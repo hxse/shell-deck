@@ -35,6 +35,14 @@ test-004:
 test-005:
     bun run test:005
 
+test-006-offline:
+    bun run test:006:offline
+
+test-006-online:
+    SHELL_DECK_RUN_ONLINE=1 bun run test:006:online
+
+test-006: test-006-offline
+
 test: test-unit test-e2e
 
 # Run the deterministic .001 API probe. No network and no real model call.

@@ -3,6 +3,7 @@ import { extname, join } from 'node:path'
 import { parseConfigId } from '../src/lib/identifier'
 import { PROFILE_CATALOG_SUMMARY } from '../src/lib/macro/profileCatalogSummary'
 import { MacroTemplateStore } from '../src/lib/macro/templateStore'
+import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { RunEventStore } from '../src/lib/runLog/runEventStore'
 import { isRunEventKind } from '../src/lib/runLog/runEventSchema'
 import type { AppendRunEventInput } from '../src/lib/runLog/runEventTypes'
@@ -10,6 +11,7 @@ import type { ClientMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import { TerminalDeckManager } from './terminalDeckManager'
 import { MacroRunnerService } from './macroRunnerService'
+import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
 
 export type ShellDeckServer = {
   url: string
@@ -31,7 +33,8 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const manager = options.manager ?? new TerminalDeckManager()
   const templateStore = new MacroTemplateStore()
   const runEventStore = new RunEventStore()
-  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore)
+  const agentEventStore = new AgentEventStore(runEventStore.rootDir)
+  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore)
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
@@ -52,7 +55,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       }
 
       try {
-        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner)
+        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner, agentEventStore)
       } catch (error) {
         return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400)
       }
@@ -79,6 +82,16 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     },
   })
 
+
+  manager.setTerminalEnvProvider((configId, terminalId, launchId) => ({
+    SHELL_DECK_CONFIG_ID: configId,
+    SHELL_DECK_TERMINAL_ID: terminalId,
+    SHELL_DECK_LAUNCH_ID: launchId,
+    SHELL_DECK_DATA_ROOT: runEventStore.rootDir,
+    SHELL_DECK_INGEST_URL: bindHost === '127.0.0.1' ? 'http://' + server.hostname + ':' + server.port + '/api/agent-events' : undefined,
+    SHELL_DECK_INGEST_TOKEN: process.env.SHELL_DECK_INGEST_TOKEN,
+  }))
+
   return {
     url: 'http://' + server.hostname + ':' + server.port,
     port: server.port ?? 0,
@@ -87,9 +100,19 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
 }
 
-async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService): Promise<Response> {
+async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService, agentEventStore: AgentEventStore): Promise<Response> {
   if (url.pathname === '/health') {
     return json({ ok: true, bind: bindHost })
+  }
+  if (url.pathname === '/api/agent-events' && req.method === 'POST') {
+    const result = ingestAgentEvent(await requestJson(req), agentEventTokenFromRequest(req), {
+      bindHost,
+      expectedToken: process.env.SHELL_DECK_INGEST_TOKEN,
+      manager,
+      store: agentEventStore,
+    })
+    if (!result.ok) return json({ ok: false, error: result.error }, result.status)
+    return json({ ok: true, event: result.event }, 201)
   }
   if (url.pathname === '/api/macro/profile-catalog' && req.method === 'GET') {
     return json(PROFILE_CATALOG_SUMMARY)
@@ -199,6 +222,13 @@ async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, 
       const existingRunId = error instanceof Error && 'existingRunId' in error ? String((error as { existingRunId?: string }).existingRunId) : undefined
       return json({ ok: false, error: error instanceof Error ? error.message : String(error), ...(existingRunId ? { existingRunId } : {}) }, 409)
     }
+  }
+
+  const spoolImportMatch = /^\/api\/configs\/([^/]+)\/agent-events\/import-spool$/.exec(url.pathname)
+  if (spoolImportMatch && req.method === 'POST') {
+    const configId = parseConfigId(spoolImportMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, imported: agentEventStore.importSpool(configId) })
   }
 
   const runsMatch = /^\/api\/configs\/([^/]+)\/runs$/.exec(url.pathname)

@@ -10,6 +10,7 @@
   let snapshot = $state<RunSnapshot | null>(null)
   let statusText = $state('Loading run logs')
   let errorText = $state<string | null>(null)
+  let artifactPreview = $state<Record<string, { status: 'loading' | 'ready' | 'error'; content?: string; error?: string }>>({})
 
   const aiTrace = $derived(snapshot ? JSON.stringify(snapshot, null, 2) : '')
 
@@ -45,6 +46,23 @@
     } catch (error) {
       errorText = messageOf(error)
       statusText = 'Load failed'
+    }
+  }
+
+  async function toggleArtifactPreview(ref: string) {
+    if (!selectedRunId) return
+    if (artifactPreview[ref]?.status === 'ready') {
+      const next = { ...artifactPreview }
+      delete next[ref]
+      artifactPreview = next
+      return
+    }
+    artifactPreview = { ...artifactPreview, [ref]: { status: 'loading' } }
+    try {
+      const content = await client().readArtifact(selectedRunId, ref)
+      artifactPreview = { ...artifactPreview, [ref]: { status: 'ready', content } }
+    } catch (error) {
+      artifactPreview = { ...artifactPreview, [ref]: { status: 'error', error: messageOf(error) } }
     }
   }
 
@@ -216,7 +234,18 @@
             {#if node.artifactRefs.length > 0}
               <div class="artifact-list">
                 {#each node.artifactRefs as ref}
-                  <code data-testid="run-artifact-ref">{ref}</code>
+                  <button type="button" class="artifact-preview-trigger" data-testid="run-artifact-ref" onclick={() => toggleArtifactPreview(ref)}>{ref}</button>
+                  {#if artifactPreview[ref]}
+                    <div class="artifact-preview" data-testid="run-artifact-preview">
+                      {#if artifactPreview[ref].status === 'loading'}
+                        <span>Loading artifact</span>
+                      {:else if artifactPreview[ref].status === 'error'}
+                        <span>{artifactPreview[ref].error}</span>
+                      {:else}
+                        <pre>{artifactPreview[ref].content}</pre>
+                      {/if}
+                    </div>
+                  {/if}
                 {/each}
               </div>
             {/if}

@@ -15,7 +15,9 @@
     "test:002": "bun test tests/unit/*.test.ts tests/integration/*.test.ts && bun run scripts/runPlaywright.ts",
     "test:003": "bun test tests/unit/profileCatalogSummary.test.ts tests/unit/macroTemplate.test.ts && bun run scripts/runPlaywright.ts tests/e2e/macroTemplateWorkbench.spec.ts",
     "test:004": "bun test tests/unit/runEventSchema.test.ts tests/unit/artifactStore.test.ts tests/unit/runEventReplay.test.ts tests/unit/runEventStore.test.ts && bun run scripts/runPlaywright.ts tests/e2e/runLogView.spec.ts",
-    "test:005": "bun test tests/unit/terminalRefResolver.test.ts tests/integration/macroRunnerFakeTerminal.test.ts && bun run scripts/runPlaywright.ts tests/e2e/macroRunnerState.spec.ts"
+    "test:005": "bun test tests/unit/terminalRefResolver.test.ts tests/integration/macroRunnerFakeTerminal.test.ts && bun run scripts/runPlaywright.ts tests/e2e/macroRunnerState.spec.ts",
+    "test:006:offline": "bun test tests/unit/terminalBufferCapture.test.ts tests/unit/agentEventIngest.test.ts tests/unit/codexHookAdapter.test.ts tests/integration/agentEventCapture.test.ts && bun run scripts/runPlaywright.ts tests/e2e/captureSourceFlow.spec.ts",
+    "test:006:online": "bun run scripts/probe-006-online.ts"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",

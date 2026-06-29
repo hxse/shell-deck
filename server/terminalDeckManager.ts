@@ -1,6 +1,6 @@
 import { assertValidPublicId } from '../src/lib/identifier'
 import type { DeckSnapshot, ServerMessage, TerminalBackendKind, TerminalSnapshot } from '../src/lib/protocol'
-import { createTerminalId, normalizeTerminalRef, type TerminalRef } from '../src/lib/terminalIdentity'
+import { createTerminalId, createTerminalLaunchId, normalizeTerminalRef, type TerminalRef } from '../src/lib/terminalIdentity'
 import { ConfigStore } from './configStore'
 import { FakeTerminalBackend } from './fakeTerminalBackend'
 import { RealPtyBackend } from './realPtyBackend'
@@ -17,6 +17,7 @@ export type DeckClient = {
 type TerminalSlot = {
   configId: string
   terminalId: string
+  launchId: string
   backend: TerminalBackend
   backendKind: TerminalBackendKind
   status: 'starting' | 'running' | 'closed' | 'failed'
@@ -45,6 +46,7 @@ export class TerminalDeckManager {
   readonly clients = new Map<string, DeckClient>()
   readonly replayLimit: number
   readonly backendFactory: TerminalBackendFactory
+  private terminalEnvProvider: (configId: string, terminalId: string, launchId: string) => Record<string, string | undefined> = () => ({})
   #nextClient = 1
 
   constructor(options: { replayLimit?: number; backendFactory?: TerminalBackendFactory } = {}) {
@@ -60,6 +62,10 @@ export class TerminalDeckManager {
       this.configs.set(configId, config)
     }
     return config
+  }
+
+  setTerminalEnvProvider(provider: (configId: string, terminalId: string, launchId: string) => Record<string, string | undefined>): void {
+    this.terminalEnvProvider = provider
   }
 
   connectClient(configId: string, send: (message: ServerMessage) => void, clientId = 'client_' + this.#nextClient++): DeckClient {
@@ -81,10 +87,12 @@ export class TerminalDeckManager {
     const backendKind = options.backend ?? 'fake'
     const cols = options.cols ?? 80
     const rows = options.rows ?? 24
-    const backend = this.backendFactory(backendKind, { cols, rows })
+    const launchId = createTerminalLaunchId()
+    const backend = this.backendFactory(backendKind, { cols, rows, configId, terminalId, launchId, env: this.terminalEnvProvider(configId, terminalId, launchId) })
     const terminal: TerminalSlot = {
       configId,
       terminalId,
+      launchId,
       backend,
       backendKind,
       status: 'starting',
@@ -172,10 +180,12 @@ export class TerminalDeckManager {
     }
 
     const nextBackendKind = backendKind ?? oldTerminal.backendKind
-    const backend = this.backendFactory(nextBackendKind, { cols: oldTerminal.cols, rows: oldTerminal.rows })
+    const launchId = createTerminalLaunchId()
+    const backend = this.backendFactory(nextBackendKind, { cols: oldTerminal.cols, rows: oldTerminal.rows, configId, terminalId: oldTerminal.terminalId, launchId, env: this.terminalEnvProvider(configId, oldTerminal.terminalId, launchId) })
     const nextTerminal: TerminalSlot = {
       configId: oldTerminal.configId,
       terminalId: oldTerminal.terminalId,
+      launchId,
       backend,
       backendKind: nextBackendKind,
       status: 'starting',

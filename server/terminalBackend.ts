@@ -19,6 +19,10 @@ export type TerminalBackendOptions = {
   cols: number
   rows: number
   shell?: string
+  configId?: string
+  terminalId?: string
+  launchId?: string
+  env?: Record<string, string | undefined>
 }
 
 export type TerminalBackendFactory = (kind: TerminalBackendKind, options: TerminalBackendOptions) => TerminalBackend

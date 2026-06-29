@@ -21,6 +21,10 @@ export function createTerminalId(): string {
   return 'term_' + translator.new()
 }
 
+export function createTerminalLaunchId(): string {
+  return 'launch_' + translator.new()
+}
+
 export function assertTerminalId(value: string): string {
   assertValidPublicId(value, 'terminalId')
   if (!TERMINAL_ID_RE.test(value)) {

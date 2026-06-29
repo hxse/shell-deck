@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { FakeTerminalBackend } from '../../server/fakeTerminalBackend'
-import type { TerminalBackend, TerminalBackendEvent } from '../../server/terminalBackend'
+import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } from '../../server/terminalBackend'
 import { TerminalDeckManager } from '../../server/terminalDeckManager'
 
 function collect(manager: TerminalDeckManager, configId: string) {
@@ -124,6 +124,41 @@ class ThrowingBackend implements TerminalBackend {
   resize(_cols: number, _rows: number): void {}
   close(): void {}
 }
+
+
+test('backend options inject shell-deck terminal env for wrapped Codex hooks', () => {
+  const captured: TerminalBackendOptions[] = []
+  const manager = new TerminalDeckManager({
+    backendFactory: (_kind, options) => {
+      captured.push(options)
+      return new FakeTerminalBackend(options)
+    },
+  })
+  manager.setTerminalEnvProvider((configId, terminalId, launchId) => ({
+    SHELL_DECK_CONFIG_ID: configId,
+    SHELL_DECK_TERMINAL_ID: terminalId,
+    SHELL_DECK_LAUNCH_ID: launchId,
+    SHELL_DECK_INGEST_URL: 'http://127.0.0.1:9999/api/agent-events',
+    SHELL_DECK_INGEST_TOKEN: 'token-a',
+  }))
+
+  const terminal = manager.createTerminal('local', { backend: 'real', terminalId: 'term_env_a' })
+  expect(captured[0]).toMatchObject({ configId: 'local', terminalId: 'term_env_a' })
+  expect(captured[0].launchId).toMatch(/^launch_/)
+  expect(captured[0].env).toMatchObject({
+    SHELL_DECK_CONFIG_ID: 'local',
+    SHELL_DECK_TERMINAL_ID: 'term_env_a',
+    SHELL_DECK_LAUNCH_ID: captured[0].launchId,
+    SHELL_DECK_INGEST_URL: 'http://127.0.0.1:9999/api/agent-events',
+    SHELL_DECK_INGEST_TOKEN: 'token-a',
+  })
+
+  expect(manager.resetTerminal('local', terminal.terminalId, 'real')).toEqual({ ok: true })
+  expect(captured[1].terminalId).toBe('term_env_a')
+  expect(captured[1].launchId).toMatch(/^launch_/)
+  expect(captured[1].launchId).not.toBe(captured[0].launchId)
+  expect(captured[1].env?.SHELL_DECK_LAUNCH_ID).toBe(captured[1].launchId)
+})
 
 test('createTerminal keeps config clean when backend start throws', () => {
   const manager = new TerminalDeckManager({

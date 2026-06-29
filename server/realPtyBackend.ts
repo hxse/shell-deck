@@ -8,6 +8,7 @@ export class RealPtyBackend implements TerminalBackend {
   readonly kind = 'real' as const
   readonly inputChannel = HELPER_INPUT_CHANNEL
   readonly shell: string
+  readonly shellDeckEnv: Record<string, string | undefined>
   #events: TerminalBackendEvent | null = null
   #child: ChildProcessWithoutNullStreams | null = null
   #closed = false
@@ -18,6 +19,12 @@ export class RealPtyBackend implements TerminalBackend {
     this.cols = options.cols
     this.rows = options.rows
     this.shell = options.shell ?? process.env.SHELL ?? '/run/current-system/sw/bin/bash'
+    this.shellDeckEnv = {
+      ...options.env,
+      ...(options.configId ? { SHELL_DECK_CONFIG_ID: options.configId } : {}),
+      ...(options.terminalId ? { SHELL_DECK_TERMINAL_ID: options.terminalId } : {}),
+      ...(options.launchId ? { SHELL_DECK_LAUNCH_ID: options.launchId } : {}),
+    }
   }
 
   start(events: TerminalBackendEvent): void {
@@ -28,6 +35,7 @@ export class RealPtyBackend implements TerminalBackend {
         ...process.env,
         TERM: 'xterm-256color',
         PS1: '$ ',
+        ...this.shellDeckEnv,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     })

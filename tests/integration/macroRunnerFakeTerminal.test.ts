@@ -57,7 +57,7 @@ test('runner waits for input_line, submits text, and blocks second live run in s
   }
 })
 
-test('runner supports mock capture, regex parse, branch and loop guard pause', async () => {
+test('runner supports terminal-buffer capture, regex parse, branch and loop guard pause', async () => {
   const h = harness()
   try {
     h.templateStore.save('local', template('loop_guard', [
@@ -66,7 +66,9 @@ test('runner supports mock capture, regex parse, branch and loop guard pause', a
       { id: 'branch', type: 'branch', fromParseStep: 'parse', conditions: [{ signal: 'hasReadyText', op: '==', value: true, goto: 'capture' }], else: 'done', loopGuard: { maxIterations: 1, onLimit: 'pause' } },
       { id: 'done', type: 'complete', reason: 'done' },
     ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'loop_guard', mockCaptureText: 'ready' })
+    h.manager.input('local', { kind: 'alias', value: 'reviewer' }, 'ready\r')
+    await waitFor(async () => h.manager.deckSnapshot('local').terminals.some((terminal) => terminal.terminalId === 'term_review_b' && terminal.replay.join('').includes('ECHO:ready')))
+    await h.service.start('local', { templateId: 'loop_guard' })
     await waitFor(async () => h.service.snapshot('local').status === 'paused')
     const snapshot = h.service.snapshot('local')
     expect(snapshot.pauseReason?.code).toBe('loop_guard_limit')

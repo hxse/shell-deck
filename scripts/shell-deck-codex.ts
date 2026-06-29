@@ -5,13 +5,15 @@ import { spawnSync } from 'node:child_process'
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const codexBin = process.env.SHELL_DECK_CODEX_BIN ?? 'codex'
-const launchId = process.env.SHELL_DECK_LAUNCH_ID ?? `launch_${Date.now()}`
-const hookDir = process.env.SHELL_DECK_HOOK_DIR ?? join(process.cwd(), '.shell-deck', 'agent-events', launchId)
+const configId = process.env.SHELL_DECK_CONFIG_ID ?? 'local'
+const terminalId = process.env.SHELL_DECK_TERMINAL_ID ?? 'term_manual'
+const launchId = process.env.SHELL_DECK_LAUNCH_ID ?? 'launch_' + Date.now()
+const hookDir = process.env.SHELL_DECK_HOOK_DIR ?? join(process.cwd(), '.shell-deck', 'configs', configId, 'agent-events', 'debug', launchId)
 mkdirSync(hookDir, { recursive: true })
 
 const hookScript = join(repoRoot, 'scripts', 'shell-deck-hook.ts')
-const hookCommand = `${shellQuote(process.execPath)} ${shellQuote(hookScript)} --out ${shellQuote(hookDir)}`
-const hookConfig = (name: string) => `hooks.${name}=[{matcher="*", hooks=[{type="command", command=${tomlString(hookCommand)}, timeout=10}]}]`
+const hookCommand = shellQuote(process.execPath) + ' ' + shellQuote(hookScript) + ' --out ' + shellQuote(hookDir)
+const hookConfig = (name: string) => 'hooks.' + name + '=[{matcher="*", hooks=[{type="command", command=' + tomlString(hookCommand) + ', timeout=10}]}]'
 const hookArgs = process.env.SHELL_DECK_DISABLE_HOOKS === '1'
   ? []
   : [
@@ -28,8 +30,8 @@ const result = spawnSync(codexBin, [...hookArgs, ...process.argv.slice(2)], {
   cwd: process.cwd(),
   env: {
     ...process.env,
-    SHELL_DECK_CONFIG_ID: process.env.SHELL_DECK_CONFIG_ID ?? 'local',
-    SHELL_DECK_TERMINAL_ID: process.env.SHELL_DECK_TERMINAL_ID ?? 'term_manual',
+    SHELL_DECK_CONFIG_ID: configId,
+    SHELL_DECK_TERMINAL_ID: terminalId,
     SHELL_DECK_LAUNCH_ID: launchId,
     SHELL_DECK_HOOK_DIR: hookDir,
   },
@@ -42,10 +44,10 @@ if (result.error) {
 }
 process.exit(result.status ?? 1)
 
-function shellQuote(value: string) {
-  return `'${value.replaceAll("'", "'\\''")}'`
+function shellQuote(value: string): string {
+  return "'" + value.replaceAll("'", "'\\''") + "'"
 }
 
-function tomlString(value: string) {
+function tomlString(value: string): string {
   return JSON.stringify(value)
 }

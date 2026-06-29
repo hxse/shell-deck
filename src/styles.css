@@ -876,6 +876,42 @@ select,
   font-size: 11px;
 }
 
+.artifact-preview-trigger {
+  border: 1px solid #c8d3dd;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #f4f7fa;
+  color: #2f3d4a;
+  font: 11px ui-monospace, SFMono-Regular, Consolas, monospace;
+  cursor: pointer;
+}
+
+.artifact-preview-trigger:hover {
+  border-color: #8aa3bd;
+  background: #edf4fa;
+}
+
+.artifact-preview {
+  flex-basis: 100%;
+  min-width: 0;
+  border: 1px solid #d2dbe4;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.artifact-preview span,
+.artifact-preview pre {
+  display: block;
+  margin: 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #26323e;
+  font-size: 12px;
+}
+
 .event-list {
   display: grid;
   gap: 8px;

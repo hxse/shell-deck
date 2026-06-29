@@ -1,6 +1,9 @@
 import { validateMacroTemplate } from '../src/lib/macro/templateSchema'
 import type { BranchCondition, MacroStep, MacroTemplate } from '../src/lib/macro/templateTypes'
 import { parseMockSignals } from '../src/lib/macro/mockParser'
+import { AgentEventStore, agentEventKey } from '../src/lib/agentEvents/agentEventStore'
+import type { AgentEvent } from '../src/lib/agentEvents/agentEventTypes'
+import { captureTerminalBuffer } from '../src/lib/capture/terminalBufferCapture'
 import { PROFILE_CATALOG_SUMMARY } from '../src/lib/macro/profileCatalogSummary'
 import type { MacroRunnerPauseReason, MacroRunnerSnapshot, MacroRunnerStatus, StartMacroRunRequest } from '../src/lib/macro/runnerTypes'
 import { resolveTerminalTargetInConfig, type ResolvedTerminalRef } from '../src/lib/macro/terminalRefResolver'
@@ -22,6 +25,8 @@ type RuntimeState = {
   waitingInput: MacroRunnerSnapshot['waitingInput']
   captureArtifacts: Map<string, string>
   parserSignals: Map<string, Record<string, boolean | null>>
+  consumedAgentEvents: Set<string>
+  agentEventBaselines: Map<string, number>
   manualContinueRequested: boolean
   pauseRequested: boolean
   mockCaptureText: string
@@ -37,6 +42,7 @@ export class MacroRunnerService {
     readonly manager: TerminalDeckManager,
     readonly templateStore: MacroTemplateStore,
     readonly runEventStore: RunEventStore,
+    readonly agentEventStore = new AgentEventStore(runEventStore.rootDir),
   ) {}
 
   snapshot(configId: string): MacroRunnerSnapshot {
@@ -67,6 +73,8 @@ export class MacroRunnerService {
       waitingInput: null,
       captureArtifacts: new Map(),
       parserSignals: new Map(),
+      consumedAgentEvents: new Set(),
+      agentEventBaselines: new Map(),
       manualContinueRequested: false,
       pauseRequested: false,
       mockCaptureText: request.mockCaptureText ?? 'mock capture ready ai-fixable',
@@ -216,11 +224,59 @@ export class MacroRunnerService {
     if (step.type === 'capture-source') {
       const resolved = this.resolveTerminal(runtime, step.capture.terminal)
       await this.appendTerminalRef(runtime, step.id, step.capture.terminal, resolved)
-      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'capture_wait_started', stepId: step.id, summary: 'Mock capture started', data: { captureKind: step.capture.kind, terminalId: resolved.terminalId } })
-      const text = this.captureText(runtime, step, resolved)
-      const artifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'capture', text, 'txt', step.id)
-      runtime.captureArtifacts.set(step.id, artifact.artifact.artifactRef)
-      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'capture_artifact_created', stepId: step.id, summary: 'Mock capture artifact created', data: { artifactRef: artifact.artifact.artifactRef, captureKind: step.capture.kind } })
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'capture_wait_started', stepId: step.id, summary: 'Capture source started', data: { captureKind: step.capture.kind, terminalId: resolved.terminalId } })
+
+      if (step.capture.kind === 'terminal-buffer') {
+        const terminal = this.terminalSnapshot(runtime.configId, resolved.terminalId)
+        const captured = captureTerminalBuffer({ replay: terminal.replay, maxChars: step.capture.maxChars })
+        const rawArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'capture-raw', captured.rawText, 'txt', step.id)
+        const normalizedArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'capture-normalized', captured.normalizedText, 'txt', step.id)
+        runtime.captureArtifacts.set(step.id, normalizedArtifact.artifact.artifactRef)
+        await this.runEventStore.appendEvent(runtime.configId, runtime.runId, {
+          kind: 'capture_artifact_created',
+          stepId: step.id,
+          summary: 'Terminal buffer capture artifact created',
+          data: {
+            captureKind: 'terminal-buffer',
+            terminalId: resolved.terminalId,
+            mode: step.capture.mode,
+            maxChars: step.capture.maxChars,
+            artifactRef: normalizedArtifact.artifact.artifactRef,
+            rawArtifactRef: rawArtifact.artifact.artifactRef,
+            normalizedArtifactRef: normalizedArtifact.artifact.artifactRef,
+            truncated: captured.truncated,
+            rawCharsBeforeTail: captured.rawCharsBeforeTail,
+            capturedChars: captured.capturedChars,
+            strippedAnsi: captured.strippedAnsi,
+          },
+        })
+      } else {
+        const event = this.nextAgentEventForCapture(runtime, step.id, resolved.terminalId, step.capture.agentKind, step.capture.eventKind, step.capture.adapter)
+        if (!event) throw new Error('agent_event_not_ready:' + resolved.terminalId)
+        runtime.consumedAgentEvents.add(agentEventKey(event))
+        const rawArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'agent-event-raw', JSON.stringify(event, null, 2), 'json', step.id)
+        const captureArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'capture-agent', event.capturedText ?? '', 'txt', step.id)
+        runtime.captureArtifacts.set(step.id, captureArtifact.artifact.artifactRef)
+        await this.runEventStore.appendEvent(runtime.configId, runtime.runId, {
+          kind: 'capture_artifact_created',
+          stepId: step.id,
+          summary: 'AgentEvent capture artifact created',
+          data: {
+            captureKind: 'agent-event',
+            terminalId: resolved.terminalId,
+            agentKind: step.capture.agentKind,
+            eventKind: step.capture.eventKind,
+            adapter: step.capture.adapter,
+            agentSessionId: event.agentSessionId,
+            codexSessionId: event.adapterMetadata.codexSessionId,
+            launchId: event.launchId,
+            agentTurnId: event.agentTurnId ?? null,
+            artifactRef: captureArtifact.artifact.artifactRef,
+            rawArtifactRef: rawArtifact.artifact.artifactRef,
+          },
+        })
+      }
+
       await this.completeStep(runtime, step.id)
       return this.nextStepId(runtime, step)
     }
@@ -316,6 +372,7 @@ export class MacroRunnerService {
   }
 
   private async waitForCaptureReadyOrManual(runtime: RuntimeState, step: Extract<MacroStep, { type: 'wait'; mode: 'capture-ready-or-user' }>): Promise<WaitResult> {
+    this.rememberAgentEventBaseline(runtime, step.captureStep)
     const deadline = Date.now() + step.timeoutMs
     while (Date.now() < deadline) {
       if (!this.runtimeCanContinue(runtime, 'waiting')) return 'cancelled'
@@ -328,7 +385,14 @@ export class MacroRunnerService {
 
   private captureSourceReady(runtime: RuntimeState, captureStepId: string): boolean {
     const captureStep = runtime.template.steps.find((step) => step.id === captureStepId)
-    return captureStep?.type === 'capture-source' && runtime.mockCaptureReady
+    if (captureStep?.type !== 'capture-source' || !runtime.mockCaptureReady) return false
+    if (captureStep.capture.kind === 'terminal-buffer') return true
+    try {
+      const resolved = this.resolveTerminal(runtime, captureStep.capture.terminal)
+      return Boolean(this.nextAgentEventForCapture(runtime, captureStep.id, resolved.terminalId, captureStep.capture.agentKind, captureStep.capture.eventKind, captureStep.capture.adapter))
+    } catch {
+      return false
+    }
   }
 
   private async waitForTerminalQuiet(runtime: RuntimeState, step: Extract<MacroStep, { type: 'wait'; mode: 'terminal-quiet' }>): Promise<WaitResult> {
@@ -416,10 +480,18 @@ export class MacroRunnerService {
     await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'terminal_ref_resolved', stepId, summary: 'Terminal ref resolved', data: { ref, terminalId: resolved.terminalId, terminalAlias: resolved.terminalAlias, terminalIndex: resolved.terminalIndex } })
   }
 
-  private captureText(runtime: RuntimeState, step: Extract<MacroStep, { type: 'capture-source' }>, resolved: ResolvedTerminalRef): string {
-    const terminal = this.terminalSnapshot(runtime.configId, resolved.terminalId)
-    const replay = terminal.replay.join('')
-    return [runtime.mockCaptureText, replay].filter(Boolean).join('\n').slice(-(step.capture.kind === 'terminal-buffer' ? step.capture.maxChars : 20000))
+  private rememberAgentEventBaseline(runtime: RuntimeState, captureStepId: string): void {
+    if (runtime.agentEventBaselines.has(captureStepId)) return
+    const captureStep = runtime.template.steps.find((step) => step.id === captureStepId)
+    if (captureStep?.type !== 'capture-source' || captureStep.capture.kind !== 'agent-event') return
+    const resolved = this.resolveTerminal(runtime, captureStep.capture.terminal)
+    this.agentEventStore.importSpool(runtime.configId)
+    runtime.agentEventBaselines.set(captureStepId, this.agentEventStore.countMatching({ configId: runtime.configId, terminalId: resolved.terminalId, agentKind: captureStep.capture.agentKind, eventKind: captureStep.capture.eventKind, adapter: captureStep.capture.adapter }))
+  }
+
+  private nextAgentEventForCapture(runtime: RuntimeState, captureStepId: string, terminalId: string, agentKind: 'codex', eventKind: 'agent.output', adapter: 'codex-stop-hook'): AgentEvent | undefined {
+    this.agentEventStore.importSpool(runtime.configId)
+    return this.agentEventStore.nextMatching({ configId: runtime.configId, terminalId, agentKind, eventKind, adapter }, runtime.agentEventBaselines.get(captureStepId) ?? 0, runtime.consumedAgentEvents)
   }
 
   private terminalSnapshot(configId: string, terminalId: string): TerminalSnapshot {

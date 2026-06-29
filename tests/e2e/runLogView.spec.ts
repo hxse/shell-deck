@@ -21,6 +21,8 @@ test('run log panel creates recoverable run log, shows folded node logs and rest
   for (const prefix of ['send', 'input', 'sleep', 'capture', 'parser', 'branch', 'control']) {
     await expect(page.getByTestId('run-log-panel')).toContainText(new RegExp('artifacts/' + prefix + '-'))
   }
+  await page.getByTestId('run-artifact-ref').first().click()
+  await expect(page.getByTestId('run-artifact-preview').first()).toContainText('review docs only')
 
   await page.locator('.run-ai-trace summary').click()
   await expect(page.getByTestId('run-ai-trace')).toContainText('"nodeLogs"')
