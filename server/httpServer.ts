@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { extname, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { dirname, extname, join } from 'node:path'
 import { parseConfigId } from '../src/lib/identifier'
 import { PROFILE_CATALOG_SUMMARY } from '../src/lib/macro/profileCatalogSummary'
 import { MacroTemplateStore } from '../src/lib/macro/templateStore'
@@ -7,7 +7,7 @@ import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { RunEventStore } from '../src/lib/runLog/runEventStore'
 import { isRunEventKind } from '../src/lib/runLog/runEventSchema'
 import type { AppendRunEventInput } from '../src/lib/runLog/runEventTypes'
-import type { ClientMessage } from '../src/lib/protocol'
+import type { ClientMessage, TerminalBackendKind } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import { TerminalDeckManager } from './terminalDeckManager'
 import { MacroRunnerService } from './macroRunnerService'
@@ -27,6 +27,7 @@ type StartOptions = {
   manager?: TerminalDeckManager
   seed?: boolean
   aiJsonParser?: AiJsonParserMode
+  seedBackend?: TerminalBackendKind
 }
 
 export function startShellDeckServer(options: StartOptions = {}): ShellDeckServer {
@@ -41,8 +42,9 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
-      manager.createTerminal('local', { backend: 'fake' })
-      manager.createTerminal('local', { backend: 'fake' })
+      const seedBackend = options.seedBackend ?? 'fake'
+      manager.createTerminal('local', { backend: seedBackend })
+      manager.createTerminal('local', { backend: seedBackend })
     }
   }
 
@@ -416,8 +418,38 @@ if (import.meta.main) {
   }
   const port = Number(argValue('--port') ?? '5177')
   const aiJsonParser = parseAiJsonParserMode(argValue('--ai-json-parser') ?? 'disabled')
-  const server = startShellDeckServer({ host, port, aiJsonParser })
+  const seedBackend = parseSeedBackend(argValue('--seed-backend') ?? 'real')
+  const server = startShellDeckServer({ host, port, aiJsonParser, seedBackend })
+  const pidFile = argValue('--pid-file') ?? defaultPidFile(port)
+  writePidFile(pidFile)
+  const cleanup = () => removePidFile(pidFile)
+  process.on('exit', cleanup)
+  process.once('SIGINT', () => { server.stop(); cleanup(); process.exit(0) })
+  process.once('SIGTERM', () => { server.stop(); cleanup(); process.exit(0) })
   console.log('shell-deck listening on ' + server.url)
+  console.log('shell-deck pid file ' + pidFile)
+}
+
+function defaultPidFile(port: number): string {
+  return join(process.env.SHELL_DECK_DATA_ROOT ?? join(process.cwd(), '.shell-deck'), 'server-' + port + '.pid')
+}
+
+function writePidFile(path: string): void {
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(path, String(process.pid) + '\n', 'utf8')
+}
+
+function removePidFile(path: string): void {
+  try {
+    if (readFileSync(path, 'utf8').trim() === String(process.pid)) unlinkSync(path)
+  } catch {
+    // Best-effort cleanup only.
+  }
+}
+
+function parseSeedBackend(value: string): TerminalBackendKind {
+  if (value === 'fake' || value === 'real') return value
+  throw new Error('invalid_seed_backend:' + value)
 }
 
 function parseAiJsonParserMode(value: string): AiJsonParserMode {

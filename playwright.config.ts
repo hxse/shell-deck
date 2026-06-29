@@ -13,7 +13,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: `bun run build && bun run server/httpServer.ts --host ${host} --port ${port}`,
+    command: `bun run build && bun run server/httpServer.ts --host ${host} --port ${port} --seed-backend fake`,
     url: `${baseURL}/health`,
     reuseExistingServer: false,
     timeout: 60_000,

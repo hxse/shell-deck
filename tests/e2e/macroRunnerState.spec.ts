@@ -70,3 +70,17 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await expect(page.getByTestId("macro-run-status")).toContainText("completed")
   await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:from-ui/)
 })
+
+test("macro runner auto-saves draft before start and completes send_line without next", async ({ page, request }) => {
+  await request.post("/api/configs/runner-draft-e2e/terminals?backend=fake")
+  await page.goto("/?configId=runner-draft-e2e")
+  await expect(page.getByTestId("macro-panel")).toBeVisible()
+
+  await page.getByTestId("macro-create").click()
+  await page.getByTestId("add-step-send").click()
+  await page.getByTestId("send-line-text").fill("draft-send-only")
+  await page.getByTestId("macro-control-start").click()
+
+  await expect(page.getByTestId("macro-run-status")).toContainText("completed")
+  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:draft-send-only/)
+})

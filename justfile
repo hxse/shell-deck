@@ -13,6 +13,9 @@ start-mock-ai *args:
 start-codex-ai *args:
     bun run server/httpServer.ts --ai-json-parser codex-exec {{args}}
 
+stop *args:
+    bun run scripts/stop-server.ts {{args}}
+
 # Development server entry. The server serves Vite-built assets when present and exposes WebSocket APIs.
 dev *args:
     bun run server/httpServer.ts --ai-json-parser disabled {{args}}
@@ -66,6 +69,10 @@ test-008-online:
     bun run test:008:online
 
 test-008: test-008-offline
+
+test-009-offline: check build test-unit test-e2e test-001-offline test-002 test-003 test-004 test-005 test-006-offline test-007-offline test-008-offline
+
+test-009: test-009-offline
 
 test-007: test-007-offline
 

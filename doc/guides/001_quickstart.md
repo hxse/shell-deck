@@ -1,58 +1,136 @@
 # Quickstart
 
-`shell-deck` V0 还没有完整交付，但当前已经可以运行浏览器 terminal deck 和 `.003 macro template workbench`。宏模板可以创建、编辑、复制、删除、导入、导出，并保存 terminal refs、`capture-source` steps、parser config 和结构化 branch；宏 runner、run log、真实 capture artifact 和 parser invocation 还在后续子任务。
+This guide exercises the V0 local path. It does not require network access unless you explicitly run online Codex probes or start the real `codex-exec` parser mode.
 
-## 启动本地工作台
+## Start And Stop
+
+From the shell-deck repo:
 
 ```bash
+cd <shell-deck-root>
 just start
 ```
 
-默认监听 `127.0.0.1:5177`。打开浏览器访问：
+`just start` seeds the `local` config with two real shell terminals when it starts with an empty deck. Tests and explicit API calls can still create fake terminals.
+
+Default URL:
 
 ```text
 http://127.0.0.1:5177
 ```
 
-当前可用能力：
+Stop the default local server from another shell:
 
-- terminal tabs：多 terminal、fake/real backend、多浏览器 tab 同步、tab 重命名、可选拖拽排序。
-- macro panel：template CRUD、duplicate、import/export、terminal tab alias/index/id 引用；capture 配置放在 `capture-source` step 内，支持 `terminal-buffer` 和 `agent-event`。
-- parser config：内置 `ai-json` profile summary 选择，以及 template-local `regex` rules。
-- branch config：结构化 `signal/op/value/goto`，不保存字符串表达式，不做 `"true" == true` 宽松转换。
-- flow config：可保存 `send_line`、`sleep`、`input_line`、`wait`、`capture-source`、`parse`、`branch`、`goto`、`pause/complete/fail/stop`。
+```bash
+just stop
+```
 
-当前不可用能力：
+For a non-default port, pass the same port to both commands:
 
-- 不能真正运行 macro。
-- 不会生成 run event log 或 artifact。
-- 不会调用真实 parser / Spark / Codex exec。
-- 不绑定或恢复 Codex session。
+```bash
+just start --port 5188
+just stop --port 5188
+```
 
-## 测试入口
+The server refuses non-local binds unless `SHELL_DECK_ALLOW_LAN=1` is set. V0 has no access control, so local bind is the safe default.
 
-所有项目命令入口走 `justfile`：
+## Parser Modes
+
+V0 separates parser modes at the command entry point:
+
+```bash
+just start          # ai-json disabled; regex still works
+just start-mock-ai  # explicit mock ai-json for offline demos/tests
+just start-codex-ai # real codex exec parser; may use auth/network/model quota
+```
+
+If a macro uses `ai-json` while the server is in disabled mode, the run pauses with `ai_json_adapter_not_configured`. This avoids silently using mock AI or silently spending model quota.
+
+## Terminal Deck
+
+Open two browser tabs to the same URL and config. Terminal output, terminal order, aliases, and replay are synchronized by the server. A fresh `just start` opens two real shell terminals by default.
+
+V0 terminal refs:
+
+- `{ "kind": "index", "value": 1 }`: convenient dynamic position
+- `{ "kind": "id", "value": "term_..." }`: stable terminal id
+- `{ "kind": "alias", "value": "reviewer" }`: terminal tab rename alias
+
+Double-click a terminal tab to rename it. That alias is the macro-visible alias. Dragging terminal tabs is behind the drag toggle to avoid accidental reorder.
+
+## Hook-Enabled Codex
+
+Use the shell-deck justfile wrapper from any target project when you want Codex hooks to report AgentEvents back to shell-deck:
+
+```bash
+cd /path/to/target/project
+just -f <shell-deck-root>/justfile -- codex --help
+just -f <shell-deck-root>/justfile -- codex exec -
+```
+
+The wrapper injects temporary hook config only for that Codex invocation. It forwards arguments to Codex and preserves terminal/config/launch ids through environment variables. V0 records Codex session ids for traceability but does not bind macro templates or macro state to Codex sessions.
+
+## Macro Template Flow
+
+The macro panel supports:
+
+- template create/save/duplicate/delete with delete confirmation
+- import/export JSON backups
+- visual editing for top-level macro steps and basic `parallel_all` lane id/terminal fields
+- JSON preview/import/export for advanced fields, including lane internals
+- structured branch conditions only; no expression strings and no JS eval
+
+Common V0 step types:
+
+- `send_line`: writes text to target terminal and presses Enter
+- `sleep`: waits for a fixed duration
+- `wait`: duration, terminal quiet, capture-ready-or-user, or user-continue
+- `input_line`: pauses for user text, sends it to target terminal, then continues
+- `capture-source`: terminal-buffer or AgentEvent capture
+- `parse`: regex or ai-json parser over a capture artifact
+- `branch`, `goto`, `pause`, `complete`, `fail`, `stop`
+- `parallel_all`: bounded fan-out/fan-in across different terminals inside one macro run
+
+## Observability
+
+Each macro run writes one append-only event log plus artifacts. The visual node log and AI-readable trace derive from that same event log. Expand nodes to inspect inputs, waits, captures, parser results, branch decisions, parallel lane events, and artifact refs.
+
+## Offline Test Gate
+
+The full V0 offline gate is:
+
+```bash
+just test-009-offline
+```
+
+Useful smaller gates:
 
 ```bash
 just check
+just build
 just test-unit
 just test-e2e
-just test-003
+just test-001-offline
+just test-006-offline
+just test-007-offline
+just test-008-offline
 ```
 
-`.001` API probe 仍可单独运行：
+Online probes are explicit and optional:
 
 ```bash
-just test-001-offline
 just test-001-online
+just test-006-online
+just test-007-online
+just test-008-online
 ```
 
-`test-001-offline` 不访问网络、不调用真实模型；`test-001-online` 会调用真实 Codex CLI，可能使用网络、认证和模型额度。Playwright 测试会通过 `SHELL_DECK_DATA_ROOT` 使用临时数据目录，避免污染项目本地 `.shell-deck/` 缓存。
+They may require Codex auth, network, and model quota. If unavailable, record the blocked reason instead of treating them as default failures.
 
-## 文档入口
+## Known V0 Limits
 
-```text
-doc/tasks/index/001_20260627A.md
-doc/tasks/snapshots/20260627A shell deck bootstrap/20260627A/02_spec/01_contract.md
-doc/tasks/snapshots/20260627A shell deck bootstrap/20260627A.003 macro template workbench/02_spec/01_contract.md
-```
+- No authentication or access control; keep default local bind unless you understand the LAN risk.
+- No Codex session binding or session restore; use `codex resume` manually in a terminal if needed.
+- `ai-json` real parser depends on Codex structured output compatibility and external model availability.
+- Full nested visual editing for `parallel_all` lane internals is deferred; use JSON for advanced lane steps/conditions.
+- Crash recovery for the tiny window where terminal input was sent but the event was not written is deferred; normal pause/resume duplicate-send prevention is implemented.

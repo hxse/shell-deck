@@ -39,6 +39,22 @@ test('runner executes send_line and complete against fake terminal with event lo
   }
 })
 
+test('runner completes a send_line-only template without requiring an explicit complete step', async () => {
+  const h = harness()
+  try {
+    h.templateStore.save('local', template('send_only', [
+      { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'main' }, text: 'runner-send-only' },
+    ]), h.manager.indexMap('local'))
+    await h.service.start('local', { templateId: 'send_only' })
+    await waitFor(async () => h.service.snapshot('local').status === 'completed')
+    const snapshot = h.service.snapshot('local')
+    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain('run_completed')
+    expect(h.manager.deckSnapshot('local').terminals[0].replay.join('')).toContain('ECHO:runner-send-only')
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
 test('runner waits for input_line, submits text, and blocks second live run in same config', async () => {
   const h = harness()
   try {

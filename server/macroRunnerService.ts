@@ -192,7 +192,11 @@ export class MacroRunnerService {
       runtime.currentStepId = step.id
       try {
         const next = await this.executeStep(runtime, step)
-        if (!next || !isLive(runtime.status) || runtime.status !== 'running') return
+        if (!next) {
+          if (runtime.status === 'running') await this.completeRunWithoutNext(runtime, step.id)
+          return
+        }
+        if (!isLive(runtime.status) || runtime.status !== 'running') return
         stepId = await this.transition(runtime, step, next)
       } catch (error) {
         await this.pauseRun(runtime, 'step_error', error instanceof Error ? error.message : String(error), step.id)
@@ -833,6 +837,12 @@ export class MacroRunnerService {
     const snapshot = this.manager.deckSnapshot(configId).terminals.find((terminal) => terminal.terminalId === terminalId)
     if (!snapshot) throw new Error('terminal_not_found:' + terminalId)
     return snapshot
+  }
+
+  private async completeRunWithoutNext(runtime: RuntimeState, stepId: string): Promise<void> {
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'run_completed', summary: 'Run completed: no next step', data: { reason: 'No next step' } })
+    runtime.status = 'completed'
+    runtime.currentStepId = stepId
   }
 
   private async startStep(runtime: RuntimeState, stepId: string): Promise<void> {

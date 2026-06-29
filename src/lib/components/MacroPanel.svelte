@@ -455,16 +455,28 @@
     }
     try {
       const api = runnerClient()
-      if (action === 'start' && draft) runner = await api.start({ templateId: draft.id })
+      if (action === 'start' && draft) {
+        draft = await client().save(draft)
+        selectedTemplateId = draft.id
+        templates = await client().list()
+        runner = await api.start({ templateId: draft.id })
+      }
       if (action === 'pause') runner = await api.pause()
       if (action === 'resume') runner = await api.resume()
       if (action === 'stop') runner = await api.stop()
       statusText = 'Runner ' + (runner?.status ?? action)
-      if (action === 'start' || action === 'resume') window.setTimeout(() => { void refreshRunner() }, 80)
+      if (action === 'start' || action === 'resume') refreshRunnerSoon()
     } catch (error) {
       errorText = messageOf(error)
       statusText = 'Runner ' + action + ' failed'
     }
+  }
+
+  function refreshRunnerSoon(attempt = 0) {
+    window.setTimeout(async () => {
+      await refreshRunner()
+      if (attempt < 5 && (runner?.status === 'running' || runner?.status === 'waiting')) refreshRunnerSoon(attempt + 1)
+    }, 100)
   }
 
   async function submitRunnerInput() {
@@ -473,7 +485,7 @@
       runner = await runnerClient().submitInput({ text: runnerInput })
       runnerInput = ''
       statusText = 'Runner ' + runner.status
-      window.setTimeout(() => { void refreshRunner() }, 80)
+      refreshRunnerSoon()
     } catch (error) {
       errorText = messageOf(error)
     }

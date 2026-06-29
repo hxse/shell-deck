@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bun run server/httpServer.ts --ai-json-parser disabled",
     "start": "bun run server/httpServer.ts --ai-json-parser disabled",
+    "stop": "bun run scripts/stop-server.ts",
     "build": "vite build",
     "check": "bun run scripts/check.ts",
     "test": "bun run test:unit && bun run test:e2e",
