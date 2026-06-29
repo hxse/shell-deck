@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run server/httpServer.ts",
-    "start": "bun run server/httpServer.ts",
+    "dev": "bun run server/httpServer.ts --ai-json-parser disabled",
+    "start": "bun run server/httpServer.ts --ai-json-parser disabled",
     "build": "vite build",
     "check": "bun run scripts/check.ts",
     "test": "bun run test:unit && bun run test:e2e",
@@ -17,7 +17,9 @@
     "test:004": "bun test tests/unit/runEventSchema.test.ts tests/unit/artifactStore.test.ts tests/unit/runEventReplay.test.ts tests/unit/runEventStore.test.ts && bun run scripts/runPlaywright.ts tests/e2e/runLogView.spec.ts",
     "test:005": "bun test tests/unit/terminalRefResolver.test.ts tests/integration/macroRunnerFakeTerminal.test.ts && bun run scripts/runPlaywright.ts tests/e2e/macroRunnerState.spec.ts",
     "test:006:offline": "bun test tests/unit/terminalBufferCapture.test.ts tests/unit/agentEventIngest.test.ts tests/unit/codexHookAdapter.test.ts tests/integration/agentEventCapture.test.ts && bun run scripts/runPlaywright.ts tests/e2e/captureSourceFlow.spec.ts",
-    "test:006:online": "bun run scripts/probe-006-online.ts"
+    "test:006:online": "bun run scripts/probe-006-online.ts",
+    "test:007:offline": "bun test tests/unit/parserProfile.test.ts tests/unit/parserResultSchema.test.ts tests/unit/regexParserAdapter.test.ts tests/unit/replicaReducer.test.ts tests/integration/parserFixtureEval.test.ts tests/integration/codexExecParserProbe.test.ts tests/integration/parserRuntimeRunner.test.ts && bun run scripts/runPlaywright.ts tests/e2e/captureSourceFlow.spec.ts",
+    "test:007:online": "bun run scripts/probe-007-online.ts --run-online"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",

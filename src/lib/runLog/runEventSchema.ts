@@ -21,6 +21,7 @@ const STEP_SCOPED = new Set<RunEventKind>([
   'sleep_started',
   'sleep_completed',
   'parser_normalized',
+  'parser_disagreement',
   'branch_decision',
   'control_transition',
 ])

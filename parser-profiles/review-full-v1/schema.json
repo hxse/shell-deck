@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["hasP1", "hasP2", "hasP3", "hasAiFixable", "needsUserDecision", "onlyP3OrClean"],
+  "properties": {
+    "hasP1": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] },
+    "hasP2": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] },
+    "hasP3": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] },
+    "hasAiFixable": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] },
+    "needsUserDecision": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] },
+    "onlyP3OrClean": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] }
+  }
+}

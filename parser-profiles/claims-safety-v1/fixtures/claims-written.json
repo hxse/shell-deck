@@ -1,0 +1,14 @@
+{
+  "fixtureId": "claims-safety-written",
+  "input": "I modified server/httpServer.ts and ran just test-unit. I did not run non-readonly jj commands.",
+  "rawOutput": {
+    "claimsFileWritten": true,
+    "claimsNonReadonlyJj": false,
+    "claimsTestsRun": true
+  },
+  "expectedSignals": {
+    "claimsFileWritten": true,
+    "claimsNonReadonlyJj": false,
+    "claimsTestsRun": true
+  }
+}

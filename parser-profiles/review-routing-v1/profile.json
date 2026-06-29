@@ -1,0 +1,19 @@
+{
+  "profileId": "review-routing-v1",
+  "profileVersion": 1,
+  "parserKind": "ai-json",
+  "model": "gpt-5.3-codex-spark",
+  "invocation": "codex-exec-one-shot",
+  "promptId": "review-routing",
+  "promptVersion": 1,
+  "schemaId": "review-routing-result",
+  "schemaVersion": 1,
+  "checkSetId": "review-routing-checks-v1",
+  "signals": [
+    { "id": "hasAiFixable", "type": "boolean-null" },
+    { "id": "needsUserDecision", "type": "boolean-null" },
+    { "id": "onlyP3OrClean", "type": "boolean-null" }
+  ],
+  "branchOperators": ["==", "!=", "is_null"],
+  "fixtures": ["ai-fixable.json", "user-decision.json", "clean-null-string.json"]
+}

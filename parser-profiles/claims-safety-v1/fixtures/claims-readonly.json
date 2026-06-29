@@ -1,0 +1,14 @@
+{
+  "fixtureId": "claims-safety-readonly",
+  "input": "I only inspected docs. I ran jj status and no tests.",
+  "rawOutput": {
+    "claimsFileWritten": "false",
+    "claimsNonReadonlyJj": "false",
+    "claimsTestsRun": "false"
+  },
+  "expectedSignals": {
+    "claimsFileWritten": false,
+    "claimsNonReadonlyJj": false,
+    "claimsTestsRun": false
+  }
+}

@@ -3,13 +3,25 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 default:
     just --list
 
-# Start the local-only shell-deck server.
+# Start the local-only shell-deck server. ai-json is disabled unless an explicit AI mode entry is used.
 start *args:
-    bun run start {{args}}
+    bun run server/httpServer.ts --ai-json-parser disabled {{args}}
+
+start-mock-ai *args:
+    bun run server/httpServer.ts --ai-json-parser mock {{args}}
+
+start-codex-ai *args:
+    bun run server/httpServer.ts --ai-json-parser codex-exec {{args}}
 
 # Development server entry. The server serves Vite-built assets when present and exposes WebSocket APIs.
 dev *args:
-    bun run dev {{args}}
+    bun run server/httpServer.ts --ai-json-parser disabled {{args}}
+
+dev-mock-ai *args:
+    bun run server/httpServer.ts --ai-json-parser mock {{args}}
+
+dev-codex-ai *args:
+    bun run server/httpServer.ts --ai-json-parser codex-exec {{args}}
 
 check:
     bun run check
@@ -40,6 +52,14 @@ test-006-offline:
 
 test-006-online:
     SHELL_DECK_RUN_ONLINE=1 bun run test:006:online
+
+test-007-offline:
+    bun run test:007:offline
+
+test-007-online:
+    bun run test:007:online
+
+test-007: test-007-offline
 
 test-006: test-006-offline
 

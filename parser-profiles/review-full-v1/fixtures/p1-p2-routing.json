@@ -1,0 +1,20 @@
+{
+  "fixtureId": "review-full-p1-p2-routing",
+  "input": "P1: data loss. P2: missing validation. AI can directly fix the P2 issue, but the P1 mitigation needs user decision.",
+  "rawOutput": {
+    "hasP1": true,
+    "hasP2": true,
+    "hasP3": false,
+    "hasAiFixable": true,
+    "needsUserDecision": true,
+    "onlyP3OrClean": false
+  },
+  "expectedSignals": {
+    "hasP1": true,
+    "hasP2": true,
+    "hasP3": false,
+    "hasAiFixable": true,
+    "needsUserDecision": true,
+    "onlyP3OrClean": false
+  }
+}

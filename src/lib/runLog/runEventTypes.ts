@@ -23,6 +23,7 @@ export const RUN_EVENT_KINDS = [
   'sleep_started',
   'sleep_completed',
   'parser_normalized',
+  'parser_disagreement',
   'branch_decision',
   'control_transition',
   'user_override',

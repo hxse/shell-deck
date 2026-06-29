@@ -1,0 +1,8 @@
+{
+  "checkSetId": "review-full-checks-v1",
+  "checks": [
+    "Report severity presence only when the review text clearly contains that severity.",
+    "Routing signals must be independent booleans/null, not a single category.",
+    "Use null for missing evidence."
+  ]
+}

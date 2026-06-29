@@ -1,0 +1,8 @@
+{
+  "checkSetId": "review-routing-checks-v1",
+  "checks": [
+    "All declared signals must be present.",
+    "Do not treat tool claims as system audit facts.",
+    "Use null for unclear evidence instead of guessing."
+  ]
+}

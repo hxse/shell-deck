@@ -11,6 +11,7 @@ import type { ClientMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import { TerminalDeckManager } from './terminalDeckManager'
 import { MacroRunnerService } from './macroRunnerService'
+import { ParserRuntime, type AiJsonParserMode } from '../src/lib/parser/parserRuntime'
 import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
 
 export type ShellDeckServer = {
@@ -25,6 +26,7 @@ type StartOptions = {
   port?: number
   manager?: TerminalDeckManager
   seed?: boolean
+  aiJsonParser?: AiJsonParserMode
 }
 
 export function startShellDeckServer(options: StartOptions = {}): ShellDeckServer {
@@ -34,7 +36,8 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const templateStore = new MacroTemplateStore()
   const runEventStore = new RunEventStore()
   const agentEventStore = new AgentEventStore(runEventStore.rootDir)
-  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore)
+  const aiJsonParser = options.aiJsonParser ?? 'disabled'
+  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore, new ParserRuntime(runEventStore, { aiJsonMode: aiJsonParser }))
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
@@ -102,7 +105,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
 
 async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService, agentEventStore: AgentEventStore): Promise<Response> {
   if (url.pathname === '/health') {
-    return json({ ok: true, bind: bindHost })
+    return json({ ok: true, bind: bindHost, aiJsonParser: macroRunner.parserRuntime.optionsLabel() })
   }
   if (url.pathname === '/api/agent-events' && req.method === 'POST') {
     const result = ingestAgentEvent(await requestJson(req), agentEventTokenFromRequest(req), {
@@ -412,11 +415,19 @@ if (import.meta.main) {
     process.exit(1)
   }
   const port = Number(argValue('--port') ?? '5177')
-  const server = startShellDeckServer({ host, port })
+  const aiJsonParser = parseAiJsonParserMode(argValue('--ai-json-parser') ?? 'disabled')
+  const server = startShellDeckServer({ host, port, aiJsonParser })
   console.log('shell-deck listening on ' + server.url)
 }
 
+function parseAiJsonParserMode(value: string): AiJsonParserMode {
+  if (value === 'disabled' || value === 'mock' || value === 'codex-exec') return value
+  throw new Error('invalid_ai_json_parser_mode:' + value)
+}
+
 function argValue(name: string): string | undefined {
+  const inline = process.argv.find((arg) => arg.startsWith(name + '='))
+  if (inline) return inline.slice(name.length + 1)
   const index = process.argv.indexOf(name)
   if (index === -1) return undefined
   return process.argv[index + 1]

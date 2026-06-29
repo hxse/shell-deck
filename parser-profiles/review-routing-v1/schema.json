@@ -1,0 +1,10 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["hasAiFixable", "needsUserDecision", "onlyP3OrClean"],
+  "properties": {
+    "hasAiFixable": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] },
+    "needsUserDecision": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] },
+    "onlyP3OrClean": { "oneOf": [{ "type": "boolean" }, { "type": "null" }, { "type": "string", "enum": ["true", "false", "null"] }] }
+  }
+}

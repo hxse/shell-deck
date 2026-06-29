@@ -1,10 +1,11 @@
 import { validateMacroTemplate } from '../src/lib/macro/templateSchema'
 import type { BranchCondition, MacroStep, MacroTemplate } from '../src/lib/macro/templateTypes'
-import { parseMockSignals } from '../src/lib/macro/mockParser'
 import { AgentEventStore, agentEventKey } from '../src/lib/agentEvents/agentEventStore'
 import type { AgentEvent } from '../src/lib/agentEvents/agentEventTypes'
 import { captureTerminalBuffer } from '../src/lib/capture/terminalBufferCapture'
 import { PROFILE_CATALOG_SUMMARY } from '../src/lib/macro/profileCatalogSummary'
+import { ParserRuntime } from '../src/lib/parser/parserRuntime'
+import { parserInvocationErrorMetadata } from '../src/lib/parser/parserProfileTypes'
 import type { MacroRunnerPauseReason, MacroRunnerSnapshot, MacroRunnerStatus, StartMacroRunRequest } from '../src/lib/macro/runnerTypes'
 import { resolveTerminalTargetInConfig, type ResolvedTerminalRef } from '../src/lib/macro/terminalRefResolver'
 import type { RunSnapshot, RunSummary } from '../src/lib/runLog/runEventTypes'
@@ -32,6 +33,7 @@ type RuntimeState = {
   mockCaptureText: string
   mockCaptureReady: boolean
   token: number
+  abortController: AbortController | null
 }
 
 export class MacroRunnerService {
@@ -43,6 +45,7 @@ export class MacroRunnerService {
     readonly templateStore: MacroTemplateStore,
     readonly runEventStore: RunEventStore,
     readonly agentEventStore = new AgentEventStore(runEventStore.rootDir),
+    readonly parserRuntime = new ParserRuntime(runEventStore),
   ) {}
 
   snapshot(configId: string): MacroRunnerSnapshot {
@@ -80,6 +83,7 @@ export class MacroRunnerService {
       mockCaptureText: request.mockCaptureText ?? 'mock capture ready ai-fixable',
       mockCaptureReady: request.mockCaptureReady ?? true,
       token: this.nextToken++,
+      abortController: null,
     }
     this.runtimes.set(configId, runtime)
 
@@ -101,6 +105,7 @@ export class MacroRunnerService {
     const runtime = this.runtimeOrThrow(configId)
     if (!isLive(runtime.status)) return this.snapshotForRuntime(configId, runtime)
     runtime.pauseRequested = true
+    runtime.abortController?.abort()
     await this.pauseRun(runtime, 'user_pause', 'Paused by user')
     return this.snapshotForRuntime(configId, runtime)
   }
@@ -135,6 +140,7 @@ export class MacroRunnerService {
       return this.snapshot(configId)
     }
     runtime.pauseRequested = true
+    runtime.abortController?.abort()
     runtime.status = "stopped"
     runtime.waitingInput = null
     runtime.pauseReason = { code: "user_stop", message: "Stopped by user", stepId: runtime.currentStepId ?? undefined }
@@ -284,10 +290,62 @@ export class MacroRunnerService {
       const artifactRef = runtime.captureArtifacts.get(step.captureStep)
       if (!artifactRef) throw new Error('missing_capture_artifact:' + step.captureStep)
       const text = this.runEventStore.readArtifact(runtime.configId, runtime.runId, artifactRef)
-      const parsed = parseMockSignals(step.parser, text, PROFILE_CATALOG_SUMMARY)
+      const abortController = new AbortController()
+      runtime.abortController = abortController
+      let parsed: Awaited<ReturnType<ParserRuntime['parse']>>
+      try {
+        parsed = await this.parserRuntime.parse({
+          configId: runtime.configId,
+          runId: runtime.runId,
+          stepId: step.id,
+          captureArtifactRef: artifactRef,
+          parser: step.parser,
+          text,
+          signal: abortController.signal,
+        })
+      } catch (error) {
+        if (!this.runtimeCanContinue(runtime, 'running')) return null
+        const parserError = parserInvocationErrorMetadata(error)
+        if (parserError) {
+          await this.pauseRun(runtime, parserError.code, error instanceof Error ? error.message : String(error), step.id, parserError)
+          return null
+        }
+        throw error
+      } finally {
+        if (runtime.abortController === abortController) runtime.abortController = null
+      }
+      if (!this.runtimeCanContinue(runtime, 'running')) return null
+      if (parsed.status === 'disagreement') {
+        await this.runEventStore.appendEvent(runtime.configId, runtime.runId, {
+          kind: 'parser_disagreement',
+          stepId: step.id,
+          summary: 'Parser replicas disagreed: ' + parsed.profileId,
+          data: {
+            profileId: parsed.profileId,
+            strategy: parsed.strategy,
+            variants: parsed.variants.map((variant) => ({ signals: variant.signals, rawArtifactRef: variant.rawArtifactRef, normalizedArtifactRef: variant.normalizedArtifactRef, inputArtifactRef: variant.inputArtifactRef ?? null, metadata: variant.metadata })),
+          },
+        })
+        await this.pauseRun(runtime, 'parser_disagreement', 'Parser replicas disagreed for ' + parsed.profileId, step.id)
+        return null
+      }
       runtime.parserSignals.set(step.id, parsed.signals)
-      const artifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'parser-output', JSON.stringify(parsed, null, 2), 'json', step.id)
-      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parser_normalized', stepId: step.id, summary: 'Mock parser normalized signals', data: { captureArtifactRef: artifactRef, artifactRef: artifact.artifact.artifactRef, signals: parsed.signals } })
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, {
+        kind: 'parser_normalized',
+        stepId: step.id,
+        summary: 'Parser normalized signals',
+        data: {
+          parserKind: parsed.parserKind,
+          profileId: parsed.profileId ?? null,
+          captureArtifactRef: artifactRef,
+          rawArtifactRef: parsed.rawArtifactRef,
+          normalizedArtifactRef: parsed.normalizedArtifactRef,
+          artifactRef: parsed.normalizedArtifactRef,
+          inputArtifactRef: parsed.inputArtifactRef ?? null,
+          signals: parsed.signals,
+          metadata: parsed.metadata,
+        },
+      })
       await this.completeStep(runtime, step.id)
       return this.nextStepId(runtime, step)
     }
@@ -509,6 +567,7 @@ export class MacroRunnerService {
   }
 
   private async stopRun(runtime: RuntimeState, message: string, code: string, stepId?: string): Promise<void> {
+    runtime.abortController?.abort()
     runtime.pauseRequested = true
     runtime.status = 'stopped'
     runtime.waitingInput = null
@@ -516,15 +575,17 @@ export class MacroRunnerService {
     await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'run_stopped', summary: message, data: { code, reason: message, ...(stepId ? { stepId } : {}) } })
   }
 
-  private async pauseRun(runtime: RuntimeState, code: string, message: string, stepId = runtime.currentStepId ?? undefined): Promise<void> {
+  private async pauseRun(runtime: RuntimeState, code: string, message: string, stepId = runtime.currentStepId ?? undefined, data: Record<string, unknown> = {}): Promise<void> {
+    runtime.abortController?.abort()
     runtime.status = 'paused'
     runtime.pauseRequested = true
     runtime.pauseReason = { code, message, stepId }
     runtime.waitingInput = null
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'run_paused', stepId, summary: message, data: { code, reason: message } })
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'run_paused', stepId, summary: message, data: { code, reason: message, ...data } })
   }
 
   private async failRun(runtime: RuntimeState, code: string, message: string, stepId = runtime.currentStepId ?? undefined): Promise<void> {
+    runtime.abortController?.abort()
     runtime.status = 'failed'
     runtime.pauseRequested = true
     runtime.pauseReason = { code, message, stepId }

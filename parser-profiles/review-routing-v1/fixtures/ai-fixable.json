@@ -1,0 +1,14 @@
+{
+  "fixtureId": "review-routing-ai-fixable",
+  "input": "AI can directly fix the P2 documentation drift. No user decision is required.",
+  "rawOutput": {
+    "hasAiFixable": true,
+    "needsUserDecision": false,
+    "onlyP3OrClean": false
+  },
+  "expectedSignals": {
+    "hasAiFixable": true,
+    "needsUserDecision": false,
+    "onlyP3OrClean": false
+  }
+}

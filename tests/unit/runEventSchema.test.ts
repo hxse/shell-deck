@@ -40,6 +40,7 @@ test('operational events are step-scoped in V0', () => {
     'sleep_started',
     'sleep_completed',
     'parser_normalized',
+    'parser_disagreement',
     'branch_decision',
     'control_transition',
   ]

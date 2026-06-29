@@ -1,0 +1,14 @@
+{
+  "fixtureId": "review-routing-clean-null-string",
+  "input": "No blocking issues. Only P3 polish remains. The AI-fixable route is unclear.",
+  "rawOutput": {
+    "hasAiFixable": "null",
+    "needsUserDecision": "false",
+    "onlyP3OrClean": "true"
+  },
+  "expectedSignals": {
+    "hasAiFixable": null,
+    "needsUserDecision": false,
+    "onlyP3OrClean": true
+  }
+}

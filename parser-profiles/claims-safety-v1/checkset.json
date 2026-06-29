@@ -1,0 +1,8 @@
+{
+  "checkSetId": "claims-safety-checks-v1",
+  "checks": [
+    "Extract only textual claims.",
+    "Do not infer filesystem or VCS truth.",
+    "Use null when the claim is absent or ambiguous."
+  ]
+}

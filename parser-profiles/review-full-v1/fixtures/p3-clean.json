@@ -1,0 +1,20 @@
+{
+  "fixtureId": "review-full-p3-clean",
+  "input": "Only P3 polish remains. No P1 or P2 findings.",
+  "rawOutput": {
+    "hasP1": "false",
+    "hasP2": "false",
+    "hasP3": "true",
+    "hasAiFixable": "null",
+    "needsUserDecision": false,
+    "onlyP3OrClean": true
+  },
+  "expectedSignals": {
+    "hasP1": false,
+    "hasP2": false,
+    "hasP3": true,
+    "hasAiFixable": null,
+    "needsUserDecision": false,
+    "onlyP3OrClean": true
+  }
+}

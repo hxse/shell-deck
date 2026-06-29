@@ -1,0 +1,14 @@
+{
+  "fixtureId": "review-routing-user-decision",
+  "input": "There is a design fork. The user must choose A or B before implementation.",
+  "rawOutput": {
+    "hasAiFixable": false,
+    "needsUserDecision": true,
+    "onlyP3OrClean": false
+  },
+  "expectedSignals": {
+    "hasAiFixable": false,
+    "needsUserDecision": true,
+    "onlyP3OrClean": false
+  }
+}
