@@ -3,12 +3,17 @@ import type { TerminalIndexMapItem } from '../protocol'
 import type { ProfileCatalogSummary, ProfileSummary, SignalSummary } from './profileCatalogSummary'
 import { PROFILE_CATALOG_SUMMARY, profileById } from './profileCatalogSummary'
 import { validateTerminalTarget } from './terminalRef'
+import { resolveTerminalTargetInConfig } from './terminalRefResolver'
 import type {
   BooleanNullRegexRule,
   BranchOperator,
   CaptureSourceConfig,
   MacroStep,
   MacroTemplate,
+  LaneSuccessCondition,
+  ParallelAllStep,
+  ParallelLane,
+  ParallelLaneStep,
   ParserConfig,
   ValidationIssue,
   ValidationResult,
@@ -19,6 +24,8 @@ const CONTROL_STEP_TYPES = new Set(['pause', 'complete', 'fail', 'stop'])
 const BRANCH_OPERATORS: BranchOperator[] = ['==', '!=', 'is_null']
 const PROFILE_BUNDLE_KEYS = ['prompt', 'schema', 'jsonSchema', 'checkSet', 'fixtures', 'model', 'replicas']
 const BRANCH_CONDITION_KEYS = new Set(['signal', 'op', 'value', 'goto'])
+const LANE_SUCCESS_CONDITION_KEYS = new Set(['signal', 'op', 'value'])
+const LANE_STEP_TYPES = new Set(['send_line', 'sleep', 'wait', 'capture-source', 'parse'])
 
 type ValidateOptions = {
   indexMap?: TerminalIndexMapItem[]
@@ -139,6 +146,10 @@ function validateStep(issues: ValidationIssue[], step: MacroStep, index: number,
     validateParserConfig(issues, path + '.parser', step.parser, options.profileCatalog)
     return
   }
+  if (step.type === 'parallel_all') {
+    validateParallelAllStep(issues, path, step, options)
+    return
+  }
   if (step.type === 'branch') {
     validateBranchStep(issues, path, step, template, options.profileCatalog)
     return
@@ -152,6 +163,200 @@ function validateStep(issues: ValidationIssue[], step: MacroStep, index: number,
     return
   }
   issues.push({ path: path + '.type', message: 'unsupported step type' })
+}
+
+function validateParallelAllStep(issues: ValidationIssue[], path: string, step: ParallelAllStep, options: ValidateOptions) {
+  if (!Array.isArray(step.lanes) || step.lanes.length === 0) {
+    issues.push({ path: path + '.lanes', message: 'parallel_all must declare at least one lane' })
+    return
+  }
+  if (!isObject(step.join)) {
+    issues.push({ path: path + '.join', message: 'parallel_all join must be an object' })
+  } else {
+    if (step.join.mode !== 'all_success') issues.push({ path: path + '.join.mode', message: 'V0 parallel_all join.mode must be all_success' })
+    validateTimeoutAction(issues, path + '.join.onLaneFail', step.join.onLaneFail)
+    if (step.join.onTimeout !== undefined) validateTimeoutAction(issues, path + '.join.onTimeout', step.join.onTimeout)
+  }
+
+  const laneIds = new Set<string>()
+  const laneTerminalIds = new Map<string, string>()
+  for (const [laneIndex, lane] of step.lanes.entries()) {
+    const lanePath = path + '.lanes[' + laneIndex + ']'
+    if (!isObject(lane)) {
+      issues.push({ path: lanePath, message: 'lane must be an object' })
+      continue
+    }
+    validatePublicId(issues, lanePath + '.id', lane.id, 'genericId')
+    if (laneIds.has(lane.id)) issues.push({ path: lanePath + '.id', message: 'duplicate lane id' })
+    laneIds.add(lane.id)
+    issues.push(...validateTerminalTarget(lanePath + '.terminal', lane.terminal, options.indexMap))
+    const primaryTerminalId = resolvedTerminalId(lane.terminal, options.indexMap)
+    if (primaryTerminalId) {
+      const existingLane = laneTerminalIds.get(primaryTerminalId)
+      if (existingLane) issues.push({ path: lanePath + '.terminal', message: 'duplicate lane primary terminal: ' + primaryTerminalId + ' already used by ' + existingLane })
+      laneTerminalIds.set(primaryTerminalId, lane.id)
+    }
+    validateParallelLane(issues, lanePath, lane as ParallelLane, primaryTerminalId, options)
+  }
+}
+
+function validateParallelLane(issues: ValidationIssue[], path: string, lane: ParallelLane, primaryTerminalId: string | undefined, options: ValidateOptions) {
+  if (!Array.isArray(lane.steps) || lane.steps.length === 0) {
+    issues.push({ path: path + '.steps', message: 'lane must declare steps' })
+    return
+  }
+  const stepIds = new Set<string>()
+  const parseSteps: Extract<ParallelLaneStep, { type: 'parse' }>[] = []
+  const counts = new Map<string, number>()
+  for (const [stepIndex, laneStep] of lane.steps.entries()) {
+    const stepPath = path + '.steps[' + stepIndex + ']'
+    if (!isObject(laneStep)) {
+      issues.push({ path: stepPath, message: 'lane step must be an object' })
+      continue
+    }
+    validatePublicId(issues, stepPath + '.id', laneStep.id, 'genericId')
+    if (stepIds.has(laneStep.id)) issues.push({ path: stepPath + '.id', message: 'duplicate lane step id' })
+    stepIds.add(laneStep.id)
+    counts.set(String(laneStep.type), (counts.get(String(laneStep.type)) ?? 0) + 1)
+    if (!LANE_STEP_TYPES.has(String(laneStep.type))) {
+      issues.push({ path: stepPath + '.type', message: 'lane step type must be send_line, sleep, wait, capture-source or parse' })
+      continue
+    }
+    if ('next' in laneStep) issues.push({ path: stepPath + '.next', message: 'lane steps are linear and must not declare next' })
+    if ('loopGuard' in laneStep) issues.push({ path: stepPath + '.loopGuard', message: 'lane steps must not declare loopGuard' })
+    validateLaneStep(issues, stepPath, laneStep as ParallelLaneStep, lane, primaryTerminalId, options)
+    if (laneStep.type === 'parse') {
+      parseSteps.push(laneStep as Extract<ParallelLaneStep, { type: 'parse' }>)
+      validateLaneCaptureStepOrder(issues, stepPath + '.captureStep', laneStep.captureStep, lane.steps, stepIndex)
+    }
+  }
+  for (const required of ['send_line', 'wait', 'capture-source', 'parse']) {
+    if (!counts.get(required)) issues.push({ path: path + '.steps', message: 'lane must include at least one ' + required + ' step' })
+  }
+  validateLaneSuccess(issues, path + '.success', lane.success, parseSteps, options.profileCatalog)
+}
+
+function validateLaneStep(issues: ValidationIssue[], path: string, step: ParallelLaneStep, lane: ParallelLane, primaryTerminalId: string | undefined, options: ValidateOptions) {
+  if (step.type === 'send_line') {
+    const target = step.terminal ?? lane.terminal
+    if (step.terminal !== undefined) issues.push(...validateTerminalTarget(path + '.terminal', step.terminal, options.indexMap))
+    validateLaneTerminalMatch(issues, path + '.terminal', target, primaryTerminalId, options.indexMap)
+    validateString(issues, path + '.text', step.text, 1)
+    return
+  }
+  if (step.type === 'sleep') {
+    validatePositiveInt(issues, path + '.durationMs', step.durationMs)
+    return
+  }
+  if (step.type === 'wait') {
+    validateLaneWaitStep(issues, path, step, lane, primaryTerminalId, options)
+    return
+  }
+  if (step.type === 'capture-source') {
+    validateCaptureConfig(issues, path + '.capture', step.capture, options.indexMap)
+    validateLaneTerminalMatch(issues, path + '.capture.terminal', step.capture.terminal, primaryTerminalId, options.indexMap)
+    return
+  }
+  if (step.type === 'parse') {
+    validateLaneCaptureStepRef(issues, path + '.captureStep', step.captureStep, lane.steps)
+    validateParserConfig(issues, path + '.parser', step.parser, options.profileCatalog)
+  }
+}
+
+function validateLaneWaitStep(issues: ValidationIssue[], path: string, step: Extract<ParallelLaneStep, { type: 'wait' }>, lane: ParallelLane, primaryTerminalId: string | undefined, options: ValidateOptions) {
+  if (step.mode === 'duration') {
+    validatePositiveInt(issues, path + '.durationMs', step.durationMs)
+    return
+  }
+  if (step.mode === 'capture-ready-or-user') {
+    validateLaneCaptureStepRef(issues, path + '.captureStep', step.captureStep, lane.steps)
+    validatePositiveInt(issues, path + '.timeoutMs', step.timeoutMs)
+    validateTimeoutAction(issues, path + '.onTimeout', step.onTimeout)
+    return
+  }
+  if (step.mode === 'terminal-quiet') {
+    issues.push(...validateTerminalTarget(path + '.terminal', step.terminal, options.indexMap))
+    validateLaneTerminalMatch(issues, path + '.terminal', step.terminal, primaryTerminalId, options.indexMap)
+    validatePositiveInt(issues, path + '.quietMs', step.quietMs)
+    validatePositiveInt(issues, path + '.maxMs', step.maxMs)
+    if (Number.isInteger(step.quietMs) && Number.isInteger(step.maxMs) && step.maxMs < step.quietMs) issues.push({ path: path + '.maxMs', message: 'maxMs must be greater than or equal to quietMs' })
+    validateTimeoutAction(issues, path + '.onTimeout', step.onTimeout)
+    return
+  }
+  if (step.mode === 'user-continue') {
+    issues.push({ path: path + '.mode', message: 'lane wait must not use user-continue in V0' })
+    return
+  }
+  issues.push({ path: path + '.mode', message: 'unsupported wait mode' })
+}
+
+function validateLaneSuccess(issues: ValidationIssue[], path: string, success: ParallelLane['success'], parseSteps: Extract<ParallelLaneStep, { type: 'parse' }>[], catalog = PROFILE_CATALOG_SUMMARY) {
+  if (!isObject(success)) {
+    issues.push({ path, message: 'lane success must be an object' })
+    return
+  }
+  validatePublicId(issues, path + '.fromParseStep', success.fromParseStep, 'genericId')
+  if (success.mode !== 'all') issues.push({ path: path + '.mode', message: 'V0 lane success mode must be all' })
+  const parseStep = parseSteps.find((candidate) => candidate.id === success.fromParseStep)
+  if (!parseStep) issues.push({ path: path + '.fromParseStep', message: 'fromParseStep must reference a lane parse step' })
+  const output = parseStep ? parseOutputForStep(parseStep, catalog) : undefined
+  if (!Array.isArray(success.conditions) || success.conditions.length === 0) {
+    issues.push({ path: path + '.conditions', message: 'lane success must declare at least one condition' })
+    return
+  }
+  for (const [conditionIndex, condition] of success.conditions.entries()) {
+    const conditionPath = path + '.conditions[' + conditionIndex + ']'
+    if (!isObject(condition)) {
+      issues.push({ path: conditionPath, message: 'lane success condition must be an object' })
+      continue
+    }
+    rejectDisallowedLaneSuccessConditionKeys(issues, conditionPath, condition)
+    validateLaneSuccessCondition(issues, conditionPath, condition as Record<string, unknown>, output)
+  }
+}
+
+function validateLaneSuccessCondition(issues: ValidationIssue[], path: string, condition: Record<string, unknown>, output: ParseOutput | undefined) {
+  validatePublicId(issues, path + '.signal', condition.signal, 'genericId')
+  if (!BRANCH_OPERATORS.includes(condition.op as BranchOperator)) {
+    issues.push({ path: path + '.op', message: 'condition op must be ==, != or is_null' })
+    return
+  }
+  const op = condition.op as BranchOperator
+  if (output) {
+    const signal = output.signals.find((item) => item.id === condition.signal)
+    if (!signal) issues.push({ path: path + '.signal', message: 'signal is not declared by selected lane parse step' })
+    if (!output.operators.includes(op)) issues.push({ path: path + '.op', message: 'operator is not allowed by selected parse step' })
+    if (signal?.type !== 'boolean-null') issues.push({ path: path + '.signal', message: 'V0 lane success only supports boolean-null signals' })
+  }
+  if (op === 'is_null') {
+    if ('value' in condition) issues.push({ path: path + '.value', message: 'is_null must not include value' })
+    return
+  }
+  if (typeof condition.value !== 'boolean') issues.push({ path: path + '.value', message: 'boolean-null ==/!= value must be typed true or false' })
+}
+
+function validateLaneCaptureStepRef(issues: ValidationIssue[], path: string, captureStep: unknown, laneSteps: ParallelLaneStep[]) {
+  validatePublicId(issues, path, captureStep, 'genericId')
+  if (typeof captureStep === 'string' && !laneSteps.some((step) => step.id === captureStep && step.type === 'capture-source')) {
+    issues.push({ path, message: 'captureStep must reference a lane capture-source step' })
+  }
+}
+
+function validateLaneCaptureStepOrder(issues: ValidationIssue[], path: string, captureStep: unknown, laneSteps: ParallelLaneStep[], parseIndex: number) {
+  if (typeof captureStep !== 'string') return
+  const captureIndex = laneSteps.findIndex((step) => step.id === captureStep && step.type === 'capture-source')
+  if (captureIndex !== -1 && captureIndex > parseIndex) issues.push({ path, message: 'parse captureStep must reference an earlier lane capture-source step' })
+}
+
+function validateLaneTerminalMatch(issues: ValidationIssue[], path: string, target: unknown, primaryTerminalId: string | undefined, indexMap?: TerminalIndexMapItem[]) {
+  if (!primaryTerminalId || !indexMap || !isObject(target)) return
+  const laneTerminalId = resolvedTerminalId(target as never, indexMap)
+  if (laneTerminalId && laneTerminalId !== primaryTerminalId) issues.push({ path, message: 'lane step terminal must resolve to lane primary terminal' })
+}
+
+function resolvedTerminalId(target: unknown, indexMap?: TerminalIndexMapItem[]): string | undefined {
+  if (!indexMap || !isObject(target)) return undefined
+  try { return resolveTerminalTargetInConfig(target as never, indexMap).terminalId } catch { return undefined }
 }
 
 function validateCaptureConfig(issues: ValidationIssue[], path: string, capture: CaptureSourceConfig, indexMap?: TerminalIndexMapItem[]) {
@@ -295,7 +500,7 @@ function validateBranchCondition(issues: ValidationIssue[], path: string, condit
   if (typeof condition.value !== 'boolean') issues.push({ path: path + '.value', message: 'boolean-null ==/!= value must be typed true or false' })
 }
 
-function parseOutputForStep(step: Extract<MacroStep, { type: 'parse' }>, catalog: ProfileCatalogSummary): ParseOutput | undefined {
+function parseOutputForStep(step: Extract<MacroStep | ParallelLaneStep, { type: 'parse' }>, catalog: ProfileCatalogSummary): ParseOutput | undefined {
   if (step.parser.kind === 'ai-json') {
     const profile = profileFromCatalog(step.parser.profileId, catalog)
     return profile ? { signals: profile.signals, operators: profile.branchOperators } : undefined
@@ -434,6 +639,13 @@ function rejectDisallowedBranchConditionKeys(issues: ValidationIssue[], path: st
   for (const key of Object.keys(condition)) {
     if (!BRANCH_CONDITION_KEYS.has(key)) {
       issues.push({ path: path + '.' + key, message: 'string expressions are not allowed; extra branch condition fields are not allowed; use signal/op/value/goto' })
+    }
+  }
+}
+function rejectDisallowedLaneSuccessConditionKeys(issues: ValidationIssue[], path: string, condition: Record<string, unknown>) {
+  for (const key of Object.keys(condition)) {
+    if (!LANE_SUCCESS_CONDITION_KEYS.has(key)) {
+      issues.push({ path: path + '.' + key, message: 'string expressions are not allowed; extra lane success condition fields are not allowed; use signal/op/value' })
     }
   }
 }

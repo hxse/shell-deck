@@ -1,5 +1,5 @@
 import { validateMacroTemplate } from '../src/lib/macro/templateSchema'
-import type { BranchCondition, MacroStep, MacroTemplate } from '../src/lib/macro/templateTypes'
+import type { BranchCondition, LaneSuccessCondition, MacroStep, MacroTemplate, ParallelAllStep, ParallelLane, ParallelLaneStep } from '../src/lib/macro/templateTypes'
 import { AgentEventStore, agentEventKey } from '../src/lib/agentEvents/agentEventStore'
 import type { AgentEvent } from '../src/lib/agentEvents/agentEventTypes'
 import { captureTerminalBuffer } from '../src/lib/capture/terminalBufferCapture'
@@ -15,6 +15,8 @@ import { MacroTemplateStore } from '../src/lib/macro/templateStore'
 import { TerminalDeckManager } from './terminalDeckManager'
 
 type WaitResult = 'completed' | 'manual' | 'timeout' | 'cancelled'
+
+type LaneFailureAction = 'pause' | 'fail'
 
 type RuntimeState = {
   configId: string
@@ -33,7 +35,7 @@ type RuntimeState = {
   mockCaptureText: string
   mockCaptureReady: boolean
   token: number
-  abortController: AbortController | null
+  abortControllers: Set<AbortController>
 }
 
 export class MacroRunnerService {
@@ -83,7 +85,7 @@ export class MacroRunnerService {
       mockCaptureText: request.mockCaptureText ?? 'mock capture ready ai-fixable',
       mockCaptureReady: request.mockCaptureReady ?? true,
       token: this.nextToken++,
-      abortController: null,
+      abortControllers: new Set(),
     }
     this.runtimes.set(configId, runtime)
 
@@ -105,7 +107,7 @@ export class MacroRunnerService {
     const runtime = this.runtimeOrThrow(configId)
     if (!isLive(runtime.status)) return this.snapshotForRuntime(configId, runtime)
     runtime.pauseRequested = true
-    runtime.abortController?.abort()
+    this.abortActiveParsers(runtime)
     await this.pauseRun(runtime, 'user_pause', 'Paused by user')
     return this.snapshotForRuntime(configId, runtime)
   }
@@ -140,7 +142,7 @@ export class MacroRunnerService {
       return this.snapshot(configId)
     }
     runtime.pauseRequested = true
-    runtime.abortController?.abort()
+    this.abortActiveParsers(runtime)
     runtime.status = "stopped"
     runtime.waitingInput = null
     runtime.pauseReason = { code: "user_stop", message: "Stopped by user", stepId: runtime.currentStepId ?? undefined }
@@ -286,12 +288,13 @@ export class MacroRunnerService {
       await this.completeStep(runtime, step.id)
       return this.nextStepId(runtime, step)
     }
+    if (step.type === 'parallel_all') return await this.executeParallelAll(runtime, step)
     if (step.type === 'parse') {
       const artifactRef = runtime.captureArtifacts.get(step.captureStep)
       if (!artifactRef) throw new Error('missing_capture_artifact:' + step.captureStep)
       const text = this.runEventStore.readArtifact(runtime.configId, runtime.runId, artifactRef)
       const abortController = new AbortController()
-      runtime.abortController = abortController
+      this.registerAbortController(runtime, abortController)
       let parsed: Awaited<ReturnType<ParserRuntime['parse']>>
       try {
         parsed = await this.parserRuntime.parse({
@@ -312,7 +315,7 @@ export class MacroRunnerService {
         }
         throw error
       } finally {
-        if (runtime.abortController === abortController) runtime.abortController = null
+        this.releaseAbortController(runtime, abortController)
       }
       if (!this.runtimeCanContinue(runtime, 'running')) return null
       if (parsed.status === 'disagreement') {
@@ -383,6 +386,267 @@ export class MacroRunnerService {
       return null
     }
     throw new Error('unsupported_step:' + (step as { type: string }).type)
+  }
+
+  private async executeParallelAll(runtime: RuntimeState, step: ParallelAllStep): Promise<string | null> {
+    this.hydrateParallelRuntimeFromEvents(runtime, step)
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_all_started', stepId: step.id, summary: 'Parallel all started: ' + step.id, data: { laneIds: step.lanes.map((lane) => lane.id) } })
+    await Promise.all(step.lanes.map((lane) => this.executeParallelLane(runtime, step, lane)))
+    if (!this.runtimeCanContinue(runtime, 'running')) return null
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_all_joined', stepId: step.id, summary: 'Parallel all joined: all_success', data: { mode: step.join.mode, laneIds: step.lanes.map((lane) => lane.id) } })
+    await this.completeStep(runtime, step.id)
+    return this.nextStepId(runtime, step)
+  }
+
+  private async executeParallelLane(runtime: RuntimeState, parent: ParallelAllStep, lane: ParallelLane): Promise<void> {
+    if (!this.runtimeCanContinue(runtime, 'running')) return
+    if (this.parallelLaneSucceeded(runtime, parent.id, lane.id)) return
+    const terminal = this.resolveTerminal(runtime, lane.terminal)
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_started', stepId: parent.id, summary: 'Parallel lane started: ' + lane.id, data: { laneId: lane.id, terminalId: terminal.terminalId, terminalAlias: terminal.terminalAlias, terminalIndex: terminal.terminalIndex } })
+    for (const laneStep of lane.steps) {
+      if (!this.runtimeCanContinue(runtime, 'running')) return
+      if (this.parallelLaneStepCompleted(runtime, parent.id, lane.id, laneStep.id)) continue
+      try {
+        await this.executeParallelLaneStep(runtime, parent, lane, laneStep, terminal)
+      } catch (error) {
+        if (!this.runtimeCanContinue(runtime, 'running')) return
+        await this.failParallelLane(runtime, parent, lane.id, laneStep.id, 'pause', error instanceof Error ? error.message : String(error), { code: 'parallel_lane_step_error' })
+        return
+      }
+    }
+    if (!this.runtimeCanContinue(runtime, 'running')) return
+    const signals = runtime.parserSignals.get(this.laneStepKey(parent.id, lane.id, lane.success.fromParseStep))
+    if (!signals) {
+      await this.failParallelLane(runtime, parent, lane.id, lane.success.fromParseStep, parent.join.onLaneFail, 'Missing lane parser signals: ' + lane.success.fromParseStep, { code: 'parallel_lane_missing_parser_signals' })
+      return
+    }
+    const success = this.evaluateLaneSuccess(lane.success.conditions, signals)
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_condition_evaluated', stepId: parent.id, summary: success.ok ? 'Parallel lane condition passed: ' + lane.id : 'Parallel lane condition failed: ' + lane.id, data: { laneId: lane.id, fromParseStep: lane.success.fromParseStep, ok: success.ok, failedSignal: success.failedSignal ?? null, signals } })
+    if (!success.ok) {
+      await this.failParallelLane(runtime, parent, lane.id, lane.success.fromParseStep, parent.join.onLaneFail, 'Parallel lane success condition failed: ' + lane.id, { code: 'parallel_lane_condition_failed', failedSignal: success.failedSignal ?? null, signals })
+      return
+    }
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_succeeded', stepId: parent.id, summary: 'Parallel lane succeeded: ' + lane.id, data: { laneId: lane.id } })
+  }
+
+  private async executeParallelLaneStep(runtime: RuntimeState, parent: ParallelAllStep, lane: ParallelLane, laneStep: ParallelLaneStep, terminal: ResolvedTerminalRef): Promise<void> {
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_step_started', stepId: parent.id, summary: 'Parallel lane step started: ' + lane.id + '/' + laneStep.id, data: { laneId: lane.id, laneStepId: laneStep.id, laneStepType: laneStep.type } })
+    if (laneStep.type === 'send_line') {
+      if (!this.parallelLaneLineSent(runtime, parent.id, lane.id, laneStep.id)) {
+        const target = laneStep.terminal ?? lane.terminal
+        const resolved = this.resolveTerminal(runtime, target)
+        if (resolved.terminalId !== terminal.terminalId) throw new Error('parallel_lane_terminal_mismatch:' + lane.id + ':' + laneStep.id)
+        await this.appendTerminalRef(runtime, parent.id, target, resolved)
+        const artifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'parallel-send', laneStep.text, 'txt', parent.id)
+        const result = this.manager.input(runtime.configId, { kind: 'id', value: resolved.terminalId }, laneStep.text + '\r')
+        if (!result.ok) throw new Error('terminal_input_rejected:' + result.reason)
+        await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'terminal_line_sent', stepId: parent.id, summary: 'Parallel lane line sent: ' + lane.id + '/' + laneStep.id, data: { laneId: lane.id, laneStepId: laneStep.id, terminalId: resolved.terminalId, artifactRef: artifact.artifact.artifactRef, enter: true } })
+      }
+      await this.completeParallelLaneStep(runtime, parent.id, lane.id, laneStep.id)
+      return
+    }
+    if (laneStep.type === 'sleep') {
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'sleep_started', stepId: parent.id, summary: 'Parallel lane sleep started', data: { laneId: lane.id, laneStepId: laneStep.id, durationMs: laneStep.durationMs } })
+      const completed = await this.waitForDuration(runtime, laneStep.durationMs, 'running')
+      if (!completed) return
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'sleep_completed', stepId: parent.id, summary: 'Parallel lane sleep completed', data: { laneId: lane.id, laneStepId: laneStep.id, durationMs: laneStep.durationMs } })
+      await this.completeParallelLaneStep(runtime, parent.id, lane.id, laneStep.id)
+      return
+    }
+    if (laneStep.type === 'wait') {
+      const waitResult = await this.executeParallelLaneWait(runtime, parent, lane, laneStep, terminal)
+      if (waitResult === 'cancelled') return
+      if (waitResult === 'timeout') {
+        const action = 'onTimeout' in laneStep ? laneStep.onTimeout : parent.join.onTimeout ?? 'pause'
+        await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'wait_timeout', stepId: parent.id, summary: 'Parallel lane wait timed out: ' + lane.id + '/' + laneStep.id, data: { laneId: lane.id, laneStepId: laneStep.id, mode: laneStep.mode } })
+        await this.failParallelLane(runtime, parent, lane.id, laneStep.id, action, 'Parallel lane wait timed out: ' + lane.id + '/' + laneStep.id, { code: 'parallel_lane_wait_timeout', mode: laneStep.mode })
+        return
+      }
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'wait_completed', stepId: parent.id, summary: 'Parallel lane wait completed: ' + lane.id + '/' + laneStep.id, data: { laneId: lane.id, laneStepId: laneStep.id, mode: laneStep.mode } })
+      await this.completeParallelLaneStep(runtime, parent.id, lane.id, laneStep.id)
+      return
+    }
+    if (laneStep.type === 'capture-source') {
+      await this.captureParallelLaneSource(runtime, parent, lane, laneStep, terminal)
+      await this.completeParallelLaneStep(runtime, parent.id, lane.id, laneStep.id)
+      return
+    }
+    if (laneStep.type === 'parse') {
+      await this.parseParallelLaneCapture(runtime, parent, lane, laneStep)
+      await this.completeParallelLaneStep(runtime, parent.id, lane.id, laneStep.id)
+    }
+  }
+
+  private async executeParallelLaneWait(runtime: RuntimeState, parent: ParallelAllStep, lane: ParallelLane, laneStep: Extract<ParallelLaneStep, { type: 'wait' }>, terminal: ResolvedTerminalRef): Promise<WaitResult> {
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_waiting', stepId: parent.id, summary: 'Parallel lane waiting: ' + lane.id + '/' + laneStep.id, data: { laneId: lane.id, laneStepId: laneStep.id, mode: laneStep.mode } })
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'wait_started', stepId: parent.id, summary: 'Parallel lane wait started: ' + laneStep.mode, data: { laneId: lane.id, laneStepId: laneStep.id, mode: laneStep.mode } })
+    if (laneStep.mode === 'duration') return await this.waitForDuration(runtime, laneStep.durationMs, 'running') ? 'completed' : 'cancelled'
+    if (laneStep.mode === 'terminal-quiet') {
+      const resolved = this.resolveTerminal(runtime, laneStep.terminal)
+      if (resolved.terminalId !== terminal.terminalId) throw new Error('parallel_lane_terminal_mismatch:' + lane.id + ':' + laneStep.id)
+      return await this.waitForParallelTerminalQuiet(runtime, laneStep, resolved.terminalId)
+    }
+    if (laneStep.mode === 'capture-ready-or-user') return await this.waitForParallelCaptureReady(runtime, parent, lane, laneStep)
+    throw new Error('parallel_lane_wait_mode_not_allowed:' + laneStep.mode)
+  }
+
+  private async waitForParallelTerminalQuiet(runtime: RuntimeState, step: Extract<ParallelLaneStep, { type: 'wait'; mode: 'terminal-quiet' }>, terminalId: string): Promise<WaitResult> {
+    const startedAt = Date.now()
+    let lastChangeAt = startedAt
+    let lastSize = this.terminalReplaySize(runtime.configId, terminalId)
+    while (Date.now() - startedAt < step.maxMs) {
+      if (!this.runtimeCanContinue(runtime, 'running')) return 'cancelled'
+      const size = this.terminalReplaySize(runtime.configId, terminalId)
+      if (size !== lastSize) {
+        lastSize = size
+        lastChangeAt = Date.now()
+      }
+      if (Date.now() - lastChangeAt >= step.quietMs) return 'completed'
+      await delay(25)
+    }
+    return 'timeout'
+  }
+
+  private async waitForParallelCaptureReady(runtime: RuntimeState, parent: ParallelAllStep, lane: ParallelLane, step: Extract<ParallelLaneStep, { type: 'wait'; mode: 'capture-ready-or-user' }>): Promise<WaitResult> {
+    this.rememberParallelAgentEventBaseline(runtime, parent.id, lane, step.captureStep)
+    const deadline = Date.now() + step.timeoutMs
+    while (Date.now() < deadline) {
+      if (!this.runtimeCanContinue(runtime, 'running')) return 'cancelled'
+      if (this.parallelCaptureSourceReady(runtime, parent.id, lane, step.captureStep)) return 'completed'
+      await delay(Math.min(25, Math.max(1, deadline - Date.now())))
+    }
+    return this.parallelCaptureSourceReady(runtime, parent.id, lane, step.captureStep) ? 'completed' : 'timeout'
+  }
+
+  private async captureParallelLaneSource(runtime: RuntimeState, parent: ParallelAllStep, lane: ParallelLane, laneStep: Extract<ParallelLaneStep, { type: 'capture-source' }>, terminal: ResolvedTerminalRef): Promise<void> {
+    const resolved = this.resolveTerminal(runtime, laneStep.capture.terminal)
+    if (resolved.terminalId !== terminal.terminalId) throw new Error('parallel_lane_terminal_mismatch:' + lane.id + ':' + laneStep.id)
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'capture_wait_started', stepId: parent.id, summary: 'Parallel lane capture started', data: { laneId: lane.id, laneStepId: laneStep.id, captureKind: laneStep.capture.kind, terminalId: resolved.terminalId } })
+    if (laneStep.capture.kind === 'terminal-buffer') {
+      const terminalSnapshot = this.terminalSnapshot(runtime.configId, resolved.terminalId)
+      const captured = captureTerminalBuffer({ replay: terminalSnapshot.replay, maxChars: laneStep.capture.maxChars })
+      const rawArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'parallel-capture-raw', captured.rawText, 'txt', parent.id)
+      const normalizedArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'parallel-capture-normalized', captured.normalizedText, 'txt', parent.id)
+      runtime.captureArtifacts.set(this.laneStepKey(parent.id, lane.id, laneStep.id), normalizedArtifact.artifact.artifactRef)
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'capture_artifact_created', stepId: parent.id, summary: 'Parallel lane terminal buffer capture artifact created', data: { laneId: lane.id, laneStepId: laneStep.id, captureKind: 'terminal-buffer', terminalId: resolved.terminalId, mode: laneStep.capture.mode, maxChars: laneStep.capture.maxChars, artifactRef: normalizedArtifact.artifact.artifactRef, rawArtifactRef: rawArtifact.artifact.artifactRef, normalizedArtifactRef: normalizedArtifact.artifact.artifactRef, truncated: captured.truncated, rawCharsBeforeTail: captured.rawCharsBeforeTail, capturedChars: captured.capturedChars, strippedAnsi: captured.strippedAnsi } })
+      return
+    }
+    const event = this.nextParallelAgentEventForCapture(runtime, parent.id, lane.id, laneStep.id, resolved.terminalId, laneStep.capture.agentKind, laneStep.capture.eventKind, laneStep.capture.adapter)
+    if (!event) throw new Error('agent_event_not_ready:' + resolved.terminalId)
+    runtime.consumedAgentEvents.add(agentEventKey(event))
+    const rawArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'parallel-agent-event-raw', JSON.stringify(event, null, 2), 'json', parent.id)
+    const captureArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, 'parallel-capture-agent', event.capturedText ?? '', 'txt', parent.id)
+    runtime.captureArtifacts.set(this.laneStepKey(parent.id, lane.id, laneStep.id), captureArtifact.artifact.artifactRef)
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'capture_artifact_created', stepId: parent.id, summary: 'Parallel lane AgentEvent capture artifact created', data: { laneId: lane.id, laneStepId: laneStep.id, captureKind: 'agent-event', terminalId: resolved.terminalId, agentKind: laneStep.capture.agentKind, eventKind: laneStep.capture.eventKind, adapter: laneStep.capture.adapter, agentSessionId: event.agentSessionId, codexSessionId: event.adapterMetadata.codexSessionId, launchId: event.launchId, agentTurnId: event.agentTurnId ?? null, artifactRef: captureArtifact.artifact.artifactRef, rawArtifactRef: rawArtifact.artifact.artifactRef } })
+  }
+
+  private async parseParallelLaneCapture(runtime: RuntimeState, parent: ParallelAllStep, lane: ParallelLane, laneStep: Extract<ParallelLaneStep, { type: 'parse' }>): Promise<void> {
+    const captureKey = this.laneStepKey(parent.id, lane.id, laneStep.captureStep)
+    const artifactRef = runtime.captureArtifacts.get(captureKey)
+    if (!artifactRef) throw new Error('missing_parallel_capture_artifact:' + lane.id + ':' + laneStep.captureStep)
+    const text = this.runEventStore.readArtifact(runtime.configId, runtime.runId, artifactRef)
+    const abortController = new AbortController()
+    this.registerAbortController(runtime, abortController)
+    let parsed: Awaited<ReturnType<ParserRuntime['parse']>> | null = null
+    try {
+      parsed = await this.parserRuntime.parse({ configId: runtime.configId, runId: runtime.runId, stepId: parent.id, captureArtifactRef: artifactRef, parser: laneStep.parser, text, signal: abortController.signal, laneId: lane.id, laneStepId: laneStep.id } as never)
+    } catch (error) {
+      if (!this.runtimeCanContinue(runtime, 'running')) return
+      const parserError = parserInvocationErrorMetadata(error)
+      if (parserError) {
+        await this.failParallelLane(runtime, parent, lane.id, laneStep.id, 'pause', error instanceof Error ? error.message : String(error), parserError)
+        return
+      }
+      throw error
+    } finally {
+      this.releaseAbortController(runtime, abortController)
+    }
+    if (!this.runtimeCanContinue(runtime, 'running') || !parsed) return
+    if (parsed.status === 'disagreement') {
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parser_disagreement', stepId: parent.id, summary: 'Parallel lane parser replicas disagreed: ' + lane.id, data: { laneId: lane.id, laneStepId: laneStep.id, profileId: parsed.profileId, strategy: parsed.strategy, variants: parsed.variants.map((variant) => ({ signals: variant.signals, rawArtifactRef: variant.rawArtifactRef, normalizedArtifactRef: variant.normalizedArtifactRef, inputArtifactRef: variant.inputArtifactRef ?? null, metadata: variant.metadata })) } })
+      await this.failParallelLane(runtime, parent, lane.id, laneStep.id, 'pause', 'Parser replicas disagreed for lane ' + lane.id, { code: 'parser_disagreement' })
+      return
+    }
+    runtime.parserSignals.set(this.laneStepKey(parent.id, lane.id, laneStep.id), parsed.signals)
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parser_normalized', stepId: parent.id, summary: 'Parallel lane parser normalized signals', data: { laneId: lane.id, laneStepId: laneStep.id, parserKind: parsed.parserKind, profileId: parsed.profileId ?? null, captureArtifactRef: artifactRef, rawArtifactRef: parsed.rawArtifactRef, normalizedArtifactRef: parsed.normalizedArtifactRef, artifactRef: parsed.normalizedArtifactRef, inputArtifactRef: parsed.inputArtifactRef ?? null, signals: parsed.signals, metadata: parsed.metadata } })
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_parser_normalized', stepId: parent.id, summary: 'Parallel lane parser normalized: ' + lane.id + '/' + laneStep.id, data: { laneId: lane.id, laneStepId: laneStep.id, signals: parsed.signals, artifactRef: parsed.normalizedArtifactRef, rawArtifactRef: parsed.rawArtifactRef, inputArtifactRef: parsed.inputArtifactRef ?? null } })
+  }
+
+  private async completeParallelLaneStep(runtime: RuntimeState, parentStepId: string, laneId: string, laneStepId: string): Promise<void> {
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_step_completed', stepId: parentStepId, summary: 'Parallel lane step completed: ' + laneId + '/' + laneStepId, data: { laneId, laneStepId } })
+  }
+
+  private async failParallelLane(runtime: RuntimeState, parent: ParallelAllStep, laneId: string, laneStepId: string, action: LaneFailureAction, message: string, data: Record<string, unknown> = {}): Promise<void> {
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: 'parallel_lane_failed', stepId: parent.id, summary: message, data: { laneId, laneStepId, action, ...data } })
+    if (action === 'fail') await this.failRun(runtime, String(data.code ?? 'parallel_lane_failed'), message, parent.id)
+    else await this.pauseRun(runtime, String(data.code ?? 'parallel_lane_failed'), message, parent.id, { laneId, laneStepId, ...data })
+  }
+
+  private hydrateParallelRuntimeFromEvents(runtime: RuntimeState, parent: ParallelAllStep): void {
+    for (const event of this.runEventStore.snapshot(runtime.configId, runtime.runId).replay.events) {
+      if (event.stepId !== parent.id) continue
+      const laneId = typeof event.data.laneId === 'string' ? event.data.laneId : null
+      const laneStepId = typeof event.data.laneStepId === 'string' ? event.data.laneStepId : null
+      if (!laneId || !laneStepId) continue
+      const key = this.laneStepKey(parent.id, laneId, laneStepId)
+      if (event.kind === 'capture_artifact_created' && typeof event.data.artifactRef === 'string') runtime.captureArtifacts.set(key, event.data.artifactRef)
+      if (event.kind === 'parser_normalized' && isSignalRecord(event.data.signals)) runtime.parserSignals.set(key, event.data.signals)
+    }
+  }
+
+  private parallelLaneSucceeded(runtime: RuntimeState, parentStepId: string, laneId: string): boolean {
+    return this.runEventStore.snapshot(runtime.configId, runtime.runId).replay.events.some((event) => event.stepId === parentStepId && event.kind === 'parallel_lane_succeeded' && event.data.laneId === laneId)
+  }
+
+  private parallelLaneStepCompleted(runtime: RuntimeState, parentStepId: string, laneId: string, laneStepId: string): boolean {
+    return this.runEventStore.snapshot(runtime.configId, runtime.runId).replay.events.some((event) => event.stepId === parentStepId && event.kind === 'parallel_lane_step_completed' && event.data.laneId === laneId && event.data.laneStepId === laneStepId)
+  }
+
+  private parallelLaneLineSent(runtime: RuntimeState, parentStepId: string, laneId: string, laneStepId: string): boolean {
+    return this.runEventStore.snapshot(runtime.configId, runtime.runId).replay.events.some((event) => event.stepId === parentStepId && event.kind === 'terminal_line_sent' && event.data.laneId === laneId && event.data.laneStepId === laneStepId)
+  }
+
+  private evaluateLaneSuccess(conditions: LaneSuccessCondition[], signals: Record<string, boolean | null>): { ok: boolean; failedSignal?: string } {
+    for (const condition of conditions) {
+      const actual = signals[condition.signal]
+      if (actual === undefined) return { ok: false, failedSignal: condition.signal }
+      if (condition.op === 'is_null') {
+        if (actual !== null) return { ok: false, failedSignal: condition.signal }
+      } else if (condition.op === '==' && actual !== condition.value) return { ok: false, failedSignal: condition.signal }
+      else if (condition.op === '!=' && actual === condition.value) return { ok: false, failedSignal: condition.signal }
+    }
+    return { ok: true }
+  }
+
+  private parallelCaptureSourceReady(runtime: RuntimeState, parentStepId: string, lane: ParallelLane, captureStepId: string): boolean {
+    const captureStep = lane.steps.find((step) => step.id === captureStepId)
+    if (captureStep?.type !== 'capture-source' || !runtime.mockCaptureReady) return false
+    if (captureStep.capture.kind === 'terminal-buffer') return true
+    try {
+      const resolved = this.resolveTerminal(runtime, captureStep.capture.terminal)
+      return Boolean(this.nextParallelAgentEventForCapture(runtime, parentStepId, lane.id, captureStep.id, resolved.terminalId, captureStep.capture.agentKind, captureStep.capture.eventKind, captureStep.capture.adapter))
+    } catch {
+      return false
+    }
+  }
+
+  private rememberParallelAgentEventBaseline(runtime: RuntimeState, parentStepId: string, lane: ParallelLane, captureStepId: string): void {
+    const key = this.laneStepKey(parentStepId, lane.id, captureStepId)
+    if (runtime.agentEventBaselines.has(key)) return
+    const captureStep = lane.steps.find((step) => step.id === captureStepId)
+    if (captureStep?.type !== 'capture-source' || captureStep.capture.kind !== 'agent-event') return
+    const resolved = this.resolveTerminal(runtime, captureStep.capture.terminal)
+    this.agentEventStore.importSpool(runtime.configId)
+    runtime.agentEventBaselines.set(key, this.agentEventStore.countMatching({ configId: runtime.configId, terminalId: resolved.terminalId, agentKind: captureStep.capture.agentKind, eventKind: captureStep.capture.eventKind, adapter: captureStep.capture.adapter }))
+  }
+
+  private nextParallelAgentEventForCapture(runtime: RuntimeState, parentStepId: string, laneId: string, laneStepId: string, terminalId: string, agentKind: 'codex', eventKind: 'agent.output', adapter: 'codex-stop-hook'): AgentEvent | undefined {
+    this.agentEventStore.importSpool(runtime.configId)
+    return this.agentEventStore.nextMatching({ configId: runtime.configId, terminalId, agentKind, eventKind, adapter }, runtime.agentEventBaselines.get(this.laneStepKey(parentStepId, laneId, laneStepId)) ?? 0, runtime.consumedAgentEvents)
+  }
+
+  private laneStepKey(parentStepId: string, laneId: string, laneStepId: string): string {
+    return parentStepId + '/' + laneId + '/' + laneStepId
   }
 
   private async executeWait(runtime: RuntimeState, step: Extract<MacroStep, { type: 'wait' }>): Promise<string | null> {
@@ -552,6 +816,19 @@ export class MacroRunnerService {
     return this.agentEventStore.nextMatching({ configId: runtime.configId, terminalId, agentKind, eventKind, adapter }, runtime.agentEventBaselines.get(captureStepId) ?? 0, runtime.consumedAgentEvents)
   }
 
+  private registerAbortController(runtime: RuntimeState, controller: AbortController): void {
+    runtime.abortControllers.add(controller)
+  }
+
+  private releaseAbortController(runtime: RuntimeState, controller: AbortController): void {
+    runtime.abortControllers.delete(controller)
+  }
+
+  private abortActiveParsers(runtime: RuntimeState): void {
+    for (const controller of runtime.abortControllers) controller.abort()
+    runtime.abortControllers.clear()
+  }
+
   private terminalSnapshot(configId: string, terminalId: string): TerminalSnapshot {
     const snapshot = this.manager.deckSnapshot(configId).terminals.find((terminal) => terminal.terminalId === terminalId)
     if (!snapshot) throw new Error('terminal_not_found:' + terminalId)
@@ -567,7 +844,7 @@ export class MacroRunnerService {
   }
 
   private async stopRun(runtime: RuntimeState, message: string, code: string, stepId?: string): Promise<void> {
-    runtime.abortController?.abort()
+    this.abortActiveParsers(runtime)
     runtime.pauseRequested = true
     runtime.status = 'stopped'
     runtime.waitingInput = null
@@ -576,7 +853,7 @@ export class MacroRunnerService {
   }
 
   private async pauseRun(runtime: RuntimeState, code: string, message: string, stepId = runtime.currentStepId ?? undefined, data: Record<string, unknown> = {}): Promise<void> {
-    runtime.abortController?.abort()
+    this.abortActiveParsers(runtime)
     runtime.status = 'paused'
     runtime.pauseRequested = true
     runtime.pauseReason = { code, message, stepId }
@@ -585,7 +862,7 @@ export class MacroRunnerService {
   }
 
   private async failRun(runtime: RuntimeState, code: string, message: string, stepId = runtime.currentStepId ?? undefined): Promise<void> {
-    runtime.abortController?.abort()
+    this.abortActiveParsers(runtime)
     runtime.status = 'failed'
     runtime.pauseRequested = true
     runtime.pauseReason = { code, message, stepId }
@@ -645,6 +922,11 @@ export class MacroRunnerService {
       runs,
     }
   }
+}
+
+function isSignalRecord(value: unknown): value is Record<string, boolean | null> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.values(value).every((item) => typeof item === 'boolean' || item === null)
 }
 
 function liveRunError(runId: string): Error & { existingRunId?: string } {

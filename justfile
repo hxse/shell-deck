@@ -59,6 +59,14 @@ test-007-offline:
 test-007-online:
     bun run test:007:online
 
+test-008-offline:
+    bun run test:008:offline
+
+test-008-online:
+    bun run test:008:online
+
+test-008: test-008-offline
+
 test-007: test-007-offline
 
 test-006: test-006-offline

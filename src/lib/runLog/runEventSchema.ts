@@ -24,6 +24,16 @@ const STEP_SCOPED = new Set<RunEventKind>([
   'parser_disagreement',
   'branch_decision',
   'control_transition',
+  'parallel_all_started',
+  'parallel_lane_started',
+  'parallel_lane_step_started',
+  'parallel_lane_step_completed',
+  'parallel_lane_waiting',
+  'parallel_lane_parser_normalized',
+  'parallel_lane_condition_evaluated',
+  'parallel_lane_succeeded',
+  'parallel_lane_failed',
+  'parallel_all_joined',
 ])
 const KIND_SET = new Set<string>(RUN_EVENT_KINDS)
 

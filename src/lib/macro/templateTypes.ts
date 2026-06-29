@@ -40,6 +40,12 @@ export type BranchCondition = {
   goto: string
 }
 
+export type LaneSuccessCondition = {
+  signal: string
+  op: BranchOperator
+  value?: boolean
+}
+
 export type LoopGuard = {
   maxIterations: number
   onLimit: TimeoutAction
@@ -104,6 +110,40 @@ export type TerminalStateStep = Omit<MacroStepBase, 'next'> & {
   reason?: string
 }
 
+export type ParallelLaneWaitStep =
+  | { id: string; type: 'wait'; mode: 'duration'; durationMs: number }
+  | { id: string; type: 'wait'; mode: 'capture-ready-or-user'; captureStep: string; timeoutMs: number; onTimeout: TimeoutAction }
+  | { id: string; type: 'wait'; mode: 'terminal-quiet'; terminal: TerminalTarget; quietMs: number; maxMs: number; onTimeout: TimeoutAction }
+  | { id: string; type: 'wait'; mode: 'user-continue'; prompt: string }
+
+export type ParallelLaneStep =
+  | (Omit<SendLineStep, 'terminal' | 'next' | 'loopGuard'> & { terminal?: TerminalTarget })
+  | Omit<SleepStep, 'next' | 'loopGuard'>
+  | ParallelLaneWaitStep
+  | Omit<CaptureSourceStep, 'next' | 'loopGuard'>
+  | Omit<ParseStep, 'next' | 'loopGuard'>
+
+export type ParallelLane = {
+  id: string
+  terminal: TerminalTarget
+  steps: ParallelLaneStep[]
+  success: {
+    fromParseStep: string
+    mode: 'all'
+    conditions: LaneSuccessCondition[]
+  }
+}
+
+export type ParallelAllStep = MacroStepBase & {
+  type: 'parallel_all'
+  lanes: ParallelLane[]
+  join: {
+    mode: 'all_success'
+    onLaneFail: TimeoutAction
+    onTimeout?: TimeoutAction
+  }
+}
+
 export type MacroStep =
   | SendLineStep
   | SleepStep
@@ -114,6 +154,7 @@ export type MacroStep =
   | BranchStep
   | GotoStep
   | TerminalStateStep
+  | ParallelAllStep
 
 export type MacroTemplate = {
   schemaVersion: 1

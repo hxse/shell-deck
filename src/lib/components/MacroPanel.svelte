@@ -10,6 +10,7 @@
     CaptureSourceConfig,
     MacroStep,
     MacroTemplate,
+    ParallelLane,
     ParserConfig,
     TemplateSummary,
     TerminalTarget,
@@ -324,6 +325,49 @@
     return { kind, terminal, mode: 'scrollback-tail', maxChars: 20000 }
   }
 
+  function terminalTargetAt(index: number): TerminalTarget {
+    const item = indexMap[index] ?? indexMap[0]
+    return item?.terminalAlias ? { kind: 'alias', value: item.terminalAlias } : { kind: 'index', value: index + 1 }
+  }
+
+  function defaultParallelLane(template: MacroTemplate, prefix: string, terminal: TerminalTarget): ParallelLane {
+    const laneId = uniqueKey(prefix, template.steps.flatMap((step) => step.type === 'parallel_all' ? step.lanes.map((lane) => lane.id) : []))
+    const captureId = laneId + '_capture'
+    const parseId = laneId + '_parse'
+    return {
+      id: laneId,
+      terminal,
+      steps: [
+        { id: laneId + '_send', type: 'send_line', text: 'echo ready' },
+        { id: laneId + '_wait', type: 'wait', mode: 'terminal-quiet', terminal, quietMs: 1000, maxMs: 600000, onTimeout: 'pause' },
+        { id: captureId, type: 'capture-source', capture: { kind: 'terminal-buffer', terminal, mode: 'scrollback-tail', maxChars: 20000 } },
+        { id: parseId, type: 'parse', captureStep: captureId, parser: { kind: 'regex', rules: [{ signal: 'hasReadyText', type: 'boolean-null', pattern: 'ready|done|complete', flags: 'i', onMatch: true, onNoMatch: false }] } },
+      ],
+      success: { fromParseStep: parseId, mode: 'all', conditions: [{ signal: 'hasReadyText', op: '==', value: true }] },
+    }
+  }
+
+  function addParallelLane(stepId: string) {
+    updateStep(stepId, (step, template) => {
+      if (step.type !== 'parallel_all') return
+      step.lanes.push(defaultParallelLane(template, 'lane', terminalTargetAt(step.lanes.length)))
+    })
+  }
+
+  function removeParallelLane(stepId: string, laneId: string) {
+    updateStep(stepId, (step) => {
+      if (step.type === 'parallel_all') step.lanes = step.lanes.filter((lane) => lane.id !== laneId)
+    })
+  }
+
+  function updateParallelLane(stepId: string, laneId: string, mutator: (lane: ParallelLane) => void) {
+    updateStep(stepId, (step) => {
+      if (step.type !== 'parallel_all') return
+      const lane = step.lanes.find((candidate) => candidate.id === laneId)
+      if (lane) mutator(lane)
+    })
+  }
+
   function captureSteps(template: MacroTemplate) {
     return template.steps.filter((step): step is Extract<MacroStep, { type: 'capture-source' }> => step.type === 'capture-source')
   }
@@ -346,6 +390,7 @@
     if (type === 'capture-source') return { id, type, capture: defaultCaptureSource('terminal-buffer') }
     if (type === 'parse') return { id, type, captureStep: firstCaptureStepId(template), parser: { kind: 'regex', rules: [{ signal: 'hasReadyText', type: 'boolean-null', pattern: 'ready|done|complete', flags: 'i', onMatch: true, onNoMatch: false }] } }
     if (type === 'goto') return { id, type, goto: template.steps[0]?.id ?? id, loopGuard: { maxIterations: 5, onLimit: 'pause' } }
+    if (type === 'parallel_all') return { id, type, lanes: [defaultParallelLane(template, 'lane_a', terminalTargetAt(0)), defaultParallelLane(template, 'lane_b', terminalTargetAt(1))], join: { mode: 'all_success', onLaneFail: 'pause', onTimeout: 'pause' } }
     if (type === 'complete') return { id, type }
     if (type === 'fail') return { id, type, reason: 'explicit-fail' }
     if (type === 'stop') return { id, type, reason: 'explicit-stop' }
@@ -540,6 +585,7 @@
           <button type="button" data-testid="add-step-capture" onclick={() => addStep('capture-source')}>capture</button>
           <button type="button" data-testid="add-step-parse" onclick={() => addStep('parse')}>parse</button>
           <button type="button" data-testid="add-step-branch" onclick={() => addStep('branch')}>branch</button>
+          <button type="button" data-testid="add-step-parallel" onclick={() => addStep('parallel_all')}>parallel_all</button>
           <button type="button" data-testid="add-step-goto" onclick={() => addStep('goto')}>goto</button>
           <button type="button" onclick={() => addStep('pause')}>pause</button>
           <button type="button" onclick={() => addStep('complete')}>complete</button>
@@ -743,6 +789,33 @@
                     <option value="">none</option>{#each stepIds(draft) as stepId}<option value={stepId}>{stepId}</option>{/each}
                   </select>
                 </label>
+              {:else if step.type === 'parallel_all'}
+                <div class="parallel-lane-editor" data-testid="parallel-all-editor">
+                  <div class="macro-row">
+                    <label>On lane fail
+                      <select value={step.join.onLaneFail} onchange={(event) => updateStep(step.id, (item) => { if (item.type === 'parallel_all') item.join.onLaneFail = event.currentTarget.value as 'pause' | 'fail' })}>
+                        <option value="pause">pause</option><option value="fail">fail</option>
+                      </select>
+                    </label>
+                    <label>On timeout
+                      <select value={step.join.onTimeout ?? 'pause'} onchange={(event) => updateStep(step.id, (item) => { if (item.type === 'parallel_all') item.join.onTimeout = event.currentTarget.value as 'pause' | 'fail' })}>
+                        <option value="pause">pause</option><option value="fail">fail</option>
+                      </select>
+                    </label>
+                  </div>
+                  {#each step.lanes as lane (lane.id)}
+                    <div class="parallel-lane-row">
+                      <input aria-label="lane id" value={lane.id} oninput={(event) => updateParallelLane(step.id, lane.id, (item) => { item.id = event.currentTarget.value })} />
+                      <select aria-label="lane terminal" value={choiceFromTarget(lane.terminal)} onchange={(event) => updateParallelLane(step.id, lane.id, (item) => { item.terminal = targetFromChoice(event.currentTarget.value) })}>
+                        {#each terminalChoices() as choice}<option value={choice.value}>{choice.label}</option>{/each}
+                      </select>
+                      <span>{lane.steps.length} lane steps</span>
+                      <span>{lane.success.conditions.length} conditions</span>
+                      <button type="button" onclick={() => removeParallelLane(step.id, lane.id)}>Remove</button>
+                    </div>
+                  {/each}
+                  <button type="button" onclick={() => addParallelLane(step.id)}>Add lane</button>
+                </div>
               {:else if step.type === 'goto'}
                 <label>Goto
                   <select value={step.goto} onchange={(event) => updateStep(step.id, (item) => { if (item.type === 'goto') item.goto = event.currentTarget.value })}>

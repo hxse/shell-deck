@@ -27,6 +27,16 @@ export const RUN_EVENT_KINDS = [
   'branch_decision',
   'control_transition',
   'user_override',
+  'parallel_all_started',
+  'parallel_lane_started',
+  'parallel_lane_step_started',
+  'parallel_lane_step_completed',
+  'parallel_lane_waiting',
+  'parallel_lane_parser_normalized',
+  'parallel_lane_condition_evaluated',
+  'parallel_lane_succeeded',
+  'parallel_lane_failed',
+  'parallel_all_joined',
 ] as const
 
 export type RunEventKind = typeof RUN_EVENT_KINDS[number]
