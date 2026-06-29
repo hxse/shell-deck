@@ -1,7 +1,7 @@
 import { expect, test } from 'playwright/test'
 
 test('run log panel creates recoverable run log, shows folded node logs and restores after reload', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/?configId=run-log-e2e')
   await expect(page.getByTestId('run-log-panel')).toBeVisible()
   await expect(page.getByTestId('run-list-item')).toHaveCount(0)
 

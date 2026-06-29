@@ -9,6 +9,7 @@ import type { AppendRunEventInput } from '../src/lib/runLog/runEventTypes'
 import type { ClientMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import { TerminalDeckManager } from './terminalDeckManager'
+import { MacroRunnerService } from './macroRunnerService'
 
 export type ShellDeckServer = {
   url: string
@@ -30,6 +31,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const manager = options.manager ?? new TerminalDeckManager()
   const templateStore = new MacroTemplateStore()
   const runEventStore = new RunEventStore()
+  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore)
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
@@ -50,7 +52,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       }
 
       try {
-        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore)
+        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner)
       } catch (error) {
         return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400)
       }
@@ -85,7 +87,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
 }
 
-async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore): Promise<Response> {
+async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService): Promise<Response> {
   if (url.pathname === '/health') {
     return json({ ok: true, bind: bindHost })
   }
@@ -167,6 +169,36 @@ async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, 
     manager.ensureConfig(configId)
     templateStore.delete(configId, templateId)
     return json({ ok: true })
+  }
+
+
+  const runnerMatch = /^\/api\/configs\/([^/]+)\/runner$/.exec(url.pathname)
+  if (runnerMatch && req.method === 'GET') {
+    const configId = parseConfigId(runnerMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, runner: macroRunner.snapshot(configId) })
+  }
+  const runnerActionMatch = /^\/api\/configs\/([^/]+)\/runner\/(start|pause|resume|stop|input)$/.exec(url.pathname)
+  if (runnerActionMatch && req.method === 'POST') {
+    const configId = parseConfigId(runnerActionMatch[1])
+    manager.ensureConfig(configId)
+    const body = asRecord(await requestJson(req))
+    try {
+      const action = runnerActionMatch[2]
+      const runner = action === 'start'
+        ? await macroRunner.start(configId, { templateId: stringField(body, 'templateId'), mockCaptureText: optionalStringField(body, 'mockCaptureText'), mockCaptureReady: optionalBooleanField(body, 'mockCaptureReady') })
+        : action === 'pause'
+          ? await macroRunner.pause(configId)
+          : action === 'resume'
+            ? await macroRunner.resume(configId, optionalStringField(body, 'nextStepId'))
+            : action === 'stop'
+              ? await macroRunner.stop(configId)
+              : await macroRunner.submitInput(configId, stringField(body, 'text'))
+      return json({ ok: true, runner })
+    } catch (error) {
+      const existingRunId = error instanceof Error && 'existingRunId' in error ? String((error as { existingRunId?: string }).existingRunId) : undefined
+      return json({ ok: false, error: error instanceof Error ? error.message : String(error), ...(existingRunId ? { existingRunId } : {}) }, 409)
+    }
   }
 
   const runsMatch = /^\/api\/configs\/([^/]+)\/runs$/.exec(url.pathname)
@@ -309,6 +341,26 @@ function asOptionalRecord(value: unknown): Record<string, unknown> | undefined {
   if (value === undefined) return undefined
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request_field_must_be_object')
   return value as Record<string, unknown>
+}
+
+function stringField(value: Record<string, unknown>, key: string): string {
+  const field = value[key]
+  if (typeof field !== 'string' || field.length === 0) throw new Error('missing_string_field:' + key)
+  return field
+}
+
+function optionalStringField(value: Record<string, unknown>, key: string): string | undefined {
+  const field = value[key]
+  if (field === undefined) return undefined
+  if (typeof field !== 'string') throw new Error('invalid_string_field:' + key)
+  return field
+}
+
+function optionalBooleanField(value: Record<string, unknown>, key: string): boolean | undefined {
+  const field = value[key]
+  if (field === undefined) return undefined
+  if (typeof field !== 'boolean') throw new Error('invalid_boolean_field:' + key)
+  return field
 }
 
 function runEventInput(value: unknown): AppendRunEventInput {

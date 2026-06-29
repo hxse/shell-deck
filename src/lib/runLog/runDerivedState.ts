@@ -51,6 +51,11 @@ function applyEvent(state: RunDerivedState, event: RunEvent): void {
     state.currentStepId = null
     state.pauseReason = stringData(event, 'reason') ?? event.summary
   }
+  if (event.kind === 'run_stopped') {
+    setRunStatus(state, 'stopped')
+    state.currentStepId = null
+    state.pauseReason = stringData(event, 'reason') ?? event.summary
+  }
   if (event.kind === 'step_started' && event.stepId) setStep(state, event.stepId, 'running')
   if (event.kind === 'step_completed' && event.stepId) setStep(state, event.stepId, 'completed')
   if (event.kind === 'step_failed' && event.stepId) {

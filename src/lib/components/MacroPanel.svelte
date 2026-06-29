@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { TerminalIndexMapItem, TerminalSnapshot } from '../protocol'
   import { MacroTemplateClient } from '../macro/macroTemplateClient'
+  import { MacroRunnerClient } from '../macro/macroRunnerClient'
   import type { ProfileCatalogSummary, ProfileSummary, SignalSummary } from '../macro/profileCatalogSummary'
   import { validateMacroTemplate } from '../macro/templateSchema'
+  import type { MacroRunnerSnapshot } from '../macro/runnerTypes'
   import type {
     BranchCondition,
     CaptureSourceConfig,
@@ -30,6 +32,8 @@
   let errorText = $state<string | null>(null)
   let importInput = $state<HTMLInputElement | null>(null)
   let macroView = $state<'editor' | 'json'>('editor')
+  let runner = $state<MacroRunnerSnapshot | null>(null)
+  let runnerInput = $state('')
 
   const validation = $derived(draft ? validateMacroTemplate(draft, { indexMap }) : { ok: true, issues: [] })
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
@@ -43,6 +47,10 @@
 
   function client() {
     return new MacroTemplateClient(configId)
+  }
+
+  function runnerClient() {
+    return new MacroRunnerClient(configId)
   }
 
   async function reloadAll() {
@@ -61,6 +69,7 @@
         selectedTemplateId = null
         draft = null
       }
+      runner = await runnerClient().snapshot()
       statusText = 'Ready'
     } catch (error) {
       errorText = messageOf(error)
@@ -388,7 +397,7 @@
     return base + '_' + Date.now()
   }
 
-  function macroControl(action: 'start' | 'pause' | 'resume' | 'stop') {
+  async function macroControl(action: 'start' | 'pause' | 'resume' | 'stop') {
     errorText = null
     if (action === 'start' && !draft) {
       statusText = 'Create or select a template first'
@@ -399,7 +408,40 @@
       statusText = 'Start blocked'
       return
     }
-    statusText = 'Macro runner lands in .005; ' + action + ' did not execute a run'
+    try {
+      const api = runnerClient()
+      if (action === 'start' && draft) runner = await api.start({ templateId: draft.id })
+      if (action === 'pause') runner = await api.pause()
+      if (action === 'resume') runner = await api.resume()
+      if (action === 'stop') runner = await api.stop()
+      statusText = 'Runner ' + (runner?.status ?? action)
+      if (action === 'start' || action === 'resume') window.setTimeout(() => { void refreshRunner() }, 80)
+    } catch (error) {
+      errorText = messageOf(error)
+      statusText = 'Runner ' + action + ' failed'
+    }
+  }
+
+  async function submitRunnerInput() {
+    errorText = null
+    try {
+      runner = await runnerClient().submitInput({ text: runnerInput })
+      runnerInput = ''
+      statusText = 'Runner ' + runner.status
+      window.setTimeout(() => { void refreshRunner() }, 80)
+    } catch (error) {
+      errorText = messageOf(error)
+    }
+  }
+
+  async function refreshRunner() {
+    errorText = null
+    try {
+      runner = await runnerClient().snapshot()
+      statusText = 'Runner ' + runner.status
+    } catch (error) {
+      errorText = messageOf(error)
+    }
   }
 
   function messageOf(error: unknown) {
@@ -417,11 +459,29 @@
   </div>
 
   <div class="macro-run-controls" data-testid="macro-run-controls">
-    <button type="button" data-testid="macro-control-start" title="Macro runner lands in .005" onclick={() => macroControl('start')}>Start</button>
-    <button type="button" data-testid="macro-control-pause" title="Macro runner lands in .005" onclick={() => macroControl('pause')}>Pause</button>
-    <button type="button" data-testid="macro-control-resume" title="Macro runner lands in .005" onclick={() => macroControl('resume')}>Resume</button>
-    <button type="button" data-testid="macro-control-stop" title="Macro runner lands in .005" onclick={() => macroControl('stop')}>Stop</button>
+    <button type="button" data-testid="macro-control-start" title="Start selected template" onclick={() => macroControl('start')}>Start</button>
+    <button type="button" data-testid="macro-control-pause" title="Pause active run" onclick={() => macroControl('pause')}>Pause</button>
+    <button type="button" data-testid="macro-control-resume" title="Resume paused run" onclick={() => macroControl('resume')}>Resume</button>
+    <button type="button" data-testid="macro-control-stop" title="Stop active run" onclick={() => macroControl('stop')}>Stop</button>
   </div>
+
+  <section class="macro-run-status" data-testid="macro-run-status">
+    <div>
+      <strong>{runner?.status ?? 'idle'}</strong>
+      <span>{runner?.runId ?? 'no active run'}</span>
+      {#if runner?.currentStepId}<span>step: {runner.currentStepId}</span>{/if}
+      {#if runner?.pauseReason}<span>{runner.pauseReason.message}</span>{/if}
+    </div>
+    <button type="button" data-testid="macro-run-refresh" onclick={refreshRunner}>Refresh</button>
+    {#if runner?.waitingInput}
+      <div class="runner-input-line" data-testid="macro-run-input">
+        <label>{runner.waitingInput.prompt}
+          <input data-testid="macro-run-input-text" bind:value={runnerInput} onkeydown={(event) => { if (event.key === 'Enter') submitRunnerInput() }} />
+        </label>
+        <button type="button" data-testid="macro-run-input-submit" onclick={submitRunnerInput}>Send</button>
+      </div>
+    {/if}
+  </section>
 
   <div class="macro-tabs" role="tablist" aria-label="Macro views">
     <button type="button" role="tab" aria-selected={macroView === 'editor'} class:active={macroView === 'editor'} data-testid="macro-tab-editor" onclick={() => { macroView = 'editor' }}>Editor</button>

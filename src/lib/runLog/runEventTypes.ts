@@ -5,10 +5,18 @@ export const RUN_EVENT_KINDS = [
   'run_completed',
   'run_failed',
   'run_interrupted',
+  'run_stopped',
   'step_started',
   'step_completed',
   'step_failed',
   'artifact_created',
+  'terminal_ref_resolved',
+  'wait_started',
+  'wait_completed',
+  'wait_timeout',
+  'wait_manual_continue',
+  'capture_wait_started',
+  'capture_artifact_created',
   'terminal_line_sent',
   'user_input_requested',
   'user_input_submitted',
@@ -21,7 +29,7 @@ export const RUN_EVENT_KINDS = [
 ] as const
 
 export type RunEventKind = typeof RUN_EVENT_KINDS[number]
-export type RunStatus = 'empty' | 'running' | 'paused' | 'completed' | 'failed' | 'interrupted' | 'recoverable_error'
+export type RunStatus = 'empty' | 'running' | 'paused' | 'completed' | 'failed' | 'interrupted' | 'stopped' | 'recoverable_error'
 export type StepStatus = 'running' | 'completed' | 'failed'
 
 export type RunEvent = {

@@ -2,12 +2,19 @@ import { assertValidPublicId } from '../identifier'
 import { assertEventId, assertRunId, assertStepId } from './identifier'
 import { RUN_EVENT_KINDS, type RunEvent, type RunEventKind, type ValidationIssue, type ValidationResult } from './runEventTypes'
 
-const RUN_SCOPED = new Set<RunEventKind>(['run_started', 'run_completed', 'run_failed', 'run_interrupted'])
+const RUN_SCOPED = new Set<RunEventKind>(['run_started', 'run_completed', 'run_failed', 'run_interrupted', 'run_stopped'])
 const CONTEXT_SCOPED = new Set<RunEventKind>(['run_paused', 'run_resumed', 'artifact_created', 'user_override'])
 const STEP_SCOPED = new Set<RunEventKind>([
   'step_started',
   'step_completed',
   'step_failed',
+  'terminal_ref_resolved',
+  'wait_started',
+  'wait_completed',
+  'wait_timeout',
+  'wait_manual_continue',
+  'capture_wait_started',
+  'capture_artifact_created',
   'terminal_line_sent',
   'user_input_requested',
   'user_input_submitted',

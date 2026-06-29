@@ -32,6 +32,9 @@ test-003:
 test-004:
     bun run test:004
 
+test-005:
+    bun run test:005
+
 test: test-unit test-e2e
 
 # Run the deterministic .001 API probe. No network and no real model call.

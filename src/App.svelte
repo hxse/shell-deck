@@ -6,8 +6,15 @@
   import RunLogView from './lib/components/RunLogView.svelte'
 
   const ALIAS_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
+  const CONFIG_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 
-  let configId = $state('local')
+  function initialConfigId() {
+    const value = new URL(window.location.href).searchParams.get("configId")
+    return value && CONFIG_ID_RE.test(value) ? value : "local"
+  }
+
+
+  let configId = $state(initialConfigId())
   let connected = $state(false)
   let client = $state<TerminalDeckClient | null>(null)
   let terminals = $state<TerminalSnapshot[]>([])

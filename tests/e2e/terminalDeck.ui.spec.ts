@@ -1,12 +1,14 @@
 import { expect, test } from 'playwright/test'
 
-test('browser tabs render live output, alias rename, replay and drag reorder', async ({ browser }) => {
+test("browser tabs render live output, alias rename, replay and drag reorder", async ({ browser, request }) => {
   const context = await browser.newContext()
   const first = await context.newPage()
   const second = await context.newPage()
 
-  await first.goto('/')
-  await second.goto('/')
+  await request.post("/api/configs/terminal-deck-e2e/terminals?backend=fake")
+  await request.post("/api/configs/terminal-deck-e2e/terminals?backend=fake")
+  await first.goto('/?configId=terminal-deck-e2e')
+  await second.goto('/?configId=terminal-deck-e2e')
   await expect(first.getByTestId('terminal-tab')).toHaveCount(2)
   await expect(second.getByTestId('terminal-tab')).toHaveCount(2)
 
@@ -64,7 +66,7 @@ test('browser tabs render live output, alias rename, replay and drag reorder', a
   await expect(createdHost).not.toHaveAttribute('data-rendered-replay', /ECHO:ui-live|ECHO:second-only/)
 
   const late = await context.newPage()
-  await late.goto('/')
+  await late.goto('/?configId=terminal-deck-e2e')
   await expect(late.getByTestId('terminal-tab')).toHaveCount(3)
   await expect(late.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`).getByTestId('terminal-host')).toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)
 

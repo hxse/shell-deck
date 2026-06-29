@@ -1,8 +1,10 @@
 import { expect, test } from 'playwright/test'
 import { readFileSync } from 'node:fs'
 
-test('macro template workbench creates, saves, reloads, exports, imports and guards destructive actions', async ({ page }) => {
-  await page.goto('/')
+test("macro template workbench creates, saves, reloads, exports, imports and guards destructive actions", async ({ page, request }) => {
+  await request.post("/api/configs/macro-workbench-e2e/terminals?backend=fake")
+  await request.post("/api/configs/macro-workbench-e2e/terminals?backend=fake")
+  await page.goto('/?configId=macro-workbench-e2e')
   await expect(page.getByTestId('macro-panel')).toBeVisible()
   await expect(page.getByTestId('terminal-tab')).toHaveCount(2)
   await expect(page.getByTestId('macro-run-controls')).toBeVisible()
@@ -28,7 +30,7 @@ test('macro template workbench creates, saves, reloads, exports, imports and gua
   await expect(page.getByTestId('macro-template-actions')).toContainText('Import')
   await expect(page.getByTestId('macro-template-actions')).toContainText('Export')
   await page.getByTestId('macro-control-start').click()
-  await expect(page.getByText('Macro runner lands in .005; start did not execute a run')).toBeVisible()
+  await expect(page.getByText('template has no steps')).toBeVisible()
   await page.getByTestId('macro-name').fill('Review Fix Loop')
 
   await page.getByTestId('add-step-send').click()

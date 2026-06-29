@@ -29,6 +29,11 @@ test('run-scoped events omit stepId and step-scoped events require stepId', () =
 
 test('operational events are step-scoped in V0', () => {
   const operational: RunEventKind[] = [
+    'terminal_ref_resolved',
+    'wait_started',
+    'wait_completed',
+    'wait_timeout',
+    'wait_manual_continue',
     'terminal_line_sent',
     'user_input_requested',
     'user_input_submitted',

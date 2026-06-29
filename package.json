@@ -14,7 +14,8 @@
     "test:001:online": "bun run scripts/probe-001-online.ts",
     "test:002": "bun test tests/unit/*.test.ts tests/integration/*.test.ts && bun run scripts/runPlaywright.ts",
     "test:003": "bun test tests/unit/profileCatalogSummary.test.ts tests/unit/macroTemplate.test.ts && bun run scripts/runPlaywright.ts tests/e2e/macroTemplateWorkbench.spec.ts",
-    "test:004": "bun test tests/unit/runEventSchema.test.ts tests/unit/artifactStore.test.ts tests/unit/runEventReplay.test.ts tests/unit/runEventStore.test.ts && bun run scripts/runPlaywright.ts tests/e2e/runLogView.spec.ts"
+    "test:004": "bun test tests/unit/runEventSchema.test.ts tests/unit/artifactStore.test.ts tests/unit/runEventReplay.test.ts tests/unit/runEventStore.test.ts && bun run scripts/runPlaywright.ts tests/e2e/runLogView.spec.ts",
+    "test:005": "bun test tests/unit/terminalRefResolver.test.ts tests/integration/macroRunnerFakeTerminal.test.ts && bun run scripts/runPlaywright.ts tests/e2e/macroRunnerState.spec.ts"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",
