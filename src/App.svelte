@@ -3,6 +3,7 @@
   import { TerminalDeckClient } from './lib/terminalDeckClient'
   import TerminalSlot from './lib/components/TerminalSlot.svelte'
   import MacroPanel from './lib/components/MacroPanel.svelte'
+  import RunLogView from './lib/components/RunLogView.svelte'
 
   const ALIAS_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 
@@ -275,6 +276,9 @@
         {/key}
       {/if}
     </div>
-    <MacroPanel {configId} {terminals} {indexMap} />
+    <div class="side-panels">
+      <MacroPanel {configId} {terminals} {indexMap} />
+      <RunLogView {configId} />
+    </div>
   </section>
 </main>

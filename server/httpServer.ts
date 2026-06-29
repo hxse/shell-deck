@@ -3,6 +3,9 @@ import { extname, join } from 'node:path'
 import { parseConfigId } from '../src/lib/identifier'
 import { PROFILE_CATALOG_SUMMARY } from '../src/lib/macro/profileCatalogSummary'
 import { MacroTemplateStore } from '../src/lib/macro/templateStore'
+import { RunEventStore } from '../src/lib/runLog/runEventStore'
+import { isRunEventKind } from '../src/lib/runLog/runEventSchema'
+import type { AppendRunEventInput } from '../src/lib/runLog/runEventTypes'
 import type { ClientMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import { TerminalDeckManager } from './terminalDeckManager'
@@ -26,6 +29,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const bindHost = host
   const manager = options.manager ?? new TerminalDeckManager()
   const templateStore = new MacroTemplateStore()
+  const runEventStore = new RunEventStore()
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
@@ -46,7 +50,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       }
 
       try {
-        return await handleHttp(req, url, manager, bindHost, templateStore)
+        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore)
       } catch (error) {
         return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400)
       }
@@ -81,7 +85,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
 }
 
-async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore): Promise<Response> {
+async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore): Promise<Response> {
   if (url.pathname === '/health') {
     return json({ ok: true, bind: bindHost })
   }
@@ -164,6 +168,53 @@ async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, 
     templateStore.delete(configId, templateId)
     return json({ ok: true })
   }
+
+  const runsMatch = /^\/api\/configs\/([^/]+)\/runs$/.exec(url.pathname)
+  if (runsMatch && req.method === 'GET') {
+    const configId = parseConfigId(runsMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, runs: runEventStore.listRuns(configId) })
+  }
+  if (runsMatch && req.method === 'POST') {
+    const configId = parseConfigId(runsMatch[1])
+    manager.ensureConfig(configId)
+    const body = asRecord(await requestJson(req))
+    const data = asOptionalRecord(body.data) ?? {}
+    return json({ ok: true, run: await runEventStore.createRun(configId, data) }, 201)
+  }
+  const artifactReadMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)\/artifacts\/(.+)$/.exec(url.pathname)
+  if (artifactReadMatch && req.method === 'GET') {
+    const configId = parseConfigId(artifactReadMatch[1])
+    manager.ensureConfig(configId)
+    const runId = artifactReadMatch[2]
+    const artifactRef = 'artifacts/' + decodeURIComponent(artifactReadMatch[3])
+    return new Response(runEventStore.readArtifact(configId, runId, artifactRef), { headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  }
+  const artifactWriteMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)\/artifacts$/.exec(url.pathname)
+  if (artifactWriteMatch && req.method === 'POST') {
+    const configId = parseConfigId(artifactWriteMatch[1])
+    manager.ensureConfig(configId)
+    const body = asRecord(await requestJson(req))
+    const content = typeof body.content === 'string' ? body.content : ''
+    const prefix = typeof body.prefix === 'string' ? body.prefix : 'artifact'
+    const extension = typeof body.extension === 'string' ? body.extension : 'txt'
+    const stepId = typeof body.stepId === 'string' ? body.stepId : undefined
+    const result = await runEventStore.writeArtifact(configId, artifactWriteMatch[2], prefix, content, extension, stepId)
+    return json({ ok: true, ...result }, 201)
+  }
+  const runMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)$/.exec(url.pathname)
+  if (runMatch && req.method === 'GET') {
+    const configId = parseConfigId(runMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, run: runEventStore.snapshot(configId, runMatch[2]) })
+  }
+  const runEventMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)\/events$/.exec(url.pathname)
+  if (runEventMatch && req.method === 'POST') {
+    const configId = parseConfigId(runEventMatch[1])
+    manager.ensureConfig(configId)
+    const event = await runEventStore.appendEvent(configId, runEventMatch[2], runEventInput(await requestJson(req)))
+    return json({ ok: true, event, run: runEventStore.snapshot(configId, runEventMatch[2]) }, 201)
+  }
   return serveStatic(url)
 }
 
@@ -242,10 +293,34 @@ function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
 }
 
+
 async function requestJson(req: Request): Promise<unknown> {
   const text = await req.text()
   if (!text.trim()) return {}
   return JSON.parse(text)
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request_body_must_be_object')
+  return value as Record<string, unknown>
+}
+
+function asOptionalRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request_field_must_be_object')
+  return value as Record<string, unknown>
+}
+
+function runEventInput(value: unknown): AppendRunEventInput {
+  const body = asRecord(value)
+  if (!isRunEventKind(body.kind)) throw new Error('invalid_run_event_kind')
+  if (typeof body.summary !== 'string' || body.summary.trim().length === 0) throw new Error('event_summary_required')
+  return {
+    kind: body.kind,
+    summary: body.summary,
+    data: asOptionalRecord(body.data) ?? {},
+    stepId: typeof body.stepId === 'string' ? body.stepId : undefined,
+  }
 }
 
 if (import.meta.main) {
