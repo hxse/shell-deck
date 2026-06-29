@@ -3,7 +3,29 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "bun run server/httpServer.ts --host 127.0.0.1 --port 5177",
+    "start": "bun run server/httpServer.ts --host 127.0.0.1 --port 5177",
+    "build": "vite build",
+    "check": "bun run scripts/check.ts",
+    "test": "bun run test:unit && bun run test:e2e",
+    "test:unit": "bun test tests/001-offline.test.ts tests/unit/*.test.ts tests/integration/*.test.ts",
+    "test:e2e": "bun run scripts/runPlaywright.ts",
     "test:001:offline": "bun test tests/001-offline.test.ts",
-    "test:001:online": "bun run scripts/probe-001-online.ts"
+    "test:001:online": "bun run scripts/probe-001-online.ts",
+    "test:002": "bun test tests/unit/*.test.ts tests/integration/*.test.ts && bun run scripts/runPlaywright.ts"
+  },
+  "dependencies": {
+    "@xterm/xterm": "6.0.0",
+    "short-uuid": "^5.2.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/bun": "latest",
+    "playwright": "^1.61.0",
+    "svelte": "^5.56.3",
+    "svelte-check": "^4.6.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.5"
   }
 }
