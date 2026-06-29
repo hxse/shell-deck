@@ -2,7 +2,7 @@
 
 `shell-deck` is a browser terminal deck with a visual macro panel. It keeps Codex and other terminal programs as ordinary processes inside PTYs, then lets users run flexible, pauseable, observable macros against terminal indexes or stable terminal ids. It is also an experiment in tooling the strict spec/review/Gate workflow used by `<pyo3-quant-root>/AGENTS.md`, so the first target audience is high-control AI collaboration rather than generic terminal automation.
 
-Current status: V0 design bootstrap with `.001 v0 api probe` passed. The root blueprint lives at `doc/tasks/snapshots/20260627A shell deck bootstrap/20260627A/`, and V0 implementation is split into nine phase tasks under the same snapshot group.
+Current status: V0 is not complete yet. `.001 v0 api probe`, `.002 terminal deck foundation`, and `.003 macro template workbench` now have runnable implementation and automated gate coverage. The root blueprint lives at `doc/tasks/snapshots/20260627A shell deck bootstrap/20260627A/`, and the remaining V0 implementation is still split across the phase tasks under the same snapshot group.
 
 Core V0 direction:
 
@@ -15,7 +15,7 @@ Core V0 direction:
 - normalize agent callbacks through a local `AgentEvent Ingest` protocol; Codex hook is the first adapter, not a macro-runner dependency
 - macro templates persisted as JSON, with terminal refs by dynamic index or stable id, edited through a basic visual panel
 - macro runs persisted as append-only event logs plus artifacts
-- parser supports template-local `regex` rules and built-in `ai-json` profiles to produce soft structured signals from user-selected capture sources; terminal buffer capture is the default, AgentEvent/Codex hook capture is optional
+- parser supports template-local `regex` rules and built-in `ai-json` profiles to produce soft structured signals from user-selected `capture-source` steps; terminal buffer capture is the default, AgentEvent/Codex hook capture is optional
 - V0 restores macro state and logs, not Codex sessions
 
 V0 phase tasks:

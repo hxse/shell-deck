@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run server/httpServer.ts --host 127.0.0.1 --port 5177",
-    "start": "bun run server/httpServer.ts --host 127.0.0.1 --port 5177",
+    "dev": "bun run server/httpServer.ts",
+    "start": "bun run server/httpServer.ts",
     "build": "vite build",
     "check": "bun run scripts/check.ts",
     "test": "bun run test:unit && bun run test:e2e",
@@ -12,7 +12,8 @@
     "test:e2e": "bun run scripts/runPlaywright.ts",
     "test:001:offline": "bun test tests/001-offline.test.ts",
     "test:001:online": "bun run scripts/probe-001-online.ts",
-    "test:002": "bun test tests/unit/*.test.ts tests/integration/*.test.ts && bun run scripts/runPlaywright.ts"
+    "test:002": "bun test tests/unit/*.test.ts tests/integration/*.test.ts && bun run scripts/runPlaywright.ts",
+    "test:003": "bun test tests/unit/profileCatalogSummary.test.ts tests/unit/macroTemplate.test.ts && bun run scripts/runPlaywright.ts tests/e2e/macroTemplateWorkbench.spec.ts"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",

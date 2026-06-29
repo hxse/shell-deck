@@ -1,0 +1,113 @@
+import { expect, test } from 'playwright/test'
+import { readFileSync } from 'node:fs'
+
+test('macro template workbench creates, saves, reloads, exports, imports and guards destructive actions', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.getByTestId('macro-panel')).toBeVisible()
+  await expect(page.getByTestId('terminal-tab')).toHaveCount(2)
+  await expect(page.getByTestId('macro-run-controls')).toBeVisible()
+  await expect(page.getByTestId('macro-control-start')).toBeEnabled()
+  await expect(page.getByTestId('macro-control-pause')).toBeEnabled()
+  await expect(page.getByTestId('macro-control-resume')).toBeEnabled()
+  await expect(page.getByTestId('macro-control-stop')).toBeEnabled()
+  await page.getByTestId('macro-control-start').click()
+  await expect(page.getByText('Create or select a template first')).toBeVisible()
+  await expect(page.getByTestId('macro-template-actions')).toContainText('Import')
+  await expect(page.getByTestId('macro-template-actions')).toContainText('Export')
+  await expect(page.getByTestId('macro-import')).toBeEnabled()
+  await expect(page.getByTestId('macro-export')).toBeDisabled()
+  await expect(page.getByTestId('macro-json-preview')).toHaveCount(0)
+
+  await page.getByTestId('terminal-tab').first().dblclick()
+  await page.getByTestId('terminal-alias-input').fill('reviewer')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('terminal-tab').first()).toHaveAttribute('data-terminal-alias', 'reviewer')
+
+  await page.getByTestId('macro-create').click()
+  await expect(page.getByTestId('macro-name')).toHaveValue('New Macro Template')
+  await expect(page.getByTestId('macro-template-actions')).toContainText('Import')
+  await expect(page.getByTestId('macro-template-actions')).toContainText('Export')
+  await page.getByTestId('macro-control-start').click()
+  await expect(page.getByText('Macro runner lands in .005; start did not execute a run')).toBeVisible()
+  await page.getByTestId('macro-name').fill('Review Fix Loop')
+
+  await page.getByTestId('add-step-send').click()
+  await expect(page.getByTestId('send-line-terminal')).toHaveValue('alias:reviewer')
+  await page.getByTestId('send-line-text').fill('review docs only')
+  await page.getByTestId('add-step-sleep').click()
+  await page.getByTestId('sleep-ms').fill('2000')
+  await page.getByTestId('add-step-input').click()
+  await page.getByTestId('add-step-capture').click()
+  await expect(page.getByTestId('capture-step-kind')).toHaveValue('terminal-buffer')
+  await expect(page.getByTestId('capture-step-terminal')).toHaveValue(/^(alias|index|id):/)
+  await page.getByTestId('add-step-parse').click()
+  await page.getByTestId('add-step-branch').click()
+  await page.getByTestId('add-step-goto').click()
+  await page.getByTestId('add-step-fail').click()
+  await page.getByTestId('add-step-stop').click()
+
+  await expect(page.getByTestId('macro-step-list')).toContainText('send_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('input_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('capture-source')
+  await expect(page.getByTestId('macro-step-list')).toContainText('parse')
+  await expect(page.getByTestId('macro-step-list')).toContainText('branch')
+  await expect(page.getByTestId('macro-step-list')).toContainText('fail')
+  await expect(page.getByTestId('macro-step-list')).toContainText('stop')
+  await expect(page.getByTestId('parse-step-source')).toHaveValue(/^capture_source_/)
+  await expect(page.getByTestId('macro-step-list')).not.toContainText('Terminal Mapping')
+  await expect(page.getByTestId('macro-step-list')).not.toContainText('Capture Sources')
+
+  await page.getByTestId('macro-tab-json').click()
+  await expect(page.getByTestId('macro-json-view')).toBeVisible()
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"terminal": {')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"kind": "alias"')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"value": "reviewer"')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"kind": "regex"')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"loopGuard"')
+  await page.getByTestId('macro-tab-editor').click()
+  await expect(page.getByTestId('macro-json-preview')).toHaveCount(0)
+
+  await page.getByTestId('macro-save').click()
+  await expect(page.getByText('Saved')).toBeVisible()
+
+  await page.reload()
+  await expect(page.getByTestId('macro-template-item')).toHaveCount(1)
+  await page.getByTestId('macro-tab-json').click()
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"Review Fix Loop"')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"send_line"')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"input_line"')
+  await page.getByTestId('macro-tab-editor').click()
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByTestId('macro-export').click(),
+  ])
+  const downloadPath = await download.path()
+  expect(downloadPath).toBeTruthy()
+  const exported = JSON.parse(readFileSync(downloadPath!, 'utf8')) as { steps: Array<{ type: string }>; session_id?: string }
+  expect(exported.steps.map((step) => step.type)).toContain('branch')
+  expect(JSON.stringify(exported)).not.toContain('session_id')
+  expect(JSON.stringify(exported)).not.toContain('terminalAliases')
+  expect(JSON.stringify(exported)).not.toContain('captureSources')
+
+  await page.getByTestId('macro-import-file').setInputFiles(downloadPath!)
+  await expect(page.getByTestId('macro-template-item')).toHaveCount(2)
+  await page.getByTestId('macro-tab-json').click()
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"Review Fix Loop"')
+  await page.getByTestId('macro-tab-editor').click()
+
+  page.once('dialog', async (dialog) => {
+    expect(dialog.type()).toBe('confirm')
+    expect(dialog.message()).toContain('Delete macro template')
+    await dialog.dismiss()
+  })
+  await page.getByTestId('macro-delete').click()
+  await expect(page.getByTestId('macro-template-item')).toHaveCount(2)
+
+  page.once('dialog', async (dialog) => {
+    expect(dialog.type()).toBe('confirm')
+    await dialog.accept()
+  })
+  await page.getByTestId('macro-delete').click()
+  await expect(page.getByTestId('macro-template-item')).toHaveCount(1)
+})

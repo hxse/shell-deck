@@ -1,4 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createServer } from 'node:net'
 import { dirname } from 'node:path'
 
@@ -50,6 +53,7 @@ async function playwrightEnvWithPort() {
   const env = playwrightEnv(process.env)
   env.SHELL_DECK_E2E_HOST = env.SHELL_DECK_E2E_HOST ?? '127.0.0.1'
   env.SHELL_DECK_E2E_PORT = env.SHELL_DECK_E2E_PORT ?? String(await findFreePort(env.SHELL_DECK_E2E_HOST))
+  env.SHELL_DECK_DATA_ROOT = env.SHELL_DECK_DATA_ROOT ?? mkdtempSync(join(tmpdir(), 'shell-deck-e2e-'))
   return env
 }
 

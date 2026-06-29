@@ -27,6 +27,17 @@ test('browser tabs render live output, alias rename, replay and drag reorder', a
   await firstHost.click()
   await first.keyboard.type('ui-live')
   await expect(firstHost).toHaveAttribute('data-rendered-replay', /ui-live/)
+  const terminalSizing = await firstHost.evaluate((host) => {
+    const xterm = host.querySelector('.xterm') as HTMLElement | null
+    const viewport = host.querySelector('.xterm-viewport') as HTMLElement | null
+    return {
+      hostHeight: host.getBoundingClientRect().height,
+      xtermHeight: xterm?.getBoundingClientRect().height ?? 0,
+      viewportBackground: viewport ? getComputedStyle(viewport).backgroundColor : '',
+    }
+  })
+  expect(terminalSizing.xtermHeight).toBeGreaterThan(terminalSizing.hostHeight * 0.85)
+  expect(terminalSizing.viewportBackground).toBe('rgb(17, 19, 22)')
   await first.keyboard.press('Enter')
 
   await expect(firstHost).toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)

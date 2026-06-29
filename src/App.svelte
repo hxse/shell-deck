@@ -2,6 +2,7 @@
   import type { ServerMessage, TerminalSnapshot } from './lib/protocol'
   import { TerminalDeckClient } from './lib/terminalDeckClient'
   import TerminalSlot from './lib/components/TerminalSlot.svelte'
+  import MacroPanel from './lib/components/MacroPanel.svelte'
 
   const ALIAS_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
 
@@ -266,11 +267,14 @@
     <div class="alias-error" role="alert">{aliasError}</div>
   {/if}
 
-  <section class="terminal-stage">
-    {#if activeTerminal}
-      {#key activeTerminal.terminalId}
-        <TerminalSlot terminal={activeTerminal} client={client} />
-      {/key}
-    {/if}
+  <section class="workspace-shell">
+    <div class="terminal-stage">
+      {#if activeTerminal}
+        {#key activeTerminal.terminalId}
+          <TerminalSlot terminal={activeTerminal} client={client} />
+        {/key}
+      {/if}
+    </div>
+    <MacroPanel {configId} {terminals} {indexMap} />
   </section>
 </main>

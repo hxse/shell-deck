@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import { parseConfigId } from '../src/lib/identifier'
+import { PROFILE_CATALOG_SUMMARY } from '../src/lib/macro/profileCatalogSummary'
+import { MacroTemplateStore } from '../src/lib/macro/templateStore'
 import type { ClientMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import { TerminalDeckManager } from './terminalDeckManager'
@@ -23,6 +25,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const host = options.host ?? '127.0.0.1'
   const bindHost = host
   const manager = options.manager ?? new TerminalDeckManager()
+  const templateStore = new MacroTemplateStore()
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
@@ -34,7 +37,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const server = Bun.serve<{ clientId: string; configId: string }>({
     hostname: host,
     port: options.port ?? 5177,
-    fetch(req, bunServer) {
+    async fetch(req, bunServer) {
       const url = new URL(req.url)
       if (url.pathname === '/ws') {
         const configId = parseConfigId(url.searchParams.get('configId'))
@@ -43,7 +46,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       }
 
       try {
-        return handleHttp(req, url, manager, bindHost)
+        return await handleHttp(req, url, manager, bindHost, templateStore)
       } catch (error) {
         return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400)
       }
@@ -78,9 +81,12 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
 }
 
-function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string): Response {
+async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore): Promise<Response> {
   if (url.pathname === '/health') {
     return json({ ok: true, bind: bindHost })
+  }
+  if (url.pathname === '/api/macro/profile-catalog' && req.method === 'GET') {
+    return json(PROFILE_CATALOG_SUMMARY)
   }
   const snapshotMatch = /^\/api\/configs\/([^/]+)\/snapshot$/.exec(url.pathname)
   if (snapshotMatch && req.method === 'GET') {
@@ -93,6 +99,70 @@ function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHo
     const configId = parseConfigId(terminalMatch[1])
     const backend = url.searchParams.get('backend') === 'real' ? 'real' : 'fake'
     return json(manager.createTerminal(configId, { backend }))
+  }
+  const templatesMatch = /^\/api\/configs\/([^/]+)\/templates$/.exec(url.pathname)
+  if (templatesMatch && req.method === 'GET') {
+    const configId = parseConfigId(templatesMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, templates: templateStore.list(configId) })
+  }
+  if (templatesMatch && req.method === 'POST') {
+    const configId = parseConfigId(templatesMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, template: templateStore.create(configId, manager.indexMap(configId)) }, 201)
+  }
+  const importMatch = /^\/api\/configs\/([^/]+)\/templates\/import$/.exec(url.pathname)
+  if (importMatch && req.method === 'POST') {
+    const configId = parseConfigId(importMatch[1])
+    manager.ensureConfig(configId)
+    const body = await requestJson(req)
+    try {
+      return json({ ok: true, template: templateStore.import(configId, body, manager.indexMap(configId)) }, 201)
+    } catch (error) {
+      return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 422)
+    }
+  }
+  const duplicateMatch = /^\/api\/configs\/([^/]+)\/templates\/([^/]+)\/duplicate$/.exec(url.pathname)
+  if (duplicateMatch && req.method === 'POST') {
+    const configId = parseConfigId(duplicateMatch[1])
+    const templateId = duplicateMatch[2]
+    manager.ensureConfig(configId)
+    return json({ ok: true, template: templateStore.duplicate(configId, templateId, manager.indexMap(configId)) }, 201)
+  }
+  const exportMatch = /^\/api\/configs\/([^/]+)\/templates\/([^/]+)\/export$/.exec(url.pathname)
+  if (exportMatch && req.method === 'GET') {
+    const configId = parseConfigId(exportMatch[1])
+    const templateId = exportMatch[2]
+    manager.ensureConfig(configId)
+    return json(templateStore.read(configId, templateId))
+  }
+  const templateMatch = /^\/api\/configs\/([^/]+)\/templates\/([^/]+)$/.exec(url.pathname)
+  if (templateMatch && req.method === 'GET') {
+    const configId = parseConfigId(templateMatch[1])
+    const templateId = templateMatch[2]
+    manager.ensureConfig(configId)
+    return json({ ok: true, template: templateStore.read(configId, templateId) })
+  }
+  if (templateMatch && req.method === 'PUT') {
+    const configId = parseConfigId(templateMatch[1])
+    const templateId = templateMatch[2]
+    manager.ensureConfig(configId)
+    const body = await requestJson(req)
+    if (!body || typeof body !== 'object' || (body as { id?: unknown }).id !== templateId) {
+      return json({ ok: false, error: 'template_id_mismatch' }, 422)
+    }
+    const validation = templateStore.validate(body, manager.indexMap(configId))
+    if (!validation.ok) {
+      return json({ ok: false, issues: validation.issues }, 422)
+    }
+    return json({ ok: true, template: templateStore.save(configId, body as never, manager.indexMap(configId)) })
+  }
+  if (templateMatch && req.method === 'DELETE') {
+    const configId = parseConfigId(templateMatch[1])
+    const templateId = templateMatch[2]
+    manager.ensureConfig(configId)
+    templateStore.delete(configId, templateId)
+    return json({ ok: true })
   }
   return serveStatic(url)
 }
@@ -170,6 +240,12 @@ function contentType(filePath: string): string {
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
+}
+
+async function requestJson(req: Request): Promise<unknown> {
+  const text = await req.text()
+  if (!text.trim()) return {}
+  return JSON.parse(text)
 }
 
 if (import.meta.main) {
