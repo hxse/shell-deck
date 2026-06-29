@@ -1,0 +1,9 @@
+{
+  "name": "shell-deck",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:001:offline": "bun test tests/001-offline.test.ts",
+    "test:001:online": "bun run scripts/probe-001-online.ts"
+  }
+}
