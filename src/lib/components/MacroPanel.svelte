@@ -442,6 +442,16 @@
     return base + '_' + Date.now()
   }
 
+  function legacyFlowLabel(step: MacroStep): string | null {
+    if (step.type === 'branch') return 'legacy if/elif/else'
+    if (step.type === 'goto') return 'legacy loop jump'
+    if (step.type === 'complete') return 'legacy return'
+    if (step.type === 'pause') return 'legacy pause'
+    if (step.type === 'fail') return 'legacy fail'
+    if (step.type === 'stop') return 'legacy stop'
+    return null
+  }
+
   async function macroControl(action: 'start' | 'pause' | 'resume' | 'stop') {
     errorText = null
     if (action === 'start' && !draft) {
@@ -592,27 +602,51 @@
 
       <section class="macro-section">
         <div class="macro-section-title"><h3>Steps</h3></div>
-        <div class="step-actions">
-          <button type="button" data-testid="add-step-send" onclick={() => addStep('send_line')}>send_line</button>
-          <button type="button" data-testid="add-step-sleep" onclick={() => addStep('sleep')}>sleep</button>
-          <button type="button" data-testid="add-step-input" onclick={() => addStep('input_line')}>input_line</button>
-          <button type="button" onclick={() => addStep('wait')}>wait</button>
-          <button type="button" data-testid="add-step-capture" onclick={() => addStep('capture-source')}>capture</button>
-          <button type="button" data-testid="add-step-parse" onclick={() => addStep('parse')}>parse</button>
-          <button type="button" data-testid="add-step-branch" onclick={() => addStep('branch')}>branch</button>
-          <button type="button" data-testid="add-step-parallel" onclick={() => addStep('parallel_all')}>parallel_all</button>
-          <button type="button" data-testid="add-step-goto" onclick={() => addStep('goto')}>goto</button>
-          <button type="button" onclick={() => addStep('pause')}>pause</button>
-          <button type="button" onclick={() => addStep('complete')}>complete</button>
-          <button type="button" data-testid="add-step-fail" onclick={() => addStep('fail')}>fail</button>
-          <button type="button" data-testid="add-step-stop" onclick={() => addStep('stop')}>stop</button>
+        <div class="step-palette-grid">
+          <div class="step-palette" data-testid="macro-actions-palette">
+            <div class="palette-heading"><span>Actions</span><small>do work</small></div>
+            <div class="step-actions">
+              <button type="button" data-testid="add-step-send" onclick={() => addStep('send_line')}>send_line</button>
+              <button type="button" data-testid="add-step-sleep" onclick={() => addStep('sleep')}>sleep</button>
+              <button type="button" data-testid="add-step-input" onclick={() => addStep('input_line')}>input_line</button>
+              <button type="button" data-testid="add-step-wait" onclick={() => addStep('wait')}>wait</button>
+              <button type="button" data-testid="add-step-capture" onclick={() => addStep('capture-source')}>capture</button>
+              <button type="button" data-testid="add-step-parse" onclick={() => addStep('parse')}>parse</button>
+              <button type="button" data-testid="add-step-parallel" onclick={() => addStep('parallel_all')}>parallel_all</button>
+            </div>
+          </div>
+
+          <div class="step-palette flow-palette" data-testid="macro-flow-palette">
+            <div class="palette-heading"><span>Flow</span><small>structured V2</small></div>
+            <div class="step-actions flow-v2-actions">
+              <button type="button" class="flow-v2-button" data-testid="flow-v2-if" disabled title="Flow V2 block editor is not wired to the v1 runner yet">if</button>
+              <button type="button" class="flow-v2-button" data-testid="flow-v2-elif" disabled title="Flow V2 block editor is not wired to the v1 runner yet">elif</button>
+              <button type="button" class="flow-v2-button" data-testid="flow-v2-else" disabled title="Flow V2 block editor is not wired to the v1 runner yet">else</button>
+              <button type="button" class="flow-v2-button" data-testid="flow-v2-for" disabled title="Flow V2 block editor is not wired to the v1 runner yet">for</button>
+              <button type="button" class="flow-v2-button" data-testid="flow-v2-break" disabled title="Flow V2 block editor is not wired to the v1 runner yet">break</button>
+              <button type="button" class="flow-v2-button" data-testid="flow-v2-continue" disabled title="Flow V2 block editor is not wired to the v1 runner yet">continue</button>
+              <button type="button" class="flow-v2-button" data-testid="flow-v2-return" disabled title="Flow V2 block editor is not wired to the v1 runner yet">return</button>
+            </div>
+            <p class="hint">Flow V2 saves structured JSON; compiler/interpreter wiring is tracked separately.</p>
+            <details class="legacy-flow-panel" data-testid="legacy-flow-panel">
+              <summary>Legacy flow nodes</summary>
+              <div class="step-actions legacy-step-actions">
+                <button type="button" data-testid="add-step-branch" onclick={() => addStep('branch')}>branch</button>
+                <button type="button" data-testid="add-step-goto" onclick={() => addStep('goto')}>goto</button>
+                <button type="button" data-testid="add-step-pause" onclick={() => addStep('pause')}>pause</button>
+                <button type="button" data-testid="add-step-complete" onclick={() => addStep('complete')}>complete</button>
+                <button type="button" data-testid="add-step-fail" onclick={() => addStep('fail')}>fail</button>
+                <button type="button" data-testid="add-step-stop" onclick={() => addStep('stop')}>stop</button>
+              </div>
+            </details>
+          </div>
         </div>
 
         <div class="step-list" data-testid="macro-step-list">
           {#each draft.steps as step, index (step.id)}
             <article class="step-editor">
               <div class="step-title">
-                <strong>{index + 1}. {step.type}</strong>
+                <strong>{index + 1}. {step.type}{#if legacyFlowLabel(step)} <span class="legacy-badge" data-testid="legacy-flow-badge">{legacyFlowLabel(step)}</span>{/if}</strong>
                 <div class="inline-actions">
                   <button type="button" onclick={() => moveStep(step.id, -1)}>Up</button>
                   <button type="button" onclick={() => moveStep(step.id, 1)}>Down</button>

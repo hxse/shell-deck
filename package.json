@@ -22,7 +22,8 @@
     "test:007:offline": "bun test tests/unit/parserProfile.test.ts tests/unit/parserResultSchema.test.ts tests/unit/regexParserAdapter.test.ts tests/unit/replicaReducer.test.ts tests/integration/parserFixtureEval.test.ts tests/integration/codexExecParserProbe.test.ts tests/integration/parserRuntimeRunner.test.ts && bun run scripts/runPlaywright.ts tests/e2e/captureSourceFlow.spec.ts",
     "test:007:online": "bun run scripts/probe-007-online.ts --run-online",
     "test:008:offline": "bun test tests/unit/parallelAllValidator.test.ts tests/integration/parallelAllRunner.test.ts && bun run scripts/runPlaywright.ts tests/e2e/parallelAll.spec.ts",
-    "test:008:online": "bun run scripts/probe-008-online.ts --run-online"
+    "test:008:online": "bun run scripts/probe-008-online.ts --run-online",
+    "test:011": "bun test tests/unit/flowV2Schema.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTemplateWorkbench.spec.ts"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",
