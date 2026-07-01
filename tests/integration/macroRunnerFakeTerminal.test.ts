@@ -73,6 +73,28 @@ test('runner waits for input_line, submits text, and blocks second live run in s
   }
 })
 
+test('runner resumes a template pause step by advancing to its next step', async () => {
+  const h = harness()
+  try {
+    h.templateStore.save('local', template('pause_resume', [
+      { id: 'pause_here', type: 'pause', reason: 'manual checkpoint', next: 'done' },
+      { id: 'done', type: 'complete', reason: 'resumed' },
+    ]), h.manager.indexMap('local'))
+    await h.service.start('local', { templateId: 'pause_resume' })
+    await waitFor(async () => h.service.snapshot('local').status === 'paused')
+    expect(h.service.snapshot('local').currentStepId).toBe('pause_here')
+
+    await h.service.resume('local')
+    await waitFor(async () => h.service.snapshot('local').status === 'completed')
+    const snapshot = h.service.snapshot('local')
+    expect(snapshot.currentStepId).toBe('done')
+    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain('run_resumed')
+    expect(snapshot.run?.replay.events.some((event) => event.kind === 'control_transition' && event.data.fromStepId === 'pause_here' && event.data.toStepId === 'done')).toBe(true)
+  } finally {
+    rmSync(h.root, { recursive: true, force: true })
+  }
+})
+
 test('runner supports terminal-buffer capture, regex parse, branch and loop guard pause', async () => {
   const h = harness()
   try {

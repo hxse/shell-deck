@@ -105,10 +105,17 @@ export type GotoStep = MacroStepBase & {
   goto: string
 }
 
-export type TerminalStateStep = Omit<MacroStepBase, 'next'> & {
-  type: 'pause' | 'complete' | 'fail' | 'stop'
+export type PauseStep = MacroStepBase & {
+  type: 'pause'
   reason?: string
 }
+
+export type TerminalEndStep = Omit<MacroStepBase, 'next'> & {
+  type: 'complete' | 'fail' | 'stop'
+  reason?: string
+}
+
+export type TerminalStateStep = PauseStep | TerminalEndStep
 
 export type ParallelLaneWaitStep =
   | { id: string; type: 'wait'; mode: 'duration'; durationMs: number }

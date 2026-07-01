@@ -128,8 +128,18 @@ export class MacroRunnerService {
     runtime.status = 'running'
     runtime.pauseReason = null
     runtime.waitingInput = null
-    await this.runEventStore.appendEvent(configId, runtime.runId, { kind: 'run_resumed', summary: 'Run resumed', data: { nextStepId: nextStepId ?? runtime.currentStepId } })
-    void this.run(runtime, nextStepId ?? runtime.currentStepId)
+
+    const pausedStep = runtime.currentStepId ? runtime.template.steps.find((candidate) => candidate.id === runtime.currentStepId) : undefined
+    let resumeStepId = nextStepId ?? runtime.currentStepId
+    await this.runEventStore.appendEvent(configId, runtime.runId, { kind: 'run_resumed', summary: 'Run resumed', data: { nextStepId: resumeStepId } })
+    if (!nextStepId && pausedStep?.type === 'pause') {
+      const pauseNextStepId = this.nextStepId(runtime, pausedStep)
+      if (pauseNextStepId) {
+        await this.completeStep(runtime, pausedStep.id)
+        resumeStepId = await this.transition(runtime, pausedStep, pauseNextStepId)
+      }
+    }
+    void this.run(runtime, resumeStepId)
     return this.snapshotForRuntime(configId, runtime)
   }
 

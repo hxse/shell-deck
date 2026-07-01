@@ -74,6 +74,17 @@ test-009-offline: check build test-unit test-e2e test-001-offline test-002 test-
 
 test-009: test-009-offline
 
+test-010-shell-gui:
+    SHELL_DECK_E2E_AI_JSON_PARSER=mock bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/captureSourceFlow.spec.ts tests/e2e/runLogView.spec.ts tests/e2e/macroRunnerState.spec.ts tests/e2e/parallelAll.spec.ts tests/e2e/macroRealShellGui.spec.ts tests/e2e/macroRealShellMatrix.spec.ts
+    SHELL_DECK_E2E_AI_JSON_PARSER=disabled bun run scripts/runPlaywright.ts --workers=1 tests/e2e/parserFailureGui.spec.ts
+
+test-010-codex-gui:
+    bun run scripts/probe-010-codex-gui.ts
+
+test-010-offline: check test-unit test-e2e test-010-shell-gui
+
+test-010: test-010-offline
+
 test-007: test-007-offline
 
 test-006: test-006-offline

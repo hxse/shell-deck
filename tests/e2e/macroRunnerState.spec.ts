@@ -28,6 +28,21 @@ const otherTemplate = {
   ],
 }
 
+const delayedTemplate = {
+  schemaVersion: 1,
+  id: "runner_delayed_template",
+  name: "Runner Delayed Template",
+  description: "e2e delayed runner refresh template",
+  configId: "runner-delayed-e2e",
+  createdAt: "2026-06-30T00:00:00.000Z",
+  updatedAt: "2026-06-30T00:00:00.000Z",
+  steps: [
+    { id: "send", type: "send_line", terminal: { kind: "alias", value: "terminal_1" }, text: "delayed-run", next: "sleep" },
+    { id: "sleep", type: "sleep", durationMs: 1200, next: "done" },
+    { id: "done", type: "complete", reason: "ok" },
+  ],
+}
+
 test("macro runner starts selected template, pauses, isolates configs, sends input and completes", async ({ page, request }) => {
   await request.post("/api/configs/runner-e2e/terminals?backend=fake")
   const imported = await request.post("/api/configs/runner-e2e/templates/import", { data: template })
@@ -83,4 +98,18 @@ test("macro runner auto-saves draft before start and completes send_line without
 
   await expect(page.getByTestId("macro-run-status")).toContainText("completed")
   await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:draft-send-only/)
+})
+
+
+test("macro runner auto-refreshes after delayed live run completes without manual refresh", async ({ page, request }) => {
+  await request.post("/api/configs/runner-delayed-e2e/terminals?backend=fake")
+  const imported = await request.post("/api/configs/runner-delayed-e2e/templates/import", { data: delayedTemplate })
+  expect(imported.status()).toBe(201)
+  await page.goto("/?configId=runner-delayed-e2e")
+  await expect(page.getByTestId("macro-template-item")).toContainText("Runner Delayed Template")
+
+  await page.getByTestId("macro-control-start").click()
+  await expect(page.getByTestId("macro-run-status")).toContainText("running")
+  await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
+  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:delayed-run/)
 })

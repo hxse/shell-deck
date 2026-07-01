@@ -78,3 +78,32 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
 
   await context.close()
 })
+
+test('real shell keeps cursor visible after repeated empty prompts', async ({ page, request }) => {
+  await request.post('/api/configs/terminal-enter-scroll-e2e/terminals?backend=real')
+  await page.goto('/?configId=terminal-enter-scroll-e2e')
+  const host = page.getByTestId('terminal-host').first()
+  await expect(host).toBeVisible()
+  await host.click()
+
+  for (let index = 0; index < 90; index += 1) await page.keyboard.press('Enter')
+
+  await expect.poll(async () => await terminalViewportState(host), { timeout: 5000 }).toMatchObject({ cursorVisible: true, screenFits: true })
+  await page.keyboard.press('Control+C')
+  await expect.poll(async () => (await terminalViewportState(host)).cursorVisible, { timeout: 5000 }).toBe(true)
+})
+
+async function terminalViewportState(host: { evaluate: <T>(callback: (host: HTMLElement) => T | Promise<T>) => Promise<T> }) {
+  return await host.evaluate((element) => {
+    const xterm = element.querySelector('.xterm') as HTMLElement | null
+    const screen = element.querySelector('.xterm-screen') as HTMLElement | null
+    const cursor = element.querySelector('.xterm-cursor, .xterm-cursor-layer .xterm-cursor') as HTMLElement | null
+    const xtermRect = xterm?.getBoundingClientRect()
+    const screenRect = screen?.getBoundingClientRect()
+    const cursorRect = cursor?.getBoundingClientRect()
+    return {
+      cursorVisible: Boolean(cursorRect && xtermRect && cursorRect.bottom <= xtermRect.bottom + 1 && cursorRect.top >= xtermRect.top - 1),
+      screenFits: Boolean(screenRect && xtermRect && screenRect.bottom <= xtermRect.bottom + 1),
+    }
+  })
+}

@@ -61,6 +61,7 @@
       for (const chunk of terminal.replay.slice(renderedReplay.length)) xterm.write(chunk)
     }
 
+    xterm.scrollToBottom()
     renderedTerminalId = terminal.terminalId
     renderedReplay = [...terminal.replay]
     host.dataset.renderedReplay = renderedReplay.join('')
@@ -68,15 +69,36 @@
 
   function fitToHost() {
     if (!xterm || !host) return
-    const rect = host.getBoundingClientRect()
-    if (rect.width < 40 || rect.height < 40) return
-    const cols = Math.max(20, Math.floor((rect.width - 18) / 8.4))
-    const rows = Math.max(4, Math.floor((rect.height - 18) / 16.8))
+    const terminalElement = host.querySelector('.xterm') as HTMLElement | null
+    const fitRect = terminalElement?.getBoundingClientRect() ?? host.getBoundingClientRect()
+    if (fitRect.width < 40 || fitRect.height < 40) return
+
+    const cellSize = measureCellSize()
+    const cols = Math.max(20, Math.floor(fitRect.width / cellSize.width))
+    const rows = Math.max(4, Math.floor(fitRect.height / cellSize.height))
     if (cols === sentCols && rows === sentRows) return
     sentCols = cols
     sentRows = rows
     xterm.resize(cols, rows)
+    xterm.scrollToBottom()
     client?.send({ type: 'terminal_resize', terminalId: terminal.terminalId, cols, rows })
+  }
+
+  function measureCellSize() {
+    const screen = host.querySelector('.xterm-screen') as HTMLElement | null
+    const rowsElement = host.querySelector('.xterm-rows') as HTMLElement | null
+    const firstRow = host.querySelector('.xterm-rows > div') as HTMLElement | null
+    const screenRect = screen?.getBoundingClientRect()
+    const rowsRect = rowsElement?.getBoundingClientRect()
+    const firstRowRect = firstRow?.getBoundingClientRect()
+
+    const measuredWidth = screenRect && xterm && xterm.cols > 0 ? screenRect.width / xterm.cols : 0
+    const measuredHeight = firstRowRect?.height || (rowsRect && xterm && xterm.rows > 0 ? rowsRect.height / xterm.rows : 0)
+
+    return {
+      width: measuredWidth > 0 ? measuredWidth : 8.4,
+      height: measuredHeight > 0 ? measuredHeight : 20,
+    }
   }
 </script>
 

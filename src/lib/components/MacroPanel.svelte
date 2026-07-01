@@ -473,10 +473,13 @@
   }
 
   function refreshRunnerSoon(attempt = 0) {
+    const isLiveRefreshStatus = runner?.status === 'running' || runner?.status === 'waiting'
+    if (!isLiveRefreshStatus || attempt > 130) return
+    const delayMs = attempt < 10 ? 100 : 1000
     window.setTimeout(async () => {
       await refreshRunner()
-      if (attempt < 5 && (runner?.status === 'running' || runner?.status === 'waiting')) refreshRunnerSoon(attempt + 1)
-    }, 100)
+      refreshRunnerSoon(attempt + 1)
+    }, delayMs)
   }
 
   async function submitRunnerInput() {
@@ -646,8 +649,8 @@
                   </label>
                   <label>Set as
                     <span class="duration-tools">
-                      <input type="number" min="1" value="1" oninput={(event) => setSleepFromUnit(step.id, event.currentTarget.value, (event.currentTarget.nextElementSibling as HTMLSelectElement).value)} />
-                      <select onchange={(event) => { const input = event.currentTarget.previousElementSibling as HTMLInputElement; setSleepFromUnit(step.id, input.value, event.currentTarget.value) }}>
+                      <input data-testid="sleep-unit-amount" type="number" min="1" value="1" oninput={(event) => setSleepFromUnit(step.id, event.currentTarget.value, (event.currentTarget.nextElementSibling as HTMLSelectElement).value)} />
+                      <select data-testid="sleep-unit" onchange={(event) => { const input = event.currentTarget.previousElementSibling as HTMLInputElement; setSleepFromUnit(step.id, input.value, event.currentTarget.value) }}>
                         <option value="ms">ms</option><option value="s">s</option><option value="min">min</option><option value="h">h</option>
                       </select>
                     </span>
