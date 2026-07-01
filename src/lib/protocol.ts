@@ -1,3 +1,4 @@
+import type { WorkspaceUiLayout } from './workspace/uiLayoutTypes'
 export type TerminalBackendKind = 'fake' | 'real'
 export type TerminalStatus = 'starting' | 'running' | 'closed' | 'failed'
 
@@ -30,6 +31,16 @@ export type DeckSnapshot = {
   indexMap: TerminalIndexMapItem[]
 }
 
+export type PromptUpdatedMessage = {
+  type: 'prompts_updated'
+  configId: string
+  scope: 'project' | 'global'
+  action: 'created' | 'updated' | 'deleted' | 'moved'
+  promptId: string
+  oldScope?: 'project' | 'global'
+  newScope?: 'project' | 'global'
+}
+
 export type ServerMessage =
   | { type: 'client_registered'; clientId: string; configId: string }
   | DeckSnapshot
@@ -40,6 +51,8 @@ export type ServerMessage =
   | { type: 'terminal_error'; configId: string; terminalId?: string; reason: string }
   | { type: 'terminal_replay'; configId: string; terminalId: string; replay: string[] }
   | { type: 'input_rejected'; configId: string; terminalId: string; reason: string }
+  | { type: 'ui_layout_updated'; configId: string; layout: WorkspaceUiLayout }
+  | PromptUpdatedMessage
 
 export type ClientMessage =
   | { type: 'create_terminal'; backend?: TerminalBackendKind; cols?: number; rows?: number }

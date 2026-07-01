@@ -70,6 +70,20 @@ just -f <shell-deck-root>/justfile -- codex exec -
 
 The wrapper injects temporary hook config only for that Codex invocation. It forwards arguments to Codex and preserves terminal/config/launch ids through environment variables. V0 records Codex session ids for traceability but does not bind macro templates or macro state to Codex sessions.
 
+## Workspace Panels
+
+The top bar has Macro and Prompt toggles. Macro is visible by default; Prompt is hidden by default. Both side panels can be resized horizontally and reset to their default widths. Panel visibility and width are stored per config and synchronized across browser tabs connected to the same config.
+
+The Prompt panel provides a small Prompt Library:
+
+- project prompts scoped to the current config
+- global prompts visible to all configs on the same server
+- create/edit/delete with confirmation
+- search by title, body, or tag
+- preview and copy body to clipboard
+
+Prompts are plain text records; V0.1 does not auto-send prompts to terminals and does not bind prompts to macros.
+
 ## Macro Template Flow
 
 The macro panel supports:

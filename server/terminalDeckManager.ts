@@ -270,6 +270,16 @@ export class TerminalDeckManager {
     return { type: 'terminal_replay', configId, terminalId: terminal.terminalId, replay: [...terminal.replay] }
   }
 
+  broadcastConfigMessage(configId: string, message: ServerMessage): void {
+    this.broadcast(configId, message)
+  }
+
+  broadcastAllConfigMessages(createMessage: (configId: string) => ServerMessage): void {
+    for (const client of this.clients.values()) {
+      client.send(createMessage(client.configId))
+    }
+  }
+
   deckSnapshot(configId: string): DeckSnapshot {
     const config = this.configOrThrow(configId)
     const terminals = config.store.terminalOrder.map((terminalId) => this.terminalSnapshot(this.terminalOrThrow(configId, terminalId)))

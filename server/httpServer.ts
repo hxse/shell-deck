@@ -13,6 +13,9 @@ import { TerminalDeckManager } from './terminalDeckManager'
 import { MacroRunnerService } from './macroRunnerService'
 import { ParserRuntime, type AiJsonParserMode } from '../src/lib/parser/parserRuntime'
 import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
+import { UiLayoutStore } from '../src/lib/workspace/uiLayoutStore'
+import { PromptStore } from '../src/lib/prompts/promptStore'
+import type { PromptScope, PromptScopeFilter } from '../src/lib/prompts/promptTypes'
 
 export type ShellDeckServer = {
   url: string
@@ -37,6 +40,8 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const templateStore = new MacroTemplateStore()
   const runEventStore = new RunEventStore()
   const agentEventStore = new AgentEventStore(runEventStore.rootDir)
+  const uiLayoutStore = new UiLayoutStore()
+  const promptStore = new PromptStore()
   const aiJsonParser = options.aiJsonParser ?? 'disabled'
   const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore, new ParserRuntime(runEventStore, { aiJsonMode: aiJsonParser }))
   if (options.seed ?? true) {
@@ -60,7 +65,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       }
 
       try {
-        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner, agentEventStore)
+        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner, agentEventStore, uiLayoutStore, promptStore)
       } catch (error) {
         return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400)
       }
@@ -105,9 +110,89 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
 }
 
-async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService, agentEventStore: AgentEventStore): Promise<Response> {
+async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService, agentEventStore: AgentEventStore, uiLayoutStore: UiLayoutStore, promptStore: PromptStore): Promise<Response> {
   if (url.pathname === '/health') {
     return json({ ok: true, bind: bindHost, aiJsonParser: macroRunner.parserRuntime.optionsLabel() })
+  }
+
+  const layoutMatch = new RegExp('^/api/configs/([^/]+)/ui-layout$').exec(url.pathname)
+  if (layoutMatch && req.method === 'GET') {
+    const configId = parseConfigId(layoutMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, layout: uiLayoutStore.read(configId) })
+  }
+  if (layoutMatch && req.method === 'PUT') {
+    const configId = parseConfigId(layoutMatch[1])
+    manager.ensureConfig(configId)
+    const layout = uiLayoutStore.save(configId, await requestJson(req))
+    manager.broadcastConfigMessage(configId, { type: 'ui_layout_updated', configId, layout })
+    return json({ ok: true, layout })
+  }
+
+  const configPromptsMatch = new RegExp('^/api/configs/([^/]+)/prompts$').exec(url.pathname)
+  if (configPromptsMatch && req.method === 'GET') {
+    const configId = parseConfigId(configPromptsMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, prompts: promptStore.list(configId, { scope: parsePromptScopeFilter(url.searchParams.get('scope')), q: url.searchParams.get('q') ?? '' }) })
+  }
+  if (configPromptsMatch && req.method === 'POST') {
+    const configId = parseConfigId(configPromptsMatch[1])
+    manager.ensureConfig(configId)
+    const prompt = promptStore.create('project', configId, await requestJson(req))
+    broadcastPromptChange(manager, configId, 'created', prompt.promptId, 'project', 'project')
+    return json({ ok: true, prompt }, 201)
+  }
+
+  const configPromptMatch = new RegExp('^/api/configs/([^/]+)/prompts/([^/]+)$').exec(url.pathname)
+  if (configPromptMatch && req.method === 'GET') {
+    const configId = parseConfigId(configPromptMatch[1])
+    manager.ensureConfig(configId)
+    return json({ ok: true, prompt: promptStore.read('project', configId, configPromptMatch[2]) })
+  }
+  if (configPromptMatch && req.method === 'PUT') {
+    const configId = parseConfigId(configPromptMatch[1])
+    manager.ensureConfig(configId)
+    const prompt = promptStore.update('project', configId, configPromptMatch[2], await requestJson(req))
+    broadcastPromptChange(manager, configId, prompt.scope === 'project' ? 'updated' : 'moved', prompt.promptId, 'project', prompt.scope)
+    return json({ ok: true, prompt })
+  }
+  if (configPromptMatch && req.method === 'DELETE') {
+    const configId = parseConfigId(configPromptMatch[1])
+    manager.ensureConfig(configId)
+    const promptId = configPromptMatch[2]
+    promptStore.delete('project', configId, promptId)
+    broadcastPromptChange(manager, configId, 'deleted', promptId, 'project', 'project')
+    return json({ ok: true })
+  }
+
+  if (url.pathname === '/api/prompts/global' && req.method === 'GET') {
+    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
+    return json({ ok: true, prompts: promptStore.list(configId, { scope: 'global', q: url.searchParams.get('q') ?? '' }) })
+  }
+  if (url.pathname === '/api/prompts/global' && req.method === 'POST') {
+    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
+    const prompt = promptStore.create('global', configId, await requestJson(req))
+    broadcastPromptChange(manager, configId, 'created', prompt.promptId, 'global', 'global')
+    return json({ ok: true, prompt }, 201)
+  }
+
+  const globalPromptMatch = new RegExp('^/api/prompts/global/([^/]+)$').exec(url.pathname)
+  if (globalPromptMatch && req.method === 'GET') {
+    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
+    return json({ ok: true, prompt: promptStore.read('global', configId, globalPromptMatch[1]) })
+  }
+  if (globalPromptMatch && req.method === 'PUT') {
+    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
+    const prompt = promptStore.update('global', configId, globalPromptMatch[1], await requestJson(req))
+    broadcastPromptChange(manager, configId, prompt.scope === 'global' ? 'updated' : 'moved', prompt.promptId, 'global', prompt.scope)
+    return json({ ok: true, prompt })
+  }
+  if (globalPromptMatch && req.method === 'DELETE') {
+    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
+    const promptId = globalPromptMatch[1]
+    promptStore.delete('global', configId, promptId)
+    broadcastPromptChange(manager, configId, 'deleted', promptId, 'global', 'global')
+    return json({ ok: true })
   }
   if (url.pathname === '/api/agent-events' && req.method === 'POST') {
     const result = ingestAgentEvent(await requestJson(req), agentEventTokenFromRequest(req), {
@@ -346,6 +431,15 @@ function serveStatic(url: URL): Response {
   return new Response('shell-deck', { headers: { 'content-type': 'text/plain; charset=utf-8' } })
 }
 
+function broadcastPromptChange(manager: TerminalDeckManager, configId: string, action: 'created' | 'updated' | 'deleted' | 'moved', promptId: string, oldScope: PromptScope, newScope: PromptScope): void {
+  if (oldScope === 'project' || newScope === 'project') {
+    manager.broadcastConfigMessage(configId, { type: 'prompts_updated', configId, scope: 'project', action, promptId, oldScope, newScope })
+  }
+  if (oldScope === 'global' || newScope === 'global') {
+    manager.broadcastAllConfigMessages((clientConfigId) => ({ type: 'prompts_updated', configId: clientConfigId, scope: 'global', action, promptId, oldScope, newScope }))
+  }
+}
+
 function contentType(filePath: string): string {
   switch (extname(filePath)) {
     case '.html': return 'text/html; charset=utf-8'
@@ -396,6 +490,11 @@ function optionalBooleanField(value: Record<string, unknown>, key: string): bool
   if (field === undefined) return undefined
   if (typeof field !== 'boolean') throw new Error('invalid_boolean_field:' + key)
   return field
+}
+
+function parsePromptScopeFilter(value: string | null): PromptScopeFilter {
+  if (value === 'project' || value === 'global' || value === 'all') return value
+  return 'all'
 }
 
 function runEventInput(value: unknown): AppendRunEventInput {

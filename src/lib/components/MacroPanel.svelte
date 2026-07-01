@@ -18,10 +18,11 @@
 
   type WaitMode = Extract<MacroStep, { type: 'wait' }>['mode']
 
-  let { configId, terminals, indexMap } = $props<{
+  let { configId, terminals, indexMap, onResetWidth } = $props<{
     configId: string
     terminals: TerminalSnapshot[]
     indexMap: TerminalIndexMapItem[]
+    onResetWidth?: () => void
   }>()
 
   let loadedConfigId = $state('')
@@ -525,7 +526,10 @@
       <h2>Macro</h2>
       <p>{statusText || 'Template workbench'}</p>
     </div>
-    <button type="button" data-testid="macro-create" onclick={createTemplate}>New</button>
+    <div class="inline-actions">
+      <button type="button" data-testid="macro-reset-width" onclick={() => onResetWidth?.()}>Reset width</button>
+      <button type="button" data-testid="macro-create" onclick={createTemplate}>New</button>
+    </div>
   </div>
 
   <div class="macro-run-controls" data-testid="macro-run-controls">
