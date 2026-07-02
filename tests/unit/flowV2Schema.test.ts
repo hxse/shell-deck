@@ -80,9 +80,9 @@ test('Flow V2 rejects duplicate node ids globally', () => {
   expect(issueText(result)).toContain('duplicate Flow V2 node id')
 })
 
-test('Flow V2 parse must reference an earlier capture-source node', () => {
+test('Flow V2 parse must reference an earlier artifact-producing step', () => {
   const template = validFlowV2Template() as any
-  template.body[0].body[2].captureStep = 'capture_later'
+  template.body[0].body[2].source.stepId = 'capture_later'
   template.body[0].body.push({
     id: 'capture_later',
     type: 'capture-source',
@@ -91,21 +91,30 @@ test('Flow V2 parse must reference an earlier capture-source node', () => {
 
   const result = validateFlowV2Template(template, { indexMap })
   expect(result.ok).toBe(false)
-  expect(issueText(result)).toContain('parse captureStep must reference an earlier capture-source')
+  expect(issueText(result)).toContain('artifact source must reference an earlier artifact-producing step')
 })
 
-test('Flow V2 action nodes reject v1 control fields', () => {
+test('Flow V2 rejects v1 control fields recursively', () => {
   const template = validFlowV2Template() as any
-  template.body[0].body[0].next = 'hidden_jump'
-  template.body[0].body[1].loopGuard = { maxIterations: 3, onLimit: 'pause' }
+  template.body[0].range.goto = 'hidden_jump'
+  template.body[0].body[1].capture.next = 'hidden_jump'
+  template.body[0].body[2].parser.next = 'hidden_jump'
+  template.body[0].body[2].parser.rules[0].goto = 'hidden_jump'
+  const parallel = validParallelAllNode() as any
+  parallel.join.next = 'hidden_jump'
+  template.body.push(parallel)
 
   const result = validateFlowV2Template(template, { indexMap })
   expect(result.ok).toBe(false)
-  expect(issueText(result)).toContain('body[0].body[0].next:extra Flow V2 node field is not allowed')
-  expect(issueText(result)).toContain('body[0].body[1].loopGuard:extra Flow V2 node field is not allowed')
+  const text = issueText(result)
+  expect(text).toContain('body[0].range.goto:legacy control fields are not allowed in Flow V2')
+  expect(text).toContain('body[0].body[1].capture.next:legacy control fields are not allowed in Flow V2')
+  expect(text).toContain('body[0].body[2].parser.next:legacy control fields are not allowed in Flow V2')
+  expect(text).toContain('body[0].body[2].parser.rules[0].goto:legacy control fields are not allowed in Flow V2')
+  expect(text).toContain('body[3].join.next:legacy control fields are not allowed in Flow V2')
 })
 
-test('Flow V2 parallel_all uses full lane validation instead of accepting unknown lanes', () => {
+test('Flow V2 parallel_all lanes use restricted fan-out fan-in schema', () => {
   const valid = validFlowV2Template() as any
   valid.body.push(validParallelAllNode())
   expect(validateFlowV2Template(valid, { indexMap })).toEqual({ ok: true, issues: [] })
@@ -118,15 +127,101 @@ test('Flow V2 parallel_all uses full lane validation instead of accepting unknow
         id: 'lane_bad',
         terminal: { kind: 'alias', value: 'reviewer' },
         steps: [{ id: 'lane_bad_send', type: 'send_line', text: 'echo ready' }],
-        success: { fromParseStep: 'lane_bad_parse', mode: 'all', conditions: [{ signal: 'hasReadyText', op: '==', value: true }] },
+        body: [{ id: 'lane_bad_return', type: 'return' }],
+        success: { fromParseStep: 'lane_bad_parse', mode: 'all', conditions: [] },
       },
     ],
   })
 
   const result = validateFlowV2Template(broken, { indexMap })
   expect(result.ok).toBe(false)
-  expect(issueText(result)).toContain('lane must include at least one wait step')
-  expect(issueText(result)).toContain('fromParseStep must reference a lane parse step')
+  const text = issueText(result)
+  expect(text).toContain('lanes[0].steps:legacy control fields are not allowed in Flow V2')
+  expect(text).toContain('lanes[0].body:extra Flow V2 node field is not allowed')
+  expect(text).toContain('lanes[0].send:lane send must be an object')
+  expect(text).toContain('lanes[0].wait:lane wait must be an object')
+  expect(text).toContain('lanes[0].capture:lane capture must be an object')
+})
+
+test('Flow V2 parallel_all lane rejects user-driven workflow fields', () => {
+  const template = validFlowV2Template() as any
+  const parallel = validParallelAllNode() as any
+  parallel.lanes[0].send.terminal = { kind: 'alias', value: 'worker' }
+  parallel.lanes[0].wait = { mode: 'user-continue', prompt: 'continue?' }
+  parallel.lanes[0].capture.terminal = { kind: 'alias', value: 'worker' }
+  template.body.push(parallel)
+
+  const result = validateFlowV2Template(template, { indexMap })
+  expect(result.ok).toBe(false)
+  const text = issueText(result)
+  expect(text).toContain('lanes[0].send.terminal:extra Flow V2 node field is not allowed')
+  expect(text).toContain('lanes[0].wait.mode:lane wait mode must be duration or terminal-quiet')
+  expect(text).toContain('lanes[0].capture.terminal:extra Flow V2 node field is not allowed')
+})
+
+test('Flow V2 merge and send_artifact require explicit visible predecessor artifact sources', () => {
+  const valid = validFlowV2Template() as any
+  valid.body.push(validParallelAllNode(), validMergeParallelResultsNode(), validParseMergedNode(), validSendArtifactNode())
+  expect(validateFlowV2Template(valid, { indexMap })).toEqual({ ok: true, issues: [] })
+
+  const mergeBeforeParallel = validFlowV2Template() as any
+  mergeBeforeParallel.body.push(validMergeParallelResultsNode(), validParallelAllNode())
+  expect(issueText(validateFlowV2Template(mergeBeforeParallel, { indexMap }))).toContain('merge source must reference an earlier parallel_all')
+
+  const sendBeforeMerge = validFlowV2Template() as any
+  sendBeforeMerge.body.push(validParallelAllNode(), validSendArtifactNode(), validMergeParallelResultsNode())
+  expect(issueText(validateFlowV2Template(sendBeforeMerge, { indexMap }))).toContain('artifact source must reference an earlier artifact-producing step')
+})
+
+test('Flow V2 branch body can reference outer visible predecessor artifacts', () => {
+  const template = validFlowV2Template() as any
+  const loopBody = template.body[0].body
+  loopBody.splice(3, 0, validParallelAllNode(), validMergeParallelResultsNode(), {
+    id: 'send_outer_artifact_branch',
+    type: 'if',
+    branches: [
+      {
+        kind: 'if',
+        condition: { fromParseStep: 'parse_review', signal: 'onlyP3OrClean', op: '==', value: true },
+        body: [validSendArtifactNode()],
+      },
+    ],
+  })
+
+  expect(validateFlowV2Template(template, { indexMap })).toEqual({ ok: true, issues: [] })
+})
+
+test('Flow V2 branch-local artifact outputs do not leak to later siblings', () => {
+  const template = validFlowV2Template() as any
+  const loopBody = template.body[0].body
+  loopBody.splice(3, 0, {
+    id: 'branch_parallel_merge',
+    type: 'if',
+    branches: [
+      {
+        kind: 'if',
+        condition: { fromParseStep: 'parse_review', signal: 'onlyP3OrClean', op: '==', value: true },
+        body: [validParallelAllNode(), validMergeParallelResultsNode()],
+      },
+    ],
+  })
+  loopBody.splice(4, 0, validSendArtifactNode())
+
+  const result = validateFlowV2Template(template, { indexMap })
+  expect(result.ok).toBe(false)
+  expect(issueText(result)).toContain('artifact source must reference an earlier artifact-producing step')
+})
+
+test('Flow V2 parallel_all detects duplicate direct lane terminals without indexMap', () => {
+  const template = validFlowV2Template() as any
+  const parallel = validParallelAllNode() as any
+  parallel.lanes[0].terminal = { kind: 'id', value: 'term_same' }
+  parallel.lanes[1].terminal = { kind: 'id', value: 'term_same' }
+  template.body.push(parallel)
+
+  const result = validateFlowV2Template(template)
+  expect(result.ok).toBe(false)
+  expect(issueText(result)).toContain('duplicate lane primary terminal: direct:id:term_same already used by lane_docs')
 })
 
 function validFlowV2Template(): FlowV2Template {
@@ -153,7 +248,7 @@ function validFlowV2Template(): FlowV2Template {
           {
             id: 'parse_review',
             type: 'parse',
-            captureStep: 'capture_review',
+            source: { kind: 'step_artifact', stepId: 'capture_review', artifact: 'captured_text' },
             parser: {
               kind: 'regex',
               rules: [
@@ -196,23 +291,48 @@ function validParallelAllNode() {
     type: 'parallel_all',
     lanes: [
       {
-        id: 'lane_reviewer',
+        id: 'lane_docs',
         terminal: { kind: 'alias', value: 'reviewer' },
-        steps: [
-          { id: 'lane_reviewer_send', type: 'send_line', text: 'echo ready' },
-          { id: 'lane_reviewer_wait', type: 'wait', mode: 'terminal-quiet', terminal: { kind: 'alias', value: 'reviewer' }, quietMs: 100, maxMs: 1000, onTimeout: 'pause' },
-          { id: 'lane_reviewer_capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'reviewer' }, mode: 'scrollback-tail', maxChars: 4000 } },
-          {
-            id: 'lane_reviewer_parse',
-            type: 'parse',
-            captureStep: 'lane_reviewer_capture',
-            parser: { kind: 'regex', rules: [{ signal: 'hasReadyText', type: 'boolean-null', pattern: 'ready', flags: 'i', onMatch: true, onNoMatch: false }] },
-          },
-        ],
-        success: { fromParseStep: 'lane_reviewer_parse', mode: 'all', conditions: [{ signal: 'hasReadyText', op: '==', value: true }] },
+        send: { text: 'review docs only' },
+        wait: { mode: 'terminal-quiet', quietMs: 100, maxMs: 1000, onTimeout: 'pause' },
+        capture: { kind: 'terminal-buffer', mode: 'scrollback-tail', maxChars: 4000 },
+      },
+      {
+        id: 'lane_tests',
+        terminal: { kind: 'alias', value: 'worker' },
+        send: { text: 'review tests only' },
+        wait: { mode: 'duration', durationMs: 100 },
+        capture: { kind: 'terminal-buffer', mode: 'scrollback-tail', maxChars: 4000 },
       },
     ],
-    join: { mode: 'all_success', onLaneFail: 'pause', onTimeout: 'pause' },
+    join: { mode: 'all_completed', onLaneFail: 'pause', onTimeout: 'pause' },
+  }
+}
+
+function validMergeParallelResultsNode() {
+  return {
+    id: 'merge_review_outputs',
+    type: 'merge_parallel_results',
+    source: { kind: 'parallel_all', stepId: 'parallel_review', captures: 'all' },
+    format: { kind: 'sectioned_text', includeLaneId: true, includeTerminal: true },
+  }
+}
+
+function validParseMergedNode() {
+  return {
+    id: 'parse_merged_review',
+    type: 'parse',
+    source: { kind: 'step_artifact', stepId: 'merge_review_outputs', artifact: 'merged_text' },
+    parser: { kind: 'regex', rules: [{ signal: 'hasAiFixable', type: 'boolean-null', pattern: 'ai can fix', flags: 'i', onMatch: true, onNoMatch: false }] },
+  }
+}
+
+function validSendArtifactNode() {
+  return {
+    id: 'send_merged_to_worker',
+    type: 'send_artifact',
+    terminal: { kind: 'alias', value: 'worker' },
+    source: { kind: 'step_artifact', stepId: 'merge_review_outputs', artifact: 'merged_text' },
   }
 }
 

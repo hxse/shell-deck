@@ -88,6 +88,9 @@ test-010: test-010-offline
 test-011:
     bun run test:011
 
+test-012:
+    bun run test:012
+
 test-007: test-007-offline
 
 test-006: test-006-offline
