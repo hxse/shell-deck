@@ -1,9 +1,8 @@
 <script lang="ts">
-  import type { PromptUpdatedMessage, ServerMessage, TerminalSnapshot } from './lib/protocol'
+  import type { PromptUpdatedMessage, RunLogUpdatedMessage, ServerMessage, TerminalSnapshot } from './lib/protocol'
   import { TerminalDeckClient } from './lib/terminalDeckClient'
   import TerminalSlot from './lib/components/TerminalSlot.svelte'
   import MacroPanel from './lib/components/MacroPanel.svelte'
-  import RunLogView from './lib/components/RunLogView.svelte'
   import PromptPanel from './lib/components/PromptPanel.svelte'
   import { UiLayoutClient } from './lib/workspace/uiLayoutClient'
   import {
@@ -39,6 +38,8 @@
   let layout = $state<WorkspaceUiLayout>(normalizeWorkspaceUiLayout(DEFAULT_WORKSPACE_LAYOUT))
   let promptRefreshToken = $state(0)
   let promptRefreshEvent = $state<PromptUpdatedMessage | null>(null)
+  let runLogRefreshToken = $state(0)
+  let runLogRefreshEvent = $state<RunLogUpdatedMessage | null>(null)
   let noticeSeq = 0
   let notices = $state<Array<{ id: number; text: string }>>([])
   let activeTerminal = $derived(terminals.find((terminal) => terminal.terminalId === activeTerminalId) ?? terminals[0] ?? null)
@@ -111,6 +112,10 @@
     if (message.type === 'prompts_updated' && message.configId === configId) {
       promptRefreshEvent = message
       promptRefreshToken += 1
+    }
+    if (message.type === 'run_log_updated' && message.configId === configId) {
+      runLogRefreshEvent = message
+      runLogRefreshToken += 1
     }
   }
 
@@ -211,6 +216,13 @@
 
   function selectTerminal(terminalId: string) {
     activeTerminalId = terminalId
+  }
+
+  function closeTerminalTab(event: MouseEvent, terminal: TerminalSnapshot) {
+    event.stopPropagation()
+    const label = terminal.terminalAlias || terminal.terminalId
+    if (!window.confirm('Close terminal ' + label + '?')) return
+    client?.send({ type: 'close_terminal', terminalId: terminal.terminalId })
   }
 
   function startDrag(event: DragEvent, terminalId: string) {
@@ -383,6 +395,15 @@
                 <span class="tab-alias">{terminal.terminalAlias}</span>
               {/if}
               <span class="tab-kind">{terminal.backend}</span>
+              <button
+                type="button"
+                class="tab-close"
+                data-testid="terminal-tab-close"
+                aria-label={'Close terminal ' + terminal.terminalAlias}
+                title="Close terminal"
+                onpointerdown={(event) => event.stopPropagation()}
+                onclick={(event) => closeTerminalTab(event, terminal)}
+              >x</button>
             </div>
           {/each}
         </div>
@@ -404,9 +425,8 @@
     {#if layout.panels.macro.visible}
       <section class="workspace-side-panel macro-side-panel" data-testid="macro-side-panel" style={`width: ${layout.panels.macro.widthPx}px`}>
         <div class="panel-resize-handle" data-testid="macro-resize-handle" role="separator" aria-orientation="vertical" onpointerdown={(event) => beginPanelResize('macro', event)}></div>
-        <div class="side-panel-scroll">
-          <MacroPanel {configId} {terminals} {indexMap} onResetWidth={() => resetPanelWidth('macro')} />
-          <RunLogView {configId} />
+        <div class="side-panel-scroll macro-workbench-shell" data-testid="macro-workbench-shell">
+          <MacroPanel {configId} {terminals} {indexMap} onResetWidth={() => resetPanelWidth('macro')} runLogRefreshToken={runLogRefreshToken} runLogRefreshEvent={runLogRefreshEvent} />
         </div>
       </section>
     {/if}

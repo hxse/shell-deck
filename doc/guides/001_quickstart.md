@@ -56,7 +56,7 @@ V0 terminal refs:
 - `{ "kind": "id", "value": "term_..." }`: stable terminal id
 - `{ "kind": "alias", "value": "reviewer" }`: terminal tab rename alias
 
-Double-click a terminal tab to rename it. That alias is the macro-visible alias. Dragging terminal tabs is behind the drag toggle to avoid accidental reorder.
+Double-click a terminal tab to rename it. That alias is the macro-visible alias. Use the tab close button to remove a terminal; shell-deck asks for confirmation before closing. Dragging terminal tabs is behind the drag toggle to avoid accidental reorder.
 
 ## Hook-Enabled Codex
 
@@ -74,21 +74,22 @@ The wrapper injects temporary hook config only for that Codex invocation. It for
 
 The top bar has Macro and Prompt toggles. Macro is visible by default; Prompt is hidden by default. Both side panels can be resized horizontally and reset to their default widths. Panel visibility and width are stored per config and synchronized across browser tabs connected to the same config.
 
-The Prompt panel provides a small Prompt Library:
+The Prompt panel provides a compact Prompt Library with a searchable selector:
 
 - project prompts scoped to the current config
 - global prompts visible to all configs on the same server
 - create/edit/delete with confirmation
 - search by title, body, or tag
-- preview and copy body to clipboard
+- edit/read body in one textarea and copy body to clipboard
 
 Prompts are plain text records; V0.1 does not auto-send prompts to terminals and does not bind prompts to macros.
 
 ## Macro Template Flow
 
-The macro panel supports:
+The macro workbench supports:
 
-- template create/save/duplicate/delete with delete confirmation
+- searchable template selection
+- template create/save/duplicate/delete with delete confirmation in one toolbar
 - import/export JSON backups
 - visual editing for top-level macro steps and basic `parallel_all` lane id/terminal fields
 - JSON preview/import/export for advanced fields, including lane internals
@@ -148,3 +149,5 @@ They may require Codex auth, network, and model quota. If unavailable, record th
 - `ai-json` real parser depends on Codex structured output compatibility and external model availability.
 - Full nested visual editing for `parallel_all` lane internals is deferred; use JSON for advanced lane steps/conditions.
 - Crash recovery for the tiny window where terminal input was sent but the event was not written is deferred; normal pause/resume duplicate-send prevention is implemented.
+
+Run Log / AI Trace lives under the Macro Trace tab, follows the selected macro template, and updates from server run events automatically.

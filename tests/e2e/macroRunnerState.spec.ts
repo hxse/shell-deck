@@ -59,7 +59,6 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await expect(page.getByTestId("macro-run-status")).toContainText("paused")
   await page.getByTestId("macro-control-resume").click()
   await page.waitForTimeout(100)
-  await page.getByTestId("macro-run-refresh").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("waiting_user_input")
 
   await page.getByTestId("macro-control-start").click()
@@ -73,7 +72,6 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await expect(otherPage.getByTestId("macro-template-item")).toContainText("Runner Other Template")
   await otherPage.getByTestId("macro-control-start").click()
   await otherPage.waitForTimeout(100)
-  await otherPage.getByTestId("macro-run-refresh").click()
   await expect(otherPage.getByTestId("macro-run-status")).toContainText("completed")
   await expect(otherPage.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:other-run/)
   await otherPage.close()
@@ -81,7 +79,6 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await page.getByTestId("macro-run-input-text").fill("from-ui")
   await page.getByTestId("macro-run-input-submit").click()
   await page.waitForTimeout(100)
-  await page.getByTestId("macro-run-refresh").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("completed")
   await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:from-ui/)
 })
@@ -90,6 +87,7 @@ test("macro runner auto-saves draft before start and completes send_line without
   await request.post("/api/configs/runner-draft-e2e/terminals?backend=fake")
   await page.goto("/?configId=runner-draft-e2e")
   await expect(page.getByTestId("macro-panel")).toBeVisible()
+  await page.getByTestId('macro-template-summary').click()
 
   await page.getByTestId("macro-create").click()
   await page.getByTestId("add-step-send").click()

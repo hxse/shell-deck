@@ -18,6 +18,12 @@ type RunEventStoreOptions = {
   now?: () => string
 }
 
+export type RunEventStoreUpdate = {
+  configId: string
+  runId: string
+  event: RunEvent
+}
+
 export class RunEventStore {
   readonly paths: RunStoragePaths
   readonly artifacts: ArtifactStore
@@ -26,6 +32,7 @@ export class RunEventStore {
   private readonly runIdFactory: () => string
   private readonly eventIdFactory: () => string
   private readonly now: () => string
+  private readonly listeners = new Set<(update: RunEventStoreUpdate) => void>()
 
   constructor(readonly rootDir = process.env.SHELL_DECK_DATA_ROOT ?? process.cwd(), options: RunEventStoreOptions = {}) {
     this.paths = new RunStoragePaths(rootDir)
@@ -43,7 +50,14 @@ export class RunEventStore {
   }
 
   async appendEvent(configId: string, runId: string, input: AppendRunEventInput): Promise<RunEvent> {
-    return await this.enqueue(configId, runId, () => this.appendEventSync(configId, runId, input))
+    const event = await this.enqueue(configId, runId, () => this.appendEventSync(configId, runId, input))
+    this.notify({ configId, runId, event })
+    return event
+  }
+
+  subscribe(listener: (update: RunEventStoreUpdate) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
   }
 
   async writeArtifact(configId: string, runId: string, prefix: string, content: string, extension = 'txt', stepId?: string): Promise<ArtifactWriteResult> {
@@ -78,14 +92,31 @@ export class RunEventStore {
     return readdirSync(runsDir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => this.snapshot(configId, entry.name))
-      .map((snapshot) => ({
-        runId: snapshot.runId,
-        configId: snapshot.configId,
-        status: snapshot.derivedState.status,
-        eventCount: snapshot.derivedState.eventCount,
-        updatedAt: snapshot.replay.events.at(-1)?.createdAt ?? null,
-      }))
+      .map((snapshot) => {
+        const started = snapshot.replay.events.find((event) => event.kind === 'run_started')
+        const templateId = typeof started?.data.templateId === 'string' ? started.data.templateId : undefined
+        const templateName = typeof started?.data.templateName === 'string' ? started.data.templateName : undefined
+        return {
+          runId: snapshot.runId,
+          configId: snapshot.configId,
+          status: snapshot.derivedState.status,
+          eventCount: snapshot.derivedState.eventCount,
+          updatedAt: snapshot.replay.events.at(-1)?.createdAt ?? null,
+          templateId,
+          templateName,
+        }
+      })
       .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+  }
+
+  private notify(update: RunEventStoreUpdate): void {
+    for (const listener of this.listeners) {
+      try {
+        listener(update)
+      } catch {
+        // Run log notification must not break append-only persistence.
+      }
+    }
   }
 
   private appendEventSync(configId: string, runId: string, input: AppendRunEventInput): RunEvent {

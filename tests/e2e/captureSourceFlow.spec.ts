@@ -27,7 +27,6 @@ test('terminal-buffer capture flow records source kind, terminal id and artifact
   await expect(page.getByTestId('macro-template-item')).toContainText('Capture Terminal Buffer')
   await page.getByTestId('macro-control-start').click()
   await page.waitForTimeout(150)
-  await page.getByTestId('macro-run-refresh').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed')
 
   const runsResponse = await request.get('/api/configs/capture-e2e/runs')

@@ -25,7 +25,14 @@ async function importTemplate(request: APIRequestContext, configId: string, temp
 }
 
 async function startTemplate(page: Page, name: RegExp | string) {
-  await page.getByRole('button', { name }).click()
+  const drawer = page.getByTestId('macro-template-drawer')
+  if (!await drawer.evaluate((element) => (element as HTMLDetailsElement).open)) await page.getByTestId('macro-template-summary').click()
+  const selector = page.getByTestId('macro-template-select')
+  const option = selector.locator('option').filter({ hasText: name }).first()
+  await expect(option).toHaveCount(1)
+  const value = await option.getAttribute('value')
+  expect(value).toBeTruthy()
+  await selector.selectOption(value!)
   await page.getByTestId('macro-control-start').click()
 }
 

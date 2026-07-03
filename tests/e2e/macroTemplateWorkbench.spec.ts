@@ -1,11 +1,33 @@
 import { expect, test } from 'playwright/test'
 import { readFileSync } from 'node:fs'
 
+async function openTemplateDrawer(page: { getByTestId: (id: string) => any }) {
+  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
+}
+
 test("macro template workbench creates, saves, reloads, exports, imports and guards destructive actions", async ({ page, request }) => {
   await request.post("/api/configs/macro-workbench-e2e/terminals?backend=fake")
   await request.post("/api/configs/macro-workbench-e2e/terminals?backend=fake")
   await page.goto('/?configId=macro-workbench-e2e')
   await expect(page.getByTestId('macro-panel')).toBeVisible()
+  await expect(page.getByTestId('macro-sticky-head')).toBeVisible()
+  expect(await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => element.open)).toBe(false)
+  await openTemplateDrawer(page)
+  const macroTitleBox = await page.locator('.macro-header h2').boundingBox()
+  const templateSummaryBox = await page.getByTestId('macro-template-summary').boundingBox()
+  expect(macroTitleBox).toBeTruthy()
+  expect(templateSummaryBox).toBeTruthy()
+  expect(Math.abs(macroTitleBox!.y - templateSummaryBox!.y)).toBeLessThanOrEqual(8)
+  const templateBodyBox = await page.locator('.macro-template-drawer-body').boundingBox()
+  const macroHeaderBox = await page.locator('.macro-header').boundingBox()
+  const macroTabsBox = await page.locator('.macro-tabs').boundingBox()
+  expect(templateBodyBox).toBeTruthy()
+  expect(macroHeaderBox).toBeTruthy()
+  expect(macroTabsBox).toBeTruthy()
+  expect(templateBodyBox!.y).toBeGreaterThanOrEqual(templateSummaryBox!.y + templateSummaryBox!.height)
+  expect(templateBodyBox!.x).toBeLessThanOrEqual(macroHeaderBox!.x + 10)
+  expect(templateBodyBox!.x + templateBodyBox!.width).toBeGreaterThanOrEqual(macroHeaderBox!.x + macroHeaderBox!.width - 10)
+  expect(templateBodyBox!.y + templateBodyBox!.height).toBeLessThanOrEqual(macroTabsBox!.y)
   await expect(page.getByTestId('terminal-tab')).toHaveCount(2)
   await expect(page.getByTestId('macro-run-controls')).toBeVisible()
   await expect(page.getByTestId('macro-control-start')).toBeEnabled()
@@ -33,13 +55,29 @@ test("macro template workbench creates, saves, reloads, exports, imports and gua
   await expect(page.getByText('template has no steps')).toBeVisible()
   await page.getByTestId('macro-name').fill('Review Fix Loop')
   await expect(page.getByTestId('macro-actions-palette')).toBeVisible()
-  await expect(page.getByTestId('macro-actions-palette')).toContainText('send_line')
-  await expect(page.getByTestId('macro-actions-palette')).toContainText('parallel_all')
+  await expect(page.getByTestId('add-step-send')).toBeVisible()
+  await expect(page.getByTestId('add-step-parallel')).toBeVisible()
   await expect(page.getByTestId('macro-flow-palette')).toBeVisible()
-  await expect(page.getByTestId('macro-flow-palette')).toContainText('if')
-  await expect(page.getByTestId('macro-flow-palette')).toContainText('return')
-  await expect(page.getByTestId('flow-v2-if')).toBeDisabled()
+  await expect(page.getByTestId('flow-v2-hidden-note')).toBeHidden()
+  await expect(page.getByTestId('flow-v2-if')).toHaveCount(0)
   await expect(page.getByTestId('legacy-flow-panel')).toContainText('Legacy flow nodes')
+  const railBox = await page.getByTestId('macro-step-tool-rail').boundingBox()
+  const runBox = await page.getByTestId('macro-run-card').boundingBox()
+  const runControlsBox = await page.getByTestId('macro-run-controls').boundingBox()
+  const runStatusBox = await page.getByTestId('macro-run-status').boundingBox()
+  const actionsBox = await page.getByTestId('macro-actions-palette').boundingBox()
+  const stepListBox = await page.getByTestId('macro-step-list').boundingBox()
+  expect(railBox).toBeTruthy()
+  expect(runBox).toBeTruthy()
+  expect(runControlsBox).toBeTruthy()
+  expect(runStatusBox).toBeTruthy()
+  expect(actionsBox).toBeTruthy()
+  expect(stepListBox).toBeTruthy()
+  expect(railBox!.x).toBeGreaterThan(stepListBox!.x + stepListBox!.width - 4)
+  expect(runControlsBox!.x).toBeGreaterThan(stepListBox!.x + stepListBox!.width - 4)
+  expect(runControlsBox!.y + runControlsBox!.height).toBeLessThanOrEqual(actionsBox!.y + 2)
+  expect(runStatusBox!.x).toBeLessThan(railBox!.x)
+  expect(runStatusBox!.y + runStatusBox!.height).toBeLessThanOrEqual(railBox!.y + 2)
 
   await page.getByTestId('add-step-send').click()
   await expect(page.getByTestId('send-line-terminal')).toHaveValue('alias:reviewer')
@@ -80,6 +118,14 @@ test("macro template workbench creates, saves, reloads, exports, imports and gua
   await expect(page.getByTestId('macro-step-list')).not.toContainText('Terminal Mapping')
   await expect(page.getByTestId('macro-step-list')).not.toContainText('Capture Sources')
 
+  await page.getByTestId('macro-editor-main').evaluate((element: HTMLElement) => { element.scrollTop = element.scrollHeight })
+  const scrolledMainBox = await page.getByTestId('macro-editor-main').boundingBox()
+  const scrolledRailBox = await page.getByTestId('macro-step-tool-rail').boundingBox()
+  expect(scrolledMainBox).toBeTruthy()
+  expect(scrolledRailBox).toBeTruthy()
+  expect(scrolledMainBox!.x + scrolledMainBox!.width).toBeLessThanOrEqual(scrolledRailBox!.x)
+  expect(scrolledRailBox!.y + scrolledRailBox!.height).toBeLessThanOrEqual(scrolledMainBox!.y + scrolledMainBox!.height + 1)
+
   await page.getByTestId('macro-tab-json').click()
   await expect(page.getByTestId('macro-json-view')).toBeVisible()
   await expect(page.getByTestId('macro-json-preview')).toContainText('"terminal": {')
@@ -89,9 +135,10 @@ test("macro template workbench creates, saves, reloads, exports, imports and gua
   await expect(page.getByTestId('macro-json-preview')).toContainText('"loopGuard"')
   await page.getByTestId('macro-tab-editor').click()
   await expect(page.getByTestId('macro-json-preview')).toHaveCount(0)
+  await openTemplateDrawer(page)
 
   await page.getByTestId('macro-save').click()
-  await expect(page.getByText('Saved')).toBeVisible()
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
 
   await page.reload()
   await expect(page.getByTestId('macro-template-item')).toHaveCount(1)
@@ -100,6 +147,7 @@ test("macro template workbench creates, saves, reloads, exports, imports and gua
   await expect(page.getByTestId('macro-json-preview')).toContainText('"send_line"')
   await expect(page.getByTestId('macro-json-preview')).toContainText('"input_line"')
   await page.getByTestId('macro-tab-editor').click()
+  await openTemplateDrawer(page)
 
   const [download] = await Promise.all([
     page.waitForEvent('download'),
@@ -118,6 +166,7 @@ test("macro template workbench creates, saves, reloads, exports, imports and gua
   await page.getByTestId('macro-tab-json').click()
   await expect(page.getByTestId('macro-json-preview')).toContainText('"Review Fix Loop"')
   await page.getByTestId('macro-tab-editor').click()
+  await openTemplateDrawer(page)
 
   page.once('dialog', async (dialog) => {
     expect(dialog.type()).toBe('confirm')

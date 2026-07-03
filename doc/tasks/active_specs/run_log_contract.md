@@ -21,3 +21,7 @@ Normal pause/resume does not duplicate already event-logged terminal sends. V0 d
 ## Node Logs
 
 Node logs group events by macro step. Parallel lane events include `laneId` and `laneStepId` metadata so the parent `parallel_all` node can display per-lane trace.
+
+## Real-Time UI Updates
+
+RunEventStore append is the single notification source. After any event append succeeds, the server broadcasts `run_log_updated` with `configId`, `runId`, `eventSeq`, and `kind`. UI views use this signal to refresh the selected run and run list. Manual refresh is a debug/recovery path, not the normal way to observe run progress.

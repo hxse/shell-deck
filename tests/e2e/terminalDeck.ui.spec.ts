@@ -76,6 +76,24 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
   await first.getByTestId('terminal-tab').first().dragTo(first.getByTestId('terminal-tab').nth(1))
   await expect(second.getByTestId('terminal-tab').nth(1)).toHaveAttribute('data-terminal-id', terminalId!)
 
+
+  first.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('Close terminal')
+    await dialog.dismiss()
+  })
+  const createdTab = first.locator('[data-testid="terminal-tab"][data-terminal-id="' + createdTerminalId + '"]')
+  await createdTab.getByTestId('terminal-tab-close').click()
+  await expect(first.getByTestId('terminal-tab')).toHaveCount(3)
+
+  first.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('Close terminal')
+    await dialog.accept()
+  })
+  await createdTab.getByTestId('terminal-tab-close').click()
+  await expect(first.getByTestId('terminal-tab')).toHaveCount(2)
+  await expect(second.getByTestId('terminal-tab')).toHaveCount(2)
+  await expect(late.getByTestId('terminal-tab')).toHaveCount(2)
+  await expect(first.locator('[data-testid="terminal-tab"][data-terminal-id="' + createdTerminalId + '"]')).toHaveCount(0)
   await context.close()
 })
 

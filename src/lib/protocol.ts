@@ -1,3 +1,4 @@
+import type { RunEventKind } from './runLog/runEventTypes'
 import type { WorkspaceUiLayout } from './workspace/uiLayoutTypes'
 export type TerminalBackendKind = 'fake' | 'real'
 export type TerminalStatus = 'starting' | 'running' | 'closed' | 'failed'
@@ -41,6 +42,14 @@ export type PromptUpdatedMessage = {
   newScope?: 'project' | 'global'
 }
 
+export type RunLogUpdatedMessage = {
+  type: 'run_log_updated'
+  configId: string
+  runId: string
+  eventSeq: number
+  kind: RunEventKind
+}
+
 export type ServerMessage =
   | { type: 'client_registered'; clientId: string; configId: string }
   | DeckSnapshot
@@ -53,6 +62,7 @@ export type ServerMessage =
   | { type: 'input_rejected'; configId: string; terminalId: string; reason: string }
   | { type: 'ui_layout_updated'; configId: string; layout: WorkspaceUiLayout }
   | PromptUpdatedMessage
+  | RunLogUpdatedMessage
 
 export type ClientMessage =
   | { type: 'create_terminal'; backend?: TerminalBackendKind; cols?: number; rows?: number }
@@ -60,6 +70,7 @@ export type ClientMessage =
   | { type: 'terminal_resize'; terminalId?: string; terminalIndex?: number; terminalAlias?: string; cols: number; rows: number }
   | { type: 'rename_terminal'; terminalId: string; terminalAlias: string }
   | { type: 'reorder_terminal'; terminalId: string; newIndex: number }
+  | { type: 'close_terminal'; terminalId?: string; terminalIndex?: number; terminalAlias?: string }
   | { type: 'reset_terminal'; terminalId?: string; terminalIndex?: number; terminalAlias?: string; backend?: TerminalBackendKind }
   | { type: 'request_replay'; terminalId?: string; terminalIndex?: number; terminalAlias?: string }
   | { type: 'request_snapshot' }

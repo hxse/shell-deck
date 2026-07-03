@@ -11,7 +11,7 @@ test('ui layout store returns defaults and persists config-scoped panel state', 
     expect(store.read('local')).toEqual({
       schemaVersion: 1,
       panels: {
-        macro: { visible: true, widthPx: 420 },
+        macro: { visible: true, widthPx: 760 },
         prompt: { visible: false, widthPx: 360 },
       },
     })

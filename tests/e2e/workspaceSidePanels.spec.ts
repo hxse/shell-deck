@@ -56,8 +56,8 @@ test('workspace side panels persist layout and prompt library supports CRUD sear
   await expect(first.getByTestId('prompt-list-item')).toContainText(['Review Task Prompt'])
   await first.getByTestId('prompt-search').fill('')
 
-  await first.getByTestId('prompt-list-item').filter({ hasText: 'Review Task Prompt' }).click()
-  await expect(first.getByTestId('prompt-preview')).toContainText('P1/P2/P3')
+  await selectPromptByTitle(first, 'Review Task Prompt')
+  await expect(first.getByTestId('prompt-body')).toHaveValue('审查当前任务，只输出 P1/P2/P3。')
   await first.getByTestId('prompt-copy').click()
   await expect(first.getByText('Copied')).toBeVisible()
   await expect.poll(async () => await first.evaluate(() => navigator.clipboard.readText())).toContain('P1/P2/P3')
@@ -71,7 +71,7 @@ test('workspace side panels persist layout and prompt library supports CRUD sear
   await expect(first.getByTestId('prompt-list-item')).toHaveCount(1)
   await expect(first.getByTestId('prompt-list-item')).toContainText(['Global Fix Prompt'])
 
-  await first.getByTestId('prompt-list-item').filter({ hasText: 'Global Fix Prompt' }).click()
+  await selectPromptByTitle(first, 'Global Fix Prompt')
   await expect(first.getByTestId('prompt-title')).toHaveValue('Global Fix Prompt')
   await first.getByTestId('prompt-title').fill('Global Fix Prompt Updated')
   await first.getByTestId('prompt-save').click()
@@ -93,6 +93,13 @@ test('workspace side panels persist layout and prompt library supports CRUD sear
 
   await context.close()
 })
+
+async function selectPromptByTitle(page: { getByTestId: (id: string) => any }, title: string) {
+  const selector = page.getByTestId('prompt-selector')
+  const value = await selector.locator('option').filter({ hasText: title }).first().getAttribute('value')
+  expect(value).toBeTruthy()
+  await selector.selectOption(value!)
+}
 
 async function expectWithinViewport(page: { viewportSize: () => { width: number; height: number } | null; getByTestId: (id: string) => { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null> } }, testId: string) {
   const box = await page.getByTestId(testId).boundingBox()
@@ -127,7 +134,7 @@ test('prompt panel moves saved prompts across scopes and broadcasts global promp
   await second.getByTestId('prompt-panel-toggle').click()
 
   await first.getByTestId('prompt-scope-filter').selectOption('project')
-  await first.getByTestId('prompt-list-item').filter({ hasText: 'Move Scope Prompt' }).click()
+  await selectPromptByTitle(first, 'Move Scope Prompt')
   await first.getByTestId('prompt-edit-scope').selectOption('global')
   await first.getByTestId('prompt-body').fill('global moved body')
   await first.getByTestId('prompt-save').click()
@@ -139,7 +146,7 @@ test('prompt panel moves saved prompts across scopes and broadcasts global promp
   await expect(first.getByTestId('prompt-list-item')).toHaveCount(0)
   await first.getByTestId('prompt-scope-filter').selectOption('global')
   await expect(first.getByTestId('prompt-list-item')).toContainText(['Move Scope Prompt'])
-  await first.getByTestId('prompt-list-item').filter({ hasText: 'Move Scope Prompt' }).click()
+  await selectPromptByTitle(first, 'Move Scope Prompt')
   await expect(first.getByTestId('prompt-body')).toHaveValue('global moved body')
 
   await second.getByTestId('prompt-scope-filter').selectOption('global')
@@ -177,7 +184,7 @@ test('prompt panel refreshes selected prompt on remote update and protects dirty
 
   await page.goto('/?configId=' + configId)
   await page.getByTestId('prompt-panel-toggle').click()
-  await page.getByTestId('prompt-list-item').filter({ hasText: 'Remote Prompt' }).click()
+  await selectPromptByTitle(page, 'Remote Prompt')
   await expect(page.getByTestId('prompt-body')).toHaveValue('first body')
 
   await request.put('/api/configs/' + configId + '/prompts/remote_prompt', {
@@ -216,7 +223,7 @@ test('prompt panel preserves selected scope when project and global share prompt
 
   await page.goto('/?configId=' + configId)
   await page.getByTestId('prompt-panel-toggle').click()
-  await page.getByTestId('prompt-list-item').filter({ hasText: 'Same Project Prompt' }).click()
+  await selectPromptByTitle(page, 'Same Project Prompt')
   await expect(page.getByTestId('prompt-edit-scope')).toHaveValue('project')
   await expect(page.getByTestId('prompt-body')).toHaveValue('project same body')
 
@@ -252,7 +259,7 @@ test('prompt delete uses saved scope when draft scope is changed but unsaved', a
 
   await page.goto('/?configId=' + configId)
   await page.getByTestId('prompt-panel-toggle').click()
-  await page.getByTestId('prompt-list-item').filter({ hasText: 'Delete Project Prompt' }).click()
+  await selectPromptByTitle(page, 'Delete Project Prompt')
   await page.getByTestId('prompt-edit-scope').selectOption('global')
   await expect(page.getByTestId('prompt-edit-scope')).toHaveValue('global')
 
@@ -266,14 +273,14 @@ test('prompt delete uses saved scope when draft scope is changed but unsaved', a
   await expect(page.getByTestId('prompt-list-item')).toHaveCount(0)
   await page.getByTestId('prompt-scope-filter').selectOption('global')
   await expect(page.getByTestId('prompt-list-item')).toContainText(['Delete Global Prompt'])
-  await page.getByTestId('prompt-list-item').filter({ hasText: 'Delete Global Prompt' }).click()
+  await selectPromptByTitle(page, 'Delete Global Prompt')
   await expect(page.getByTestId('prompt-body')).toHaveValue('global delete body')
 
   await context.close()
 })
 
 test('workspace side panel widths sync, reset, and remain visible at narrow desktop width', async ({ browser, request }) => {
-  const context = await browser.newContext({ viewport: { width: 1080, height: 760 } })
+  const context = await browser.newContext({ viewport: { width: 1400, height: 760 } })
   const first = await context.newPage()
   const second = await context.newPage()
   const configId = 'workspace-panel-width-e2e'
@@ -297,12 +304,14 @@ test('workspace side panel widths sync, reset, and remain visible at narrow desk
   await expect.poll(async () => await panelWidth(second, 'macro-side-panel')).toBeGreaterThan(macroWidthBefore + 30)
 
   await first.getByTestId('macro-reset-width').click()
-  await expect.poll(async () => Math.round(await panelWidth(first, 'macro-side-panel'))).toBeGreaterThanOrEqual(360)
-  await expect.poll(async () => Math.round(await panelWidth(first, 'macro-side-panel'))).toBeLessThanOrEqual(422)
-  await expect.poll(async () => Math.round(await panelWidth(second, 'macro-side-panel'))).toBeGreaterThanOrEqual(360)
-  await expect.poll(async () => Math.round(await panelWidth(second, 'macro-side-panel'))).toBeLessThanOrEqual(422)
+  await expect.poll(async () => Math.round(await panelWidth(first, 'macro-side-panel'))).toBeGreaterThanOrEqual(420)
+  await expect.poll(async () => Math.round(await panelWidth(first, 'macro-side-panel'))).toBeLessThanOrEqual(762)
+  await expect.poll(async () => Math.round(await panelWidth(second, 'macro-side-panel'))).toBeGreaterThanOrEqual(420)
+  await expect.poll(async () => Math.round(await panelWidth(second, 'macro-side-panel'))).toBeLessThanOrEqual(762)
   await expect.poll(async () => Math.abs(Math.round(await panelWidth(first, 'macro-side-panel')) - Math.round(await panelWidth(second, 'macro-side-panel')))).toBeLessThanOrEqual(1)
 
+  await first.setViewportSize({ width: 1080, height: 760 })
+  await second.setViewportSize({ width: 1080, height: 760 })
   await expect.poll(async () => await panelWidth(first, 'terminal-deck')).toBeGreaterThan(230)
   await expectWithinViewport(first, 'macro-side-panel')
   await expectWithinViewport(first, 'prompt-side-panel')

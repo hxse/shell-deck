@@ -261,8 +261,14 @@ export class TerminalDeckManager {
   }
 
   closeTerminal(configId: string, ref: TerminalRef | string | number) {
+    const config = this.configOrThrow(configId)
     const terminal = this.resolveTerminal(configId, ref)
+    config.terminals.delete(terminal.terminalId)
+    config.store.removeTerminal(terminal.terminalId)
     terminal.backend.close()
+    this.broadcastIndexMap(configId)
+    this.broadcast(configId, this.deckSnapshot(configId))
+    return { ok: true as const }
   }
 
   requestReplay(configId: string, ref: TerminalRef | string | number): ServerMessage {

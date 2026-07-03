@@ -1,7 +1,8 @@
 <script lang="ts">
-  import type { TerminalIndexMapItem, TerminalSnapshot } from '../protocol'
+  import type { RunLogUpdatedMessage, TerminalIndexMapItem, TerminalSnapshot } from '../protocol'
   import { MacroTemplateClient } from '../macro/macroTemplateClient'
   import { MacroRunnerClient } from '../macro/macroRunnerClient'
+  import RunLogView from './RunLogView.svelte'
   import type { ProfileCatalogSummary, ProfileSummary, SignalSummary } from '../macro/profileCatalogSummary'
   import { validateMacroTemplate } from '../macro/templateSchema'
   import type { MacroRunnerSnapshot } from '../macro/runnerTypes'
@@ -18,11 +19,13 @@
 
   type WaitMode = Extract<MacroStep, { type: 'wait' }>['mode']
 
-  let { configId, terminals, indexMap, onResetWidth } = $props<{
+  let { configId, terminals, indexMap, onResetWidth, runLogRefreshToken = 0, runLogRefreshEvent = null } = $props<{
     configId: string
     terminals: TerminalSnapshot[]
     indexMap: TerminalIndexMapItem[]
     onResetWidth?: () => void
+    runLogRefreshToken?: number
+    runLogRefreshEvent?: RunLogUpdatedMessage | null
   }>()
 
   let loadedConfigId = $state('')
@@ -30,15 +33,18 @@
   let templates = $state<TemplateSummary[]>([])
   let draft = $state<MacroTemplate | null>(null)
   let selectedTemplateId = $state<string | null>(null)
+  let templateSearch = $state('')
   let statusText = $state('')
   let errorText = $state<string | null>(null)
   let importInput = $state<HTMLInputElement | null>(null)
-  let macroView = $state<'editor' | 'json'>('editor')
+  let macroView = $state<'editor' | 'json' | 'trace'>('editor')
   let runner = $state<MacroRunnerSnapshot | null>(null)
   let runnerInput = $state('')
 
   const validation = $derived(draft ? validateMacroTemplate(draft, { indexMap }) : { ok: true, issues: [] })
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
+  const filteredTemplates = $derived(templates.filter((template) => !templateSearch.trim() || template.name.toLowerCase().includes(templateSearch.trim().toLowerCase()) || template.id.toLowerCase().includes(templateSearch.trim().toLowerCase())))
+  const selectedTemplateName = $derived(templates.find((template) => template.id === selectedTemplateId)?.name ?? draft?.name ?? null)
 
   $effect(() => {
     if (loadedConfigId !== configId) {
@@ -522,130 +528,98 @@
 
 <aside class="macro-panel" data-testid="macro-panel">
   <div class="macro-header">
-    <div>
-      <h2>Macro</h2>
-      <p>{statusText || 'Template workbench'}</p>
-    </div>
-    <div class="inline-actions">
-      <button type="button" data-testid="macro-reset-width" onclick={() => onResetWidth?.()}>Reset width</button>
-      <button type="button" data-testid="macro-create" onclick={createTemplate}>New</button>
-    </div>
-  </div>
-
-  <div class="macro-run-controls" data-testid="macro-run-controls">
-    <button type="button" data-testid="macro-control-start" title="Start selected template" onclick={() => macroControl('start')}>Start</button>
-    <button type="button" data-testid="macro-control-pause" title="Pause active run" onclick={() => macroControl('pause')}>Pause</button>
-    <button type="button" data-testid="macro-control-resume" title="Resume paused run" onclick={() => macroControl('resume')}>Resume</button>
-    <button type="button" data-testid="macro-control-stop" title="Stop active run" onclick={() => macroControl('stop')}>Stop</button>
-  </div>
-
-  <section class="macro-run-status" data-testid="macro-run-status">
-    <div>
-      <strong>{runner?.status ?? 'idle'}</strong>
-      <span>{runner?.runId ?? 'no active run'}</span>
-      {#if runner?.currentStepId}<span>step: {runner.currentStepId}</span>{/if}
-      {#if runner?.pauseReason}<span>{runner.pauseReason.message}</span>{/if}
-    </div>
-    <button type="button" data-testid="macro-run-refresh" onclick={refreshRunner}>Refresh</button>
-    {#if runner?.waitingInput}
-      <div class="runner-input-line" data-testid="macro-run-input">
-        <label>{runner.waitingInput.prompt}
-          <input data-testid="macro-run-input-text" bind:value={runnerInput} onkeydown={(event) => { if (event.key === 'Enter') submitRunnerInput() }} />
+    <h2>Macro</h2>
+    <details class="macro-template-drawer" data-testid="macro-template-drawer">
+    <summary data-testid="macro-template-summary">
+      <span>Template</span>
+      <strong>{selectedTemplateName ?? 'No template selected'}</strong>
+      <small>{templates.length} saved · {draft ? draft.steps.length + ' steps' : 'empty'}</small>
+    </summary>
+    </details>
+    <div class="macro-template-drawer-body">
+      <div class="template-selector" data-testid="macro-template-selector">
+        <label>Search
+          <input data-testid="macro-template-search" value={templateSearch} oninput={(event) => { templateSearch = event.currentTarget.value }} placeholder="template name" />
         </label>
-        <button type="button" data-testid="macro-run-input-submit" onclick={submitRunnerInput}>Send</button>
+        <label>Select
+          <select data-testid="macro-template-select" value={selectedTemplateId ?? ''} onchange={(event) => { if (event.currentTarget.value) selectTemplate(event.currentTarget.value) }}>
+            <option value="">{filteredTemplates.length === 0 ? 'No templates' : 'Select template'}</option>
+            {#each filteredTemplates as template (template.id)}
+              <option data-testid="macro-template-item" value={template.id}>{template.name} · {template.stepCount} steps</option>
+            {/each}
+          </select>
+        </label>
       </div>
-    {/if}
-  </section>
-
-  <div class="macro-tabs" role="tablist" aria-label="Macro views">
-    <button type="button" role="tab" aria-selected={macroView === 'editor'} class:active={macroView === 'editor'} data-testid="macro-tab-editor" onclick={() => { macroView = 'editor' }}>Editor</button>
-    <button type="button" role="tab" aria-selected={macroView === 'json'} class:active={macroView === 'json'} data-testid="macro-tab-json" onclick={() => { macroView = 'json' }}>JSON</button>
+      <div class="inline-actions template-toolbar" data-testid="macro-template-actions">
+        <button type="button" data-testid="macro-create" onclick={createTemplate}>New</button>
+        <button type="button" data-testid="macro-save" onclick={saveTemplate} disabled={!draft}>Save</button>
+        <button type="button" data-testid="macro-duplicate" onclick={duplicateTemplate} disabled={!draft}>Duplicate</button>
+        <button type="button" data-testid="macro-import" onclick={() => importInput?.click()}>Import</button>
+        <button type="button" data-testid="macro-export" onclick={exportTemplate} disabled={!draft}>Export</button>
+        <button type="button" data-testid="macro-delete" onclick={deleteTemplate} disabled={!draft}>Delete</button>
+        <input class="hidden-file" data-testid="macro-import-file" type="file" accept="application/json,.json" bind:this={importInput} onchange={importTemplate} />
+      </div>
+      {#if draft}
+        <div class="template-metadata" data-testid="macro-template-metadata">
+          <label>Name
+            <input data-testid="macro-name" value={draft.name} oninput={(event) => updateDraft((template) => { template.name = event.currentTarget.value })} />
+          </label>
+          <label>Description
+            <textarea value={draft.description} oninput={(event) => updateDraft((template) => { template.description = event.currentTarget.value })}></textarea>
+          </label>
+          <code>{draft.id}</code>
+        </div>
+      {/if}
+    </div>
+    <button type="button" data-testid="macro-reset-width" onclick={() => onResetWidth?.()}>Reset width</button>
   </div>
 
   {#if errorText}
     <div class="macro-error" role="alert">{errorText}</div>
   {/if}
 
-  {#if macroView === 'editor'}
-    <section class="macro-section">
-      <div class="macro-section-title">
-        <h3>Templates</h3>
-      </div>
-      <div class="template-list" data-testid="macro-template-list">
-        {#each templates as template (template.id)}
-          <button type="button" class:active={template.id === selectedTemplateId} data-testid="macro-template-item" onclick={() => selectTemplate(template.id)}>
-            <span>{template.name}</span>
-            <small>{template.stepCount} steps</small>
-          </button>
-        {/each}
-        {#if templates.length === 0}<p class="empty-text">No templates yet.</p>{/if}
-      </div>
-      <div class="inline-actions" data-testid="macro-template-actions">
-        <button type="button" data-testid="macro-save" onclick={saveTemplate} disabled={!draft}>Save</button>
-        <button type="button" onclick={duplicateTemplate} disabled={!draft}>Duplicate</button>
-        <button type="button" data-testid="macro-import" onclick={() => importInput?.click()}>Import</button>
-        <button type="button" data-testid="macro-export" onclick={exportTemplate} disabled={!draft}>Export</button>
-        <button type="button" data-testid="macro-delete" onclick={deleteTemplate} disabled={!draft}>Delete</button>
-        <input class="hidden-file" data-testid="macro-import-file" type="file" accept="application/json,.json" bind:this={importInput} onchange={importTemplate} />
-      </div>
-    </section>
+  <div class="macro-sticky-head" data-testid="macro-sticky-head">
+    <div class="macro-top-dock" data-testid="macro-top-dock">
 
-    {#if draft}
-      <section class="macro-section">
-        <div class="macro-section-title">
-          <h3>Template</h3>
+
+      <section class="macro-run-status macro-run-status-dock" data-testid="macro-run-status">
+      <div>
+        <strong>{runner?.status ?? 'idle'}</strong>
+        <span>{runner?.runId ?? 'no active run'}</span>
+        {#if statusText}<span>{statusText}</span>{/if}
+        {#if runner?.currentStepId}<span>step: {runner.currentStepId}</span>{/if}
+        {#if runner?.pauseReason}<span>{runner.pauseReason.message}</span>{/if}
+      </div>
+      <details class="macro-debug-refresh" data-testid="macro-debug-refresh">
+        <summary>Debug</summary>
+        <button type="button" data-testid="macro-run-refresh" onclick={refreshRunner}>Refresh</button>
+      </details>
+      {#if runner?.waitingInput}
+        <div class="runner-input-line" data-testid="macro-run-input">
+          <label>{runner.waitingInput.prompt}
+            <input data-testid="macro-run-input-text" bind:value={runnerInput} onkeydown={(event) => { if (event.key === 'Enter') submitRunnerInput() }} />
+          </label>
+          <button type="button" data-testid="macro-run-input-submit" onclick={submitRunnerInput}>Send</button>
         </div>
-        <label>Name
-          <input data-testid="macro-name" value={draft.name} oninput={(event) => updateDraft((template) => { template.name = event.currentTarget.value })} />
-        </label>
-        <label>Description
-          <textarea value={draft.description} oninput={(event) => updateDraft((template) => { template.description = event.currentTarget.value })}></textarea>
-        </label>
-        <code>{draft.id}</code>
+      {/if}
       </section>
+    </div>
 
+    <div class="macro-tabs" role="tablist" aria-label="Macro views">
+    <button type="button" role="tab" aria-selected={macroView === 'editor'} class:active={macroView === 'editor'} data-testid="macro-tab-editor" onclick={() => { macroView = 'editor' }}>Editor</button>
+    <button type="button" role="tab" aria-selected={macroView === 'json'} class:active={macroView === 'json'} data-testid="macro-tab-json" onclick={() => { macroView = 'json' }}>JSON</button>
+    <button type="button" role="tab" aria-selected={macroView === 'trace'} class:active={macroView === 'trace'} data-testid="macro-tab-trace" onclick={() => { macroView = 'trace' }}>Trace</button>
+  </div>
+  </div>
+
+  {#if macroView === 'trace'}
+    <RunLogView {configId} refreshToken={runLogRefreshToken} refreshEvent={runLogRefreshEvent} templateId={selectedTemplateId} templateName={selectedTemplateName} />
+  {:else if macroView === 'editor'}
+    <div class="macro-editor-layout" data-testid="macro-editor-layout">
+      <div class="macro-editor-main" data-testid="macro-editor-main">
+        {#if draft}
       <section class="macro-section">
         <div class="macro-section-title"><h3>Steps</h3></div>
-        <div class="step-palette-grid">
-          <div class="step-palette" data-testid="macro-actions-palette">
-            <div class="palette-heading"><span>Actions</span><small>do work</small></div>
-            <div class="step-actions">
-              <button type="button" data-testid="add-step-send" onclick={() => addStep('send_line')}>send_line</button>
-              <button type="button" data-testid="add-step-sleep" onclick={() => addStep('sleep')}>sleep</button>
-              <button type="button" data-testid="add-step-input" onclick={() => addStep('input_line')}>input_line</button>
-              <button type="button" data-testid="add-step-wait" onclick={() => addStep('wait')}>wait</button>
-              <button type="button" data-testid="add-step-capture" onclick={() => addStep('capture-source')}>capture</button>
-              <button type="button" data-testid="add-step-parse" onclick={() => addStep('parse')}>parse</button>
-              <button type="button" data-testid="add-step-parallel" onclick={() => addStep('parallel_all')}>parallel_all</button>
-            </div>
-          </div>
-
-          <div class="step-palette flow-palette" data-testid="macro-flow-palette">
-            <div class="palette-heading"><span>Flow</span><small>structured V2</small></div>
-            <div class="step-actions flow-v2-actions">
-              <button type="button" class="flow-v2-button" data-testid="flow-v2-if" disabled title="Flow V2 block editor is not wired to the v1 runner yet">if</button>
-              <button type="button" class="flow-v2-button" data-testid="flow-v2-elif" disabled title="Flow V2 block editor is not wired to the v1 runner yet">elif</button>
-              <button type="button" class="flow-v2-button" data-testid="flow-v2-else" disabled title="Flow V2 block editor is not wired to the v1 runner yet">else</button>
-              <button type="button" class="flow-v2-button" data-testid="flow-v2-for" disabled title="Flow V2 block editor is not wired to the v1 runner yet">for</button>
-              <button type="button" class="flow-v2-button" data-testid="flow-v2-break" disabled title="Flow V2 block editor is not wired to the v1 runner yet">break</button>
-              <button type="button" class="flow-v2-button" data-testid="flow-v2-continue" disabled title="Flow V2 block editor is not wired to the v1 runner yet">continue</button>
-              <button type="button" class="flow-v2-button" data-testid="flow-v2-return" disabled title="Flow V2 block editor is not wired to the v1 runner yet">return</button>
-            </div>
-            <p class="hint">Flow V2 saves structured JSON; compiler/interpreter wiring is tracked separately.</p>
-            <details class="legacy-flow-panel" data-testid="legacy-flow-panel">
-              <summary>Legacy flow nodes</summary>
-              <div class="step-actions legacy-step-actions">
-                <button type="button" data-testid="add-step-branch" onclick={() => addStep('branch')}>branch</button>
-                <button type="button" data-testid="add-step-goto" onclick={() => addStep('goto')}>goto</button>
-                <button type="button" data-testid="add-step-pause" onclick={() => addStep('pause')}>pause</button>
-                <button type="button" data-testid="add-step-complete" onclick={() => addStep('complete')}>complete</button>
-                <button type="button" data-testid="add-step-fail" onclick={() => addStep('fail')}>fail</button>
-                <button type="button" data-testid="add-step-stop" onclick={() => addStep('stop')}>stop</button>
-              </div>
-            </details>
-          </div>
-        </div>
-
         <div class="step-list" data-testid="macro-step-list">
           {#each draft.steps as step, index (step.id)}
             <article class="step-editor">
@@ -902,6 +876,53 @@
         {/if}
       </section>
     {/if}
+
+      </div>
+
+      <aside class="step-tool-rail" data-testid="macro-step-tool-rail" aria-label="Macro step tools">
+        <section class="rail-run-card" data-testid="macro-run-card">
+          <div class="rail-heading"><span>Run</span></div>
+          <div class="macro-run-controls rail-run-controls" data-testid="macro-run-controls">
+            <button type="button" data-testid="macro-control-start" title="Start selected template" onclick={() => macroControl('start')}>Start</button>
+            <button type="button" data-testid="macro-control-pause" title="Pause active run" onclick={() => macroControl('pause')}>Pause</button>
+            <button type="button" data-testid="macro-control-resume" title="Resume paused run" onclick={() => macroControl('resume')}>Resume</button>
+            <button type="button" data-testid="macro-control-stop" title="Stop active run" onclick={() => macroControl('stop')}>Stop</button>
+          </div>
+        </section>
+        {#if draft}
+          <div class="step-palette-grid">
+            <div class="step-palette" data-testid="macro-actions-palette">
+              <div class="palette-heading"><span>Actions</span><small>do work</small></div>
+              <div class="step-actions">
+                <button type="button" data-testid="add-step-send" title="send_line" onclick={() => addStep('send_line')}><span class="tool-icon">S</span><span class="tool-label">send</span></button>
+                <button type="button" data-testid="add-step-sleep" title="sleep" onclick={() => addStep('sleep')}><span class="tool-icon">Z</span><span class="tool-label">sleep</span></button>
+                <button type="button" data-testid="add-step-input" title="input_line" onclick={() => addStep('input_line')}><span class="tool-icon">I</span><span class="tool-label">input</span></button>
+                <button type="button" data-testid="add-step-wait" title="wait" onclick={() => addStep('wait')}><span class="tool-icon">W</span><span class="tool-label">wait</span></button>
+                <button type="button" data-testid="add-step-capture" title="capture" onclick={() => addStep('capture-source')}><span class="tool-icon">C</span><span class="tool-label">capture</span></button>
+                <button type="button" data-testid="add-step-parse" title="parse" onclick={() => addStep('parse')}><span class="tool-icon">P</span><span class="tool-label">parse</span></button>
+                <button type="button" data-testid="add-step-parallel" title="parallel_all" onclick={() => addStep('parallel_all')}><span class="tool-icon">||</span><span class="tool-label">parallel</span></button>
+              </div>
+            </div>
+
+            <div class="step-palette flow-palette" data-testid="macro-flow-palette">
+              <div class="palette-heading"><span>Flow</span><small>advanced</small></div>
+              <p class="hint" data-testid="flow-v2-hidden-note">New flow controls are not runnable yet.</p>
+              <details class="legacy-flow-panel" data-testid="legacy-flow-panel">
+                <summary>Legacy flow nodes</summary>
+                <div class="step-actions legacy-step-actions">
+                  <button type="button" data-testid="add-step-branch" title="branch" onclick={() => addStep('branch')}><span class="tool-icon">?</span><span class="tool-label">branch</span></button>
+                  <button type="button" data-testid="add-step-goto" title="goto" onclick={() => addStep('goto')}><span class="tool-icon">G</span><span class="tool-label">goto</span></button>
+                  <button type="button" data-testid="add-step-pause" title="pause" onclick={() => addStep('pause')}><span class="tool-icon">Pa</span><span class="tool-label">pause</span></button>
+                  <button type="button" data-testid="add-step-complete" title="complete" onclick={() => addStep('complete')}><span class="tool-icon">Ok</span><span class="tool-label">done</span></button>
+                  <button type="button" data-testid="add-step-fail" title="fail" onclick={() => addStep('fail')}><span class="tool-icon">!</span><span class="tool-label">fail</span></button>
+                  <button type="button" data-testid="add-step-stop" title="stop" onclick={() => addStep('stop')}><span class="tool-icon">X</span><span class="tool-label">stop</span></button>
+                </div>
+              </details>
+            </div>
+          </div>
+        {/if}
+      </aside>
+    </div>
   {:else}
     <section class="macro-section macro-json-section" data-testid="macro-json-view">
       <div class="macro-section-title">

@@ -30,7 +30,6 @@ test('parallel_all e2e runs two lanes and preserves lane events in run log', asy
   await expect(page.getByTestId('macro-template-item')).toContainText('Parallel All E2E')
   await page.getByTestId('macro-control-start').click()
   await page.waitForTimeout(250)
-  await page.getByTestId('macro-run-refresh').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed')
   await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /ECHO:ready main/)
   await page.getByTestId('terminal-tab').nth(1).click()

@@ -13,7 +13,7 @@ export type WorkspaceUiLayout = {
 export const DEFAULT_WORKSPACE_LAYOUT: WorkspaceUiLayout = {
   schemaVersion: 1,
   panels: {
-    macro: { visible: true, widthPx: 420 },
+    macro: { visible: true, widthPx: 760 },
     prompt: { visible: false, widthPx: 360 },
   },
 }

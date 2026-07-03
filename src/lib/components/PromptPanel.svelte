@@ -30,6 +30,7 @@
   let remoteNotice = $state<string | null>(null)
 
   const selectedSummary = $derived(prompts.find((prompt) => prompt.promptId === selectedPromptId && prompt.scope === selectedScope) ?? null)
+  const selectedPromptKey = $derived(selectedSummary ? promptKey(selectedSummary) : '')
 
   $effect(() => {
     if (loadedConfigId !== configId) {
@@ -116,6 +117,15 @@
       errorText = messageOf(error)
       statusText = 'Load failed'
     }
+  }
+
+  function promptKey(prompt: Pick<PromptSummary, 'scope' | 'promptId'>): string {
+    return prompt.scope + ':' + prompt.promptId
+  }
+
+  async function selectPromptByKey(key: string) {
+    const prompt = prompts.find((item) => promptKey(item) === key)
+    if (prompt) await selectPrompt(prompt)
   }
 
   async function selectPrompt(prompt: PromptSummary) {
@@ -242,7 +252,7 @@
     <div class="prompt-notice" role="status">{remoteNotice}</div>
   {/if}
 
-  <section class="prompt-section prompt-toolbar">
+  <section class="prompt-section prompt-toolbar" data-testid="prompt-toolbar">
     <label>Scope
       <select data-testid="prompt-scope-filter" bind:value={scopeFilter} onchange={reloadList}>
         <option value="all">All</option>
@@ -253,29 +263,20 @@
     <label>Search
       <input data-testid="prompt-search" bind:value={searchText} oninput={reloadList} placeholder="title, body, tag" />
     </label>
-    <div class="prompt-create-actions">
+    <label class="prompt-selector-label">Prompt
+      <select data-testid="prompt-selector" value={selectedPromptKey} onchange={(event) => selectPromptByKey(event.currentTarget.value)}>
+        <option value="">{prompts.length === 0 ? 'No prompts found' : 'Select prompt'}</option>
+        {#each prompts as prompt (prompt.scope + ':' + prompt.promptId)}
+          <option data-testid="prompt-list-item" value={promptKey(prompt)}>{prompt.title} · {prompt.scope}{#if prompt.tags?.length} · {prompt.tags.join(', ')}{/if}</option>
+        {/each}
+      </select>
+    </label>
+    <div class="prompt-editor-actions prompt-toolbar-actions" data-testid="prompt-actions">
       <button type="button" data-testid="prompt-new-project" onclick={() => createPrompt('project')}>New project</button>
       <button type="button" data-testid="prompt-new-global" onclick={() => createPrompt('global')}>New global</button>
-    </div>
-  </section>
-
-  <section class="prompt-section">
-    <div class="prompt-section-title"><h3>Browse</h3><span>{prompts.length}</span></div>
-    <div class="prompt-list" data-testid="prompt-list">
-      {#each prompts as prompt (prompt.scope + ':' + prompt.promptId)}
-        <button
-          type="button"
-          class:active={selectedSummary?.promptId === prompt.promptId && selectedSummary?.scope === prompt.scope}
-          data-testid="prompt-list-item"
-          data-prompt-id={prompt.promptId}
-          data-prompt-scope={prompt.scope}
-          onclick={() => selectPrompt(prompt)}
-        >
-          <span>{prompt.title}</span>
-          <small>{prompt.scope}{#if prompt.tags?.length} · {prompt.tags.join(', ')}{/if}</small>
-        </button>
-      {/each}
-      {#if prompts.length === 0}<p class="empty-text">No prompts found.</p>{/if}
+      <button type="button" data-testid="prompt-save" onclick={savePrompt} disabled={!draft}>Save</button>
+      <button type="button" data-testid="prompt-copy" onclick={copyPrompt} disabled={!draft}>Copy</button>
+      <button type="button" data-testid="prompt-delete" onclick={deletePrompt} disabled={!draft?.promptId}>Delete</button>
     </div>
   </section>
 
@@ -301,15 +302,7 @@
         <textarea data-testid="prompt-body" value={draft.body} oninput={(event) => updateDraft((prompt) => { prompt.body = event.currentTarget.value })}></textarea>
       </label>
       {#if draft.body.trim().length === 0}<p class="hint">Prompt body is empty.</p>{/if}
-      <div class="prompt-editor-actions">
-        <button type="button" data-testid="prompt-save" onclick={savePrompt}>Save</button>
-        <button type="button" data-testid="prompt-copy" onclick={copyPrompt}>Copy</button>
-        <button type="button" data-testid="prompt-delete" onclick={deletePrompt} disabled={!draft.promptId}>Delete</button>
-      </div>
-      <div class="prompt-preview" data-testid="prompt-preview">
-        <strong>Preview</strong>
-        <pre>{draft.body}</pre>
-      </div>
+
     {:else}
       <p class="empty-text">Select or create a prompt.</p>
     {/if}

@@ -33,6 +33,7 @@ test('parser failure pauses from GUI and leaves node log evidence', async ({ pag
   await expect(page.getByTestId('macro-run-status')).toContainText('ai_json_adapter_not_configured')
 
   await page.reload()
+  await page.getByTestId('macro-tab-trace').click()
   await expect(page.getByTestId('run-list-item')).toHaveCount(1)
   await page.getByTestId('run-list-item').first().click()
   await expect(page.getByTestId('run-derived-status')).toHaveText('paused')

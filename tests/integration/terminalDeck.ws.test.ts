@@ -29,6 +29,12 @@ test('two websocket clients share terminal output, replay and reorder map', asyn
       { index: 2, terminalId: terminal.terminalId, terminalAlias: terminal.terminalAlias },
     ])
 
+    first.ws.send(JSON.stringify({ type: 'close_terminal', terminalId: created!.terminalId }))
+    await waitFor(() => latestIndexMap(second.messages).length === 1, 1000)
+    expect(latestIndexMap(second.messages)).toEqual([
+      { index: 1, terminalId: terminal.terminalId, terminalAlias: terminal.terminalAlias },
+    ])
+
     first.ws.close()
     second.ws.close()
     late.ws.close()

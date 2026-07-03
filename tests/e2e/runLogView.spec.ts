@@ -2,6 +2,7 @@ import { expect, test } from 'playwright/test'
 
 test('run log panel creates recoverable run log, shows folded node logs and restores after reload', async ({ page }) => {
   await page.goto('/?configId=run-log-e2e')
+  await page.getByTestId('macro-tab-trace').click()
   await expect(page.getByTestId('run-log-panel')).toBeVisible()
   await expect(page.getByTestId('run-list-item')).toHaveCount(0)
 
@@ -24,12 +25,13 @@ test('run log panel creates recoverable run log, shows folded node logs and rest
   await page.getByTestId('run-artifact-ref').first().click()
   await expect(page.getByTestId('run-artifact-preview').first()).toContainText('review docs only')
 
-  await page.locator('.run-ai-trace summary').click()
+  await page.getByTestId('run-tab-ai').click()
   await expect(page.getByTestId('run-ai-trace')).toContainText('"nodeLogs"')
   await expect(page.getByTestId('run-ai-trace')).toContainText('"artifactRef"')
   await expect(page.getByTestId('run-ai-trace')).toContainText('"control_transition"')
 
   await page.reload()
+  await page.getByTestId('macro-tab-trace').click()
   await expect(page.getByTestId('run-list-item')).toHaveCount(1)
   await expect(page.getByTestId('run-derived-status')).toHaveText('paused')
   await page.getByTestId('run-node-log').nth(1).locator('summary').click()

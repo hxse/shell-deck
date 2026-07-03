@@ -7,7 +7,7 @@ shell-deck V0 is a local-first browser terminal deck plus macro runner. The desi
 ## Core Rules
 
 - One server can serve multiple config scopes.
-- Browser tabs connected to the same config see the same terminal order, terminal output, macro templates, runner state, run logs, workspace panel layout, and project prompt updates.
+- Browser tabs connected to the same config see the same terminal order, terminal output, macro templates, runner state, real-time run log updates, workspace panel layout, and project prompt updates.
 - Different configs are isolated for terminal index maps, templates, runs, AgentEvents, and artifacts.
 - V0 allows one live macro run per config. Different configs can run independently.
 - No role system, sealed prompt, or Codex pre-injected instruction is part of V0.
@@ -36,3 +36,4 @@ The default bind is `127.0.0.1`. Non-local bind requires `SHELL_DECK_ALLOW_LAN=1
 - Global `sdcodex` installation.
 - Multi-run scheduler or terminal lock scheduler inside one config.
 - Prompt auto-send, prompt variables, and prompt/macro binding.
+- Flow V2 compiler/interpreter wiring.

@@ -44,6 +44,15 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const promptStore = new PromptStore()
   const aiJsonParser = options.aiJsonParser ?? 'disabled'
   const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore, new ParserRuntime(runEventStore, { aiJsonMode: aiJsonParser }))
+  runEventStore.subscribe((update) => {
+    manager.broadcastConfigMessage(update.configId, {
+      type: 'run_log_updated',
+      configId: update.configId,
+      runId: update.runId,
+      eventSeq: update.event.eventSeq,
+      kind: update.event.kind,
+    })
+  })
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
@@ -393,6 +402,10 @@ function handleClientMessage(manager: TerminalDeckManager, configId: string, mes
   }
   if (message.type === 'reorder_terminal') {
     manager.moveTerminal(configId, message.terminalId, message.newIndex)
+    return
+  }
+  if (message.type === 'close_terminal') {
+    manager.closeTerminal(configId, refFromMessage(message))
     return
   }
   if (message.type === 'reset_terminal') {

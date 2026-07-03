@@ -132,6 +132,8 @@ export type RunSummary = {
   status: RunStatus
   eventCount: number
   updatedAt: string | null
+  templateId?: string
+  templateName?: string
 }
 
 export type ArtifactWriteResult = {
