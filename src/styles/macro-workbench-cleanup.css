@@ -1,0 +1,270 @@
+
+.template-metadata {
+  display: grid;
+  gap: 8px;
+}
+
+.template-selector {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(180px, 1.2fr);
+  gap: 8px;
+}
+
+.template-toolbar,
+.prompt-toolbar-actions {
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.macro-sticky-head {
+  position: relative;
+  top: auto;
+  z-index: 5;
+  border-bottom: 1px solid #ccd7e2;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 2px 8px rgba(28, 42, 56, 0.1);
+  backdrop-filter: blur(8px);
+}
+
+.macro-top-dock {
+  display: grid;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.macro-top-dock .macro-template-drawer,
+.macro-top-dock .macro-run-status {
+  margin: 0;
+  border: 1px solid #d7e0e8;
+  border-radius: 7px;
+  background: #fcfdfe;
+}
+
+.macro-top-dock .macro-template-drawer {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 6px;
+}
+
+.macro-top-dock .macro-run-status {
+  padding: 7px 8px;
+  border-bottom: 1px solid #d5dee7;
+}
+
+.macro-sticky-head .macro-tabs {
+  position: static;
+  top: auto;
+  z-index: auto;
+  padding: 6px 12px 8px;
+  border-bottom: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.rail-run-card {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #d5dee7;
+}
+
+.rail-heading {
+  display: grid;
+  justify-items: center;
+  padding: 3px 2px 1px;
+}
+
+.rail-heading span {
+  color: #1f3345;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.macro-debug-refresh,
+.run-log-debug {
+  position: relative;
+  color: #4d5c69;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.macro-debug-refresh summary,
+.run-log-debug summary {
+  cursor: pointer;
+}
+
+.macro-tabs,
+.run-log-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #d8e0e8;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(6px);
+}
+
+.macro-tabs button,
+.run-log-tabs button {
+  height: 32px;
+  padding: 0 8px;
+  border-color: #c0ccd7;
+  background: #f5f8fa;
+  color: #41505f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.macro-tabs button.active,
+.run-log-tabs button.active {
+  border-color: #1769aa;
+  background: #e8f3fc;
+  color: #123c63;
+  box-shadow: inset 0 -2px 0 #1769aa;
+}
+
+.macro-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.run-log-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.run-log-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.run-log-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+.run-log-debug button {
+  margin-top: 6px;
+}
+
+.compact-run-selector .run-list {
+  max-height: 132px;
+  overflow: auto;
+}
+
+.run-ai-trace pre[data-testid="run-ai-trace"] {
+  max-height: none;
+  min-height: 420px;
+}
+
+.macro-workbench-shell,
+.macro-workbench-shell > *,
+.macro-workbench-shell .run-log-panel,
+.run-log-section,
+.run-node-list,
+.event-list,
+.artifact-list,
+.run-ai-trace {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.run-log-header {
+  min-width: 0;
+}
+
+.run-log-header > div:first-child {
+  min-width: 0;
+}
+
+.run-log-actions {
+  min-width: 0;
+
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.run-log-panel pre {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prompt-toolbar {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+}
+
+.prompt-selector-label,
+.prompt-toolbar-actions {
+  grid-column: 1 / -1;
+}
+
+.prompt-panel .prompt-editor {
+  border-bottom: 0;
+}
+
+.prompt-panel textarea[data-testid="prompt-body"] {
+  min-height: 300px;
+}
+
+.macro-panel > .run-log-panel,
+.macro-panel > .macro-json-section {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 1260px) {
+  .macro-side-panel {
+    min-width: 420px;
+  }
+}
+
+/* Macro editor vertical tool rail */
+.macro-editor-layout {
+  min-width: 0;
+  min-height: 0;
+  flex: 0 1 calc(100% - 12px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  gap: 8px;
+  align-items: stretch;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding-right: 8px;
+  margin-bottom: 12px;
+}
+
+.macro-editor-layout.no-tools {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.macro-editor-main {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  overflow: auto;
+}
+
+
+.step-tool-rail {
+  position: static;
+  margin: 8px 4px 8px 0;
+  z-index: 4;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #cad5df;
+  border-radius: 7px;
+  background: #eef3f7;
+  box-shadow: 0 1px 2px rgba(28, 42, 56, 0.08);
+}

@@ -1,9 +1,8 @@
 <script lang="ts">
   import type { PromptUpdatedMessage, RunLogUpdatedMessage, ServerMessage, TerminalSnapshot } from './lib/protocol'
   import { TerminalDeckClient } from './lib/terminalDeckClient'
-  import TerminalSlot from './lib/components/TerminalSlot.svelte'
-  import MacroPanel from './lib/components/MacroPanel.svelte'
-  import PromptPanel from './lib/components/PromptPanel.svelte'
+  import NoticeStack from './lib/components/workspace/NoticeStack.svelte'
+  import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
   import { UiLayoutClient } from './lib/workspace/uiLayoutClient'
   import {
     DEFAULT_WORKSPACE_LAYOUT,
@@ -345,99 +344,36 @@
     </div>
   </header>
 
-  {#if notices.length > 0}
-    <section class="notice-stack" aria-label="Terminal notices">
-      {#each notices as notice (notice.id)}
-        <div class="notice" role="alert">
-          <span>{notice.text}</span>
-          <button type="button" aria-label="Dismiss notice" onclick={() => dismissNotice(notice.id)}>Dismiss</button>
-        </div>
-      {/each}
-    </section>
-  {/if}
+  <NoticeStack {notices} onDismiss={dismissNotice} />
 
-  <section class="workspace-shell" data-testid="workspace-shell">
-    <div class="terminal-deck" data-testid="terminal-deck">
-      <div class="tab-strip">
-        <div class="terminal-tabs" role="tablist" aria-label="Terminal tabs">
-          {#each terminals as terminal (terminal.terminalId)}
-            <div
-              class="terminal-tab"
-              class:active={terminal.terminalId === activeTerminalId}
-              class:dragging={terminal.terminalId === draggingTerminalId}
-              role="tab"
-              tabindex="0"
-              draggable={tabDragEnabled && editingTerminalId !== terminal.terminalId}
-              aria-selected={terminal.terminalId === activeTerminalId}
-              title={terminal.terminalId}
-              data-testid="terminal-tab"
-              data-terminal-id={terminal.terminalId}
-              data-terminal-alias={terminal.terminalAlias}
-              onclick={() => selectTerminal(terminal.terminalId)}
-              onkeydown={(event) => tabKeydown(event, terminal)}
-              ondragstart={(event) => startDrag(event, terminal.terminalId)}
-              ondragover={(event) => event.preventDefault()}
-              ondrop={(event) => dropOnTab(event, terminal)}
-              ondragend={() => { draggingTerminalId = null }}
-              ondblclick={() => startRename(terminal)}
-            >
-              <span class="tab-index">{terminal.terminalIndex}</span>
-              {#if editingTerminalId === terminal.terminalId}
-                <input
-                  class="tab-alias-input"
-                  data-testid="terminal-alias-input"
-                  bind:value={aliasDraft}
-                  onkeydown={(event) => aliasKeydown(event, terminal)}
-                  onblur={() => commitRename(terminal)}
-                  onclick={(event) => event.stopPropagation()}
-                />
-              {:else}
-                <span class="tab-alias">{terminal.terminalAlias}</span>
-              {/if}
-              <span class="tab-kind">{terminal.backend}</span>
-              <button
-                type="button"
-                class="tab-close"
-                data-testid="terminal-tab-close"
-                aria-label={'Close terminal ' + terminal.terminalAlias}
-                title="Close terminal"
-                onpointerdown={(event) => event.stopPropagation()}
-                onclick={(event) => closeTerminalTab(event, terminal)}
-              >x</button>
-            </div>
-          {/each}
-        </div>
-      </div>
-
-      {#if aliasError}
-        <div class="alias-error" role="alert">{aliasError}</div>
-      {/if}
-
-      <div class="terminal-stage">
-        {#if activeTerminal}
-          {#key activeTerminal.terminalId}
-            <TerminalSlot terminal={activeTerminal} client={client} />
-          {/key}
-        {/if}
-      </div>
-    </div>
-
-    {#if layout.panels.macro.visible}
-      <section class="workspace-side-panel macro-side-panel" data-testid="macro-side-panel" style={`width: ${layout.panels.macro.widthPx}px`}>
-        <div class="panel-resize-handle" data-testid="macro-resize-handle" role="separator" aria-orientation="vertical" onpointerdown={(event) => beginPanelResize('macro', event)}></div>
-        <div class="side-panel-scroll macro-workbench-shell" data-testid="macro-workbench-shell">
-          <MacroPanel {configId} {terminals} {indexMap} onResetWidth={() => resetPanelWidth('macro')} runLogRefreshToken={runLogRefreshToken} runLogRefreshEvent={runLogRefreshEvent} />
-        </div>
-      </section>
-    {/if}
-
-    {#if layout.panels.prompt.visible}
-      <section class="workspace-side-panel prompt-side-panel" data-testid="prompt-side-panel" style={`width: ${layout.panels.prompt.widthPx}px`}>
-        <div class="panel-resize-handle" data-testid="prompt-resize-handle" role="separator" aria-orientation="vertical" onpointerdown={(event) => beginPanelResize('prompt', event)}></div>
-        <div class="side-panel-scroll">
-          <PromptPanel {configId} refreshToken={promptRefreshToken} refreshEvent={promptRefreshEvent} onResetWidth={() => resetPanelWidth('prompt')} />
-        </div>
-      </section>
-    {/if}
-  </section>
+  <WorkspaceShell
+    {configId}
+    {client}
+    {terminals}
+    {indexMap}
+    {activeTerminal}
+    {activeTerminalId}
+    {draggingTerminalId}
+    {tabDragEnabled}
+    {editingTerminalId}
+    {aliasDraft}
+    {aliasError}
+    {layout}
+    {promptRefreshToken}
+    {promptRefreshEvent}
+    {runLogRefreshToken}
+    {runLogRefreshEvent}
+    onAliasDraftChange={(value: string) => { aliasDraft = value }}
+    onSelectTerminal={selectTerminal}
+    onCloseTerminal={closeTerminalTab}
+    onStartTabDrag={startDrag}
+    onDropOnTab={dropOnTab}
+    onTabDragEnd={() => { draggingTerminalId = null }}
+    onStartRename={startRename}
+    onAliasKeydown={aliasKeydown}
+    onCommitRename={commitRename}
+    onTabKeydown={tabKeydown}
+    onBeginPanelResize={beginPanelResize}
+    onResetPanelWidth={resetPanelWidth}
+  />
 </main>
