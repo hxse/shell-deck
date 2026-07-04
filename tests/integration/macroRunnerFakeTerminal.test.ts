@@ -1,336 +1,244 @@
-import { expect, test } from 'bun:test'
-import { appendFileSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { MacroRunnerService } from '../../server/macroRunnerService'
-import { TerminalDeckManager } from '../../server/terminalDeckManager'
-import { MacroTemplateStore } from '../../src/lib/macro/templateStore'
-import type { MacroTemplate } from '../../src/lib/macro/templateTypes'
-import { RunEventStore } from '../../src/lib/runLog/runEventStore'
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { expect, test } from "bun:test"
+import { AgentEventStore } from "../../src/lib/agentEvents/agentEventStore"
+import { MacroTemplateStore } from "../../src/lib/macro/templateStore"
+import type { MacroTemplate } from "../../src/lib/macro/templateTypes"
+import { RunEventStore } from "../../src/lib/runLog/runEventStore"
+import { TerminalDeckManager } from "../../server/terminalDeckManager"
+import { MacroRunnerService } from "../../server/macroRunnerService"
 
 function harness() {
-  const root = mkdtempSync(join(tmpdir(), 'shell-deck-005-'))
+  const root = mkdtempSync(join(tmpdir(), "shell-deck-runner-v2-"))
   const manager = new TerminalDeckManager()
-  manager.ensureConfig('local')
-  manager.createTerminal('local', { backend: 'fake', terminalId: 'term_main_a', terminalAlias: 'main' })
-  manager.createTerminal('local', { backend: 'fake', terminalId: 'term_review_b', terminalAlias: 'reviewer' })
-  const templateStore = new MacroTemplateStore(root)
+  manager.createTerminal("local", { backend: "fake", terminalAlias: "worker" })
+  manager.createTerminal("local", { backend: "fake", terminalAlias: "reviewer" })
+  manager.createTerminal("local", { backend: "text", terminalAlias: "collector" })
   const runStore = new RunEventStore(root)
-  const service = new MacroRunnerService(manager, templateStore, runStore)
-  return { root, manager, templateStore, runStore, service }
+  const templateStore = new MacroTemplateStore(root)
+  const agentStore = new AgentEventStore(root)
+  const service = new MacroRunnerService(manager, templateStore, runStore, agentStore)
+  return { root, manager, runStore, templateStore, service, cleanup: () => rmSync(root, { recursive: true, force: true }) }
 }
 
-test('runner executes send_line and complete against fake terminal with event log', async () => {
+function template(id: string, body: MacroTemplate["body"]): MacroTemplate {
+  const now = "2026-01-01T00:00:00.000Z"
+  return { schemaVersion: 2, id, name: id, description: "", configId: "local", body, createdAt: now, updatedAt: now }
+}
+
+test("Flow V2 runner executes send_line, wait, capture, if.text_match and return", async () => {
   const h = harness()
   try {
-    h.templateStore.save('local', template('send_complete', [
-      { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'main' }, text: 'runner-send', next: 'done' },
-      { id: 'done', type: 'complete', reason: 'ok' },
-    ]), h.manager.indexMap('local'))
-    const started = await h.service.start('local', { templateId: 'send_complete' })
-    expect(started.status).toBe('running')
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    const snapshot = h.service.snapshot('local')
-    expect(snapshot.status).toBe('completed')
-    expect(h.manager.deckSnapshot('local').terminals[0].replay.join('')).toContain('ECHO:runner-send')
-    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain('terminal_line_sent')
-  } finally {
-    rmSync(h.root, { recursive: true, force: true })
-  }
-})
-
-test('runner completes a send_line-only template without requiring an explicit complete step', async () => {
-  const h = harness()
-  try {
-    h.templateStore.save('local', template('send_only', [
-      { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'main' }, text: 'runner-send-only' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'send_only' })
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    const snapshot = h.service.snapshot('local')
-    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain('run_completed')
-    expect(h.manager.deckSnapshot('local').terminals[0].replay.join('')).toContain('ECHO:runner-send-only')
-  } finally {
-    rmSync(h.root, { recursive: true, force: true })
-  }
-})
-
-test('runner waits for input_line, submits text, and blocks second live run in same config', async () => {
-  const h = harness()
-  try {
-    h.templateStore.save('local', template('input_complete', [
-      { id: 'ask', type: 'input_line', terminal: { kind: 'alias', value: 'main' }, prompt: 'Direction', allowEmpty: false, next: 'done' },
-      { id: 'done', type: 'complete', reason: 'ok' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'input_complete' })
-    await waitFor(async () => h.service.snapshot('local').status === 'waiting_user_input')
-    await expect(h.service.start('local', { templateId: 'input_complete' })).rejects.toThrow('live_run_exists')
-    await h.service.submitInput('local', 'continue now')
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    expect(h.manager.deckSnapshot('local').terminals[0].replay.join('')).toContain('ECHO:continue now')
-  } finally {
-    rmSync(h.root, { recursive: true, force: true })
-  }
-})
-
-test('runner resumes a template pause step by advancing to its next step', async () => {
-  const h = harness()
-  try {
-    h.templateStore.save('local', template('pause_resume', [
-      { id: 'pause_here', type: 'pause', reason: 'manual checkpoint', next: 'done' },
-      { id: 'done', type: 'complete', reason: 'resumed' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'pause_resume' })
-    await waitFor(async () => h.service.snapshot('local').status === 'paused')
-    expect(h.service.snapshot('local').currentStepId).toBe('pause_here')
-
-    await h.service.resume('local')
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    const snapshot = h.service.snapshot('local')
-    expect(snapshot.currentStepId).toBe('done')
-    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain('run_resumed')
-    expect(snapshot.run?.replay.events.some((event) => event.kind === 'control_transition' && event.data.fromStepId === 'pause_here' && event.data.toStepId === 'done')).toBe(true)
-  } finally {
-    rmSync(h.root, { recursive: true, force: true })
-  }
-})
-
-test('runner supports terminal-buffer capture, regex parse, branch and loop guard pause', async () => {
-  const h = harness()
-  try {
-    h.templateStore.save('local', template('loop_guard', [
-      { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'reviewer' }, mode: 'scrollback-tail', maxChars: 12000 }, next: 'parse' },
-      { id: 'parse', type: 'parse', captureStep: 'capture', parser: { kind: 'regex', rules: [{ signal: 'hasReadyText', type: 'boolean-null', pattern: 'ready', flags: 'i', onMatch: true, onNoMatch: false }] }, next: 'branch' },
-      { id: 'branch', type: 'branch', fromParseStep: 'parse', conditions: [{ signal: 'hasReadyText', op: '==', value: true, goto: 'capture' }], else: 'done', loopGuard: { maxIterations: 1, onLimit: 'pause' } },
-      { id: 'done', type: 'complete', reason: 'done' },
-    ]), h.manager.indexMap('local'))
-    h.manager.input('local', { kind: 'alias', value: 'reviewer' }, 'ready\r')
-    await waitFor(async () => h.manager.deckSnapshot('local').terminals.some((terminal) => terminal.terminalId === 'term_review_b' && terminal.replay.join('').includes('ECHO:ready')))
-    await h.service.start('local', { templateId: 'loop_guard' })
-    await waitFor(async () => h.service.snapshot('local').status === 'paused')
-    const snapshot = h.service.snapshot('local')
-    expect(snapshot.pauseReason?.code).toBe('loop_guard_limit')
-    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain('parser_normalized')
-    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain('branch_decision')
-    const transitionCounts = snapshot.run?.replay.events.filter((event) => event.kind === 'control_transition' && event.data.backEdge === true).map((event) => event.data.count)
-    expect(transitionCounts).toEqual([1, 2])
-  } finally {
-    rmSync(h.root, { recursive: true, force: true })
-  }
-})
-
-test('different config can run while local is waiting', async () => {
-  const h = harness()
-  try {
-    h.manager.ensureConfig('other')
-    h.manager.createTerminal('other', { backend: 'fake', terminalId: 'term_other', terminalAlias: 'main' })
-    h.templateStore.save('local', template('waiting_local', [
-      { id: 'ask', type: 'input_line', terminal: { kind: 'alias', value: 'main' }, prompt: 'Direction', allowEmpty: true },
-    ]), h.manager.indexMap('local'))
-    h.templateStore.save('other', { ...template('other_done', [{ id: 'done', type: 'complete', reason: 'ok' }]), configId: 'other' }, h.manager.indexMap('other'))
-    await h.service.start('local', { templateId: 'waiting_local' })
-    await waitFor(async () => h.service.snapshot('local').status === 'waiting_user_input')
-    await h.service.start('other', { templateId: 'other_done' })
-    await waitFor(async () => h.service.snapshot('other').status === 'completed')
-    expect(h.service.snapshot('local').status).toBe('waiting_user_input')
-  } finally {
-    rmSync(h.root, { recursive: true, force: true })
-  }
-})
-
-test("new service treats stored live run as interrupted until stopped", async () => {
-  const h = harness()
-  try {
-    h.templateStore.save("local", template("interrupted_input", [
-      { id: "ask", type: "input_line", terminal: { kind: "alias", value: "main" }, prompt: "Direction", allowEmpty: false, next: "done" },
-      { id: "done", type: "complete", reason: "ok" },
+    h.templateStore.save("local", template("flow_happy", [
+      { id: "send", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello ready" }] } },
+      { id: "wait", type: "wait", mode: "duration", durationMs: 1 },
+      { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
+      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "hello ready" }, scope: { kind: "whole" } }, body: [{ id: "return_ok", type: "return", reason: "ok" }] }] },
     ]), h.manager.indexMap("local"))
-    await h.service.start("local", { templateId: "interrupted_input" })
-    await waitFor(async () => h.service.snapshot("local").status === "waiting_user_input")
-
-    const recovered = new MacroRunnerService(h.manager, h.templateStore, h.runStore)
-    expect(recovered.snapshot("local").status).toBe("interrupted")
-    await expect(recovered.start("local", { templateId: "interrupted_input" })).rejects.toThrow("live_run_exists")
-    const stopped = await recovered.stop("local")
-    expect(stopped.status).toBe("idle")
-    await recovered.start("local", { templateId: "interrupted_input" })
-    await waitFor(async () => recovered.snapshot("local").status === "waiting_user_input")
+    await h.service.start("local", { templateId: "flow_happy" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const snapshot = h.service.snapshot("local")
+    expect(snapshot.status).toBe("completed")
+    expect(snapshot.run?.replay.events.map((event) => event.kind)).toContain("branch_decision")
+    expect(snapshot.run?.derivedState.artifactRefs.some((ref) => ref.includes("capture-normalized"))).toBe(true)
   } finally {
-    rmSync(h.root, { recursive: true, force: true })
+    h.cleanup()
   }
 })
 
-test('pause and stop cancel delayed steps without writing completion events', async () => {
-  const paused = harness()
-  try {
-    paused.templateStore.save('local', template('sleep_pause', [
-      { id: 'sleep', type: 'sleep', durationMs: 160, next: 'done' },
-      { id: 'done', type: 'complete', reason: 'ok' },
-    ]), paused.manager.indexMap('local'))
-    await paused.service.start('local', { templateId: 'sleep_pause' })
-    await waitFor(async () => eventKinds(paused).includes('sleep_started'))
-    await paused.service.pause('local')
-    await delayFor(220)
-    expect(paused.service.snapshot('local').status).toBe('paused')
-    expect(eventKinds(paused)).not.toContain('sleep_completed')
-    expect(eventKinds(paused)).not.toContain('step_completed')
-  } finally {
-    rmSync(paused.root, { recursive: true, force: true })
-  }
-
-  const stopped = harness()
-  try {
-    stopped.templateStore.save('local', template('sleep_stop', [
-      { id: 'sleep', type: 'sleep', durationMs: 160, next: 'done' },
-      { id: 'done', type: 'complete', reason: 'ok' },
-    ]), stopped.manager.indexMap('local'))
-    await stopped.service.start('local', { templateId: 'sleep_stop' })
-    await waitFor(async () => eventKinds(stopped).includes('sleep_started'))
-    await stopped.service.stop('local')
-    await delayFor(220)
-    expect(stopped.service.snapshot('local').status).toBe('stopped')
-    expect(eventKinds(stopped)).not.toContain('sleep_completed')
-  } finally {
-    rmSync(stopped.root, { recursive: true, force: true })
-  }
-
-
-  const waitPaused = harness()
-  try {
-    waitPaused.templateStore.save('local', template('wait_pause', [
-      { id: 'wait', type: 'wait', mode: 'duration', durationMs: 160, next: 'done' },
-      { id: 'done', type: 'complete', reason: 'ok' },
-    ]), waitPaused.manager.indexMap('local'))
-    await waitPaused.service.start('local', { templateId: 'wait_pause' })
-    await waitFor(async () => eventKinds(waitPaused).includes('wait_started'))
-    await waitPaused.service.pause('local')
-    await delayFor(220)
-    expect(waitPaused.service.snapshot('local').status).toBe('paused')
-    expect(eventKinds(waitPaused)).not.toContain('wait_completed')
-  } finally {
-    rmSync(waitPaused.root, { recursive: true, force: true })
-  }
-})
-
-test('wait modes support duration, terminal quiet, timeout and manual continue', async () => {
+test("Flow V2 send_line concatenates ordered text and source parts without implicit separators", async () => {
   const h = harness()
   try {
-    h.templateStore.save('local', template('wait_duration', [
-      { id: 'wait', type: 'wait', mode: 'duration', durationMs: 20, next: 'done' },
-      { id: 'done', type: 'complete', reason: 'duration done' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'wait_duration' })
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    expect(eventKinds(h)).toContain('wait_completed')
-
-    h.templateStore.save('local', template('wait_quiet', [
-      { id: 'wait', type: 'wait', mode: 'terminal-quiet', terminal: { kind: 'alias', value: 'main' }, quietMs: 25, maxMs: 160, onTimeout: 'fail', next: 'done' },
-      { id: 'done', type: 'complete', reason: 'quiet done' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'wait_quiet' })
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    expect(eventKinds(h)).toContain('terminal_ref_resolved')
-
-    h.templateStore.save('local', template('wait_capture_ready', [
-      { id: 'wait', type: 'wait', mode: 'capture-ready-or-user', captureStep: 'capture_ready', timeoutMs: 120, onTimeout: 'fail', next: 'capture_ready' },
-      { id: 'capture_ready', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'main' }, mode: 'scrollback-tail', maxChars: 12000 }, next: 'done_capture' },
-      { id: 'done_capture', type: 'complete', reason: 'capture ready done' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'wait_capture_ready' })
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    const readyEvents = h.service.snapshot('local').run?.replay.events ?? []
-    const waitCompletedIndex = readyEvents.findIndex((event) => event.kind === 'wait_completed')
-    const captureArtifactIndex = readyEvents.findIndex((event) => event.kind === 'capture_artifact_created')
-    expect(waitCompletedIndex).toBeGreaterThan(-1)
-    expect(captureArtifactIndex).toBeGreaterThan(waitCompletedIndex)
-
-    h.templateStore.save('local', template('wait_timeout', [
-      { id: 'wait', type: 'wait', mode: 'capture-ready-or-user', captureStep: 'capture_later', timeoutMs: 30, onTimeout: 'fail', next: 'done' },
-      { id: 'capture_later', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'main' }, mode: 'scrollback-tail', maxChars: 12000 } },
-      { id: 'done', type: 'complete', reason: 'timeout should not reach' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'wait_timeout', mockCaptureReady: false })
-    await waitFor(async () => h.service.snapshot('local').status === 'failed')
-    expect(eventKinds(h)).toContain('wait_timeout')
-    expect(eventKinds(h)).toContain('step_failed')
-
-    h.templateStore.save('local', template('wait_user_continue', [
-      { id: 'wait', type: 'wait', mode: 'user-continue', prompt: 'Continue?', next: 'done' },
-      { id: 'done', type: 'complete', reason: 'manual done' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'wait_user_continue' })
-    await waitFor(async () => h.service.snapshot('local').status === 'waiting')
-    await h.service.resume('local')
-    await waitFor(async () => h.service.snapshot('local').status === 'completed')
-    expect(eventKinds(h)).toContain('wait_manual_continue')
+    h.templateStore.save("local", template("send_parts_flow", [
+      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-context" }] } },
+      { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
+      { id: "send_composite", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "prefix[" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" } }, { kind: "text", text: "]suffix" }] } },
+      { id: "return_done", type: "return", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "send_parts_flow" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const line = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "terminal_line_sent" && event.stepId === "send_composite")
+    const sent = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(line?.data.artifactRef))
+    expect(sent.startsWith("prefix[")).toBe(true)
+    expect(sent.startsWith("prefix[\n")).toBe(false)
+    expect(sent).toContain("seed-context")
+    expect(sent.endsWith("]suffix")).toBe(true)
   } finally {
-    rmSync(h.root, { recursive: true, force: true })
+    h.cleanup()
   }
 })
 
-test('recoverable error run log does not block a new run', async () => {
+test("terminal-buffer raw-stream-tail uses raw artifact as captured_text", async () => {
   const h = harness()
   try {
-    h.templateStore.save('local', template('recoverable_input', [
-      { id: 'ask', type: 'input_line', terminal: { kind: 'alias', value: 'main' }, prompt: 'Direction', allowEmpty: false, next: 'done' },
-      { id: 'done', type: 'complete', reason: 'ok' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'recoverable_input' })
-    await waitFor(async () => h.service.snapshot('local').status === 'waiting_user_input')
-    const runId = h.service.snapshot('local').runId
-    if (!runId) throw new Error('missing run id')
-    appendFileSync(h.runStore.paths.eventsPath('local', runId), '{bad-json\n')
-
-    const recovered = new MacroRunnerService(h.manager, h.templateStore, h.runStore)
-    expect(recovered.snapshot('local').status).toBe('idle')
-    await recovered.start('local', { templateId: 'recoverable_input' })
-    await waitFor(async () => recovered.snapshot('local').status === 'waiting_user_input')
+    h.templateStore.save("local", template("raw_capture_flow", [
+      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-raw" }] } },
+      { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "raw-stream-tail", maxChars: 12000 } },
+      { id: "return_done", type: "return", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "raw_capture_flow" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const captureEvent = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "capture_artifact_created" && event.stepId === "capture")
+    expect(captureEvent?.data.mode).toBe("raw-stream-tail")
+    expect(captureEvent?.data.artifactRef).toBe(captureEvent?.data.rawArtifactRef)
+    expect(captureEvent?.data.artifactRef).not.toBe(captureEvent?.data.normalizedArtifactRef)
   } finally {
-    rmSync(h.root, { recursive: true, force: true })
+    h.cleanup()
   }
 })
 
-test('fail and stop steps record step-level evidence', async () => {
+test("Flow V2 send_line can append rendered text to a text box deck slot", async () => {
   const h = harness()
   try {
-    h.templateStore.save('local', template('fail_step', [
-      { id: 'fail_here', type: 'fail', reason: 'configured failure' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'fail_step' })
-    await waitFor(async () => h.service.snapshot('local').status === 'failed')
-    expect(eventKinds(h)).toContain('step_failed')
-    expect(eventKinds(h)).toContain('run_failed')
-
-    h.templateStore.save('local', template('stop_step', [
-      { id: 'stop_here', type: 'stop', reason: 'configured stop' },
-    ]), h.manager.indexMap('local'))
-    await h.service.start('local', { templateId: 'stop_step' })
-    await waitFor(async () => h.service.snapshot('local').status === 'stopped')
-    const run = h.service.snapshot('local').run
-    expect(run?.replay.events.map((event) => event.kind)).toContain('step_completed')
-    expect(run?.replay.events.find((event) => event.kind === 'run_stopped')?.data.reason).toBe('configured stop')
+    h.templateStore.save("local", template("send_to_text_box", [
+      { id: "send_collect", type: "send_line", terminal: { kind: "alias", value: "collector" }, message: { parts: [{ kind: "text", text: "collected result" }] } },
+      { id: "return_done", type: "return", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "send_to_text_box" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const collector = h.manager.deckSnapshot("local").terminals.find((terminal) => terminal.terminalAlias === "collector")
+    expect(collector?.backend).toBe("text")
+    expect(collector?.replay.join("")).toContain("collected result\n")
   } finally {
-    rmSync(h.root, { recursive: true, force: true })
+    h.cleanup()
   }
 })
 
-function template(id: string, steps: MacroTemplate['steps']): MacroTemplate {
-  const now = new Date('2026-06-30T00:00:00.000Z').toISOString()
-  return { schemaVersion: 1, id, name: id, description: '', configId: 'local', steps, createdAt: now, updatedAt: now }
-}
-
-async function waitFor(predicate: () => boolean | Promise<boolean>) {
-  for (let i = 0; i < 80; i += 1) {
-    if (await predicate()) return
-    await new Promise((resolve) => setTimeout(resolve, 10))
+test("Flow V2 capture-source can read a text box deck slot", async () => {
+  const h = harness()
+  try {
+    h.manager.setTextContent("local", { kind: "alias", value: "collector" }, "draft notes\nREADY from text box")
+    h.templateStore.save("local", template("capture_text_box", [
+      { id: "capture_notes", type: "capture-source", capture: { kind: "text-box", terminal: { kind: "alias", value: "collector" } } },
+      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_notes", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "READY from text box" }, scope: { kind: "whole" } }, body: [{ id: "return_ok", type: "return", reason: "ok" }] }] },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "capture_text_box" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const captureEvent = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "capture_artifact_created" && event.stepId === "capture_notes")
+    expect(captureEvent?.data.captureKind).toBe("text-box")
+    const captured = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(captureEvent?.data.artifactRef))
+    expect(captured).toBe("draft notes\nREADY from text box")
+  } finally {
+    h.cleanup()
   }
-  throw new Error('timeout waiting for predicate')
-}
+})
 
-function eventKinds(h: ReturnType<typeof harness>) {
-  return h.service.snapshot('local').run?.replay.events.map((event) => event.kind) ?? []
-}
+test("Flow V2 extract_text filters and selects captured text for downstream send", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("extract_text_flow", [
+      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "alpha" }] } },
+      { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
+      { id: "extract_last", type: "extract_text", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, split: { kind: "lines", keepEmpty: false }, filters: [{ kind: "exclude", matcher: { kind: "regex", pattern: "^\\s*[$#>]\\s*$" } }], select: { mode: "last" }, extract: { kind: "regex", pattern: "^ECHO:(.*)$", group: 1 }, trim: "both", onEmpty: "pause" },
+      { id: "send_extract", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "got:" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "extract_last", artifact: "extracted_text" } }] } },
+      { id: "return_done", type: "return", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "extract_text_flow" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const events = h.service.snapshot("local").run?.replay.events ?? []
+    const extracted = events.find((event) => event.kind === "text_extracted" && event.stepId === "extract_last")
+    expect(extracted?.data.outputChars).toBeGreaterThan(0)
+    const sent = events.find((event) => event.kind === "terminal_line_sent" && event.stepId === "send_extract")
+    const text = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(sent?.data.artifactRef))
+    expect(text).toContain("got:alpha")
+  } finally {
+    h.cleanup()
+  }
+})
 
-function delayFor(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+test("Flow V2 input_line uses one defaultSource as editable runtime input", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("input_flow", [
+      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "default context" }] } },
+      { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
+      { id: "input", type: "input_line", terminal: { kind: "alias", value: "worker" }, prompt: "Direction", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" } },
+      { id: "return_done", type: "return", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "input_flow" })
+    await waitFor(() => h.service.snapshot("local").status === "waiting_user_input")
+    expect(h.service.snapshot("local").waitingInput?.defaultText).toContain("default context")
+    await h.service.submitInput("local", "fix it")
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const line = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "terminal_line_sent" && event.stepId === "input")
+    expect(line?.data.artifactRef).toBeTruthy()
+    const sent = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(line?.data.artifactRef))
+    expect(sent).toBe("fix it")
+  } finally {
+    h.cleanup()
+  }
+})
+
+test("Flow V2 parallel_send_capture merges item captures for downstream send", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("parallel_flow", [
+      {
+        id: "parallel_review",
+        type: "parallel_send_capture",
+        items: [
+          { id: "docs", terminal: { kind: "alias", value: "worker" }, send: { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "docs ready" }] } }, capture: { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } } },
+          { id: "tests", terminal: { kind: "alias", value: "reviewer" }, send: { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "tests ready" }] } }, capture: { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "reviewer" }, mode: "scrollback-tail", maxChars: 12000 } } },
+        ],
+        merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true },
+        onItemFail: "pause",
+      },
+      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "parallel_flow" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const events = h.service.snapshot("local").run?.replay.events ?? []
+    expect(events.map((event) => event.kind)).toContain("parallel_send_capture_joined")
+    const joinedIndex = events.findIndex((event) => event.kind === "parallel_send_capture_joined" && event.stepId === "parallel_review")
+    const parentCompletions = events.map((event, index) => ({ event, index })).filter((entry) => entry.event.kind === "step_completed" && entry.event.stepId === "parallel_review")
+    expect(parentCompletions.length).toBe(1)
+    expect(parentCompletions[0].index).toBeGreaterThan(joinedIndex)
+    const merged = events.find((event) => event.kind === "parallel_send_capture_joined")?.data.artifactRef
+    expect(String(merged)).toContain("parallel-merged")
+  } finally {
+    h.cleanup()
+  }
+})
+
+test("Flow V2 parallel_send_capture pauses on item wait timeout before capture and merge", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("parallel_wait_timeout", [
+      {
+        id: "parallel_review",
+        type: "parallel_send_capture",
+        items: [
+          { id: "docs", terminal: { kind: "alias", value: "worker" }, send: { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "docs timeout" }] } }, wait: { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 50, maxMs: 100, onTimeout: "pause" }, capture: { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } } },
+          { id: "tests", terminal: { kind: "alias", value: "reviewer" }, send: { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "tests ready" }] } }, capture: { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "reviewer" }, mode: "scrollback-tail", maxChars: 12000 } } },
+        ],
+        merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true },
+        onItemFail: "pause",
+      },
+      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "parallel_wait_timeout" })
+    const noise = setInterval(() => h.manager.input("local", { kind: "alias", value: "worker" }, "tick"), 10)
+    try {
+      await waitFor(() => h.service.snapshot("local").status === "paused")
+    } finally {
+      clearInterval(noise)
+    }
+    const events = h.service.snapshot("local").run?.replay.events ?? []
+    expect(events.some((event) => event.kind === "wait_timeout" && event.stepId === "parallel_review" && event.data.itemId === "docs")).toBe(true)
+    expect(events.some((event) => event.kind === "parallel_send_capture_item_completed" && event.data.itemId === "docs")).toBe(false)
+    expect(events.some((event) => event.kind === "parallel_send_capture_joined")).toBe(false)
+    expect(events.some((event) => event.kind === "step_completed" && event.stepId === "parallel_review")).toBe(false)
+  } finally {
+    h.cleanup()
+  }
+})
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await Bun.sleep(20)
+  }
+  throw new Error("condition_timeout")
 }

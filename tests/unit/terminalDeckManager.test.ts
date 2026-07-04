@@ -28,6 +28,24 @@ test('fake backend fan-out, backend echo and replay', async () => {
   expect(snapshotText(late.messages, terminal.terminalId)).toContain('ECHO:hello')
 })
 
+test('text backend appends macro input, supports manual content replace and syncs snapshots', async () => {
+  const manager = new TerminalDeckManager()
+  const textBox = manager.createTerminal('local', { backend: 'text', terminalId: 'term_text_a', terminalAlias: 'collector' })
+  const a = collect(manager, 'local')
+  const b = collect(manager, 'local')
+
+  expect(textBox.backend).toBe('text')
+  expect(snapshotText(a.messages, textBox.terminalId)).toBe('')
+
+  manager.input('local', { kind: 'alias', value: 'collector' }, 'result one\r')
+  expect(outputText(a.messages, textBox.terminalId)).toContain('result one\n')
+  expect(outputText(b.messages, textBox.terminalId)).toContain('result one\n')
+
+  manager.setTextContent('local', textBox.terminalId, 'manual edit')
+  expect(snapshotText(a.messages, textBox.terminalId)).toBe('manual edit')
+  expect(snapshotText(collect(manager, 'local').messages, textBox.terminalId)).toBe('manual edit')
+})
+
 test('config isolation keeps same terminal index separate', async () => {
   const manager = new TerminalDeckManager()
   const local = manager.createTerminal('local', { backend: 'fake', terminalId: 'term_local_a' })
@@ -214,8 +232,7 @@ function outputText(messages: ServerMessage[], terminalId: string) {
 
 function snapshotText(messages: ServerMessage[], terminalId: string) {
   return messages
-    .filter((message) => message.type === 'deck_snapshot')
-    .flatMap((message) => message.terminals)
+    .flatMap((message) => message.type === 'deck_snapshot' ? message.terminals : message.type === 'terminal_snapshot' ? [message] : [])
     .filter((terminal) => terminal.terminalId === terminalId)
     .map((terminal) => terminal.replay.join(''))
     .at(-1) ?? ''

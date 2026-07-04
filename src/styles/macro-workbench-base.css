@@ -187,6 +187,20 @@
   gap: 8px;
 }
 
+.message-parts-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.message-part-row {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid #d8e0e8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
 .step-title {
   justify-content: space-between;
 }

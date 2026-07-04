@@ -209,7 +209,7 @@
       : terminal)
   }
 
-  function createTerminal(backend: 'fake' | 'real') {
+  function createTerminal(backend: 'fake' | 'real' | 'text') {
     client?.send({ type: 'create_terminal', backend })
   }
 
@@ -341,6 +341,7 @@
       </button>
       <button type="button" onclick={() => createTerminal('fake')}>New fake</button>
       <button type="button" onclick={() => createTerminal('real')}>New shell</button>
+      <button type="button" onclick={() => createTerminal('text')}>New text</button>
     </div>
   </header>
 

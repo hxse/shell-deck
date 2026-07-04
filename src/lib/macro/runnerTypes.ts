@@ -29,6 +29,7 @@ export type MacroRunnerSnapshot = {
     prompt: string
     allowEmpty: boolean
     terminalId: string
+    defaultText?: string
   }
   pauseReason: MacroRunnerPauseReason | null
   run?: RunSnapshot

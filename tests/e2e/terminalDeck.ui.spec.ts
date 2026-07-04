@@ -125,3 +125,29 @@ async function terminalViewportState(host: { evaluate: <T>(callback: (host: HTML
     }
   })
 }
+
+test('text box deck slot can be created, edited, synced and copied', async ({ browser }) => {
+  const context = await browser.newContext()
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const first = await context.newPage()
+  const second = await context.newPage()
+
+  await first.goto('/?configId=text-box-deck-e2e')
+  await first.getByRole('button', { name: 'New text' }).click()
+  await expect(first.getByTestId('terminal-tab')).toHaveCount(1)
+  await expect(first.getByTestId('terminal-tab')).toHaveAttribute('data-terminal-alias', 'terminal_1')
+  await expect(first.getByTestId('terminal-tab')).toContainText('text')
+
+  await first.getByTestId('text-box-editor').fill('collected result\nline two')
+  await expect(first.getByTestId('text-box-editor')).toHaveValue('collected result\nline two')
+
+  await second.goto('/?configId=text-box-deck-e2e')
+  await expect(second.getByTestId('terminal-tab')).toHaveCount(1)
+  await expect(second.getByTestId('text-box-editor')).toHaveValue('collected result\nline two')
+
+  await first.getByTestId('text-box-copy').click()
+  await expect(first.getByText('Copied')).toBeVisible()
+  await expect.poll(async () => await first.evaluate(() => navigator.clipboard.readText())).toBe('collected result\nline two')
+
+  await context.close()
+})

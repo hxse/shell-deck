@@ -1,17 +1,17 @@
 import { expect, type Page, test } from 'playwright/test'
 
 const template = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: 'workbench_template',
   name: 'Workbench Send Template',
   description: 'workbench e2e template',
   configId: 'workbench-ui-e2e',
   createdAt: '2026-07-03T00:00:00.000Z',
   updatedAt: '2026-07-03T00:00:00.000Z',
-  steps: [
-    { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_1' }, text: 'workbench-run', next: 'input' },
-    { id: 'input', type: 'input_line', terminal: { kind: 'alias', value: 'terminal_1' }, prompt: 'Workbench input', allowEmpty: false, next: 'done' },
-    { id: 'done', type: 'complete', reason: 'ok' },
+  body: [
+    { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_1' }, message: { parts: [{ kind: 'text', text: 'workbench-run' }] } },
+    { id: 'input', type: 'input_line', terminal: { kind: 'alias', value: 'terminal_1' }, prompt: 'Workbench input', allowEmpty: false },
+    { id: 'done', type: 'return', reason: 'ok' },
   ],
 }
 
@@ -26,6 +26,7 @@ async function expectWithinViewport(page: Page, testId: string) {
 
 test('macro prompt workbench uses selectors, grouped controls, trace tabs and live run log', async ({ page, request }) => {
   const configId = 'workbench-ui-e2e-' + Date.now()
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await request.post('/api/configs/' + configId + '/terminals?backend=fake')
   const imported = await request.post('/api/configs/' + configId + '/templates/import', { data: { ...template, configId } })
   expect(imported.status()).toBe(201)
@@ -40,6 +41,7 @@ test('macro prompt workbench uses selectors, grouped controls, trace tabs and li
   await page.getByTestId('macro-template-summary').click()
   await expect(page.getByTestId('macro-template-selector')).toBeVisible()
   await expect(page.getByTestId('macro-template-item')).toContainText(['Workbench Send Template'])
+  await page.getByTestId('macro-template-select').selectOption('workbench_template')
   await page.getByTestId('macro-template-search').fill('Send')
   await expect(page.getByTestId('macro-template-item')).toHaveCount(1)
   await expect(page.getByTestId('macro-template-actions')).toContainText('New')
@@ -53,8 +55,6 @@ test('macro prompt workbench uses selectors, grouped controls, trace tabs and li
   await page.getByTestId('macro-tab-json').click()
   await expect(page.getByTestId('macro-run-controls')).toHaveCount(0)
   await page.getByTestId('macro-tab-editor').click()
-  await expect(page.getByTestId('flow-v2-if')).toHaveCount(0)
-  await expect(page.getByTestId('flow-v2-hidden-note')).toBeHidden()
 
   await expect(page.getByTestId('run-log-panel')).toHaveCount(0)
   await page.getByTestId('macro-control-start').click()
@@ -76,6 +76,8 @@ test('macro prompt workbench uses selectors, grouped controls, trace tabs and li
   await expect(page.getByTestId('run-ai-trace')).toContainText('terminal_line_sent')
   await expect(page.getByTestId('run-ai-trace')).toContainText('user_input_requested')
   await expect(page.getByTestId('run-ai-trace')).toContainText('artifacts/send-')
+  await page.getByTestId('run-trace-copy').click()
+  await expect.poll(async () => await page.evaluate(() => navigator.clipboard.readText())).toContain('terminal_line_sent')
   await page.getByTestId('run-tab-log').click()
   const runId = (await page.getByTestId('run-list-item').first().locator('span').textContent())?.trim()
   expect(runId).toBeTruthy()

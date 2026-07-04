@@ -17,6 +17,7 @@ export const RUN_EVENT_KINDS = [
   'wait_manual_continue',
   'capture_wait_started',
   'capture_artifact_created',
+  'text_extracted',
   'terminal_line_sent',
   'user_input_requested',
   'user_input_submitted',
@@ -37,6 +38,10 @@ export const RUN_EVENT_KINDS = [
   'parallel_lane_succeeded',
   'parallel_lane_failed',
   'parallel_all_joined',
+  'parallel_send_capture_started',
+  'parallel_send_capture_item_started',
+  'parallel_send_capture_item_completed',
+  'parallel_send_capture_joined',
 ] as const
 
 export type RunEventKind = typeof RUN_EVENT_KINDS[number]

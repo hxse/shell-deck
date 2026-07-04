@@ -21,6 +21,7 @@
   let statusText = $state('Loading run logs')
   let errorText = $state<string | null>(null)
   let artifactPreview = $state<Record<string, { status: 'loading' | 'ready' | 'error'; content?: string; error?: string }>>({})
+  let copyTraceLabel = $state('Copy trace')
 
   const aiTrace = $derived(snapshot ? JSON.stringify(snapshot, null, 2) : '')
   const traceTitle = $derived(templateId ? 'Trace for ' + (templateName || templateId) : 'Trace')
@@ -117,6 +118,12 @@
     }
   }
 
+  async function copyTrace() {
+    await navigator.clipboard.writeText(aiTrace)
+    copyTraceLabel = 'Copied'
+    window.setTimeout(() => { copyTraceLabel = 'Copy trace' }, 900)
+  }
+
   async function createRun() {
     errorText = null
     try {
@@ -210,6 +217,7 @@
     <div class="run-log-actions">
       <button type="button" data-testid="run-create" onclick={createRun}>New run</button>
       <button type="button" data-testid="run-append-demo" onclick={appendDemoEvents}>Append demo</button>
+      <button type="button" data-testid="run-trace-copy" onclick={copyTrace} disabled={!snapshot}>{copyTraceLabel}</button>
       <details class="run-log-debug" data-testid="run-log-debug">
         <summary>Debug</summary>
         <button type="button" data-testid="run-log-refresh" onclick={reloadAll}>Refresh</button>

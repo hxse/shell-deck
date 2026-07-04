@@ -3,6 +3,7 @@
   import type { TerminalDeckClient } from "../../terminalDeckClient"
   import type { WorkspacePanelKey, WorkspaceUiLayout } from "../../workspace/uiLayoutTypes"
   import TerminalSlot from "../TerminalSlot.svelte"
+  import TextBoxSlot from "../TextBoxSlot.svelte"
   import MacroPanel from "../MacroPanel.svelte"
   import PromptPanel from "../PromptPanel.svelte"
   import TerminalTabBar from "./TerminalTabBar.svelte"
@@ -96,7 +97,11 @@
     <div class="terminal-stage">
       {#if activeTerminal}
         {#key activeTerminal.terminalId}
-          <TerminalSlot terminal={activeTerminal} client={client} />
+          {#if activeTerminal.backend === "text"}
+            <TextBoxSlot terminal={activeTerminal} client={client} />
+          {:else}
+            <TerminalSlot terminal={activeTerminal} client={client} />
+          {/if}
         {/key}
       {/if}
     </div>

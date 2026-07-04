@@ -126,9 +126,14 @@
   color: #8a1f1f;
 }
 
-.runner-input-line input {
+.runner-input-line .line-numbered-textarea {
   border-color: #d92d20;
   background: #ffffff;
+}
+
+.runner-input-line textarea {
+  min-height: 92px;
+  resize: vertical;
 }
 
 /* .013 workspace side panels */

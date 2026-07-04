@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
   import type { MacroRunnerSnapshot } from '../../macro/runnerTypes'
 
   let {
@@ -33,7 +34,7 @@
   {#if runner?.waitingInput}
     <div class="runner-input-line" data-testid="macro-run-input">
       <label>{runner.waitingInput.prompt}
-        <input data-testid="macro-run-input-text" value={runnerInput} oninput={(event) => onRunnerInputChange(event.currentTarget.value)} onkeydown={(event) => { if (event.key === 'Enter') onSubmitRunnerInput() }} />
+        <LineNumberedTextarea testId="macro-run-input-text" value={runnerInput} ariaLabel="Runtime input line" onInput={onRunnerInputChange} />
       </label>
       <button type="button" data-testid="macro-run-input-submit" onclick={onSubmitRunnerInput}>Send</button>
     </div>

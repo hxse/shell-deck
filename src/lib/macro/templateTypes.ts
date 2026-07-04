@@ -1,28 +1,13 @@
-import type { TerminalRef } from '../terminalIdentity'
-import type { SignalType } from './profileCatalogSummary'
+import type { TerminalRef } from "../terminalIdentity"
 
 export type TerminalTarget = TerminalRef
-export type TimeoutAction = 'pause' | 'fail'
-export type BranchOperator = '==' | '!=' | 'is_null'
-
-export type CaptureSourceConfig =
-  | {
-    kind: 'terminal-buffer'
-    terminal: TerminalTarget
-    mode: 'scrollback-tail'
-    maxChars: number
-  }
-  | {
-    kind: 'agent-event'
-    agentKind: 'codex'
-    eventKind: 'agent.output'
-    adapter: 'codex-stop-hook'
-    terminal: TerminalTarget
-  }
+export type TimeoutAction = "pause" | "fail" | "return"
+export type BranchOperator = "==" | "!=" | "is_null"
+export type SignalType = "boolean-null" | "string-enum"
 
 export type BooleanNullRegexRule = {
   signal: string
-  type: SignalType
+  type: "boolean-null"
   pattern: string
   flags?: string
   onMatch: boolean | null
@@ -30,146 +15,165 @@ export type BooleanNullRegexRule = {
 }
 
 export type ParserConfig =
-  | { kind: 'ai-json'; profileId: string }
-  | { kind: 'regex'; rules: BooleanNullRegexRule[] }
+  | { kind: "ai-json"; profileId: string }
+  | { kind: "regex"; rules: BooleanNullRegexRule[] }
 
-export type BranchCondition = {
-  signal: string
-  op: BranchOperator
-  value?: boolean
-  goto: string
+export type CaptureSourceConfig =
+  | {
+    kind: "terminal-buffer"
+    terminal: TerminalTarget
+    mode: "scrollback-tail" | "raw-stream-tail"
+    maxChars: number
+  }
+  | {
+    kind: "text-box"
+    terminal: TerminalTarget
+  }
+  | {
+    kind: "agent-event"
+    agent: { kind: "codex" }
+    terminal: TerminalTarget
+    eventKind: "stop"
+    field: "last_assistant_message"
+  }
+
+export type ArtifactName = "captured_text" | "merged_text" | "extracted_text"
+
+export type FlowV2ArtifactSource = {
+  kind: "step_artifact"
+  stepId: string
+  artifact: ArtifactName
 }
 
-export type LaneSuccessCondition = {
-  signal: string
-  op: BranchOperator
-  value?: boolean
+export type MessagePart =
+  | { kind: "text"; text: string }
+  | { kind: "artifact"; source: FlowV2ArtifactSource }
+
+export type MessageSpec = {
+  parts: MessagePart[]
 }
 
-export type LoopGuard = {
-  maxIterations: number
-  onLimit: TimeoutAction
+export type TextSplitSpec =
+  | { kind: "lines"; keepEmpty: boolean }
+  | { kind: "regex"; pattern: string; flags?: string; keepEmpty: boolean }
+
+export type TextFilterMatcher =
+  | { kind: "simple"; op: SimpleTextMatchOp; text: string }
+  | { kind: "regex"; pattern: string; flags?: string }
+
+export type TextFilterSpec = {
+  kind: "include" | "exclude"
+  matcher: TextFilterMatcher
 }
 
-export type MacroStepBase = {
+export type TextSelectSpec =
+  | { mode: "first" | "last" | "all" }
+  | { mode: "index"; index: number }
+  | { mode: "range"; start: number; end?: number }
+
+export type TextExtractSpec =
+  | { kind: "none" }
+  | { kind: "regex"; pattern: string; flags?: string; group: number | string }
+
+export type TextTrimMode = "none" | "left" | "right" | "both"
+
+export type SimpleTextMatchOp = "contains" | "not_contains" | "equals" | "not_equals" | "starts_with" | "ends_with"
+
+export type TextMatchCondition = {
+  kind: "text_match"
+  source: FlowV2ArtifactSource
+  matcher:
+    | { kind: "simple"; op: SimpleTextMatchOp; text: string }
+    | { kind: "regex"; pattern: string; flags?: string }
+  scope:
+    | { kind: "whole" }
+    | { kind: "lines"; mode: "first" | "last" | "any" | "all"; includeEmptyLines?: boolean }
+}
+
+export type SendLineNode = {
   id: string
-  type: string
-  next?: string
-  loopGuard?: LoopGuard
-}
-
-export type SendLineStep = MacroStepBase & {
-  type: 'send_line'
+  type: "send_line"
   terminal: TerminalTarget
-  text: string
+  message: MessageSpec
 }
 
-export type SleepStep = MacroStepBase & {
-  type: 'sleep'
-  durationMs: number
-}
-
-export type InputLineStep = MacroStepBase & {
-  type: 'input_line'
+export type InputLineNode = {
+  id: string
+  type: "input_line"
   terminal: TerminalTarget
   prompt: string
   allowEmpty: boolean
+  defaultSource?: FlowV2ArtifactSource
 }
 
-export type WaitStep =
-  | (MacroStepBase & { type: 'wait'; mode: 'duration'; durationMs: number; next?: string })
-  | (MacroStepBase & { type: 'wait'; mode: 'capture-ready-or-user'; captureStep: string; timeoutMs: number; onTimeout: TimeoutAction; next?: string })
-  | (MacroStepBase & { type: 'wait'; mode: 'terminal-quiet'; terminal: TerminalTarget; quietMs: number; maxMs: number; onTimeout: TimeoutAction; next?: string })
-  | (MacroStepBase & { type: 'wait'; mode: 'user-continue'; prompt: string; next?: string })
+export type WaitNode =
+  | { id: string; type: "wait"; mode: "duration"; durationMs: number }
+  | { id: string; type: "wait"; mode: "terminal-quiet"; terminal: TerminalTarget; quietMs: number; maxMs: number; onTimeout: TimeoutAction }
+  | { id: string; type: "wait"; mode: "user-continue"; prompt: string }
 
-export type CaptureSourceStep = MacroStepBase & {
-  type: 'capture-source'
+export type CaptureSourceNode = {
+  id: string
+  type: "capture-source"
   capture: CaptureSourceConfig
 }
 
-export type ParseStep = MacroStepBase & {
-  type: 'parse'
-  captureStep: string
-  parser: ParserConfig
+export type ExtractTextNode = {
+  id: string
+  type: "extract_text"
+  source: FlowV2ArtifactSource
+  split: TextSplitSpec
+  filters: TextFilterSpec[]
+  select: TextSelectSpec
+  extract: TextExtractSpec
+  trim: TextTrimMode
+  onEmpty: TimeoutAction
 }
 
-export type BranchStep = Omit<MacroStepBase, 'next'> & {
-  type: 'branch'
-  fromParseStep: string
-  conditions: BranchCondition[]
-  else?: string
-}
-
-export type GotoStep = MacroStepBase & {
-  type: 'goto'
-  goto: string
-}
-
-export type PauseStep = MacroStepBase & {
-  type: 'pause'
-  reason?: string
-}
-
-export type TerminalEndStep = Omit<MacroStepBase, 'next'> & {
-  type: 'complete' | 'fail' | 'stop'
-  reason?: string
-}
-
-export type TerminalStateStep = PauseStep | TerminalEndStep
-
-export type ParallelLaneWaitStep =
-  | { id: string; type: 'wait'; mode: 'duration'; durationMs: number }
-  | { id: string; type: 'wait'; mode: 'capture-ready-or-user'; captureStep: string; timeoutMs: number; onTimeout: TimeoutAction }
-  | { id: string; type: 'wait'; mode: 'terminal-quiet'; terminal: TerminalTarget; quietMs: number; maxMs: number; onTimeout: TimeoutAction }
-  | { id: string; type: 'wait'; mode: 'user-continue'; prompt: string }
-
-export type ParallelLaneStep =
-  | (Omit<SendLineStep, 'terminal' | 'next' | 'loopGuard'> & { terminal?: TerminalTarget })
-  | Omit<SleepStep, 'next' | 'loopGuard'>
-  | ParallelLaneWaitStep
-  | Omit<CaptureSourceStep, 'next' | 'loopGuard'>
-  | Omit<ParseStep, 'next' | 'loopGuard'>
-
-export type ParallelLane = {
+export type ParallelSendCaptureItem = {
   id: string
   terminal: TerminalTarget
-  steps: ParallelLaneStep[]
-  success: {
-    fromParseStep: string
-    mode: 'all'
-    conditions: LaneSuccessCondition[]
-  }
+  send: SendLineNode
+  wait?: Extract<WaitNode, { mode: "duration" | "terminal-quiet" }>
+  capture: CaptureSourceNode
 }
 
-export type ParallelAllStep = MacroStepBase & {
-  type: 'parallel_all'
-  lanes: ParallelLane[]
-  join: {
-    mode: 'all_success'
-    onLaneFail: TimeoutAction
-    onTimeout?: TimeoutAction
+export type ParallelSendCaptureNode = {
+  id: string
+  type: "parallel_send_capture"
+  items: ParallelSendCaptureItem[]
+  merge: {
+    kind: "sectioned_text"
+    separator: string
+    order: "item_order"
+    includeEmptyCaptures: boolean
   }
+  onItemFail: "pause" | "fail"
 }
 
-export type MacroStep =
-  | SendLineStep
-  | SleepStep
-  | InputLineStep
-  | WaitStep
-  | CaptureSourceStep
-  | ParseStep
-  | BranchStep
-  | GotoStep
-  | TerminalStateStep
-  | ParallelAllStep
+export type FlowV2ActionNode = SendLineNode | InputLineNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelSendCaptureNode
+
+export type FlowV2IfBranch = {
+  kind: "if" | "elif"
+  condition: TextMatchCondition
+  body: FlowV2Node[]
+}
+
+export type FlowV2ControlNode =
+  | { id: string; type: "if"; branches: FlowV2IfBranch[]; else?: FlowV2Node[] }
+  | { id: string; type: "for"; range: { count: number }; body: FlowV2Node[] }
+  | { id: string; type: "break"; reason?: string }
+  | { id: string; type: "continue"; reason?: string }
+  | { id: string; type: "return"; reason?: string }
+
+export type FlowV2Node = FlowV2ActionNode | FlowV2ControlNode
 
 export type MacroTemplate = {
-  schemaVersion: 1
+  schemaVersion: 2
   id: string
   name: string
   description: string
   configId: string
-  steps: MacroStep[]
+  body: FlowV2Node[]
   createdAt: string
   updatedAt: string
 }

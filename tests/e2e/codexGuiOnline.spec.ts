@@ -14,7 +14,7 @@ test('Codex-in-shell GUI smoke uses macro send_line then covers terminal-buffer 
   await page.goto('/?configId=' + configId)
   await expect(page.getByTestId('terminal-tab').first()).toContainText('real')
 
-  const codexCommand = "printf 'Reply with SD_CODEX_GUI_010 only\\n' | just -f <shell-deck-root>/justfile -- codex exec -"
+  const codexCommand = "printf 'Reply with SD_CODEX_GUI_010 only\n' | just -f <shell-deck-root>/justfile -- codex exec -"
   await importTemplate(request, codexPromptTemplate(codexCommand))
   await page.reload()
   await startTemplate(page, /Codex Macro Send Prompt/)
@@ -41,8 +41,7 @@ test('Codex-in-shell GUI smoke uses macro send_line then covers terminal-buffer 
   expect(capture?.data.captureKind).toBe('agent-event')
   expect(String(capture?.data.codexSessionId)).toMatch(/^019/)
   expect(String(capture?.data.launchId)).toMatch(/^launch_/)
-  expect(events.some((event) => event.kind === 'parser_normalized' && (event.data.signals as { codexOk?: boolean }).codexOk === true)).toBe(true)
-  expect(events.some((event) => event.kind === 'branch_decision' && event.data.selectedStepId === 'done')).toBe(true)
+  expect(events.some((event) => event.kind === 'branch_decision' && event.data.matched === true)).toBe(true)
 })
 
 async function importTemplate(request: APIRequestContext, template: Record<string, unknown>) {
@@ -65,42 +64,33 @@ async function latestRunnerEvents(request: APIRequestContext) {
 
 function codexPromptTemplate(command: string) {
   return baseTemplate('codex_macro_send_prompt_gui', 'Codex Macro Send Prompt', [
-    { id: 'send_codex_prompt', type: 'send_line', terminal, text: command },
+    { id: 'send_codex_prompt', type: 'send_line', terminal, message: { parts: [{ kind: 'text', text: command }] } },
+    { id: 'done', type: 'return', reason: 'sent' },
   ])
 }
 
 function terminalBufferTemplate() {
   return baseTemplate('codex_terminal_buffer_gui', 'Codex Terminal Buffer GUI', [
-    { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal, mode: 'scrollback-tail', maxChars: 20000 }, next: 'parse' },
-    { id: 'parse', type: 'parse', captureStep: 'capture', parser: regexParser(), next: 'branch' },
-    { id: 'branch', type: 'branch', fromParseStep: 'parse', conditions: [{ signal: 'codexOk', op: '==', value: true, goto: 'done' }], else: 'fail' },
-    { id: 'done', type: 'complete', reason: 'codex terminal-buffer ok' },
-    { id: 'fail', type: 'fail', reason: 'codex terminal-buffer missing marker' },
+    { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal, mode: 'scrollback-tail', maxChars: 20000 } },
+    { id: 'if_codex', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_CODEX_GUI_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'return', reason: 'codex terminal-buffer ok' }] }] },
   ])
 }
 
 function agentEventTemplate() {
   return baseTemplate('codex_agent_event_gui', 'Codex AgentEvent GUI', [
-    { id: 'capture', type: 'capture-source', capture: { kind: 'agent-event', terminal, agentKind: 'codex', eventKind: 'agent.output', adapter: 'codex-stop-hook' }, next: 'parse' },
-    { id: 'parse', type: 'parse', captureStep: 'capture', parser: regexParser(), next: 'branch' },
-    { id: 'branch', type: 'branch', fromParseStep: 'parse', conditions: [{ signal: 'codexOk', op: '==', value: true, goto: 'done' }], else: 'fail' },
-    { id: 'done', type: 'complete', reason: 'codex agent-event ok' },
-    { id: 'fail', type: 'fail', reason: 'codex agent-event missing marker' },
+    { id: 'capture', type: 'capture-source', capture: { kind: 'agent-event', terminal, agent: { kind: 'codex' }, eventKind: 'stop', field: 'last_assistant_message' } },
+    { id: 'if_codex', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_CODEX_GUI_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'return', reason: 'codex agent-event ok' }] }] },
   ])
 }
 
-function regexParser() {
-  return { kind: 'regex', rules: [{ signal: 'codexOk', type: 'boolean-null', pattern: 'SD_CODEX_GUI_010', flags: '', onMatch: true, onNoMatch: false }] }
-}
-
-function baseTemplate(id: string, name: string, steps: unknown[]) {
+function baseTemplate(id: string, name: string, body: unknown[]) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     name,
     description: name,
     configId,
-    steps,
+    body,
     createdAt: '2026-07-01T00:00:00.000Z',
     updatedAt: '2026-07-01T00:00:00.000Z',
   }

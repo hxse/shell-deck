@@ -1,6 +1,6 @@
 import type { RunEventKind } from './runLog/runEventTypes'
 import type { WorkspaceUiLayout } from './workspace/uiLayoutTypes'
-export type TerminalBackendKind = 'fake' | 'real'
+export type TerminalBackendKind = 'fake' | 'real' | 'text'
 export type TerminalStatus = 'starting' | 'running' | 'closed' | 'failed'
 
 export type TerminalSnapshot = {
@@ -67,6 +67,7 @@ export type ServerMessage =
 export type ClientMessage =
   | { type: 'create_terminal'; backend?: TerminalBackendKind; cols?: number; rows?: number }
   | { type: 'terminal_input'; terminalId?: string; terminalIndex?: number; terminalAlias?: string; data: string }
+  | { type: 'set_terminal_text'; terminalId?: string; terminalIndex?: number; terminalAlias?: string; content: string }
   | { type: 'terminal_resize'; terminalId?: string; terminalIndex?: number; terminalAlias?: string; cols: number; rows: number }
   | { type: 'rename_terminal'; terminalId: string; terminalAlias: string }
   | { type: 'reorder_terminal'; terminalId: string; newIndex: number }

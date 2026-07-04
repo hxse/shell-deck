@@ -225,7 +225,8 @@ async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, 
   const terminalMatch = /^\/api\/configs\/([^/]+)\/terminals$/.exec(url.pathname)
   if (terminalMatch && req.method === 'POST') {
     const configId = parseConfigId(terminalMatch[1])
-    const backend = url.searchParams.get('backend') === 'real' ? 'real' : 'fake'
+    const backendParam = url.searchParams.get('backend')
+    const backend = backendParam === 'real' ? 'real' : backendParam === 'text' ? 'text' : 'fake'
     return json(manager.createTerminal(configId, { backend }))
   }
   const templatesMatch = /^\/api\/configs\/([^/]+)\/templates$/.exec(url.pathname)
@@ -386,6 +387,10 @@ function handleClientMessage(manager: TerminalDeckManager, configId: string, mes
   }
   if (message.type === 'create_terminal') {
     manager.createTerminal(configId, { backend: message.backend ?? 'fake', cols: message.cols, rows: message.rows })
+    return
+  }
+  if (message.type === 'set_terminal_text') {
+    manager.setTextContent(configId, refFromMessage(message), message.content)
     return
   }
   if (message.type === 'terminal_input') {

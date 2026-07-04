@@ -1,123 +1,120 @@
-import { assertValidPublicId } from '../identifier'
-import type { TerminalIndexMapItem } from '../protocol'
-import type { ProfileCatalogSummary, SignalSummary } from './profileCatalogSummary'
-import { PROFILE_CATALOG_SUMMARY, profileById } from './profileCatalogSummary'
-import { validateTerminalTarget } from './terminalRef'
-import type { BooleanNullRegexRule, BranchOperator, CaptureSourceConfig, ParserConfig, TerminalTarget, ValidationIssue, ValidationResult } from './templateTypes'
-import type { FlowV2Template } from './flowV2Types'
+import { assertValidPublicId } from "../identifier"
+import type { TerminalIndexMapItem } from "../protocol"
+import { validateTerminalTarget } from "./terminalRef"
+import type {
+  CaptureSourceConfig,
+  FlowV2ArtifactSource,
+  FlowV2Node,
+  MacroTemplate,
+  ParallelSendCaptureItem,
+  TextMatchCondition,
+  ValidationIssue,
+  ValidationResult,
+} from "./templateTypes"
 
-export const FLOW_V2_ACTION_TYPES = ['send_line', 'send_artifact', 'input_line', 'sleep', 'wait', 'capture-source', 'parse', 'parallel_all', 'merge_parallel_results'] as const
-export const FLOW_V2_CONTROL_TYPES = ['if', 'for', 'break', 'continue', 'return'] as const
-export const FLOW_V2_LEGACY_TYPES = ['pause', 'stop', 'goto', 'branch', 'complete', 'fail'] as const
+export const FLOW_V2_ACTION_TYPES = ["send_line", "input_line", "wait", "capture-source", "extract_text", "parallel_send_capture"] as const
+export const FLOW_V2_CONTROL_TYPES = ["if", "for", "break", "continue", "return"] as const
+export const FLOW_V2_FORBIDDEN_TYPES = ["sleep", "parse", "send_artifact", "parallel_all", "merge_parallel_results", "pause", "stop", "goto", "branch", "complete", "fail"] as const
 
 const ACTION_TYPES = new Set<string>(FLOW_V2_ACTION_TYPES)
 const CONTROL_TYPES = new Set<string>(FLOW_V2_CONTROL_TYPES)
-const LEGACY_TYPES = new Set<string>(FLOW_V2_LEGACY_TYPES)
-const BRANCH_OPERATORS: BranchOperator[] = ['==', '!=', 'is_null']
-const LEGACY_CONTROL_FIELD_KEYS = new Set(['steps', 'next', 'loopGuard', 'goto', 'branch', 'complete', 'pause', 'stop', 'fail'])
-const CONDITION_KEYS = new Set(['fromParseStep', 'signal', 'op', 'value'])
-const ARTIFACT_SOURCE_KEYS = new Set(['kind', 'stepId', 'artifact'])
-const SEND_LINE_KEYS = new Set(['id', 'type', 'terminal', 'text'])
-const SEND_ARTIFACT_KEYS = new Set(['id', 'type', 'terminal', 'source'])
-const INPUT_LINE_KEYS = new Set(['id', 'type', 'terminal', 'prompt', 'allowEmpty'])
-const SLEEP_DURATION_KEYS = new Set(['id', 'type', 'mode', 'durationMs'])
-const SLEEP_UNTIL_RESUME_KEYS = new Set(['id', 'type', 'mode', 'reason'])
-const SLEEP_ANY_KEYS = new Set(['id', 'type', 'mode', 'durationMs', 'reason'])
-const WAIT_DURATION_KEYS = new Set(['id', 'type', 'mode', 'durationMs'])
-const WAIT_CAPTURE_READY_KEYS = new Set(['id', 'type', 'mode', 'captureStep', 'timeoutMs', 'onTimeout'])
-const WAIT_TERMINAL_QUIET_KEYS = new Set(['id', 'type', 'mode', 'terminal', 'quietMs', 'maxMs', 'onTimeout'])
-const WAIT_USER_CONTINUE_KEYS = new Set(['id', 'type', 'mode', 'prompt'])
-const WAIT_ANY_KEYS = new Set(['id', 'type', 'mode', 'durationMs', 'captureStep', 'timeoutMs', 'onTimeout', 'terminal', 'quietMs', 'maxMs', 'prompt'])
-const CAPTURE_SOURCE_KEYS = new Set(['id', 'type', 'capture'])
-const PARSE_KEYS = new Set(['id', 'type', 'source', 'parser'])
-const PARALLEL_ALL_KEYS = new Set(['id', 'type', 'lanes', 'join'])
-const PARALLEL_JOIN_KEYS = new Set(['mode', 'onLaneFail', 'onTimeout'])
-const PARALLEL_LANE_KEYS = new Set(['id', 'terminal', 'send', 'wait', 'capture'])
-const LANE_SEND_KEYS = new Set(['text'])
-const LANE_WAIT_DURATION_KEYS = new Set(['mode', 'durationMs'])
-const LANE_WAIT_TERMINAL_QUIET_KEYS = new Set(['mode', 'quietMs', 'maxMs', 'onTimeout'])
-const LANE_WAIT_ANY_KEYS = new Set(['mode', 'durationMs', 'quietMs', 'maxMs', 'onTimeout'])
-const LANE_CAPTURE_KEYS = new Set(['kind', 'mode', 'maxChars'])
-const MERGE_PARALLEL_RESULTS_KEYS = new Set(['id', 'type', 'source', 'format'])
-const MERGE_SOURCE_KEYS = new Set(['kind', 'stepId', 'captures'])
-const MERGE_FORMAT_KEYS = new Set(['kind', 'includeLaneId', 'includeTerminal'])
-const IF_KEYS = new Set(['id', 'type', 'branches', 'else'])
-const IF_BRANCH_KEYS = new Set(['kind', 'condition', 'body'])
-const FOR_KEYS = new Set(['id', 'type', 'range', 'body'])
-const CONTROL_TERMINAL_KEYS = new Set(['id', 'type', 'reason'])
+const FORBIDDEN_TYPES = new Set<string>(FLOW_V2_FORBIDDEN_TYPES)
+const TEMPLATE_KEYS = new Set(["schemaVersion", "id", "name", "description", "configId", "body", "createdAt", "updatedAt"])
+const LEGACY_FIELD_KEYS = new Set(["steps", "next", "loopGuard", "goto", "branch", "complete", "pause", "stop", "fail", "parser", "parse", "captureStep", "fromParseStep", "conditions", "lanes"])
+const ARTIFACT_SOURCE_KEYS = new Set(["kind", "stepId", "artifact"])
+const MESSAGE_KEYS = new Set(["parts"])
+const TEXT_PART_KEYS = new Set(["kind", "text"])
+const ARTIFACT_PART_KEYS = new Set(["kind", "source"])
+const SEND_LINE_KEYS = new Set(["id", "type", "terminal", "message"])
+const INPUT_LINE_KEYS = new Set(["id", "type", "terminal", "prompt", "allowEmpty", "defaultSource"])
+const WAIT_DURATION_KEYS = new Set(["id", "type", "mode", "durationMs"])
+const WAIT_TERMINAL_QUIET_KEYS = new Set(["id", "type", "mode", "terminal", "quietMs", "maxMs", "onTimeout"])
+const WAIT_USER_CONTINUE_KEYS = new Set(["id", "type", "mode", "prompt"])
+const WAIT_ANY_KEYS = new Set(["id", "type", "mode", "durationMs", "terminal", "quietMs", "maxMs", "onTimeout", "prompt"])
+const CAPTURE_SOURCE_KEYS = new Set(["id", "type", "capture"])
+const CAPTURE_TERMINAL_BUFFER_KEYS = new Set(["kind", "terminal", "mode", "maxChars"])
+const CAPTURE_TEXT_BOX_KEYS = new Set(["kind", "terminal"])
+const CAPTURE_AGENT_EVENT_KEYS = new Set(["kind", "agent", "terminal", "eventKind", "field"])
+const AGENT_KEYS = new Set(["kind"])
+const EXTRACT_TEXT_KEYS = new Set(["id", "type", "source", "split", "filters", "select", "extract", "trim", "onEmpty"])
+const TEXT_SPLIT_LINES_KEYS = new Set(["kind", "keepEmpty"])
+const TEXT_SPLIT_REGEX_KEYS = new Set(["kind", "pattern", "flags", "keepEmpty"])
+const TEXT_FILTER_KEYS = new Set(["kind", "matcher"])
+const TEXT_SELECT_FIRST_LAST_ALL_KEYS = new Set(["mode"])
+const TEXT_SELECT_INDEX_KEYS = new Set(["mode", "index"])
+const TEXT_SELECT_RANGE_KEYS = new Set(["mode", "start", "end"])
+const TEXT_EXTRACT_NONE_KEYS = new Set(["kind"])
+const TEXT_EXTRACT_REGEX_KEYS = new Set(["kind", "pattern", "flags", "group"])
+const PARALLEL_SEND_CAPTURE_KEYS = new Set(["id", "type", "items", "merge", "onItemFail"])
+const PARALLEL_ITEM_KEYS = new Set(["id", "terminal", "send", "wait", "capture"])
+const PARALLEL_MERGE_KEYS = new Set(["kind", "separator", "order", "includeEmptyCaptures"])
+const IF_KEYS = new Set(["id", "type", "branches", "else"])
+const IF_BRANCH_KEYS = new Set(["kind", "condition", "body"])
+const CONDITION_KEYS = new Set(["kind", "source", "matcher", "scope"])
+const SIMPLE_MATCHER_KEYS = new Set(["kind", "op", "text"])
+const REGEX_MATCHER_KEYS = new Set(["kind", "pattern", "flags"])
+const WHOLE_SCOPE_KEYS = new Set(["kind"])
+const LINES_SCOPE_KEYS = new Set(["kind", "mode", "includeEmptyLines"])
+const FOR_KEYS = new Set(["id", "type", "range", "body"])
+const RANGE_KEYS = new Set(["count"])
+const CONTROL_TERMINAL_KEYS = new Set(["id", "type", "reason"])
+const SIMPLE_OPS = new Set(["contains", "not_contains", "equals", "not_equals", "starts_with", "ends_with"])
+const LINE_MODES = new Set(["first", "last", "any", "all"])
+const REGEX_FLAGS_RE = /^[ims]*$/
 
 type ValidateOptions = {
   indexMap?: TerminalIndexMapItem[]
-  profileCatalog?: ProfileCatalogSummary
-}
-
-type ParseOutput = {
-  signals: SignalSummary[]
-  operators: BranchOperator[]
 }
 
 type ValidationContext = {
   indexMap?: TerminalIndexMapItem[]
   nodeIds: Set<string>
-  profileCatalog: ProfileCatalogSummary
-  captureSteps: Set<string>
   artifactOutputs: Map<string, Set<string>>
-  parallelOutputs: Set<string>
-  parseOutputs: Map<string, ParseOutput>
   loopDepth: number
 }
 
 export function validateFlowV2Template(value: unknown, options: ValidateOptions = {}): ValidationResult {
   const issues: ValidationIssue[] = []
-  if (!isObject(value)) return invalid('template', 'Flow V2 template must be an object')
+  if (!isObject(value)) return invalid("template", "Flow V2 template must be an object")
+  rejectUnknownKeys(issues, "template", value, TEMPLATE_KEYS)
+  rejectStringExpressionFields(issues, "template", value)
+  rejectLegacyFields(issues, value, "")
+  rejectSessionFields(issues, value, "")
 
-  const template = value as FlowV2Template
-  if (template.schemaVersion !== 2) issues.push({ path: 'schemaVersion', message: 'Flow V2 template schemaVersion must be 2' })
-  validatePublicId(issues, 'id', template.id)
-  validatePublicId(issues, 'configId', template.configId)
-  validateString(issues, 'name', template.name, 1)
-  if (template.description !== undefined) validateString(issues, 'description', template.description, 0)
-  if (template.createdAt !== undefined) validateIsoString(issues, 'createdAt', template.createdAt)
-  if (template.updatedAt !== undefined) validateIsoString(issues, 'updatedAt', template.updatedAt)
-  rejectTemplateOnlyV1Fields(issues, value)
-  rejectSessionFields(issues, value, '')
-  rejectLegacyControlFields(issues, value, '')
-
-  const context: ValidationContext = {
-    indexMap: options.indexMap,
-    nodeIds: new Set(),
-    profileCatalog: options.profileCatalog ?? PROFILE_CATALOG_SUMMARY,
-    captureSteps: new Set(),
-    artifactOutputs: new Map(),
-    parallelOutputs: new Set(),
-    parseOutputs: new Map(),
-    loopDepth: 0,
-  }
-  validateNodeList(issues, 'body', template.body, context, true)
+  const template = value as MacroTemplate
+  if (template.schemaVersion !== 2) issues.push({ path: "schemaVersion", message: "Flow V2 template schemaVersion must be 2" })
+  validatePublicId(issues, "id", template.id)
+  validatePublicId(issues, "configId", template.configId)
+  validateString(issues, "name", template.name, 1)
+  validateString(issues, "description", template.description, 0)
+  validateIsoString(issues, "createdAt", template.createdAt)
+  validateIsoString(issues, "updatedAt", template.updatedAt)
+  const context: ValidationContext = { indexMap: options.indexMap, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0 }
+  validateNodeList(issues, "body", template.body, context, true)
   return { ok: issues.length === 0, issues }
 }
 
 function validateNodeList(issues: ValidationIssue[], path: string, nodes: unknown, context: ValidationContext, requireNonEmpty: boolean) {
   if (!Array.isArray(nodes)) {
-    issues.push({ path, message: 'node body must be an array' })
+    issues.push({ path, message: "node body must be an array" })
     return
   }
-  if (requireNonEmpty && nodes.length === 0) issues.push({ path, message: 'node body must not be empty' })
-  for (const [index, node] of nodes.entries()) validateNode(issues, path + '[' + index + ']', node, context)
+  if (requireNonEmpty && nodes.length === 0) issues.push({ path, message: "node body must not be empty" })
+  for (const [index, node] of nodes.entries()) validateNode(issues, path + "[" + index + "]", node, context)
 }
 
 function validateNode(issues: ValidationIssue[], path: string, node: unknown, context: ValidationContext) {
   if (!isObject(node)) {
-    issues.push({ path, message: 'node must be an object' })
+    issues.push({ path, message: "node must be an object" })
     return
   }
-  validateNodeId(issues, path + '.id', node.id, context)
-  if (typeof node.type !== 'string') {
-    issues.push({ path: path + '.type', message: 'node type must be a string' })
+  validateNodeId(issues, path + ".id", node.id, context)
+  if (typeof node.type !== "string") {
+    issues.push({ path: path + ".type", message: "node type must be a string" })
     return
   }
-  if (LEGACY_TYPES.has(node.type)) {
-    issues.push({ path: path + '.type', message: 'legacy flow node ' + node.type + ' is not allowed in Flow V2 primary body' })
+  if (FORBIDDEN_TYPES.has(node.type)) {
+    issues.push({ path: path + ".type", message: "legacy Flow V1 node type is unsupported in Flow V2: " + node.type })
     return
   }
   if (ACTION_TYPES.has(node.type)) {
@@ -128,427 +125,451 @@ function validateNode(issues: ValidationIssue[], path: string, node: unknown, co
     validateControlNode(issues, path, node, context)
     return
   }
-  issues.push({ path: path + '.type', message: 'unsupported Flow V2 node type' })
+  issues.push({ path: path + ".type", message: "unsupported Flow V2 node type" })
 }
 
 function validateActionNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
-  if (node.type === 'send_line') {
+  if (node.type === "send_line") {
     rejectUnknownKeys(issues, path, node, SEND_LINE_KEYS)
-    issues.push(...validateTerminalTarget(path + '.terminal', node.terminal, context.indexMap))
-    validateString(issues, path + '.text', node.text, 1)
+    issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
+    validateMessageSpec(issues, path + ".message", node.message, context)
     return
   }
-  if (node.type === 'send_artifact') {
-    rejectUnknownKeys(issues, path, node, SEND_ARTIFACT_KEYS)
-    issues.push(...validateTerminalTarget(path + '.terminal', node.terminal, context.indexMap))
-    validateArtifactSource(issues, path + '.source', node.source, context)
-    return
-  }
-  if (node.type === 'input_line') {
+  if (node.type === "input_line") {
     rejectUnknownKeys(issues, path, node, INPUT_LINE_KEYS)
-    issues.push(...validateTerminalTarget(path + '.terminal', node.terminal, context.indexMap))
-    validateString(issues, path + '.prompt', node.prompt, 1)
-    if (typeof node.allowEmpty !== 'boolean') issues.push({ path: path + '.allowEmpty', message: 'allowEmpty must be boolean' })
+    issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
+    validateString(issues, path + ".prompt", node.prompt, 1)
+    if (typeof node.allowEmpty !== "boolean") issues.push({ path: path + ".allowEmpty", message: "allowEmpty must be boolean" })
+    if (node.defaultSource !== undefined) validateArtifactSource(issues, path + ".defaultSource", node.defaultSource, context)
     return
   }
-  if (node.type === 'sleep') {
-    validateSleepNode(issues, path, node)
-    return
-  }
-  if (node.type === 'wait') {
+  if (node.type === "wait") {
     validateWaitNode(issues, path, node, context)
     return
   }
-  if (node.type === 'capture-source') {
+  if (node.type === "capture-source") {
     rejectUnknownKeys(issues, path, node, CAPTURE_SOURCE_KEYS)
-    validateCaptureConfig(issues, path + '.capture', node.capture, context.indexMap)
-    if (typeof node.id === 'string') {
-      context.captureSteps.add(node.id)
-      registerArtifactOutput(context, node.id, 'captured_text')
+    validateCaptureNodeConfig(issues, path + ".capture", node.capture, context)
+    if (typeof node.id === "string") registerArtifactOutput(context, node.id, "captured_text")
+    return
+  }
+  if (node.type === "extract_text") {
+    validateExtractTextNode(issues, path, node, context)
+    return
+  }
+  validateParallelSendCaptureNode(issues, path, node, context)
+}
+
+function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
+  if (node.mode === "duration") {
+    rejectUnknownKeys(issues, path, node, WAIT_DURATION_KEYS)
+    validatePositiveInt(issues, path + ".durationMs", node.durationMs)
+    return
+  }
+  if (node.mode === "terminal-quiet") {
+    rejectUnknownKeys(issues, path, node, WAIT_TERMINAL_QUIET_KEYS)
+    issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
+    validatePositiveInt(issues, path + ".quietMs", node.quietMs)
+    validatePositiveInt(issues, path + ".maxMs", node.maxMs)
+    if (Number.isInteger(node.quietMs) && Number.isInteger(node.maxMs) && Number(node.maxMs) < Number(node.quietMs)) issues.push({ path: path + ".maxMs", message: "maxMs must be greater than or equal to quietMs" })
+    validateTimeoutAction(issues, path + ".onTimeout", node.onTimeout, new Set(["pause", "return"]))
+    return
+  }
+  if (node.mode === "user-continue") {
+    rejectUnknownKeys(issues, path, node, WAIT_USER_CONTINUE_KEYS)
+    validateString(issues, path + ".prompt", node.prompt, 1)
+    return
+  }
+  rejectUnknownKeys(issues, path, node, WAIT_ANY_KEYS)
+  issues.push({ path: path + ".mode", message: "wait mode must be duration, terminal-quiet or user-continue" })
+}
+
+function validateCaptureNodeConfig(issues: ValidationIssue[], path: string, capture: unknown, context: ValidationContext) {
+  if (!isObject(capture)) {
+    issues.push({ path, message: "capture config must be an object" })
+    return
+  }
+  if (capture.kind === "terminal-buffer") {
+    rejectUnknownKeys(issues, path, capture, CAPTURE_TERMINAL_BUFFER_KEYS)
+    issues.push(...validateTerminalTarget(path + ".terminal", capture.terminal, context.indexMap))
+    if (capture.mode !== "scrollback-tail" && capture.mode !== "raw-stream-tail") issues.push({ path: path + ".mode", message: "terminal-buffer mode must be scrollback-tail or raw-stream-tail" })
+    validatePositiveInt(issues, path + ".maxChars", capture.maxChars)
+    return
+  }
+  if (capture.kind === "text-box") {
+    rejectUnknownKeys(issues, path, capture, CAPTURE_TEXT_BOX_KEYS)
+    issues.push(...validateTerminalTarget(path + ".terminal", capture.terminal, context.indexMap))
+    return
+  }
+  if (capture.kind === "agent-event") {
+    rejectUnknownKeys(issues, path, capture, CAPTURE_AGENT_EVENT_KEYS)
+    issues.push(...validateTerminalTarget(path + ".terminal", capture.terminal, context.indexMap))
+    if (!isObject(capture.agent)) {
+      issues.push({ path: path + ".agent", message: "agent must be an object" })
+    } else {
+      rejectUnknownKeys(issues, path + ".agent", capture.agent, AGENT_KEYS)
+      if (capture.agent.kind !== "codex") issues.push({ path: path + ".agent.kind", message: "V0 agent-event agent kind must be codex" })
     }
+    if (capture.eventKind !== "stop") issues.push({ path: path + ".eventKind", message: "V0 agent-event eventKind must be stop" })
+    if (capture.field !== "last_assistant_message") issues.push({ path: path + ".field", message: "V0 agent-event field must be last_assistant_message" })
     return
   }
-  if (node.type === 'parse') {
-    rejectUnknownKeys(issues, path, node, PARSE_KEYS)
-    validateArtifactSource(issues, path + '.source', node.source, context)
-    validateParserConfig(issues, path + '.parser', node.parser, context.profileCatalog)
-    if (typeof node.id === 'string' && isObject(node.parser)) {
-      const output = parseOutputForParser(node.parser as ParserConfig, context.profileCatalog)
-      if (output) context.parseOutputs.set(node.id, output)
+  issues.push({ path: path + ".kind", message: "capture kind must be terminal-buffer, text-box or agent-event" })
+}
+
+function validateExtractTextNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
+  rejectUnknownKeys(issues, path, node, EXTRACT_TEXT_KEYS)
+  validateArtifactSource(issues, path + ".source", node.source, context)
+  validateTextSplitSpec(issues, path + ".split", node.split)
+  validateTextFilters(issues, path + ".filters", node.filters)
+  validateTextSelectSpec(issues, path + ".select", node.select)
+  validateTextExtractSpec(issues, path + ".extract", node.extract)
+  if (node.trim !== "none" && node.trim !== "left" && node.trim !== "right" && node.trim !== "both") issues.push({ path: path + ".trim", message: "trim must be none, left, right or both" })
+  validateTimeoutAction(issues, path + ".onEmpty", node.onEmpty, new Set(["pause", "fail", "return"]))
+  if (typeof node.id === "string") registerArtifactOutput(context, node.id, "extracted_text")
+}
+
+function validateTextSplitSpec(issues: ValidationIssue[], path: string, split: unknown) {
+  if (!isObject(split)) {
+    issues.push({ path, message: "split must be an object" })
+    return
+  }
+  if (split.kind === "lines") {
+    rejectUnknownKeys(issues, path, split, TEXT_SPLIT_LINES_KEYS)
+    if (typeof split.keepEmpty !== "boolean") issues.push({ path: path + ".keepEmpty", message: "keepEmpty must be boolean" })
+    return
+  }
+  if (split.kind === "regex") {
+    rejectUnknownKeys(issues, path, split, TEXT_SPLIT_REGEX_KEYS)
+    validateRegexPattern(issues, path + ".pattern", split.pattern, split.flags)
+    validateRegexFlags(issues, path + ".flags", split.flags)
+    if (typeof split.keepEmpty !== "boolean") issues.push({ path: path + ".keepEmpty", message: "keepEmpty must be boolean" })
+    return
+  }
+  issues.push({ path: path + ".kind", message: "split kind must be lines or regex" })
+}
+
+function validateTextFilters(issues: ValidationIssue[], path: string, filters: unknown) {
+  if (!Array.isArray(filters)) {
+    issues.push({ path, message: "filters must be an array" })
+    return
+  }
+  for (const [index, filter] of filters.entries()) {
+    const filterPath = path + "[" + index + "]"
+    if (!isObject(filter)) {
+      issues.push({ path: filterPath, message: "filter must be an object" })
+      continue
     }
+    rejectUnknownKeys(issues, filterPath, filter, TEXT_FILTER_KEYS)
+    if (filter.kind !== "include" && filter.kind !== "exclude") issues.push({ path: filterPath + ".kind", message: "filter kind must be include or exclude" })
+    validateTextMatcher(issues, filterPath + ".matcher", filter.matcher)
+  }
+}
+
+function validateTextMatcher(issues: ValidationIssue[], path: string, matcher: unknown) {
+  if (!isObject(matcher)) {
+    issues.push({ path, message: "matcher must be an object" })
     return
   }
-  if (node.type === 'parallel_all') {
-    validateParallelAllNode(issues, path, node, context)
+  if (matcher.kind === "simple") {
+    rejectUnknownKeys(issues, path, matcher, SIMPLE_MATCHER_KEYS)
+    if (!SIMPLE_OPS.has(String(matcher.op))) issues.push({ path: path + ".op", message: "simple matcher op is not supported" })
+    validateString(issues, path + ".text", matcher.text, 0)
     return
   }
-  validateMergeParallelResultsNode(issues, path, node, context)
+  if (matcher.kind === "regex") {
+    rejectUnknownKeys(issues, path, matcher, REGEX_MATCHER_KEYS)
+    validateRegexPattern(issues, path + ".pattern", matcher.pattern, matcher.flags)
+    validateRegexFlags(issues, path + ".flags", matcher.flags)
+    return
+  }
+  issues.push({ path: path + ".kind", message: "matcher kind must be simple or regex" })
+}
+
+function validateTextSelectSpec(issues: ValidationIssue[], path: string, select: unknown) {
+  if (!isObject(select)) {
+    issues.push({ path, message: "select must be an object" })
+    return
+  }
+  if (select.mode === "first" || select.mode === "last" || select.mode === "all") {
+    rejectUnknownKeys(issues, path, select, TEXT_SELECT_FIRST_LAST_ALL_KEYS)
+    return
+  }
+  if (select.mode === "index") {
+    rejectUnknownKeys(issues, path, select, TEXT_SELECT_INDEX_KEYS)
+    validateNonNegativeInt(issues, path + ".index", select.index)
+    return
+  }
+  if (select.mode === "range") {
+    rejectUnknownKeys(issues, path, select, TEXT_SELECT_RANGE_KEYS)
+    validateNonNegativeInt(issues, path + ".start", select.start)
+    if (select.end !== undefined) validateNonNegativeInt(issues, path + ".end", select.end)
+    if (Number.isInteger(select.start) && Number.isInteger(select.end) && Number(select.end) < Number(select.start)) issues.push({ path: path + ".end", message: "end must be greater than or equal to start" })
+    return
+  }
+  issues.push({ path: path + ".mode", message: "select mode must be first, last, all, index or range" })
+}
+
+function validateTextExtractSpec(issues: ValidationIssue[], path: string, extract: unknown) {
+  if (!isObject(extract)) {
+    issues.push({ path, message: "extract must be an object" })
+    return
+  }
+  if (extract.kind === "none") {
+    rejectUnknownKeys(issues, path, extract, TEXT_EXTRACT_NONE_KEYS)
+    return
+  }
+  if (extract.kind === "regex") {
+    rejectUnknownKeys(issues, path, extract, TEXT_EXTRACT_REGEX_KEYS)
+    validateRegexPattern(issues, path + ".pattern", extract.pattern, extract.flags)
+    validateRegexFlags(issues, path + ".flags", extract.flags)
+    if (!(typeof extract.group === "string" && extract.group.length > 0) && !Number.isInteger(extract.group)) issues.push({ path: path + ".group", message: "group must be an integer or non-empty named group" })
+    return
+  }
+  issues.push({ path: path + ".kind", message: "extract kind must be none or regex" })
+}
+
+function validateParallelSendCaptureNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
+  rejectUnknownKeys(issues, path, node, PARALLEL_SEND_CAPTURE_KEYS)
+  if (!Array.isArray(node.items) || node.items.length === 0) {
+    issues.push({ path: path + ".items", message: "parallel_send_capture must declare items" })
+  } else {
+    validateParallelItems(issues, path + ".items", node.items, context)
+  }
+  if (!isObject(node.merge)) {
+    issues.push({ path: path + ".merge", message: "parallel_send_capture merge must be an object" })
+  } else {
+    rejectUnknownKeys(issues, path + ".merge", node.merge, PARALLEL_MERGE_KEYS)
+    if (node.merge.kind !== "sectioned_text") issues.push({ path: path + ".merge.kind", message: "merge kind must be sectioned_text" })
+    validateString(issues, path + ".merge.separator", node.merge.separator, 1)
+    if (node.merge.order !== "item_order") issues.push({ path: path + ".merge.order", message: "merge order must be item_order" })
+    if (typeof node.merge.includeEmptyCaptures !== "boolean") issues.push({ path: path + ".merge.includeEmptyCaptures", message: "includeEmptyCaptures must be boolean" })
+  }
+  if (node.onItemFail !== "pause" && node.onItemFail !== "fail") issues.push({ path: path + ".onItemFail", message: "onItemFail must be pause or fail" })
+  if (typeof node.id === "string") registerArtifactOutput(context, node.id, "merged_text")
+}
+
+function validateParallelItems(issues: ValidationIssue[], path: string, items: unknown[], context: ValidationContext) {
+  const itemIds = new Set<string>()
+  const terminalKeys = new Map<string, string>()
+  for (const [index, item] of items.entries()) {
+    const itemPath = path + "[" + index + "]"
+    if (!isObject(item)) {
+      issues.push({ path: itemPath, message: "parallel item must be an object" })
+      continue
+    }
+    rejectUnknownKeys(issues, itemPath, item, PARALLEL_ITEM_KEYS)
+    validatePublicId(issues, itemPath + ".id", item.id)
+    if (typeof item.id === "string") {
+      if (itemIds.has(item.id)) issues.push({ path: itemPath + ".id", message: "duplicate parallel item id" })
+      itemIds.add(item.id)
+    }
+    issues.push(...validateTerminalTarget(itemPath + ".terminal", item.terminal, context.indexMap))
+    const itemKey = terminalIdentityKey(item.terminal, context.indexMap)
+    if (itemKey && typeof item.id === "string") {
+      const existing = terminalKeys.get(itemKey)
+      if (existing) issues.push({ path: itemPath + ".terminal", message: "duplicate parallel item terminal: " + itemKey + " already used by " + existing })
+      terminalKeys.set(itemKey, item.id)
+    }
+    validateParallelSend(issues, itemPath + ".send", item.send, item as ParallelSendCaptureItem, context)
+    if (item.wait !== undefined) validateParallelWait(issues, itemPath + ".wait", item.wait, item as ParallelSendCaptureItem, context)
+    validateParallelCapture(issues, itemPath + ".capture", item.capture, item as ParallelSendCaptureItem, context)
+  }
+}
+
+function validateParallelSend(issues: ValidationIssue[], path: string, send: unknown, item: ParallelSendCaptureItem, context: ValidationContext) {
+  if (!isObject(send)) {
+    issues.push({ path, message: "parallel item send must be a send_line object" })
+    return
+  }
+  if (send.type !== "send_line") issues.push({ path: path + ".type", message: "parallel item send must reuse send_line" })
+  rejectUnknownKeys(issues, path, send, SEND_LINE_KEYS)
+  issues.push(...validateTerminalTarget(path + ".terminal", send.terminal, context.indexMap))
+  validateSameTerminal(issues, path + ".terminal", item.terminal, send.terminal, context.indexMap, "parallel item send terminal must match item terminal")
+  validateMessageSpec(issues, path + ".message", send.message, context)
+}
+
+function validateParallelWait(issues: ValidationIssue[], path: string, wait: unknown, item: ParallelSendCaptureItem, context: ValidationContext) {
+  if (!isObject(wait)) {
+    issues.push({ path, message: "parallel item wait must be an object" })
+    return
+  }
+  if (wait.type !== "wait") issues.push({ path: path + ".type", message: "parallel item wait must reuse wait" })
+  if (wait.mode === "user-continue") issues.push({ path: path + ".mode", message: "parallel item wait must not use user-continue" })
+  validateWaitNode(issues, path, wait, context)
+  if (wait.mode === "terminal-quiet") {
+    if (wait.onTimeout !== "pause") issues.push({ path: path + ".onTimeout", message: "parallel item wait onTimeout must be pause" })
+    validateSameTerminal(issues, path + ".terminal", item.terminal, wait.terminal, context.indexMap, "parallel item wait terminal must match item terminal")
+  }
+}
+
+function validateParallelCapture(issues: ValidationIssue[], path: string, captureNode: unknown, item: ParallelSendCaptureItem, context: ValidationContext) {
+  if (!isObject(captureNode)) {
+    issues.push({ path, message: "parallel item capture must be a capture-source object" })
+    return
+  }
+  if (captureNode.type !== "capture-source") issues.push({ path: path + ".type", message: "parallel item capture must reuse capture-source" })
+  rejectUnknownKeys(issues, path, captureNode, CAPTURE_SOURCE_KEYS)
+  validateCaptureNodeConfig(issues, path + ".capture", captureNode.capture, context)
+  if (isObject(captureNode.capture)) validateSameTerminal(issues, path + ".capture.terminal", item.terminal, captureNode.capture.terminal, context.indexMap, "parallel item capture terminal must match item terminal")
 }
 
 function validateControlNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
-  if (node.type === 'if') {
+  if (node.type === "if") {
     rejectUnknownKeys(issues, path, node, IF_KEYS)
     validateIfNode(issues, path, node, context)
     return
   }
-  if (node.type === 'for') {
+  if (node.type === "for") {
     rejectUnknownKeys(issues, path, node, FOR_KEYS)
     if (!isObject(node.range)) {
-      issues.push({ path: path + '.range', message: 'for node must declare range object' })
+      issues.push({ path: path + ".range", message: "for node must declare range object" })
     } else {
-      rejectUnknownKeys(issues, path + '.range', node.range, new Set(['count']))
-      validatePositiveInt(issues, path + '.range.count', node.range.count)
+      rejectUnknownKeys(issues, path + ".range", node.range, RANGE_KEYS)
+      validatePositiveInt(issues, path + ".range.count", node.range.count)
     }
-    validateNodeList(issues, path + '.body', node.body, childContext(context, context.loopDepth + 1), true)
+    validateNodeList(issues, path + ".body", node.body, childContext(context, context.loopDepth + 1), true)
     return
   }
-  if (node.type === 'break' || node.type === 'continue') {
+  if (node.type === "break" || node.type === "continue") {
     rejectUnknownKeys(issues, path, node, CONTROL_TERMINAL_KEYS)
-    if (context.loopDepth < 1) issues.push({ path: path + '.type', message: node.type + ' can only be used inside for body' })
-    if (node.reason !== undefined) validateString(issues, path + '.reason', node.reason, 1)
+    if (context.loopDepth < 1) issues.push({ path: path + ".type", message: node.type + " can only be used inside for body" })
+    if (node.reason !== undefined) validateString(issues, path + ".reason", node.reason, 1)
     return
   }
-  if (node.type === 'return') {
-    rejectUnknownKeys(issues, path, node, CONTROL_TERMINAL_KEYS)
-    if (node.reason !== undefined) validateString(issues, path + '.reason', node.reason, 1)
-  }
+  rejectUnknownKeys(issues, path, node, CONTROL_TERMINAL_KEYS)
+  if (node.reason !== undefined) validateString(issues, path + ".reason", node.reason, 1)
 }
 
 function validateIfNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
   rejectStringExpressionFields(issues, path, node)
   if (!Array.isArray(node.branches) || node.branches.length === 0) {
-    issues.push({ path: path + '.branches', message: 'if node must declare at least one if branch' })
+    issues.push({ path: path + ".branches", message: "if node must declare at least one if branch" })
     return
   }
   for (const [index, branch] of node.branches.entries()) {
-    const branchPath = path + '.branches[' + index + ']'
+    const branchPath = path + ".branches[" + index + "]"
     if (!isObject(branch)) {
-      issues.push({ path: branchPath, message: 'if branch must be an object' })
+      issues.push({ path: branchPath, message: "if branch must be an object" })
       continue
     }
-    rejectStringExpressionFields(issues, branchPath, branch)
     rejectUnknownKeys(issues, branchPath, branch, IF_BRANCH_KEYS)
-    if (index === 0 && branch.kind !== 'if') issues.push({ path: branchPath + '.kind', message: 'first branch kind must be if' })
-    if (index > 0 && branch.kind !== 'elif') issues.push({ path: branchPath + '.kind', message: 'later branch kind must be elif' })
-    validateCondition(issues, branchPath + '.condition', branch.condition, context)
-    validateNodeList(issues, branchPath + '.body', branch.body, childContext(context, context.loopDepth), true)
+    rejectStringExpressionFields(issues, branchPath, branch)
+    if (index === 0 && branch.kind !== "if") issues.push({ path: branchPath + ".kind", message: "first branch kind must be if" })
+    if (index > 0 && branch.kind !== "elif") issues.push({ path: branchPath + ".kind", message: "later branch kind must be elif" })
+    validateTextMatchCondition(issues, branchPath + ".condition", branch.condition, context)
+    validateNodeList(issues, branchPath + ".body", branch.body, childContext(context, context.loopDepth), true)
   }
-  if ('else' in node) validateNodeList(issues, path + '.else', node.else, childContext(context, context.loopDepth), true)
+  if ("else" in node) validateNodeList(issues, path + ".else", node.else, childContext(context, context.loopDepth), true)
 }
 
-function validateCondition(issues: ValidationIssue[], path: string, value: unknown, context: ValidationContext) {
-  if (!isObject(value)) {
-    issues.push({ path, message: 'condition must be an object' })
+function validateTextMatchCondition(issues: ValidationIssue[], path: string, condition: unknown, context: ValidationContext) {
+  if (!isObject(condition)) {
+    issues.push({ path, message: "condition must be an object" })
     return
   }
-  rejectStringExpressionFields(issues, path, value)
-  rejectUnknownKeys(issues, path, value, CONDITION_KEYS)
-  validatePublicId(issues, path + '.fromParseStep', value.fromParseStep)
-  validatePublicId(issues, path + '.signal', value.signal)
-  if (!BRANCH_OPERATORS.includes(value.op as BranchOperator)) {
-    issues.push({ path: path + '.op', message: 'condition op must be ==, != or is_null' })
-    return
-  }
-  const op = value.op as BranchOperator
-  const output = typeof value.fromParseStep === 'string' ? context.parseOutputs.get(value.fromParseStep) : undefined
-  if (!output) {
-    if (typeof value.fromParseStep === 'string') issues.push({ path: path + '.fromParseStep', message: 'condition must reference an earlier parse node' })
+  rejectUnknownKeys(issues, path, condition, CONDITION_KEYS)
+  rejectStringExpressionFields(issues, path, condition)
+  if (condition.kind !== "text_match") issues.push({ path: path + ".kind", message: "condition kind must be text_match" })
+  validateArtifactSource(issues, path + ".source", condition.source, context)
+  if (!isObject(condition.matcher)) {
+    issues.push({ path: path + ".matcher", message: "matcher must be an object" })
+  } else if (condition.matcher.kind === "simple") {
+    rejectUnknownKeys(issues, path + ".matcher", condition.matcher, SIMPLE_MATCHER_KEYS)
+    if (!SIMPLE_OPS.has(String(condition.matcher.op))) issues.push({ path: path + ".matcher.op", message: "simple matcher op is not supported" })
+    validateString(issues, path + ".matcher.text", condition.matcher.text, 0)
+  } else if (condition.matcher.kind === "regex") {
+    rejectUnknownKeys(issues, path + ".matcher", condition.matcher, REGEX_MATCHER_KEYS)
+    validateRegexPattern(issues, path + ".matcher.pattern", condition.matcher.pattern, condition.matcher.flags)
+    validateRegexFlags(issues, path + ".matcher.flags", condition.matcher.flags)
   } else {
-    validateSignalConditionOutput(issues, path, value, op, output, 'parse node')
+    issues.push({ path: path + ".matcher.kind", message: "matcher kind must be simple or regex" })
   }
-  validateConditionValue(issues, path, value, op)
-}
-
-function validateSleepNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>) {
-  if (node.mode === 'duration') {
-    rejectUnknownKeys(issues, path, node, SLEEP_DURATION_KEYS)
-    validatePositiveInt(issues, path + '.durationMs', node.durationMs)
-    return
-  }
-  if (node.mode === 'until-resume') {
-    rejectUnknownKeys(issues, path, node, SLEEP_UNTIL_RESUME_KEYS)
-    if ('durationMs' in node) issues.push({ path: path + '.durationMs', message: 'sleep until-resume must not include durationMs' })
-    if (node.reason !== undefined) validateString(issues, path + '.reason', node.reason, 1)
-    return
-  }
-  rejectUnknownKeys(issues, path, node, SLEEP_ANY_KEYS)
-  issues.push({ path: path + '.mode', message: 'sleep mode must be duration or until-resume' })
-}
-
-function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
-  if (node.mode === 'duration') {
-    rejectUnknownKeys(issues, path, node, WAIT_DURATION_KEYS)
-    validatePositiveInt(issues, path + '.durationMs', node.durationMs)
-    return
-  }
-  if (node.mode === 'capture-ready-or-user') {
-    rejectUnknownKeys(issues, path, node, WAIT_CAPTURE_READY_KEYS)
-    validatePublicId(issues, path + '.captureStep', node.captureStep)
-    if (typeof node.captureStep === 'string' && !context.captureSteps.has(node.captureStep)) issues.push({ path: path + '.captureStep', message: 'wait captureStep must reference an earlier capture-source node' })
-    validatePositiveInt(issues, path + '.timeoutMs', node.timeoutMs)
-    validateTimeoutAction(issues, path + '.onTimeout', node.onTimeout)
-    return
-  }
-  if (node.mode === 'terminal-quiet') {
-    rejectUnknownKeys(issues, path, node, WAIT_TERMINAL_QUIET_KEYS)
-    issues.push(...validateTerminalTarget(path + '.terminal', node.terminal, context.indexMap))
-    validatePositiveInt(issues, path + '.quietMs', node.quietMs)
-    validatePositiveInt(issues, path + '.maxMs', node.maxMs)
-    if (Number.isInteger(node.quietMs) && Number.isInteger(node.maxMs) && Number(node.maxMs) < Number(node.quietMs)) issues.push({ path: path + '.maxMs', message: 'maxMs must be greater than or equal to quietMs' })
-    validateTimeoutAction(issues, path + '.onTimeout', node.onTimeout)
-    return
-  }
-  if (node.mode === 'user-continue') {
-    rejectUnknownKeys(issues, path, node, WAIT_USER_CONTINUE_KEYS)
-    validateString(issues, path + '.prompt', node.prompt, 1)
-    return
-  }
-  rejectUnknownKeys(issues, path, node, WAIT_ANY_KEYS)
-  issues.push({ path: path + '.mode', message: 'unsupported wait mode' })
-}
-
-function validateParallelAllNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
-  rejectUnknownKeys(issues, path, node, PARALLEL_ALL_KEYS)
-  if (!Array.isArray(node.lanes) || node.lanes.length === 0) {
-    issues.push({ path: path + '.lanes', message: 'parallel_all must declare lanes' })
+  if (!isObject(condition.scope)) {
+    issues.push({ path: path + ".scope", message: "scope must be an object" })
+  } else if (condition.scope.kind === "whole") {
+    rejectUnknownKeys(issues, path + ".scope", condition.scope, WHOLE_SCOPE_KEYS)
+  } else if (condition.scope.kind === "lines") {
+    rejectUnknownKeys(issues, path + ".scope", condition.scope, LINES_SCOPE_KEYS)
+    if (!LINE_MODES.has(String(condition.scope.mode))) issues.push({ path: path + ".scope.mode", message: "line match mode must be first, last, any or all" })
+    if (condition.scope.includeEmptyLines !== undefined && typeof condition.scope.includeEmptyLines !== "boolean") issues.push({ path: path + ".scope.includeEmptyLines", message: "includeEmptyLines must be boolean" })
   } else {
-    validateParallelLanes(issues, path + '.lanes', node.lanes, context)
+    issues.push({ path: path + ".scope.kind", message: "scope kind must be whole or lines" })
   }
-  if (!isObject(node.join)) {
-    issues.push({ path: path + '.join', message: 'parallel_all join must be an object' })
-  } else {
-    rejectUnknownKeys(issues, path + '.join', node.join, PARALLEL_JOIN_KEYS)
-    if (node.join.mode !== 'all_completed') issues.push({ path: path + '.join.mode', message: 'parallel_all join.mode must be all_completed' })
-    validateTimeoutAction(issues, path + '.join.onLaneFail', node.join.onLaneFail)
-    if (node.join.onTimeout !== undefined) validateTimeoutAction(issues, path + '.join.onTimeout', node.join.onTimeout)
-  }
-  if (typeof node.id === 'string') context.parallelOutputs.add(node.id)
 }
 
-function validateParallelLanes(issues: ValidationIssue[], path: string, lanes: unknown[], context: ValidationContext) {
-  const laneIds = new Set<string>()
-  const laneTerminalKeys = new Map<string, string>()
-  for (const [laneIndex, lane] of lanes.entries()) {
-    const lanePath = path + '[' + laneIndex + ']'
-    if (!isObject(lane)) {
-      issues.push({ path: lanePath, message: 'lane must be an object' })
+function validateMessageSpec(issues: ValidationIssue[], path: string, message: unknown, context: ValidationContext) {
+  if (!isObject(message)) {
+    issues.push({ path, message: "message must be an object" })
+    return
+  }
+  rejectUnknownKeys(issues, path, message, MESSAGE_KEYS)
+  if (!Array.isArray(message.parts) || message.parts.length === 0) {
+    issues.push({ path: path + ".parts", message: "message.parts must be a non-empty array" })
+    return
+  }
+  for (const [index, part] of message.parts.entries()) {
+    const partPath = path + ".parts[" + index + "]"
+    if (!isObject(part)) {
+      issues.push({ path: partPath, message: "message part must be an object" })
       continue
     }
-    rejectUnknownKeys(issues, lanePath, lane, PARALLEL_LANE_KEYS)
-    validatePublicId(issues, lanePath + '.id', lane.id)
-    if (typeof lane.id === 'string') {
-      if (laneIds.has(lane.id)) issues.push({ path: lanePath + '.id', message: 'duplicate lane id' })
-      laneIds.add(lane.id)
+    if (part.kind === "text") {
+      rejectUnknownKeys(issues, partPath, part, TEXT_PART_KEYS)
+      validateString(issues, partPath + ".text", part.text, 0)
+    } else if (part.kind === "artifact") {
+      rejectUnknownKeys(issues, partPath, part, ARTIFACT_PART_KEYS)
+      validateArtifactSource(issues, partPath + ".source", part.source, context)
+    } else {
+      issues.push({ path: partPath + ".kind", message: "message part kind must be text or artifact" })
     }
-    issues.push(...validateTerminalTarget(lanePath + '.terminal', lane.terminal, context.indexMap))
-    const terminalKey = terminalIdentityKey(lane.terminal, context.indexMap)
-    if (terminalKey && typeof lane.id === 'string') {
-      const existingLane = laneTerminalKeys.get(terminalKey)
-      if (existingLane) issues.push({ path: lanePath + '.terminal', message: 'duplicate lane primary terminal: ' + terminalKey + ' already used by ' + existingLane })
-      laneTerminalKeys.set(terminalKey, lane.id)
-    }
-    validateLaneSend(issues, lanePath + '.send', lane.send)
-    validateLaneWait(issues, lanePath + '.wait', lane.wait)
-    validateLaneCapture(issues, lanePath + '.capture', lane.capture)
   }
 }
 
-function validateLaneSend(issues: ValidationIssue[], path: string, send: unknown) {
-  if (!isObject(send)) {
-    issues.push({ path, message: 'lane send must be an object' })
-    return
-  }
-  rejectUnknownKeys(issues, path, send, LANE_SEND_KEYS)
-  validateString(issues, path + '.text', send.text, 1)
-}
-
-function validateLaneWait(issues: ValidationIssue[], path: string, wait: unknown) {
-  if (!isObject(wait)) {
-    issues.push({ path, message: 'lane wait must be an object' })
-    return
-  }
-  if (wait.mode === 'duration') {
-    rejectUnknownKeys(issues, path, wait, LANE_WAIT_DURATION_KEYS)
-    validatePositiveInt(issues, path + '.durationMs', wait.durationMs)
-    return
-  }
-  if (wait.mode === 'terminal-quiet') {
-    rejectUnknownKeys(issues, path, wait, LANE_WAIT_TERMINAL_QUIET_KEYS)
-    validatePositiveInt(issues, path + '.quietMs', wait.quietMs)
-    validatePositiveInt(issues, path + '.maxMs', wait.maxMs)
-    if (Number.isInteger(wait.quietMs) && Number.isInteger(wait.maxMs) && Number(wait.maxMs) < Number(wait.quietMs)) issues.push({ path: path + '.maxMs', message: 'maxMs must be greater than or equal to quietMs' })
-    validateTimeoutAction(issues, path + '.onTimeout', wait.onTimeout)
-    return
-  }
-  rejectUnknownKeys(issues, path, wait, LANE_WAIT_ANY_KEYS)
-  issues.push({ path: path + '.mode', message: 'lane wait mode must be duration or terminal-quiet' })
-}
-
-function validateLaneCapture(issues: ValidationIssue[], path: string, capture: unknown) {
-  if (!isObject(capture)) {
-    issues.push({ path, message: 'lane capture must be an object' })
-    return
-  }
-  rejectUnknownKeys(issues, path, capture, LANE_CAPTURE_KEYS)
-  if (capture.kind !== 'terminal-buffer') issues.push({ path: path + '.kind', message: 'lane capture kind must be terminal-buffer' })
-  if (capture.mode !== 'scrollback-tail') issues.push({ path: path + '.mode', message: 'lane capture mode must be scrollback-tail' })
-  validatePositiveInt(issues, path + '.maxChars', capture.maxChars)
-}
-
-function validateMergeParallelResultsNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
-  rejectUnknownKeys(issues, path, node, MERGE_PARALLEL_RESULTS_KEYS)
-  if (!isObject(node.source)) {
-    issues.push({ path: path + '.source', message: 'merge source must be an object' })
-  } else {
-    rejectUnknownKeys(issues, path + '.source', node.source, MERGE_SOURCE_KEYS)
-    if (node.source.kind !== 'parallel_all') issues.push({ path: path + '.source.kind', message: 'merge source kind must be parallel_all' })
-    validatePublicId(issues, path + '.source.stepId', node.source.stepId)
-    if (typeof node.source.stepId === 'string' && !context.parallelOutputs.has(node.source.stepId)) issues.push({ path: path + '.source.stepId', message: 'merge source must reference an earlier parallel_all in the visible predecessor scope' })
-    if (node.source.captures !== 'all') issues.push({ path: path + '.source.captures', message: 'merge source captures must be all' })
-  }
-  if (!isObject(node.format)) {
-    issues.push({ path: path + '.format', message: 'merge format must be an object' })
-  } else {
-    rejectUnknownKeys(issues, path + '.format', node.format, MERGE_FORMAT_KEYS)
-    if (node.format.kind !== 'sectioned_text') issues.push({ path: path + '.format.kind', message: 'merge format kind must be sectioned_text' })
-    if (typeof node.format.includeLaneId !== 'boolean') issues.push({ path: path + '.format.includeLaneId', message: 'includeLaneId must be boolean' })
-    if (typeof node.format.includeTerminal !== 'boolean') issues.push({ path: path + '.format.includeTerminal', message: 'includeTerminal must be boolean' })
-  }
-  if (typeof node.id === 'string') registerArtifactOutput(context, node.id, 'merged_text')
-}
 
 function validateArtifactSource(issues: ValidationIssue[], path: string, source: unknown, context: ValidationContext) {
   if (!isObject(source)) {
-    issues.push({ path, message: 'artifact source must be an object' })
+    issues.push({ path, message: "artifact source must be an object" })
     return
   }
   rejectUnknownKeys(issues, path, source, ARTIFACT_SOURCE_KEYS)
-  if (source.kind !== 'step_artifact') issues.push({ path: path + '.kind', message: 'artifact source kind must be step_artifact' })
-  validatePublicId(issues, path + '.stepId', source.stepId)
-  validateString(issues, path + '.artifact', source.artifact, 1)
-  if (typeof source.stepId !== 'string' || typeof source.artifact !== 'string') return
+  if (source.kind !== "step_artifact") issues.push({ path: path + ".kind", message: "artifact source kind must be step_artifact" })
+  validatePublicId(issues, path + ".stepId", source.stepId)
+  if (source.artifact !== "captured_text" && source.artifact !== "merged_text" && source.artifact !== "extracted_text") issues.push({ path: path + ".artifact", message: "artifact must be captured_text, merged_text or extracted_text" })
+  if (typeof source.stepId !== "string" || typeof source.artifact !== "string") return
   const artifacts = context.artifactOutputs.get(source.stepId)
   if (!artifacts) {
-    issues.push({ path: path + '.stepId', message: 'artifact source must reference an earlier artifact-producing step in the visible predecessor scope' })
+    issues.push({ path: path + ".stepId", message: "artifact source must reference an earlier artifact-producing step in the visible predecessor scope" })
     return
   }
-  if (!artifacts.has(source.artifact)) issues.push({ path: path + '.artifact', message: 'artifact is not produced by source step' })
+  if (!artifacts.has(source.artifact)) issues.push({ path: path + ".artifact", message: "artifact is not produced by source step" })
 }
 
-function validateCaptureConfig(issues: ValidationIssue[], path: string, capture: unknown, indexMap?: TerminalIndexMapItem[]) {
-  if (!isObject(capture)) {
-    issues.push({ path, message: 'capture config must be an object' })
-    return
-  }
-  const config = capture as CaptureSourceConfig
-  if (config.kind === 'terminal-buffer') {
-    issues.push(...validateTerminalTarget(path + '.terminal', config.terminal, indexMap))
-    if (config.mode !== 'scrollback-tail') issues.push({ path: path + '.mode', message: 'terminal-buffer mode must be scrollback-tail' })
-    validatePositiveInt(issues, path + '.maxChars', config.maxChars)
-    return
-  }
-  if (config.kind === 'agent-event') {
-    issues.push(...validateTerminalTarget(path + '.terminal', config.terminal, indexMap))
-    if (config.agentKind !== 'codex') issues.push({ path: path + '.agentKind', message: 'V0 agent-event agentKind must be codex' })
-    if (config.eventKind !== 'agent.output') issues.push({ path: path + '.eventKind', message: 'V0 agent-event eventKind must be agent.output' })
-    if (config.adapter !== 'codex-stop-hook') issues.push({ path: path + '.adapter', message: 'V0 agent-event adapter must be codex-stop-hook' })
-    return
-  }
-  issues.push({ path: path + '.kind', message: 'capture kind must be terminal-buffer or agent-event' })
-}
-
-function validateParserConfig(issues: ValidationIssue[], path: string, parser: unknown, catalog: ProfileCatalogSummary) {
-  if (!isObject(parser)) {
-    issues.push({ path, message: 'parser must be an object' })
-    return
-  }
-  const config = parser as ParserConfig
-  if (config.kind === 'ai-json') {
-    validatePublicId(issues, path + '.profileId', config.profileId)
-    if (!profileFromCatalog(config.profileId, catalog)) issues.push({ path: path + '.profileId', message: 'unknown parserProfileId' })
-    return
-  }
-  if (config.kind === 'regex') {
-    if (!Array.isArray(config.rules) || config.rules.length === 0) {
-      issues.push({ path: path + '.rules', message: 'regex parser must declare at least one rule' })
-      return
-    }
-    const seen = new Set<string>()
-    for (const [index, rule] of config.rules.entries()) validateRegexRule(issues, path + '.rules[' + index + ']', rule, seen)
-    return
-  }
-  issues.push({ path: path + '.kind', message: 'parser.kind must be ai-json or regex' })
-}
-
-function validateRegexRule(issues: ValidationIssue[], path: string, rule: BooleanNullRegexRule, seen: Set<string>) {
-  if (!isObject(rule)) {
-    issues.push({ path, message: 'regex rule must be an object' })
-    return
-  }
-  validatePublicId(issues, path + '.signal', rule.signal)
-  if (seen.has(String(rule.signal))) issues.push({ path: path + '.signal', message: 'duplicate regex signal' })
-  seen.add(String(rule.signal))
-  if (rule.type !== 'boolean-null') issues.push({ path: path + '.type', message: 'V0 regex rule type must be boolean-null' })
-  validateString(issues, path + '.pattern', rule.pattern, 1)
-  if (!isBooleanOrNull(rule.onMatch)) issues.push({ path: path + '.onMatch', message: 'onMatch must be true, false or null' })
-  if (!isBooleanOrNull(rule.onNoMatch)) issues.push({ path: path + '.onNoMatch', message: 'onNoMatch must be true, false or null' })
-}
-
-function parseOutputForParser(parser: ParserConfig, catalog: ProfileCatalogSummary): ParseOutput | undefined {
-  if (parser.kind === 'ai-json') {
-    const profile = profileFromCatalog(parser.profileId, catalog)
-    return profile ? { signals: profile.signals, operators: profile.branchOperators } : undefined
-  }
-  if (parser.kind === 'regex' && Array.isArray(parser.rules)) return { signals: parser.rules.map((rule) => ({ id: rule.signal, type: rule.type })), operators: BRANCH_OPERATORS }
-  return undefined
-}
-
-function validateSignalConditionOutput(issues: ValidationIssue[], path: string, condition: Record<string, unknown>, op: BranchOperator, output: ParseOutput, sourceLabel: string) {
-  const signal = output.signals.find((candidate) => candidate.id === condition.signal)
-  if (!signal) issues.push({ path: path + '.signal', message: 'signal is not declared by selected ' + sourceLabel })
-  if (!output.operators.includes(op)) issues.push({ path: path + '.op', message: 'operator is not allowed by selected ' + sourceLabel })
-  if (signal && signal.type !== 'boolean-null') issues.push({ path: path + '.signal', message: 'Flow V2 conditions only support boolean-null signals in V0' })
-}
-
-function validateConditionValue(issues: ValidationIssue[], path: string, condition: Record<string, unknown>, op: BranchOperator) {
-  if (op === 'is_null') {
-    if ('value' in condition) issues.push({ path: path + '.value', message: 'is_null must not include value' })
-    return
-  }
-  if (typeof condition.value !== 'boolean') issues.push({ path: path + '.value', message: 'boolean-null ==/!= value must be typed true or false' })
+function validateSameTerminal(issues: ValidationIssue[], path: string, left: unknown, right: unknown, indexMap: TerminalIndexMapItem[] | undefined, message: string) {
+  const leftKey = terminalIdentityKey(left, indexMap)
+  const rightKey = terminalIdentityKey(right, indexMap)
+  if (!leftKey || !rightKey || leftKey !== rightKey) issues.push({ path, message })
 }
 
 function terminalIdentityKey(target: unknown, indexMap?: TerminalIndexMapItem[]): string | undefined {
   if (!isObject(target)) return undefined
   if (indexMap) {
-    if (target.kind === 'id' && typeof target.value === 'string') return 'resolved:' + target.value
-    if (target.kind === 'alias' && typeof target.value === 'string') {
+    if (target.kind === "id" && typeof target.value === "string") return "resolved:" + target.value
+    if (target.kind === "alias" && typeof target.value === "string") {
       const match = indexMap.find((item) => item.terminalAlias === target.value)
-      return match ? 'resolved:' + match.terminalId : undefined
+      return match ? "resolved:" + match.terminalId : undefined
     }
-    if (target.kind === 'index' && Number.isInteger(target.value)) {
+    if (target.kind === "index" && Number.isInteger(target.value)) {
       const match = indexMap.find((item) => item.index === target.value)
-      return match ? 'resolved:' + match.terminalId : undefined
+      return match ? "resolved:" + match.terminalId : undefined
     }
   }
-  if (typeof target.kind === 'string' && (typeof target.value === 'string' || typeof target.value === 'number')) return 'direct:' + target.kind + ':' + target.value
+  if (typeof target.kind === "string" && (typeof target.value === "string" || typeof target.value === "number")) return "direct:" + target.kind + ":" + target.value
   return undefined
 }
 
-function profileFromCatalog(profileId: string, catalog: ProfileCatalogSummary) {
-  if (catalog === PROFILE_CATALOG_SUMMARY) return profileById(profileId)
-  return catalog.profiles.find((profile) => profile.profileId === profileId)
-}
-
 function childContext(context: ValidationContext, loopDepth: number): ValidationContext {
-  return {
-    ...context,
-    loopDepth,
-    captureSteps: new Set(context.captureSteps),
-    artifactOutputs: cloneArtifactOutputs(context.artifactOutputs),
-    parallelOutputs: new Set(context.parallelOutputs),
-    parseOutputs: new Map(context.parseOutputs),
-  }
+  return { ...context, loopDepth, artifactOutputs: cloneArtifactOutputs(context.artifactOutputs) }
 }
 
 function cloneArtifactOutputs(outputs: Map<string, Set<string>>): Map<string, Set<string>> {
@@ -563,84 +584,95 @@ function registerArtifactOutput(context: ValidationContext, stepId: string, arti
 
 function validateNodeId(issues: ValidationIssue[], path: string, value: unknown, context: ValidationContext) {
   validatePublicId(issues, path, value)
-  if (typeof value !== 'string') return
-  if (context.nodeIds.has(value)) issues.push({ path, message: 'duplicate Flow V2 node id' })
+  if (typeof value !== "string") return
+  if (context.nodeIds.has(value)) issues.push({ path, message: "duplicate Flow V2 node id" })
   context.nodeIds.add(value)
 }
 
 function validatePublicId(issues: ValidationIssue[], path: string, value: unknown) {
-  if (typeof value !== 'string') {
-    issues.push({ path, message: 'value must be a public id string' })
+  if (typeof value !== "string") {
+    issues.push({ path, message: "value must be a public id string" })
     return
   }
-  try { assertValidPublicId(value, 'genericId') } catch { issues.push({ path, message: 'value must match Identifier Contract' }) }
+  try { assertValidPublicId(value, "genericId") } catch { issues.push({ path, message: "value must match Identifier Contract" }) }
 }
 
 function validatePositiveInt(issues: ValidationIssue[], path: string, value: unknown) {
-  if (!Number.isInteger(value) || Number(value) < 1) issues.push({ path, message: 'value must be a positive integer' })
+  if (!Number.isInteger(value) || Number(value) < 1) issues.push({ path, message: "value must be a positive integer" })
 }
 
-function validateTimeoutAction(issues: ValidationIssue[], path: string, value: unknown) {
-  if (value !== 'pause' && value !== 'fail') issues.push({ path, message: 'value must be pause or fail' })
+function validateNonNegativeInt(issues: ValidationIssue[], path: string, value: unknown) {
+  if (!Number.isInteger(value) || Number(value) < 0) issues.push({ path, message: "value must be a non-negative integer" })
+}
+
+function validateTimeoutAction(issues: ValidationIssue[], path: string, value: unknown, allowed: Set<string>) {
+  if (typeof value !== "string" || !allowed.has(value)) issues.push({ path, message: "value must be one of " + [...allowed].join(", ") })
 }
 
 function validateString(issues: ValidationIssue[], path: string, value: unknown, minLength: number) {
-  if (typeof value !== 'string' || value.length < minLength) issues.push({ path, message: 'value must be a string with length >= ' + minLength })
+  if (typeof value !== "string" || value.length < minLength) issues.push({ path, message: "value must be a string with length >= " + minLength })
 }
 
 function validateIsoString(issues: ValidationIssue[], path: string, value: unknown) {
-  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) issues.push({ path, message: 'value must be an ISO timestamp string' })
+  if (typeof value !== "string" || Number.isNaN(Date.parse(value))) issues.push({ path, message: "value must be an ISO timestamp string" })
+}
+
+function validateRegexPattern(issues: ValidationIssue[], path: string, value: unknown, flags: unknown) {
+  validateString(issues, path, value, 1)
+  if (typeof value !== "string") return
+  if (flags !== undefined && (typeof flags !== "string" || !REGEX_FLAGS_RE.test(flags) || new Set(flags.split("")).size !== flags.length)) return
+  try { new RegExp(value, typeof flags === "string" ? flags : "") } catch { issues.push({ path, message: "regex pattern must compile" }) }
+}
+
+function validateRegexFlags(issues: ValidationIssue[], path: string, value: unknown) {
+  if (value === undefined) return
+  if (typeof value !== "string" || !REGEX_FLAGS_RE.test(value)) {
+    issues.push({ path, message: "regex flags must only contain i, m or s" })
+    return
+  }
+  if (new Set(value.split("")).size !== value.length) issues.push({ path, message: "regex flags must not repeat" })
 }
 
 function rejectUnknownKeys(issues: ValidationIssue[], path: string, value: Record<string, unknown>, allowed: Set<string>) {
-  for (const key of Object.keys(value)) {
-    if (!allowed.has(key)) issues.push({ path: path + '.' + key, message: 'extra Flow V2 node field is not allowed' })
-  }
+  for (const key of Object.keys(value)) if (!allowed.has(key)) issues.push({ path: path + "." + key, message: "extra Flow V2 field is not allowed" })
 }
 
-function rejectTemplateOnlyV1Fields(issues: ValidationIssue[], value: Record<string, unknown>) {
-  if ('steps' in value) issues.push({ path: 'steps', message: 'Flow V2 template must use body, not v1 steps' })
-  if ('terminalAliases' in value) issues.push({ path: 'terminalAliases', message: 'macro-local terminalAliases are not allowed; rename terminal tabs instead' })
-  if ('captureSources' in value) issues.push({ path: 'captureSources', message: 'capture source config must live in capture-source nodes' })
-}
-
-function rejectLegacyControlFields(issues: ValidationIssue[], value: unknown, path: string) {
+function rejectLegacyFields(issues: ValidationIssue[], value: unknown, path: string) {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => rejectLegacyControlFields(issues, item, path + '[' + index + ']'))
+    value.forEach((item, index) => rejectLegacyFields(issues, item, path + "[" + index + "]"))
     return
   }
   if (!isObject(value)) return
+  if (typeof value.type === "string" && FORBIDDEN_TYPES.has(value.type)) issues.push({ path: path ? path + ".type" : "type", message: "legacy Flow V1 node type is unsupported in Flow V2: " + value.type })
   for (const [key, child] of Object.entries(value)) {
-    const childPath = path ? path + '.' + key : key
-    if (LEGACY_CONTROL_FIELD_KEYS.has(key)) issues.push({ path: childPath, message: 'legacy control fields are not allowed in Flow V2' })
-    rejectLegacyControlFields(issues, child, childPath)
+    const childPath = path ? path + "." + key : key
+    if (LEGACY_FIELD_KEYS.has(key)) issues.push({ path: childPath, message: "legacy control/parser fields are not allowed in Flow V2" })
+    if (key === "kind" && child === "ai-json") issues.push({ path: childPath, message: "legacy parser kind is not allowed in Flow V2" })
+    if (key === "mode" && child === "capture-ready-or-user") issues.push({ path: childPath, message: "legacy wait mode is not allowed in Flow V2" })
+    rejectLegacyFields(issues, child, childPath)
   }
 }
 
 function rejectSessionFields(issues: ValidationIssue[], value: unknown, path: string) {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => rejectSessionFields(issues, item, path + '[' + index + ']'))
+    value.forEach((item, index) => rejectSessionFields(issues, item, path + "[" + index + "]"))
     return
   }
   if (!isObject(value)) return
   for (const [key, child] of Object.entries(value)) {
-    const childPath = path ? path + '.' + key : key
-    if (key === 'session_id' || key === 'codexSessionId') issues.push({ path: childPath, message: 'macro template must not persist Codex session fields' })
+    const childPath = path ? path + "." + key : key
+    if (key === "session_id" || key === "codexSessionId") issues.push({ path: childPath, message: "macro template must not persist Codex session fields" })
     rejectSessionFields(issues, child, childPath)
   }
 }
 
 function rejectStringExpressionFields(issues: ValidationIssue[], path: string, value: Record<string, unknown>) {
-  if (typeof value.if === 'string') issues.push({ path: path + '.if', message: 'string expressions are not allowed in Flow V2; use structured condition fields' })
-  if (typeof value.expression === 'string') issues.push({ path: path + '.expression', message: 'string expressions are not allowed in Flow V2; use structured condition fields' })
+  if (typeof value.if === "string") issues.push({ path: path + ".if", message: "string expressions are not allowed in Flow V2; use structured condition fields" })
+  if (typeof value.expression === "string") issues.push({ path: path + ".expression", message: "string expressions are not allowed in Flow V2; use structured condition fields" })
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isBooleanOrNull(value: unknown): value is boolean | null {
-  return typeof value === 'boolean' || value === null
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
 function invalid(path: string, message: string): ValidationResult {

@@ -1,35 +1,25 @@
 # Parser Profile Contract
 
-## Parser Kinds
+## Current Product Boundary
 
-V0 supports two parser kinds:
+Flow V2 macro templates do not expose a `parse` or `ai-json` action. Parser profiles are not part of the runnable macro language after `20260627A.016`.
+
+When users want AI parsing, they run an agent such as Codex in a normal terminal, use `send_line` to send text to that terminal, use `capture-source` to capture the response, and use `if.text_match` to route on the captured text.
+
+## Retained Internal/Probe Surface
+
+The parser profile and parser runtime code may remain for historical probes, offline experiments, and explicit developer tests. It must not be treated as a macro template contract unless a future task reintroduces a parser action explicitly.
+
+If used in a probe, the old parser kinds are:
 
 - `regex`: template-local rules that emit typed boolean/null signals.
 - `ai-json`: built-in parser profiles that call either explicit mock mode or real `codex exec` mode.
 
-`ai-json` is disabled by default. Users must start `just start-mock-ai` or `just start-codex-ai` to enable it.
+`ai-json` remains disabled by default. Any mock or real model path must be selected by explicit just entry points; no product path may silently fall back to mock AI.
 
-## Signals
+## Legacy Signal Rules
 
-Parser outputs are soft structured signals for macro branching and lane success checks. V0 signal values are typed `true`, `false`, or `null`; missing fields fail schema validation.
-
-String boolean values may be normalized by parser output normalization only where explicitly allowed by parser schema. Branch and lane condition comparison itself is strict and typed.
-
-## Profile Catalog
-
-The macro workbench consumes a thin `ProfileCatalogSummary` with profile id, declared signals, and allowed branch operators. Full ParserProfile bundles add prompt/schema/check fixtures and are loaded by parser runtime.
-
-The summary and full profile must stay compatible: declared signals cannot drift.
-
-## Regex Parser
-
-Regex rules declare signal id, signal type, pattern, safe flags, and match/no-match values. Regex parser writes raw and normalized parser artifacts.
-
-## AI JSON Parser
-
-Real ai-json uses one-shot `codex exec` with schema-constrained output. Mock ai-json is only available through explicit mock mode for offline tests and demos. Parser errors pause runs with raw artifact evidence when available.
-
-Replica disagreement returns a disagreement state instead of guessing.
+Legacy parser outputs use typed `true`, `false`, or `null`; missing fields fail schema validation. String boolean values may be normalized only where explicitly allowed by parser schema. Condition comparison itself is strict and typed.
 
 ## Online Limit
 

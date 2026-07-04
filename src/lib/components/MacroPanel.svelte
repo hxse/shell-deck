@@ -33,6 +33,7 @@
   let macroView = $state<MacroView>('editor')
   let runner = $state<MacroRunnerSnapshot | null>(null)
   let runnerInput = $state('')
+  let runnerInputKey = $state('')
 
   const validation = $derived(draft ? validateMacroTemplate(draft, { indexMap }) : { ok: true, issues: [] })
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
@@ -43,6 +44,15 @@
     if (loadedConfigId !== configId) {
       loadedConfigId = configId
       void reloadAll()
+    }
+  })
+
+  $effect(() => {
+    const waiting = runner?.waitingInput
+    const nextKey = waiting ? (runner?.runId ?? '') + ':' + waiting.stepId : ''
+    if (nextKey !== runnerInputKey) {
+      runnerInputKey = nextKey
+      runnerInput = waiting?.defaultText ?? ''
     }
   })
 
@@ -235,6 +245,7 @@
     try {
       runner = await runnerClient().submitInput({ text: runnerInput })
       runnerInput = ''
+      runnerInputKey = ''
       statusText = 'Runner ' + runner.status
       refreshRunnerSoon()
     } catch (error) {

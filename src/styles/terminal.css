@@ -268,3 +268,34 @@ select,
   padding: 6px 7px;
   font-weight: 400;
 }
+
+.text-box-pane {
+  background: #f8fafc;
+}
+
+.text-box-meta .inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.text-box-editor {
+  min-height: 0;
+  flex: 1;
+  width: 100%;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  padding: 12px;
+  box-sizing: border-box;
+  background: #fbfdff;
+  color: #1f2933;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.text-box-editor:focus {
+  box-shadow: inset 0 0 0 2px #2d7ff9;
+}

@@ -4,6 +4,7 @@ import { createTerminalId, createTerminalLaunchId, normalizeTerminalRef, type Te
 import { ConfigStore } from './configStore'
 import { FakeTerminalBackend } from './fakeTerminalBackend'
 import { RealPtyBackend } from './realPtyBackend'
+import { TextBoxBackend } from './textBoxBackend'
 import type { TerminalBackend, TerminalBackendFactory } from './terminalBackend'
 
 const DEFAULT_REPLAY_LIMIT = 500
@@ -157,6 +158,16 @@ export class TerminalDeckManager {
       return { ok: false as const, reason: 'not_running' }
     }
     terminal.backend.write(data)
+    return { ok: true as const }
+  }
+
+  setTextContent(configId: string, ref: TerminalRef | string | number, content: string) {
+    const terminal = this.resolveTerminal(configId, ref)
+    if (terminal.backendKind !== 'text') {
+      throw new Error('terminal_not_text_box:' + terminal.terminalId)
+    }
+    terminal.replay = [content]
+    this.broadcast(configId, this.terminalSnapshot(terminal))
     return { ok: true as const }
   }
 
@@ -403,9 +414,13 @@ export class TerminalDeckManager {
   }
 }
 
+
 export function defaultBackendFactory(kind: TerminalBackendKind, options: { cols: number; rows: number }): TerminalBackend {
   if (kind === 'fake') {
     return new FakeTerminalBackend(options)
+  }
+  if (kind === 'text') {
+    return new TextBoxBackend(options)
   }
   return new RealPtyBackend(options)
 }

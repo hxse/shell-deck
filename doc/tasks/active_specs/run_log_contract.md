@@ -20,7 +20,7 @@ Normal pause/resume does not duplicate already event-logged terminal sends. V0 d
 
 ## Node Logs
 
-Node logs group events by macro step. Parallel lane events include `laneId` and `laneStepId` metadata so the parent `parallel_all` node can display per-lane trace.
+Node logs group events by macro step. `parallel_send_capture` item events include `itemId` metadata and remain grouped under the parent `parallel_send_capture` step. The merged output is represented by a `merged_text` artifact ref on the parent step.
 
 ## Real-Time UI Updates
 

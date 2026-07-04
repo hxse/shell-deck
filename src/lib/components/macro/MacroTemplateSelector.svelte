@@ -46,7 +46,7 @@
     <summary data-testid="macro-template-summary">
       <span>Template</span>
       <strong>{selectedTemplateName ?? 'No template selected'}</strong>
-      <small>{templates.length} saved · {draft ? draft.steps.length + ' steps' : 'empty'}</small>
+      <small>{templates.length} saved · {draft ? draft.body.length + ' nodes' : 'empty'}</small>
     </summary>
   </details>
   <div class="macro-template-drawer-body">
