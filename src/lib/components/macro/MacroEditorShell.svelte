@@ -1,44 +1,23 @@
 <script lang="ts">
   import type { TerminalIndexMapItem, TerminalSnapshot } from "../../protocol"
-  import type { ProfileCatalogSummary } from "../../macro/profileCatalogSummary"
   import type { CaptureSourceConfig, FlowV2Node, MacroTemplate, MessageSpec, ParallelSendCaptureItem, TerminalTarget, ValidationResult } from "../../macro/templateTypes"
-  import MacroActionPalette from "./MacroActionPalette.svelte"
   import MacroStepList from "./MacroStepList.svelte"
+  import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
-  let { draft = $bindable<MacroTemplate | null>(), catalog, terminals, indexMap, validation, macroControl } = $props<{
+  let { draft = $bindable<MacroTemplate | null>(), terminals, indexMap, validation, insertionPaletteMode } = $props<{
     draft: MacroTemplate | null
-    catalog: ProfileCatalogSummary | null
     terminals: TerminalSnapshot[]
     indexMap: TerminalIndexMapItem[]
     validation: ValidationResult
-    macroControl: (action: "start" | "pause" | "resume" | "stop") => void
+    insertionPaletteMode: MacroInsertionPaletteMode
   }>()
+
 
   function updateDraft(mutator: (template: MacroTemplate) => void) {
     if (!draft) return
     const next = JSON.parse(JSON.stringify(draft)) as MacroTemplate
     mutator(next)
     draft = next
-  }
-
-  function addNode(type: FlowV2Node["type"]) {
-    updateDraft((template) => template.body.push(defaultNode(template, type)))
-  }
-
-  function defaultNode(template: MacroTemplate, type: FlowV2Node["type"]): FlowV2Node {
-    const terminal = firstTerminalTarget()
-    const id = uniqueKey(type.replace(/[^A-Za-z0-9_-]/g, "_"), allNodeIds(template.body))
-    if (type === "send_line") return { id, type, terminal, message: defaultMessage("") }
-    if (type === "input_line") return { id, type, terminal, prompt: "Input", allowEmpty: false }
-    if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
-    if (type === "capture-source") return { id, type, capture: defaultCaptureSource("terminal-buffer") }
-    if (type === "extract_text") return { id, type, source: defaultArtifactSource(template), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "last" }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
-    if (type === "parallel_send_capture") return { id, type, items: [defaultParallelItem(id + "_item", terminal)], merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true }, onItemFail: "pause" }
-    if (type === "if") return { id, type, branches: [{ kind: "if", condition: defaultCondition(template), body: [{ id: uniqueKey("return", allNodeIds(template.body)), type: "return", reason: "matched" }] }] }
-    if (type === "for") return { id, type, range: { count: 1 }, body: [{ id: uniqueKey("return", allNodeIds(template.body)), type: "return", reason: "loop" }] }
-    if (type === "break") return { id, type, reason: "break" }
-    if (type === "continue") return { id, type, reason: "continue" }
-    return { id, type: "return", reason: "done" }
   }
 
   function defaultParallelItem(rawId: string, terminal: TerminalTarget): ParallelSendCaptureItem {
@@ -61,26 +40,39 @@
   }
 
   function defaultMessage(text: string): MessageSpec {
-    return { parts: [{ kind: "text", text }] }
+    return text.length > 0 ? { parts: [{ kind: "text", text }] } : { parts: [] }
   }
 
   function terminalChoices() {
-    const aliases = indexMap.map((item: TerminalIndexMapItem) => ({ value: "alias:" + item.terminalAlias, label: "alias:" + item.terminalAlias }))
-    const indices = indexMap.map((item: TerminalIndexMapItem) => ({ value: "index:" + item.index, label: "#" + item.index + " " + item.terminalAlias }))
-    const ids = terminals.map((terminal: TerminalSnapshot) => ({ value: "id:" + terminal.terminalId, label: terminal.terminalId }))
-    return [...aliases, ...indices, ...ids]
+    return indexMap.map((item: TerminalIndexMapItem) => ({
+      value: terminalChoiceValue(item),
+      label: "#" + item.index + " | alias:" + item.terminalAlias + " | id:" + item.terminalId,
+      title: "index: #" + item.index + "\nalias: " + item.terminalAlias + "\nid: " + item.terminalId,
+    }))
+  }
+
+  function terminalChoiceValue(item: TerminalIndexMapItem): string {
+    return "terminal:" + item.terminalId
+  }
+
+  function indexItemForTarget(target: TerminalTarget): TerminalIndexMapItem | undefined {
+    if (target.kind === "id") return indexMap.find((item: TerminalIndexMapItem) => item.terminalId === target.value)
+    if (target.kind === "alias") return indexMap.find((item: TerminalIndexMapItem) => item.terminalAlias === target.value)
+    return indexMap.find((item: TerminalIndexMapItem) => item.index === target.value)
   }
 
   function targetFromChoice(choice: string): TerminalTarget {
     const [kind, ...rest] = choice.split(":")
     const value = rest.join(":")
+    if (kind === "terminal") return { kind: "id", value }
     if (kind === "index") return { kind: "index", value: Number(value) }
     if (kind === "id") return { kind: "id", value }
     return { kind: "alias", value }
   }
 
   function choiceFromTarget(target: TerminalTarget): string {
-    return target.kind + ":" + target.value
+    const item = indexItemForTarget(target)
+    return item ? terminalChoiceValue(item) : target.kind + ":" + target.value
   }
 
   function firstTerminalTarget(): TerminalTarget {
@@ -109,24 +101,9 @@
         if (node.else) choices.push(...collectArtifactChoices(node.else))
       }
       if (node.type === "for") choices.push(...collectArtifactChoices(node.body))
+      if ((node.type === "break" || node.type === "continue" || node.type === "finish") && node.body) choices.push(...collectArtifactChoices(node.body))
     }
     return choices
-  }
-
-  function allNodeIds(nodes: FlowV2Node[]): string[] {
-    return nodes.flatMap((node) => {
-      const nested = node.type === "if"
-        ? [...node.branches.flatMap((branch) => allNodeIds(branch.body)), ...(node.else ? allNodeIds(node.else) : [])]
-        : node.type === "for" ? allNodeIds(node.body) : []
-      return [node.id, ...nested]
-    })
-  }
-
-  function uniqueKey(prefix: string, existing: string[]) {
-    const base = sanitizeId(prefix) || "node"
-    let candidate = base
-    for (let index = 2; existing.includes(candidate); index += 1) candidate = base + "_" + index
-    return candidate
   }
 
   function sanitizeId(value: string) {
@@ -135,7 +112,7 @@
 </script>
 
 {#if draft}
-  <div class="macro-editor-layout">
+  <div class="macro-editor-layout no-tools">
     <main class="macro-editor-main">
       <MacroStepList
         {draft}
@@ -148,9 +125,9 @@
         {defaultParallelItem}
         {defaultCondition}
         {artifactChoices}
+        {insertionPaletteMode}
       />
     </main>
-    <MacroActionPalette {draft} {addNode} {macroControl} />
   </div>
 {:else}
   <p class="hint">Create or import a macro template.</p>

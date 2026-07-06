@@ -20,7 +20,7 @@ Terminal ids, indexes, aliases, and deck snapshots are scoped by `configId`. The
 
 - `fake`: deterministic backend used by tests and offline demos.
 
-A fresh `just start` seeds the `local` config with two `real` terminals. Test servers and explicit terminal creation can still request `fake`.
+A fresh `just start` seeds the `local` config with two `real` terminals and one `text` deck slot. Test servers and explicit terminal creation can still request `fake`.
 - `real`: shell PTY backend for local shell use.
 
 The browser/xterm view displays backend PTY output. The frontend does not local-echo terminal input as truth.

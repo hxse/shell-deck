@@ -21,7 +21,7 @@ function template(id = "tmpl_v2"): MacroTemplate {
     body: [
       { id: "send", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello" }] } },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
-      { id: "return_done", type: "return", reason: "done" },
+      { id: "finish_done", type: "finish", reason: "done" },
     ],
   }
 }
@@ -45,7 +45,7 @@ test("store creates, saves, duplicates and imports Flow V2 templates", () => {
     const store = new MacroTemplateStore(root)
     const created = store.create("local", indexMap)
     expect(created.schemaVersion).toBe(2)
-    expect(created.body[0]?.type).toBe("send_line")
+    expect(created.body).toEqual([])
 
     const saved = store.save("local", { ...template("saved"), configId: "local" }, indexMap)
     expect(store.read("local", saved.id).body).toHaveLength(3)

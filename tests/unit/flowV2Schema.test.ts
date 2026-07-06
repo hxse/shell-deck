@@ -27,7 +27,7 @@ function validTemplate(): MacroTemplate {
         branches: [{
           kind: "if",
           condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "READY" }, scope: { kind: "whole" } },
-          body: [{ id: "return_ready", type: "return", reason: "ready" }],
+          body: [{ id: "finish_ready", type: "finish", reason: "ready" }],
         }],
       },
     ],
@@ -46,7 +46,14 @@ test("terminal-buffer accepts visible screen and raw stream tail modes", () => {
   expect(validateFlowV2Template(raw, { indexMap }).ok).toBe(true)
 })
 
-test("Flow V2 accepts message parts, capture, text_match and return", () => {
+
+test("Flow V2 allows empty root body for new templates", () => {
+  const template = validTemplate()
+  template.body = []
+  expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
+})
+
+test("Flow V2 accepts message parts, capture, text_match and finish", () => {
   expect(validateFlowV2Template(validTemplate(), { indexMap }).ok).toBe(true)
 })
 
@@ -63,12 +70,51 @@ test("Flow V2 hard-cuts v1 steps and legacy action names", () => {
     bad.body.push({ id: "bad_" + type, type } as never)
     expect(issues(bad)).toContain("legacy Flow V1 node type is unsupported in Flow V2")
   }
+
+  const oldReturn = validTemplate()
+  oldReturn.body.push({ id: "old_return", type: "return", reason: "old" } as never)
+  expect(issues(oldReturn)).toContain("return is unsupported in Flow V2; use finish")
 })
 
 test("wait only supports duration, terminal-quiet and user-continue", () => {
   const template = validTemplate()
   template.body.push({ id: "wait_bad", type: "wait", mode: "capture-ready-or-user", captureStep: "capture_worker", timeoutMs: 1000, onTimeout: "pause" } as never)
   expect(issues(template)).toContain("legacy wait mode is not allowed in Flow V2")
+
+  const timeoutContinue = validTemplate()
+  const wait = timeoutContinue.body[1]
+  if (wait.type !== "wait" || wait.mode !== "terminal-quiet") throw new Error("missing wait")
+  wait.onTimeout = "continue"
+  expect(issues(timeoutContinue)).toContain("onTimeout:value must be one of pause, finish")
+})
+
+
+test("for supports count and forever range modes", () => {
+  const counted = validTemplate()
+  counted.body.push({ id: "loop_count", type: "for", range: { kind: "count", count: 2 }, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] })
+  expect(validateFlowV2Template(counted, { indexMap }).ok).toBe(true)
+
+  const legacyCount = validTemplate()
+  legacyCount.body.push({ id: "loop_legacy_count", type: "for", range: { count: 2 }, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] })
+  expect(validateFlowV2Template(legacyCount, { indexMap }).ok).toBe(true)
+
+  const forever = validTemplate()
+  forever.body.push({ id: "loop_forever", type: "for", range: { kind: "forever" }, body: [{ id: "break_loop", type: "break", reason: "done" }] })
+  expect(validateFlowV2Template(forever, { indexMap }).ok).toBe(true)
+
+  const bad = validTemplate()
+  bad.body.push({ id: "loop_bad", type: "for", range: { kind: "forever", count: 1 }, body: [{ id: "break_loop", type: "break", reason: "done" }] } as never)
+  expect(issues(bad)).toContain("range.count:extra Flow V2 field is not allowed")
+})
+
+test("finish break and continue support action-only bodies", () => {
+  const template = validTemplate()
+  template.body.push({ id: "finish_with_action", type: "finish", reason: "done", body: [{ id: "send_before_finish", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before finish" }] } }] })
+  expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
+
+  const bad = validTemplate()
+  bad.body.push({ id: "finish_with_flow", type: "finish", reason: "done", body: [{ id: "nested_if", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "READY" }, scope: { kind: "whole" } }, body: [{ id: "nested_finish", type: "finish", reason: "bad" }] }] }] } as never)
+  expect(issues(bad)).toContain("finish/break/continue action body only supports action nodes")
 })
 
 test("legacy parser and wait tokens are allowed inside user text fields", () => {
@@ -81,6 +127,14 @@ test("legacy parser and wait tokens are allowed inside user text fields", () => 
 })
 
 test("send_line and input_line enforce message source rules", () => {
+  const emptyMessage = validTemplate()
+  emptyMessage.body[0] = { id: "send_empty", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } }
+  expect(validateFlowV2Template(emptyMessage, { indexMap }).ok).toBe(true)
+
+  const artifactNone = validTemplate()
+  artifactNone.body[0] = { id: "send_none", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact" }] } }
+  expect(validateFlowV2Template(artifactNone, { indexMap }).ok).toBe(true)
+
   const send = validTemplate()
   send.body[0] = { id: "send_bad", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] } } as never
   expect(issues(send)).toContain("message part kind must be text or artifact")
@@ -139,7 +193,7 @@ test("extract_text selects and extracts text into visible predecessor artifact",
     source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" },
     split: { kind: "lines", keepEmpty: false },
     filters: [{ kind: "exclude", matcher: { kind: "regex", pattern: "^\\s*[$#>]\\s*$" } }],
-    select: { mode: "last" },
+    select: { mode: "index", index: -1 },
     extract: { kind: "none" },
     trim: "right",
     onEmpty: "pause",
@@ -155,6 +209,18 @@ test("extract_text selects and extracts text into visible predecessor artifact",
   extract.source = { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }
   extract.extract = { kind: "regex", pattern: "(", group: 1 }
   expect(issues(bad)).toContain("extract.pattern:regex pattern must compile")
+
+  const negativeRange = structuredClone(template)
+  const rangeExtract = negativeRange.body[3]
+  if (rangeExtract.type !== "extract_text") throw new Error("missing extract")
+  rangeExtract.select = { mode: "range", start: -3, end: -1 }
+  expect(validateFlowV2Template(negativeRange, { indexMap }).ok).toBe(true)
+
+  const continueOnEmpty = structuredClone(template)
+  const continueExtract = continueOnEmpty.body[3]
+  if (continueExtract.type !== "extract_text") throw new Error("missing extract")
+  continueExtract.onEmpty = "continue"
+  expect(validateFlowV2Template(continueOnEmpty, { indexMap }).ok).toBe(true)
 })
 
 test("agent-event capture requires explicit codex agent enum", () => {
@@ -187,9 +253,9 @@ test("parallel_send_capture reuses send_line and capture-source schema and produ
   parallel.items[1].terminal = { kind: "alias", value: "worker" }
   expect(issues(bad)).toContain("duplicate parallel item terminal")
 
-  const badReturn = structuredClone(template)
-  const badParallel = badReturn.body[4]
+  const badFinish = structuredClone(template)
+  const badParallel = badFinish.body[4]
   if (badParallel.type !== "parallel_send_capture") throw new Error("missing parallel")
-  badParallel.items[0].wait = { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 10, maxMs: 1000, onTimeout: "return" }
-  expect(issues(badReturn)).toContain("parallel item wait onTimeout must be pause")
+  badParallel.items[0].wait = { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 10, maxMs: 1000, onTimeout: "finish" }
+  expect(issues(badFinish)).toContain("parallel item wait onTimeout must be pause")
 })

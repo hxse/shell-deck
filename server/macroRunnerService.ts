@@ -27,7 +27,7 @@ import type { TerminalSnapshot } from "../src/lib/protocol"
 import { MacroTemplateStore } from "../src/lib/macro/templateStore"
 import { TerminalDeckManager } from "./terminalDeckManager"
 
-type ControlResult = "completed" | "suspended" | "break" | "continue" | "return"
+type ControlResult = "completed" | "suspended" | "break" | "continue" | "finish"
 type CaptureExecutionResult = { artifactRef: string; text: string }
 type CaptureExecutionOptions = { eventData?: Record<string, unknown>; captureIdentityId?: string }
 
@@ -178,7 +178,7 @@ export class MacroRunnerService {
     try {
       const result = await this.executeBody(runtime, runtime.template.body, true)
       if (result === "completed") await this.completeRun(runtime, "Run completed")
-      if (result === "return") await this.completeRun(runtime, "Run returned")
+      if (result === "finish") await this.completeRun(runtime, "Run finished")
       if (result === "break" || result === "continue") await this.pauseRun(runtime, "control_outside_loop", result + " escaped loop")
     } catch (error) {
       if (runtime.status === "running") await this.pauseRun(runtime, "step_error", error instanceof Error ? error.message : String(error), runtime.currentStepId ?? undefined)
@@ -197,16 +197,7 @@ export class MacroRunnerService {
   }
 
   private async executeNode(runtime: RuntimeState, node: FlowV2Node, skipCompleted: boolean): Promise<ControlResult> {
-    if (node.type === "break" || node.type === "continue") {
-      await this.startStep(runtime, node.id)
-      await this.completeStep(runtime, node.id)
-      return node.type
-    }
-    if (node.type === "return") {
-      await this.startStep(runtime, node.id)
-      await this.completeStep(runtime, node.id)
-      return "return"
-    }
+    if (node.type === "break" || node.type === "continue" || node.type === "finish") return await this.executeControlTerminal(runtime, node, skipCompleted)
     if (node.type === "if") return await this.executeIf(runtime, node, skipCompleted)
     if (node.type === "for") return await this.executeFor(runtime, node)
     if (node.type === "send_line") return await this.executeSendLine(runtime, node)
@@ -237,14 +228,29 @@ export class MacroRunnerService {
     return "completed"
   }
 
+  private async executeControlTerminal(runtime: RuntimeState, node: Extract<FlowV2Node, { type: "break" | "continue" | "finish" }>, skipCompleted: boolean): Promise<ControlResult> {
+    await this.startStep(runtime, node.id)
+    const bodyResult = await this.executeBody(runtime, node.body ?? [], skipCompleted)
+    if (bodyResult === "suspended") return bodyResult
+    if (bodyResult === "finish") return bodyResult
+    if (bodyResult === "break" || bodyResult === "continue") return bodyResult
+    await this.completeStep(runtime, node.id)
+    return node.type === "finish" ? "finish" : node.type
+  }
+
   private async executeFor(runtime: RuntimeState, node: Extract<FlowV2Node, { type: "for" }>): Promise<ControlResult> {
     await this.startStep(runtime, node.id)
-    for (let index = 0; index < node.range.count; index += 1) {
-      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "control_transition", stepId: node.id, summary: "For iteration " + (index + 1) + "/" + node.range.count, data: { iteration: index + 1, count: node.range.count } })
+    const forever = node.range.kind === "forever"
+    const count = forever ? Number.POSITIVE_INFINITY : ("count" in node.range ? node.range.count : 1)
+    for (let index = 0; index < count; index += 1) {
+      if (!this.runtimeCanContinue(runtime)) return "suspended"
+      const summary = forever ? "For iteration " + (index + 1) + "/forever" : "For iteration " + (index + 1) + "/" + count
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "control_transition", stepId: node.id, summary, data: { iteration: index + 1, count: forever ? null : count, forever } })
       const result = await this.executeBody(runtime, node.body, false)
       if (result === "break") break
       if (result === "continue") continue
       if (result !== "completed") return result
+      if (forever) await delay(0)
     }
     await this.completeStep(runtime, node.id)
     return "completed"
@@ -311,7 +317,7 @@ export class MacroRunnerService {
     const completed = await this.waitForTerminalQuiet(runtime, node)
     if (!completed) {
       await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "wait_timeout", stepId: node.id, summary: "Wait timed out: terminal-quiet", data: { mode: node.mode } })
-      if (node.onTimeout === "return") return "return"
+      if (node.onTimeout === "finish") return "finish"
       await this.pauseRun(runtime, "wait_timeout", "Wait timed out: terminal-quiet", node.id)
       return "suspended"
     }
@@ -424,7 +430,8 @@ export class MacroRunnerService {
     this.setArtifact(runtime, node.id, "extracted_text", artifact.artifact.artifactRef)
     await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "text_extracted", stepId: node.id, summary: "Text extracted: " + node.id, data: { source: node.source, split: node.split, filters: node.filters, select: node.select, extract: node.extract, trim: node.trim, onEmpty: node.onEmpty, artifactRef: artifact.artifact.artifactRef, inputChars: input.length, outputChars: output.length, empty: output.length === 0 } })
     if (output.length === 0) {
-      if (node.onEmpty === "return") return "return"
+      if (node.onEmpty === "finish") return "finish"
+      if (node.onEmpty === "continue") return "continue"
       if (node.onEmpty === "fail") {
         await this.failRun(runtime, "extract_empty", "Text extraction produced no output", node.id)
         return "suspended"
@@ -454,10 +461,11 @@ export class MacroRunnerService {
 
   private selectTextParts(parts: string[], node: ExtractTextNode): string[] {
     const select = node.select
-    if (select.mode === "first") return parts.length > 0 ? [parts[0]] : []
-    if (select.mode === "last") return parts.length > 0 ? [parts[parts.length - 1]] : []
     if (select.mode === "all") return parts
-    if (select.mode === "index") return select.index < parts.length ? [parts[select.index]] : []
+    if (select.mode === "index") {
+      const index = select.index < 0 ? parts.length + select.index : select.index
+      return index >= 0 && index < parts.length ? [parts[index]] : []
+    }
     if (select.mode === "range") return parts.slice(select.start, select.end)
     return []
   }
@@ -490,6 +498,7 @@ export class MacroRunnerService {
   private renderMessage(runtime: RuntimeState, message: MessageSpec): string {
     return message.parts.map((part) => {
       if (part.kind === "text") return part.text
+      if (!part.source) return ""
       const ref = this.getArtifact(runtime, part.source.stepId, part.source.artifact)
       if (!ref) throw new Error("missing_artifact_source:" + part.source.stepId + ":" + part.source.artifact)
       return this.runEventStore.readArtifact(runtime.configId, runtime.runId, ref)
@@ -640,6 +649,10 @@ export class MacroRunnerService {
         }
       }
       if (node.type === "for") {
+        const found = this.findNode(node.body, stepId)
+        if (found) return found
+      }
+      if ((node.type === "break" || node.type === "continue" || node.type === "finish") && node.body) {
         const found = this.findNode(node.body, stepId)
         if (found) return found
       }

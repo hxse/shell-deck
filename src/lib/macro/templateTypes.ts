@@ -1,7 +1,7 @@
 import type { TerminalRef } from "../terminalIdentity"
 
 export type TerminalTarget = TerminalRef
-export type TimeoutAction = "pause" | "fail" | "return"
+export type TimeoutAction = "pause" | "fail" | "finish" | "continue"
 export type BranchOperator = "==" | "!=" | "is_null"
 export type SignalType = "boolean-null" | "string-enum"
 
@@ -47,7 +47,7 @@ export type FlowV2ArtifactSource = {
 
 export type MessagePart =
   | { kind: "text"; text: string }
-  | { kind: "artifact"; source: FlowV2ArtifactSource }
+  | { kind: "artifact"; source?: FlowV2ArtifactSource }
 
 export type MessageSpec = {
   parts: MessagePart[]
@@ -67,7 +67,7 @@ export type TextFilterSpec = {
 }
 
 export type TextSelectSpec =
-  | { mode: "first" | "last" | "all" }
+  | { mode: "all" }
   | { mode: "index"; index: number }
   | { mode: "range"; start: number; end?: number }
 
@@ -158,12 +158,17 @@ export type FlowV2IfBranch = {
   body: FlowV2Node[]
 }
 
+export type FlowV2ForRange = { kind?: "count"; count: number } | { kind: "forever" }
+
+export type FlowV2ControlTerminalNode =
+  | { id: string; type: "break"; reason?: string; body?: FlowV2ActionNode[] }
+  | { id: string; type: "continue"; reason?: string; body?: FlowV2ActionNode[] }
+  | { id: string; type: "finish"; reason?: string; body?: FlowV2ActionNode[] }
+
 export type FlowV2ControlNode =
   | { id: string; type: "if"; branches: FlowV2IfBranch[]; else?: FlowV2Node[] }
-  | { id: string; type: "for"; range: { count: number }; body: FlowV2Node[] }
-  | { id: string; type: "break"; reason?: string }
-  | { id: string; type: "continue"; reason?: string }
-  | { id: string; type: "return"; reason?: string }
+  | { id: string; type: "for"; range: FlowV2ForRange; body: FlowV2Node[] }
+  | FlowV2ControlTerminalNode
 
 export type FlowV2Node = FlowV2ActionNode | FlowV2ControlNode
 

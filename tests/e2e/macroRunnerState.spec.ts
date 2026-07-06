@@ -10,7 +10,7 @@ const template = {
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
     { id: "ask", type: "input_line", terminal: { kind: "alias", value: "terminal_1" }, prompt: "Direction", allowEmpty: false },
-    { id: "done", type: "return", reason: "ok" },
+    { id: "done", type: "finish", reason: "ok" },
   ],
 }
 
@@ -24,7 +24,7 @@ const otherTemplate = {
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
     { id: "send", type: "send_line", terminal: { kind: "alias", value: "terminal_1" }, message: { parts: [{ kind: "text", text: "other-run" }] } },
-    { id: "done", type: "return", reason: "ok" },
+    { id: "done", type: "finish", reason: "ok" },
   ],
 }
 
@@ -39,7 +39,7 @@ const delayedTemplate = {
   body: [
     { id: "send", type: "send_line", terminal: { kind: "alias", value: "terminal_1" }, message: { parts: [{ kind: "text", text: "delayed-run" }] } },
     { id: "wait", type: "wait", mode: "duration", durationMs: 1200 },
-    { id: "done", type: "return", reason: "ok" },
+    { id: "done", type: "finish", reason: "ok" },
   ],
 }
 
@@ -56,10 +56,12 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await page.getByTestId("macro-control-start").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("waiting_user_input")
   await expect(page.getByTestId("macro-run-input")).toBeVisible()
+  await expect(page.getByTestId("macro-control-pause-resume")).toHaveText("Pause")
 
-  await page.getByTestId("macro-control-pause").click()
+  await page.getByTestId("macro-control-pause-resume").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("paused")
-  await page.getByTestId("macro-control-resume").click()
+  await expect(page.getByTestId("macro-control-pause-resume")).toHaveText("Resume")
+  await page.getByTestId("macro-control-pause-resume").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("waiting_user_input")
 
   await page.getByTestId("macro-control-start").click()
@@ -91,6 +93,9 @@ test("macro runner auto-saves draft before start and completes send_line", async
   await page.getByTestId("macro-template-summary").click()
 
   await page.getByTestId("macro-create").click()
+  await page.getByTestId("empty-body-add").first().click()
+  await page.getByTestId("add-step-send").click()
+  await page.getByTestId("message-add-text").first().click()
   await page.getByTestId("message-text-part").first().fill("draft-send-only")
   await page.getByTestId("macro-control-start").click()
 

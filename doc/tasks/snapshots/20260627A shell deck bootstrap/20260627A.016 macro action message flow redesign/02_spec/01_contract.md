@@ -259,7 +259,7 @@ UI 要求：
 * `source` 可引用 `captured_text`、`merged_text`、`extracted_text`。
 * `split.kind = lines | regex`；regex flags 只允许 `i/m/s`，非法 pattern validation error。
 * `filters` 按顺序执行，支持 `include` / `exclude`，matcher 支持 simple ops 或 regex。
-* `select.mode = first | last | all | index | range`；`index`、`range.start`、`range.end` 都是 zero-based，range end 为 exclusive。
+* `select.mode = all | index | range`；`index`、`range.start`、`range.end` 都是 zero-based，支持负数索引（例如 `index: -1` 表示最后一段），range end 为 exclusive。`first` / `last` 不再保存为独立 mode。
 * `extract.kind = none | regex`；regex 支持 number group 或 named group。
 * `trim = none | left | right | both`。
 * `onEmpty = pause | fail | return`；空输出必须可观察地暂停/失败/返回，不静默继续。

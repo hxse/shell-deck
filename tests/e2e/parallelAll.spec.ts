@@ -20,7 +20,7 @@ const template = {
       onItemFail: "pause",
     },
     { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "terminal_1" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
-    { id: "done", type: "return", reason: "ok" },
+    { id: "done", type: "finish", reason: "ok" },
   ],
 }
 

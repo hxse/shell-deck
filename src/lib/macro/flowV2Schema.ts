@@ -13,8 +13,8 @@ import type {
 } from "./templateTypes"
 
 export const FLOW_V2_ACTION_TYPES = ["send_line", "input_line", "wait", "capture-source", "extract_text", "parallel_send_capture"] as const
-export const FLOW_V2_CONTROL_TYPES = ["if", "for", "break", "continue", "return"] as const
-export const FLOW_V2_FORBIDDEN_TYPES = ["sleep", "parse", "send_artifact", "parallel_all", "merge_parallel_results", "pause", "stop", "goto", "branch", "complete", "fail"] as const
+export const FLOW_V2_CONTROL_TYPES = ["if", "for", "break", "continue", "finish"] as const
+export const FLOW_V2_FORBIDDEN_TYPES = ["sleep", "parse", "send_artifact", "parallel_all", "merge_parallel_results", "pause", "stop", "return", "goto", "branch", "complete", "fail"] as const
 
 const ACTION_TYPES = new Set<string>(FLOW_V2_ACTION_TYPES)
 const CONTROL_TYPES = new Set<string>(FLOW_V2_CONTROL_TYPES)
@@ -40,7 +40,7 @@ const EXTRACT_TEXT_KEYS = new Set(["id", "type", "source", "split", "filters", "
 const TEXT_SPLIT_LINES_KEYS = new Set(["kind", "keepEmpty"])
 const TEXT_SPLIT_REGEX_KEYS = new Set(["kind", "pattern", "flags", "keepEmpty"])
 const TEXT_FILTER_KEYS = new Set(["kind", "matcher"])
-const TEXT_SELECT_FIRST_LAST_ALL_KEYS = new Set(["mode"])
+const TEXT_SELECT_ALL_KEYS = new Set(["mode"])
 const TEXT_SELECT_INDEX_KEYS = new Set(["mode", "index"])
 const TEXT_SELECT_RANGE_KEYS = new Set(["mode", "start", "end"])
 const TEXT_EXTRACT_NONE_KEYS = new Set(["kind"])
@@ -56,8 +56,9 @@ const REGEX_MATCHER_KEYS = new Set(["kind", "pattern", "flags"])
 const WHOLE_SCOPE_KEYS = new Set(["kind"])
 const LINES_SCOPE_KEYS = new Set(["kind", "mode", "includeEmptyLines"])
 const FOR_KEYS = new Set(["id", "type", "range", "body"])
-const RANGE_KEYS = new Set(["count"])
-const CONTROL_TERMINAL_KEYS = new Set(["id", "type", "reason"])
+const RANGE_COUNT_KEYS = new Set(["kind", "count"])
+const RANGE_FOREVER_KEYS = new Set(["kind"])
+const CONTROL_TERMINAL_KEYS = new Set(["id", "type", "reason", "body"])
 const SIMPLE_OPS = new Set(["contains", "not_contains", "equals", "not_equals", "starts_with", "ends_with"])
 const LINE_MODES = new Set(["first", "last", "any", "all"])
 const REGEX_FLAGS_RE = /^[ims]*$/
@@ -90,7 +91,7 @@ export function validateFlowV2Template(value: unknown, options: ValidateOptions 
   validateIsoString(issues, "createdAt", template.createdAt)
   validateIsoString(issues, "updatedAt", template.updatedAt)
   const context: ValidationContext = { indexMap: options.indexMap, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0 }
-  validateNodeList(issues, "body", template.body, context, true)
+  validateNodeList(issues, "body", template.body, context, false)
   return { ok: issues.length === 0, issues }
 }
 
@@ -114,7 +115,7 @@ function validateNode(issues: ValidationIssue[], path: string, node: unknown, co
     return
   }
   if (FORBIDDEN_TYPES.has(node.type)) {
-    issues.push({ path: path + ".type", message: "legacy Flow V1 node type is unsupported in Flow V2: " + node.type })
+    issues.push({ path: path + ".type", message: node.type === "return" ? "return is unsupported in Flow V2; use finish" : "legacy Flow V1 node type is unsupported in Flow V2: " + node.type })
     return
   }
   if (ACTION_TYPES.has(node.type)) {
@@ -126,6 +127,39 @@ function validateNode(issues: ValidationIssue[], path: string, node: unknown, co
     return
   }
   issues.push({ path: path + ".type", message: "unsupported Flow V2 node type" })
+}
+
+function validateActionOnlyNodeList(issues: ValidationIssue[], path: string, nodes: unknown, context: ValidationContext, requireNonEmpty: boolean) {
+  if (!Array.isArray(nodes)) {
+    issues.push({ path, message: "control action body must be an array" })
+    return
+  }
+  if (requireNonEmpty && nodes.length === 0) issues.push({ path, message: "control action body must not be empty" })
+  for (const [index, node] of nodes.entries()) {
+    const nodePath = path + "[" + index + "]"
+    if (!isObject(node)) {
+      issues.push({ path: nodePath, message: "node must be an object" })
+      continue
+    }
+    validateNodeId(issues, nodePath + ".id", node.id, context)
+    if (typeof node.type !== "string") {
+      issues.push({ path: nodePath + ".type", message: "node type must be a string" })
+      continue
+    }
+    if (FORBIDDEN_TYPES.has(node.type)) {
+      issues.push({ path: nodePath + ".type", message: node.type === "return" ? "return is unsupported in Flow V2; use finish" : "legacy Flow V1 node type is unsupported in Flow V2: " + node.type })
+      continue
+    }
+    if (ACTION_TYPES.has(node.type)) {
+      validateActionNode(issues, nodePath, node, context)
+      continue
+    }
+    if (CONTROL_TYPES.has(node.type)) {
+      issues.push({ path: nodePath + ".type", message: "finish/break/continue action body only supports action nodes" })
+      continue
+    }
+    issues.push({ path: nodePath + ".type", message: "unsupported Flow V2 node type" })
+  }
 }
 
 function validateActionNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
@@ -172,7 +206,7 @@ function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<
     validatePositiveInt(issues, path + ".quietMs", node.quietMs)
     validatePositiveInt(issues, path + ".maxMs", node.maxMs)
     if (Number.isInteger(node.quietMs) && Number.isInteger(node.maxMs) && Number(node.maxMs) < Number(node.quietMs)) issues.push({ path: path + ".maxMs", message: "maxMs must be greater than or equal to quietMs" })
-    validateTimeoutAction(issues, path + ".onTimeout", node.onTimeout, new Set(["pause", "return"]))
+    validateTimeoutAction(issues, path + ".onTimeout", node.onTimeout, new Set(["pause", "finish"]))
     return
   }
   if (node.mode === "user-continue") {
@@ -225,7 +259,7 @@ function validateExtractTextNode(issues: ValidationIssue[], path: string, node: 
   validateTextSelectSpec(issues, path + ".select", node.select)
   validateTextExtractSpec(issues, path + ".extract", node.extract)
   if (node.trim !== "none" && node.trim !== "left" && node.trim !== "right" && node.trim !== "both") issues.push({ path: path + ".trim", message: "trim must be none, left, right or both" })
-  validateTimeoutAction(issues, path + ".onEmpty", node.onEmpty, new Set(["pause", "fail", "return"]))
+  validateTimeoutAction(issues, path + ".onEmpty", node.onEmpty, new Set(["pause", "fail", "finish", "continue"]))
   if (typeof node.id === "string") registerArtifactOutput(context, node.id, "extracted_text")
 }
 
@@ -291,23 +325,22 @@ function validateTextSelectSpec(issues: ValidationIssue[], path: string, select:
     issues.push({ path, message: "select must be an object" })
     return
   }
-  if (select.mode === "first" || select.mode === "last" || select.mode === "all") {
-    rejectUnknownKeys(issues, path, select, TEXT_SELECT_FIRST_LAST_ALL_KEYS)
+  if (select.mode === "all") {
+    rejectUnknownKeys(issues, path, select, TEXT_SELECT_ALL_KEYS)
     return
   }
   if (select.mode === "index") {
     rejectUnknownKeys(issues, path, select, TEXT_SELECT_INDEX_KEYS)
-    validateNonNegativeInt(issues, path + ".index", select.index)
+    validateInt(issues, path + ".index", select.index)
     return
   }
   if (select.mode === "range") {
     rejectUnknownKeys(issues, path, select, TEXT_SELECT_RANGE_KEYS)
-    validateNonNegativeInt(issues, path + ".start", select.start)
-    if (select.end !== undefined) validateNonNegativeInt(issues, path + ".end", select.end)
-    if (Number.isInteger(select.start) && Number.isInteger(select.end) && Number(select.end) < Number(select.start)) issues.push({ path: path + ".end", message: "end must be greater than or equal to start" })
+    validateInt(issues, path + ".start", select.start)
+    if (select.end !== undefined) validateInt(issues, path + ".end", select.end)
     return
   }
-  issues.push({ path: path + ".mode", message: "select mode must be first, last, all, index or range" })
+  issues.push({ path: path + ".mode", message: "select mode must be all, index or range" })
 }
 
 function validateTextExtractSpec(issues: ValidationIssue[], path: string, extract: unknown) {
@@ -422,23 +455,40 @@ function validateControlNode(issues: ValidationIssue[], path: string, node: Reco
   }
   if (node.type === "for") {
     rejectUnknownKeys(issues, path, node, FOR_KEYS)
-    if (!isObject(node.range)) {
-      issues.push({ path: path + ".range", message: "for node must declare range object" })
-    } else {
-      rejectUnknownKeys(issues, path + ".range", node.range, RANGE_KEYS)
-      validatePositiveInt(issues, path + ".range.count", node.range.count)
-    }
+    validateForRange(issues, path + ".range", node.range)
     validateNodeList(issues, path + ".body", node.body, childContext(context, context.loopDepth + 1), true)
     return
   }
   if (node.type === "break" || node.type === "continue") {
     rejectUnknownKeys(issues, path, node, CONTROL_TERMINAL_KEYS)
     if (context.loopDepth < 1) issues.push({ path: path + ".type", message: node.type + " can only be used inside for body" })
-    if (node.reason !== undefined) validateString(issues, path + ".reason", node.reason, 1)
+    validateControlTerminalFields(issues, path, node, context)
     return
   }
   rejectUnknownKeys(issues, path, node, CONTROL_TERMINAL_KEYS)
+  validateControlTerminalFields(issues, path, node, context)
+}
+
+function validateForRange(issues: ValidationIssue[], path: string, range: unknown) {
+  if (!isObject(range)) {
+    issues.push({ path, message: "for node must declare range object" })
+    return
+  }
+  if (range.kind === undefined || range.kind === "count") {
+    rejectUnknownKeys(issues, path, range, RANGE_COUNT_KEYS)
+    validatePositiveInt(issues, path + ".count", range.count)
+    return
+  }
+  if (range.kind === "forever") {
+    rejectUnknownKeys(issues, path, range, RANGE_FOREVER_KEYS)
+    return
+  }
+  issues.push({ path: path + ".kind", message: "for range kind must be count or forever" })
+}
+
+function validateControlTerminalFields(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
   if (node.reason !== undefined) validateString(issues, path + ".reason", node.reason, 1)
+  if (node.body !== undefined) validateActionOnlyNodeList(issues, path + ".body", node.body, childContext(context, context.loopDepth), false)
 }
 
 function validateIfNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
@@ -504,8 +554,8 @@ function validateMessageSpec(issues: ValidationIssue[], path: string, message: u
     return
   }
   rejectUnknownKeys(issues, path, message, MESSAGE_KEYS)
-  if (!Array.isArray(message.parts) || message.parts.length === 0) {
-    issues.push({ path: path + ".parts", message: "message.parts must be a non-empty array" })
+  if (!Array.isArray(message.parts)) {
+    issues.push({ path: path + ".parts", message: "message.parts must be an array" })
     return
   }
   for (const [index, part] of message.parts.entries()) {
@@ -519,7 +569,7 @@ function validateMessageSpec(issues: ValidationIssue[], path: string, message: u
       validateString(issues, partPath + ".text", part.text, 0)
     } else if (part.kind === "artifact") {
       rejectUnknownKeys(issues, partPath, part, ARTIFACT_PART_KEYS)
-      validateArtifactSource(issues, partPath + ".source", part.source, context)
+      if (part.source !== undefined) validateArtifactSource(issues, partPath + ".source", part.source, context)
     } else {
       issues.push({ path: partPath + ".kind", message: "message part kind must be text or artifact" })
     }
@@ -603,6 +653,10 @@ function validatePositiveInt(issues: ValidationIssue[], path: string, value: unk
 
 function validateNonNegativeInt(issues: ValidationIssue[], path: string, value: unknown) {
   if (!Number.isInteger(value) || Number(value) < 0) issues.push({ path, message: "value must be a non-negative integer" })
+}
+
+function validateInt(issues: ValidationIssue[], path: string, value: unknown) {
+  if (!Number.isInteger(value)) issues.push({ path, message: "value must be an integer" })
 }
 
 function validateTimeoutAction(issues: ValidationIssue[], path: string, value: unknown, allowed: Set<string>) {

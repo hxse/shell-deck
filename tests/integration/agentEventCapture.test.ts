@@ -24,7 +24,7 @@ test("agent-event capture source writes raw event and captured text artifacts", 
     agentStore.append(agentOutput({ terminalId: "term_review_a", text: "ai-fixable ready", turnId: "turn-b" }))
     templateStore.save("local", template("agent_capture", [
       { id: "capture_agent", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, eventKind: "stop", field: "last_assistant_message", terminal: { kind: "alias", value: "reviewer" } } },
-      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_agent", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "ready" }, scope: { kind: "whole" } }, body: [{ id: "done", type: "return", reason: "ok" }] }] },
+      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_agent", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "ready" }, scope: { kind: "whole" } }, body: [{ id: "done", type: "finish", reason: "ok" }] }] },
     ]), manager.indexMap("local"))
 
     await service.start("local", { templateId: "agent_capture" })
@@ -52,7 +52,7 @@ test("runner imports AgentEvent spool before agent-event capture", async () => {
     agentStore.spool(agentOutput({ terminalId: "term_spool_capture", text: "spooled capture ready", turnId: "turn-spool" }))
     templateStore.save("local", template("spool_capture", [
       { id: "capture_agent", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, eventKind: "stop", field: "last_assistant_message", terminal: { kind: "alias", value: "reviewer" } } },
-      { id: "done", type: "return", reason: "ok" },
+      { id: "done", type: "finish", reason: "ok" },
     ]), manager.indexMap("local"))
 
     await service.start("local", { templateId: "spool_capture" })
@@ -101,7 +101,7 @@ test("HTTP AgentEvent ingest feeds server-owned runner capture source", async ()
     const terminal = await terminalResponse.json() as { terminalId: string }
     const httpTemplate = { ...template("http_agent_capture", [
       { id: "capture_agent", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, eventKind: "stop", field: "last_assistant_message", terminal: { kind: "id", value: terminal.terminalId } } },
-      { id: "done", type: "return", reason: "ok" },
+      { id: "done", type: "finish", reason: "ok" },
     ]), configId }
     const importResponse = await fetch(server.url + "/api/configs/" + configId + "/templates/import", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(httpTemplate) })
     expect(importResponse.status).toBe(201)

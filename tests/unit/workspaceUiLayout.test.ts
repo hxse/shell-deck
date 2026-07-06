@@ -14,6 +14,7 @@ test('ui layout store returns defaults and persists config-scoped panel state', 
         macro: { visible: true, widthPx: 760 },
         prompt: { visible: false, widthPx: 360 },
       },
+      macroInsertionPaletteMode: 'anchored',
     })
 
     const saved = store.save('local', {
@@ -21,9 +22,11 @@ test('ui layout store returns defaults and persists config-scoped panel state', 
         macro: { visible: false, widthPx: 9999 },
         prompt: { visible: true, widthPx: 200 },
       },
+      macroInsertionPaletteMode: 'center',
     })
-    expect(saved.panels.macro).toEqual({ visible: false, widthPx: 900 })
-    expect(saved.panels.prompt).toEqual({ visible: true, widthPx: 280 })
+    expect(saved.panels.macro).toEqual({ visible: false, widthPx: 1200 })
+    expect(saved.panels.prompt).toEqual({ visible: true, widthPx: 220 })
+    expect(saved.macroInsertionPaletteMode).toBe('center')
     expect(store.read('local')).toEqual(saved)
     expect(store.read('other').panels.macro.visible).toBe(true)
   } finally {

@@ -244,6 +244,45 @@
   font-weight: 700;
 }
 
+.validation-panel-compact {
+  font-size: 11px;
+}
+
+.validation-panel-compact summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.validation-panel-compact summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.validation-panel-compact summary span.ok {
+  color: #1b6d43;
+}
+
+.validation-panel-compact summary span.bad {
+  color: #8a2b1d;
+}
+
+.validation-panel-compact p,
+.validation-panel-compact ul {
+  margin: 8px 0 0;
+}
+
+.validation-panel-compact ul {
+  display: grid;
+  gap: 4px;
+  padding-left: 18px;
+}
+
 .macro-panel pre {
   max-height: 360px;
   overflow: auto;
@@ -271,4 +310,206 @@
 
 .regex-rule-row {
   flex-wrap: wrap;
+}
+
+
+/* .017 node insertion interaction */
+.macro-run-status-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.macro-run-status-dock .macro-run-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(58px, 1fr));
+  gap: 6px;
+}
+
+.macro-run-status-dock .macro-run-controls button {
+  min-height: 28px;
+  padding: 0 8px;
+}
+
+.flow-block {
+  position: relative;
+  margin: 4px 0 4px 10px;
+  padding-left: 13px;
+  border-left: 2px solid #d4dee8;
+}
+
+.flow-block::before {
+  content: "";
+  position: absolute;
+  top: 30px;
+  bottom: 6px;
+  left: -2px;
+  width: 2px;
+  background: #b7c7d6;
+}
+
+.flow-block-title {
+  min-height: 28px;
+  padding: 2px 0 6px;
+}
+
+.flow-node-editor {
+  position: relative;
+  margin-left: 4px;
+}
+
+.flow-node-editor::before {
+  content: "";
+  position: absolute;
+  top: 18px;
+  left: -17px;
+  width: 13px;
+  border-top: 2px solid #d4dee8;
+}
+
+.flow-node-editor.collapsed > :not(.step-title) {
+  display: none;
+}
+
+.flow-branch-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid #d5e0ea;
+  border-left: 3px solid #8fb6d8;
+  border-radius: 6px;
+  background: #f8fbfd;
+}
+
+.empty-flow-body {
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px dashed #b9c7d3;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.empty-flow-body button {
+  min-height: 28px;
+}
+
+.node-menu {
+  align-items: center;
+  gap: 4px;
+}
+
+.node-menu button {
+  min-height: 24px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.macro-insertion-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(24, 34, 44, 0.08);
+}
+
+.macro-insertion-mode.centered {
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.macro-insertion-mode.anchored {
+  display: block;
+  padding: 0;
+}
+
+.macro-insertion-scrim {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: default;
+}
+
+
+.macro-insertion-notice {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid #d7c489;
+  border-radius: 6px;
+  background: #fff8df;
+  color: #604a0a;
+  font-size: 12px;
+}
+
+.floating-insertion-palette {
+  position: relative;
+  z-index: 81;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(var(--palette-max-height, 560px), calc(100vh - 24px));
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #b9c7d3;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 42px rgba(20, 32, 44, 0.24);
+}
+
+.floating-insertion-palette.anchored {
+  position: fixed;
+  left: var(--palette-x);
+  top: var(--palette-y);
+  transform: translateX(-50%);
+}
+
+.floating-insertion-palette.anchored.above {
+  transform: translate(-50%, -100%);
+}
+
+.floating-insertion-palette .step-palette {
+  padding: 8px;
+}
+
+.floating-insertion-palette .step-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  justify-content: stretch;
+}
+
+.floating-insertion-palette .step-actions button {
+  min-height: 32px;
+  justify-content: center;
+}
+
+.move-existing-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.move-existing-row select,
+.move-existing-row button {
+  min-height: 32px;
+}
+
+.floating-insertion-palette > button {
+  justify-self: end;
+}
+
+@media (max-width: 760px) {
+  .floating-insertion-palette .step-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .macro-run-status-dock .macro-run-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

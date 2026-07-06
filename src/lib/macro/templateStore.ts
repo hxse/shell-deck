@@ -40,16 +40,13 @@ export class MacroTemplateStore {
 
   create(configId: string, indexMap: TerminalIndexMapItem[] = []): MacroTemplate {
     const now = new Date().toISOString()
-    const terminal = indexMap[0]?.terminalAlias ? { kind: "alias" as const, value: indexMap[0].terminalAlias } : { kind: "index" as const, value: 1 }
     const template: MacroTemplate = {
       schemaVersion: 2,
       id: createTemplateId(),
       name: "New Macro Template",
       description: "",
       configId: assertValidPublicId(configId, "configId"),
-      body: [
-        { id: "send_1", type: "send_line", terminal, message: { parts: [{ kind: "text", text: "" }] } },
-      ],
+      body: [],
       createdAt: now,
       updatedAt: now,
     }
@@ -121,6 +118,7 @@ function countNodes(nodes: unknown[]): number {
       if (Array.isArray(node.else)) count += countNodes(node.else)
     }
     if (node.type === "for" && Array.isArray(node.body)) count += countNodes(node.body)
+    if ((node.type === "break" || node.type === "continue" || node.type === "finish") && Array.isArray(node.body)) count += countNodes(node.body)
   }
   return count
 }

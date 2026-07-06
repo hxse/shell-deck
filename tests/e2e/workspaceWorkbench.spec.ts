@@ -11,7 +11,7 @@ const template = {
   body: [
     { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_1' }, message: { parts: [{ kind: 'text', text: 'workbench-run' }] } },
     { id: 'input', type: 'input_line', terminal: { kind: 'alias', value: 'terminal_1' }, prompt: 'Workbench input', allowEmpty: false },
-    { id: 'done', type: 'return', reason: 'ok' },
+    { id: 'done', type: 'finish', reason: 'ok' },
   ],
 }
 
@@ -53,7 +53,7 @@ test('macro prompt workbench uses selectors, grouped controls, trace tabs and li
 
   await expect(page.getByTestId('macro-run-controls')).toBeVisible()
   await page.getByTestId('macro-tab-json').click()
-  await expect(page.getByTestId('macro-run-controls')).toHaveCount(0)
+  await expect(page.getByTestId('macro-run-controls')).toBeVisible()
   await page.getByTestId('macro-tab-editor').click()
 
   await expect(page.getByTestId('run-log-panel')).toHaveCount(0)

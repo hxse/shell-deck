@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PromptUpdatedMessage, RunLogUpdatedMessage, TerminalIndexMapItem, TerminalSnapshot } from "../../protocol"
   import type { TerminalDeckClient } from "../../terminalDeckClient"
-  import type { WorkspacePanelKey, WorkspaceUiLayout } from "../../workspace/uiLayoutTypes"
+  import type { MacroInsertionPaletteMode, WorkspacePanelKey, WorkspaceUiLayout } from "../../workspace/uiLayoutTypes"
   import TerminalSlot from "../TerminalSlot.svelte"
   import TextBoxSlot from "../TextBoxSlot.svelte"
   import MacroPanel from "../MacroPanel.svelte"
@@ -37,6 +37,7 @@
     onTabKeydown,
     onBeginPanelResize,
     onResetPanelWidth,
+    onMacroInsertionPaletteModeChange,
   } = $props<{
     configId: string
     client: TerminalDeckClient | null
@@ -66,6 +67,7 @@
     onTabKeydown: (event: KeyboardEvent, terminal: TerminalSnapshot) => void
     onBeginPanelResize: (panel: WorkspacePanelKey, event: PointerEvent) => void
     onResetPanelWidth: (panel: WorkspacePanelKey) => void
+    onMacroInsertionPaletteModeChange: (mode: MacroInsertionPaletteMode) => void
   }>()
 </script>
 
@@ -111,7 +113,7 @@
     <section class="workspace-side-panel macro-side-panel" data-testid="macro-side-panel" style={"width: " + layout.panels.macro.widthPx + "px"}>
       <div class="panel-resize-handle" data-testid="macro-resize-handle" role="separator" aria-orientation="vertical" onpointerdown={(event) => onBeginPanelResize("macro", event)}></div>
       <div class="side-panel-scroll macro-workbench-shell" data-testid="macro-workbench-shell">
-        <MacroPanel {configId} {terminals} {indexMap} onResetWidth={() => onResetPanelWidth("macro")} {runLogRefreshToken} {runLogRefreshEvent} />
+        <MacroPanel {configId} {terminals} {indexMap} insertionPaletteMode={layout.macroInsertionPaletteMode} onInsertionPaletteModeChange={onMacroInsertionPaletteModeChange} onResetWidth={() => onResetPanelWidth("macro")} {runLogRefreshToken} {runLogRefreshEvent} />
       </div>
     </section>
   {/if}

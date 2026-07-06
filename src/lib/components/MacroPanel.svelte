@@ -10,13 +10,16 @@
   import MacroJsonView from './macro/MacroJsonView.svelte'
   import MacroTraceView from './macro/MacroTraceView.svelte'
   import MacroWorkbenchChrome from './macro/MacroWorkbenchChrome.svelte'
+  import type { MacroInsertionPaletteMode } from '../workspace/uiLayoutTypes'
 
   type MacroView = 'editor' | 'json' | 'trace'
 
-  let { configId, terminals, indexMap, onResetWidth, runLogRefreshToken = 0, runLogRefreshEvent = null } = $props<{
+  let { configId, terminals, indexMap, insertionPaletteMode, onInsertionPaletteModeChange, onResetWidth, runLogRefreshToken = 0, runLogRefreshEvent = null } = $props<{
     configId: string
     terminals: TerminalSnapshot[]
     indexMap: TerminalIndexMapItem[]
+    insertionPaletteMode: MacroInsertionPaletteMode
+    onInsertionPaletteModeChange: (mode: MacroInsertionPaletteMode) => void
     onResetWidth?: () => void
     runLogRefreshToken?: number
     runLogRefreshEvent?: RunLogUpdatedMessage | null
@@ -281,6 +284,8 @@
     {runner}
     {statusText}
     {runnerInput}
+    {insertionPaletteMode}
+    onInsertionPaletteModeChange={onInsertionPaletteModeChange}
     onTemplateSearchChange={(value) => { templateSearch = value }}
     onSelectTemplate={selectTemplate}
     onCreateTemplate={createTemplate}
@@ -294,13 +299,14 @@
     onRunnerInputChange={(value) => { runnerInput = value }}
     onSubmitRunnerInput={submitRunnerInput}
     onRefreshRunner={refreshRunner}
+    onMacroControl={macroControl}
     onViewChange={(view) => { macroView = view }}
   />
 
   {#if macroView === 'trace'}
     <MacroTraceView {configId} refreshToken={runLogRefreshToken} refreshEvent={runLogRefreshEvent} templateId={selectedTemplateId} templateName={selectedTemplateName} />
   {:else if macroView === 'editor'}
-    <MacroEditorShell bind:draft {catalog} {terminals} {indexMap} {validation} {macroControl} />
+    <MacroEditorShell bind:draft {terminals} {indexMap} {validation} {insertionPaletteMode} />
   {:else}
     <MacroJsonView {draft} {validation} {jsonPreview} onSaveTemplate={saveTemplate} onExportTemplate={exportTemplate} />
   {/if}

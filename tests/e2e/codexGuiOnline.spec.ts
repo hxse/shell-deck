@@ -65,21 +65,21 @@ async function latestRunnerEvents(request: APIRequestContext) {
 function codexPromptTemplate(command: string) {
   return baseTemplate('codex_macro_send_prompt_gui', 'Codex Macro Send Prompt', [
     { id: 'send_codex_prompt', type: 'send_line', terminal, message: { parts: [{ kind: 'text', text: command }] } },
-    { id: 'done', type: 'return', reason: 'sent' },
+    { id: 'done', type: 'finish', reason: 'sent' },
   ])
 }
 
 function terminalBufferTemplate() {
   return baseTemplate('codex_terminal_buffer_gui', 'Codex Terminal Buffer GUI', [
     { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal, mode: 'scrollback-tail', maxChars: 20000 } },
-    { id: 'if_codex', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_CODEX_GUI_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'return', reason: 'codex terminal-buffer ok' }] }] },
+    { id: 'if_codex', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_CODEX_GUI_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'finish', reason: 'codex terminal-buffer ok' }] }] },
   ])
 }
 
 function agentEventTemplate() {
   return baseTemplate('codex_agent_event_gui', 'Codex AgentEvent GUI', [
     { id: 'capture', type: 'capture-source', capture: { kind: 'agent-event', terminal, agent: { kind: 'codex' }, eventKind: 'stop', field: 'last_assistant_message' } },
-    { id: 'if_codex', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_CODEX_GUI_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'return', reason: 'codex agent-event ok' }] }] },
+    { id: 'if_codex', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_CODEX_GUI_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'finish', reason: 'codex agent-event ok' }] }] },
   ])
 }
 

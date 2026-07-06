@@ -36,7 +36,7 @@ test('real shell terminal target refs support index id and alias', async ({ page
     { id: 'send_index', type: 'send_line', terminal: { kind: 'index', value: 1 }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_INDEX_010') }] } },
     { id: 'send_id', type: 'send_line', terminal: { kind: 'id', value: first.terminalId }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ID_010') }] } },
     { id: 'send_alias', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_2' }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ALIAS_010') }] } },
-    { id: 'done', type: 'return', reason: 'targets ok' },
+    { id: 'done', type: 'finish', reason: 'targets ok' },
   ]))
 
   await page.goto('/?configId=' + configId)
@@ -59,7 +59,7 @@ test('wait duration and user-continue complete from GUI controls', async ({ page
   await importTemplate(request, configId, baseTemplate(configId, 'wait_modes', 'Wait Modes Smoke', [
     { id: 'wait_duration', type: 'wait', mode: 'duration', durationMs: 50 },
     { id: 'wait_user', type: 'wait', mode: 'user-continue', prompt: 'Continue?' },
-    { id: 'done', type: 'return', reason: 'wait modes ok' },
+    { id: 'done', type: 'finish', reason: 'wait modes ok' },
   ]))
 
   await page.goto('/?configId=' + configId)
@@ -68,7 +68,8 @@ test('wait duration and user-continue complete from GUI controls', async ({ page
   await page.getByTestId('macro-template-select').selectOption('wait_modes')
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('waiting', { timeout: 5000 })
-  await page.getByTestId('macro-control-resume').click()
+  await expect(page.getByTestId('macro-control-pause-resume')).toHaveText('Resume')
+  await page.getByTestId('macro-control-pause-resume').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 5000 })
 })
 
@@ -80,7 +81,7 @@ test('real shell text_match if handles simple true branch', async ({ page, reque
     { id: 'send_branch', type: 'send_line', terminal: target, message: { parts: [{ kind: 'text', text: printf('SD_BRANCH_TRUE_010') }] } },
     { id: 'wait_branch', type: 'wait', mode: 'duration', durationMs: 800 },
     { id: 'capture_branch', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: target, mode: 'scrollback-tail', maxChars: 12000 } },
-    { id: 'if_branch', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture_branch', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_BRANCH_TRUE_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done_regex', type: 'return', reason: 'text match ok' }] }] },
+    { id: 'if_branch', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture_branch', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_BRANCH_TRUE_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done_regex', type: 'finish', reason: 'text match ok' }] }] },
   ]))
 
   await page.goto('/?configId=' + configId)
@@ -109,7 +110,7 @@ test('real shell parallel_send_capture fan-out fan-in uses real terminals', asyn
       merge: { kind: 'sectioned_text', separator: '===== {itemId} | {terminalAlias} =====', order: 'item_order', includeEmptyCaptures: true },
       onItemFail: 'pause',
     },
-    { id: 'done', type: 'return', reason: 'parallel real ok' },
+    { id: 'done', type: 'finish', reason: 'parallel real ok' },
   ]))
 
   await page.goto('/?configId=' + configId)

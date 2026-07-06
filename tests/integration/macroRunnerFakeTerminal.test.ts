@@ -27,14 +27,14 @@ function template(id: string, body: MacroTemplate["body"]): MacroTemplate {
   return { schemaVersion: 2, id, name: id, description: "", configId: "local", body, createdAt: now, updatedAt: now }
 }
 
-test("Flow V2 runner executes send_line, wait, capture, if.text_match and return", async () => {
+test("Flow V2 runner executes send_line, wait, capture, if.text_match and finish", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("flow_happy", [
       { id: "send", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello ready" }] } },
       { id: "wait", type: "wait", mode: "duration", durationMs: 1 },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
-      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "hello ready" }, scope: { kind: "whole" } }, body: [{ id: "return_ok", type: "return", reason: "ok" }] }] },
+      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "hello ready" }, scope: { kind: "whole" } }, body: [{ id: "finish_ok", type: "finish", reason: "ok" }] }] },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "flow_happy" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
@@ -47,6 +47,24 @@ test("Flow V2 runner executes send_line, wait, capture, if.text_match and return
   }
 })
 
+test("Flow V2 control terminal action body runs before finish", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("finish_action_body", [
+      { id: "finish_done", type: "finish", reason: "done", body: [
+        { id: "send_before_finish", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before-return-action" }] } },
+      ] },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "finish_action_body" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const events = h.service.snapshot("local").run?.replay.events ?? []
+    expect(events.some((event) => event.kind === "terminal_line_sent" && event.stepId === "send_before_finish")).toBe(true)
+    expect(events.some((event) => event.kind === "step_completed" && event.stepId === "finish_done")).toBe(true)
+  } finally {
+    h.cleanup()
+  }
+})
+
 test("Flow V2 send_line concatenates ordered text and source parts without implicit separators", async () => {
   const h = harness()
   try {
@@ -54,7 +72,7 @@ test("Flow V2 send_line concatenates ordered text and source parts without impli
       { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-context" }] } },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       { id: "send_composite", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "prefix[" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" } }, { kind: "text", text: "]suffix" }] } },
-      { id: "return_done", type: "return", reason: "done" },
+      { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "send_parts_flow" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
@@ -75,7 +93,7 @@ test("terminal-buffer raw-stream-tail uses raw artifact as captured_text", async
     h.templateStore.save("local", template("raw_capture_flow", [
       { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-raw" }] } },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "raw-stream-tail", maxChars: 12000 } },
-      { id: "return_done", type: "return", reason: "done" },
+      { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "raw_capture_flow" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
@@ -93,7 +111,7 @@ test("Flow V2 send_line can append rendered text to a text box deck slot", async
   try {
     h.templateStore.save("local", template("send_to_text_box", [
       { id: "send_collect", type: "send_line", terminal: { kind: "alias", value: "collector" }, message: { parts: [{ kind: "text", text: "collected result" }] } },
-      { id: "return_done", type: "return", reason: "done" },
+      { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "send_to_text_box" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
@@ -111,7 +129,7 @@ test("Flow V2 capture-source can read a text box deck slot", async () => {
     h.manager.setTextContent("local", { kind: "alias", value: "collector" }, "draft notes\nREADY from text box")
     h.templateStore.save("local", template("capture_text_box", [
       { id: "capture_notes", type: "capture-source", capture: { kind: "text-box", terminal: { kind: "alias", value: "collector" } } },
-      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_notes", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "READY from text box" }, scope: { kind: "whole" } }, body: [{ id: "return_ok", type: "return", reason: "ok" }] }] },
+      { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_notes", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "READY from text box" }, scope: { kind: "whole" } }, body: [{ id: "finish_ok", type: "finish", reason: "ok" }] }] },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "capture_text_box" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
@@ -130,9 +148,9 @@ test("Flow V2 extract_text filters and selects captured text for downstream send
     h.templateStore.save("local", template("extract_text_flow", [
       { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "alpha" }] } },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
-      { id: "extract_last", type: "extract_text", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, split: { kind: "lines", keepEmpty: false }, filters: [{ kind: "exclude", matcher: { kind: "regex", pattern: "^\\s*[$#>]\\s*$" } }], select: { mode: "last" }, extract: { kind: "regex", pattern: "^ECHO:(.*)$", group: 1 }, trim: "both", onEmpty: "pause" },
+      { id: "extract_last", type: "extract_text", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, split: { kind: "lines", keepEmpty: false }, filters: [{ kind: "exclude", matcher: { kind: "regex", pattern: "^\\s*[$#>]\\s*$" } }], select: { mode: "index", index: -1 }, extract: { kind: "regex", pattern: "^ECHO:(.*)$", group: 1 }, trim: "both", onEmpty: "pause" },
       { id: "send_extract", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "got:" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "extract_last", artifact: "extracted_text" } }] } },
-      { id: "return_done", type: "return", reason: "done" },
+      { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "extract_text_flow" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
@@ -154,7 +172,7 @@ test("Flow V2 input_line uses one defaultSource as editable runtime input", asyn
       { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "default context" }] } },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       { id: "input", type: "input_line", terminal: { kind: "alias", value: "worker" }, prompt: "Direction", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" } },
-      { id: "return_done", type: "return", reason: "done" },
+      { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "input_flow" })
     await waitFor(() => h.service.snapshot("local").status === "waiting_user_input")
@@ -165,6 +183,52 @@ test("Flow V2 input_line uses one defaultSource as editable runtime input", asyn
     expect(line?.data.artifactRef).toBeTruthy()
     const sent = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(line?.data.artifactRef))
     expect(sent).toBe("fix it")
+  } finally {
+    h.cleanup()
+  }
+})
+
+test("Flow V2 extract_text onEmpty continue skips to next loop iteration", async () => {
+  const h = harness()
+  try {
+    h.manager.setTextContent("local", { kind: "alias", value: "collector" }, "")
+    h.templateStore.save("local", template("extract_continue_loop", [
+      { id: "capture_empty", type: "capture-source", capture: { kind: "text-box", terminal: { kind: "alias", value: "collector" } } },
+      { id: "loop_count", type: "for", range: { kind: "count", count: 2 }, body: [
+        { id: "extract_empty", type: "extract_text", source: { kind: "step_artifact", stepId: "capture_empty", artifact: "captured_text" }, split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "both", onEmpty: "continue" },
+        { id: "send_should_skip", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "should-not-run" }] } },
+      ] },
+      { id: "send_after_loop", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "after-loop" }] } },
+      { id: "finish_done", type: "finish", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "extract_continue_loop" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const events = h.service.snapshot("local").run?.replay.events ?? []
+    const transitions = events.filter((event) => event.kind === "control_transition" && event.stepId === "loop_count")
+    expect(transitions).toHaveLength(2)
+    expect(events.some((event) => event.kind === "terminal_line_sent" && event.stepId === "send_should_skip")).toBe(false)
+    expect(events.some((event) => event.kind === "terminal_line_sent" && event.stepId === "send_after_loop")).toBe(true)
+  } finally {
+    h.cleanup()
+  }
+})
+
+test("Flow V2 for forever loops until break", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("forever_break", [
+      { id: "loop_forever", type: "for", range: { kind: "forever" }, body: [
+        { id: "send_loop", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "FOREVER_BREAK_READY" }] } },
+        { id: "capture_loop", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
+        { id: "if_break", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_loop", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "FOREVER_BREAK_READY" }, scope: { kind: "whole" } }, body: [{ id: "break_loop", type: "break", reason: "matched" }] }] },
+      ] },
+      { id: "finish_done", type: "finish", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "forever_break" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const transitions = h.service.snapshot("local").run?.replay.events.filter((event) => event.kind === "control_transition" && event.stepId === "loop_forever") ?? []
+    expect(transitions).toHaveLength(1)
+    expect(transitions[0]?.data.forever).toBe(true)
   } finally {
     h.cleanup()
   }

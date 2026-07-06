@@ -56,9 +56,14 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   if (options.seed ?? true) {
     manager.ensureConfig('local')
     if (manager.indexMap('local').length === 0) {
-      const seedBackend = options.seedBackend ?? 'fake'
-      manager.createTerminal('local', { backend: seedBackend })
-      manager.createTerminal('local', { backend: seedBackend })
+      if (options.seedBackend) {
+        manager.createTerminal('local', { backend: options.seedBackend })
+        manager.createTerminal('local', { backend: options.seedBackend })
+      } else {
+        manager.createTerminal('local', { backend: 'real' })
+        manager.createTerminal('local', { backend: 'real' })
+        manager.createTerminal('local', { backend: 'text' })
+      }
     }
   }
 
@@ -535,7 +540,8 @@ if (import.meta.main) {
   }
   const port = Number(argValue('--port') ?? '5177')
   const aiJsonParser = parseAiJsonParserMode(argValue('--ai-json-parser') ?? 'disabled')
-  const seedBackend = parseSeedBackend(argValue('--seed-backend') ?? 'real')
+  const seedBackendArg = argValue('--seed-backend')
+  const seedBackend = seedBackendArg ? parseSeedBackend(seedBackendArg) : undefined
   const server = startShellDeckServer({ host, port, aiJsonParser, seedBackend })
   const pidFile = argValue('--pid-file') ?? defaultPidFile(port)
   writePidFile(pidFile)

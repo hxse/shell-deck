@@ -1,10 +1,14 @@
 <script lang="ts">
+  import { tick } from "svelte"
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
+  import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
   import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, ParallelSendCaptureItem, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
+  import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
-  type TerminalChoice = { value: string; label: string }
+  type TerminalChoice = { value: string; label: string; title: string }
   type ArtifactChoice = { label: string; source: FlowV2ArtifactSource }
-  type BlockTarget = { kind: "root" } | { kind: "if-branch"; nodeId: string; branchIndex: number } | { kind: "if-else"; nodeId: string } | { kind: "for"; nodeId: string }
+  type InsertableNodeType = FlowV2Node["type"]
+  type InsertionPalettePosition = { x: number; y: number; placement: "above" | "below"; maxHeight?: number }
 
   let {
     draft,
@@ -17,6 +21,7 @@
     defaultParallelItem,
     defaultCondition,
     artifactChoices,
+    insertionPaletteMode,
   } = $props<{
     draft: MacroTemplate
     validation: ValidationResult
@@ -28,56 +33,247 @@
     defaultParallelItem: (rawId: string, terminal: TerminalTarget) => ParallelSendCaptureItem
     defaultCondition: (template: MacroTemplate) => TextMatchCondition
     artifactChoices: (template: MacroTemplate) => ArtifactChoice[]
+    insertionPaletteMode: MacroInsertionPaletteMode
   }>()
+
+  let insertionAnchor = $state<InsertionAnchor | null>(null)
+  let insertionSummary = $state("")
+  let insertionAllowsLoopControls = $state(false)
+  let insertionPosition = $state<InsertionPalettePosition | null>(null)
+  let insertionActionOnly = $state(false)
+  let insertionTriggerElement = $state<HTMLElement | null>(null)
+  let insertionPaletteElement = $state<HTMLElement | null>(null)
+  let insertionNotice = $state("")
+  let moveNodeId = $state("")
+  let collapsedNodeIds = $state<string[]>([])
+
+  const insertionPaletteAnchored = $derived(insertionPaletteMode === "anchored" && insertionPosition !== null)
+  const insertionPaletteStyle = $derived(insertionPaletteAnchored && insertionPosition ? "--palette-x: " + insertionPosition.x + "px; --palette-y: " + insertionPosition.y + "px;" + (insertionPosition.maxHeight ? " --palette-max-height: " + insertionPosition.maxHeight + "px;" : "") : "")
+  const validationSummary = $derived(validation.ok ? "success" : validation.issues.length + " issues - " + (validation.issues[0] ? validation.issues[0].path + " " + validation.issues[0].message : ""))
+
+  const actionPaletteItems: Array<{ type: InsertableNodeType; label: string; testId: string }> = [
+    { type: "send_line", label: "send", testId: "add-step-send" },
+    { type: "input_line", label: "input", testId: "add-step-input" },
+    { type: "wait", label: "wait", testId: "add-step-wait" },
+    { type: "capture-source", label: "capture", testId: "add-step-capture" },
+    { type: "extract_text", label: "extract", testId: "add-step-extract" },
+    { type: "parallel_send_capture", label: "parallel", testId: "add-step-parallel-send-capture" },
+  ]
+
+  const flowPaletteItems: Array<{ type: InsertableNodeType; label: string; testId: string; loopOnly?: boolean }> = [
+    { type: "if", label: "if", testId: "add-flow-if" },
+    { type: "for", label: "for", testId: "add-flow-for" },
+    { type: "finish", label: "finish", testId: "add-flow-finish" },
+    { type: "break", label: "break", testId: "add-flow-break", loopOnly: true },
+    { type: "continue", label: "continue", testId: "add-flow-continue", loopOnly: true },
+  ]
+
+  $effect(() => {
+    const anchor = insertionAnchor
+    if (!anchor) return
+    if (isOpenInsertionAnchorValid(anchor)) return
+    insertionNotice = "Insertion target changed. Choose an insertion point again."
+    closeInsertion(false)
+  })
+
+  function isOpenInsertionAnchorValid(anchor: InsertionAnchor): boolean {
+    if (isInsertionAnchorValid(draft, anchor)) return true
+    if (anchor.kind === "inside" && anchor.slot === "control" && anchor.anchorNodeId) {
+      return findNodePosition(draft, anchor.anchorNodeId) !== undefined
+    }
+    return false
+  }
+
+  function openInsertion(anchor: InsertionAnchor, summary: string, allowLoopControls: boolean, event?: MouseEvent, actionOnly = false) {
+    const target = event?.currentTarget
+    insertionTriggerElement = target instanceof HTMLElement ? target : null
+    insertionNotice = ""
+    insertionAnchor = { ...anchor, parentPath: cloneBodyPath(anchor.parentPath) }
+    insertionSummary = summary
+    insertionAllowsLoopControls = allowLoopControls
+    insertionActionOnly = actionOnly
+    insertionPosition = insertionPaletteMode === "anchored" ? positionInsertionPalette(event) : null
+    moveNodeId = ""
+    void settleInsertionPalette(true)
+  }
+
+  function positionInsertionPalette(event?: MouseEvent): InsertionPalettePosition | null {
+    const target = event?.currentTarget
+    if (!(target instanceof HTMLElement)) return null
+    const rect = target.getBoundingClientRect()
+    const margin = 12
+    const estimatedHalfWidth = 180
+    const x = clamp(rect.left + rect.width / 2, margin + estimatedHalfWidth, window.innerWidth - margin - estimatedHalfWidth)
+    const placement = rect.top > window.innerHeight / 2 ? "above" : "below"
+    const y = placement === "above" ? Math.max(margin, rect.top - 8) : Math.min(window.innerHeight - margin, rect.bottom + 8)
+    return { x, y, placement }
+  }
+
+  async function settleInsertionPalette(shouldFocus: boolean) {
+    await tick()
+    clampInsertionPaletteToViewport()
+    if (shouldFocus) focusInsertionPalette()
+  }
+
+  function clampInsertionPaletteToViewport() {
+    if (!insertionPaletteAnchored || !insertionPosition || !insertionPaletteElement || !insertionTriggerElement) return
+    const triggerRect = insertionTriggerElement.getBoundingClientRect()
+    const margin = 12
+    const gap = 8
+    const width = insertionPaletteElement.offsetWidth
+    const height = insertionPaletteElement.offsetHeight
+    if (width <= 0 || height <= 0) return
+    const preferred = triggerRect.top > window.innerHeight / 2 ? "above" : "below"
+    const aboveSpace = Math.max(0, triggerRect.top - gap - margin)
+    const belowSpace = Math.max(0, window.innerHeight - triggerRect.bottom - gap - margin)
+    const placement = preferred === "above"
+      ? aboveSpace >= Math.min(height, belowSpace) ? "above" : "below"
+      : belowSpace >= Math.min(height, aboveSpace) ? "below" : "above"
+    const availableHeight = placement === "above" ? aboveSpace : belowSpace
+    const maxHeight = Math.max(0, availableHeight)
+    const x = clamp(triggerRect.left + triggerRect.width / 2, margin + width / 2, window.innerWidth - margin - width / 2)
+    const y = placement === "above" ? triggerRect.top - gap : triggerRect.bottom + gap
+    insertionPosition = { x, y, placement, maxHeight }
+  }
+
+  function focusInsertionPalette() {
+    const focusable = insertionPaletteElement?.querySelector<HTMLElement>("button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])")
+    focusable?.focus()
+  }
+
+  function handleInsertionResize() {
+    if (insertionAnchor) void settleInsertionPalette(false)
+  }
+
+  function clamp(value: number, min: number, max: number): number {
+    if (max < min) return min
+    return Math.max(min, Math.min(max, value))
+  }
+
+  function terminalChoiceTitle(value: string) {
+    const choice = terminalChoices().find((item: TerminalChoice) => item.value === value)
+    return choice?.title ?? choice?.label ?? value
+  }
+
+  function closeInsertion(restoreFocus: boolean) {
+    const trigger = insertionTriggerElement
+    insertionAnchor = null
+    insertionSummary = ""
+    insertionAllowsLoopControls = false
+    insertionActionOnly = false
+    insertionPosition = null
+    insertionTriggerElement = null
+    insertionPaletteElement = null
+    moveNodeId = ""
+    if (restoreFocus && trigger) void tick().then(() => trigger.focus())
+  }
+
+  function cancelInsertion() {
+    closeInsertion(true)
+  }
+
+  function handleInsertionKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && insertionAnchor) cancelInsertion()
+  }
+
+  function insertFromPalette(type: InsertableNodeType) {
+    if (!insertionAnchor) return
+    const anchor = insertionAnchor
+    let inserted = false
+    let reason = "unknown"
+    updateDraft((template: MacroTemplate) => {
+      const result = insertNodeAtAnchor(template, anchor, defaultNode(template, type))
+      inserted = result.ok
+      reason = result.reason ?? "unknown"
+    })
+    if (inserted) {
+      cancelInsertion()
+    } else {
+      insertionNotice = "Insertion failed: " + reason
+      void settleInsertionPalette(false)
+    }
+  }
+
+  function moveExistingNodeFromPalette() {
+    if (!insertionAnchor || !moveNodeId) return
+    const anchor = { ...insertionAnchor, parentPath: cloneBodyPath(insertionAnchor.parentPath) } as InsertionAnchor
+    const nodeId = moveNodeId
+    let moved = false
+    updateDraft((template: MacroTemplate) => {
+      moved = moveNodeToAnchor(template, nodeId, anchor).ok
+    })
+    if (moved) cancelInsertion()
+  }
+
+  function movableNodeChoices() {
+    const anchor = insertionAnchor
+    if (!anchor) return []
+    return allNodeChoices(draft.body).filter((choice) => (!insertionActionOnly || isActionType(choice.type)) && canMoveNodeToAnchor(draft, choice.id, anchor))
+  }
+
+  function isNodeCollapsed(nodeId: string): boolean {
+    return collapsedNodeIds.includes(nodeId)
+  }
+
+  function toggleNodeCollapsed(nodeId: string) {
+    collapsedNodeIds = isNodeCollapsed(nodeId) ? collapsedNodeIds.filter((id) => id !== nodeId) : [...collapsedNodeIds, nodeId]
+  }
+
+  function beforeAnchor(bodyPath: BodyPath, index: number, anchorNodeId?: string): InsertionAnchor {
+    return { kind: "before", parentPath: cloneBodyPath(bodyPath), index, anchorNodeId }
+  }
+
+  function afterAnchor(bodyPath: BodyPath, index: number, anchorNodeId?: string): InsertionAnchor {
+    return { kind: "after", parentPath: cloneBodyPath(bodyPath), index, anchorNodeId }
+  }
+
+  function insideAnchor(bodyPath: BodyPath, index: number, slot: "if" | "elif" | "else" | "for" | "control", branchIndex?: number, anchorNodeId?: string): InsertionAnchor {
+    return { kind: "inside", parentPath: cloneBodyPath(bodyPath), index, slot, branchIndex, anchorNodeId }
+  }
+
+  function insertIntoEmptyBody(bodyPath: BodyPath, label: string, allowLoopControls: boolean, event?: MouseEvent, actionOnly = false) {
+    const anchor = emptyBodyInsertionAnchor(bodyPath)
+    if (!anchor) {
+      insertionNotice = "Insertion failed: body_not_found"
+      return
+    }
+    openInsertion(anchor, "Insert into " + label, allowLoopControls, event, actionOnly)
+  }
+
+  function emptyBodyInsertionAnchor(bodyPath: BodyPath): InsertionAnchor | null {
+    const last = bodyPath[bodyPath.length - 1]
+    if (last?.kind === "control") {
+      const position = findNodePosition(draft, last.nodeId)
+      if (!position) return null
+      return insideAnchor(position.bodyPath, position.index, "control", undefined, last.nodeId)
+    }
+    return { kind: "before", parentPath: cloneBodyPath(bodyPath), index: 0 }
+  }
+
+  function moveNodeAt(bodyPath: BodyPath, index: number, offset: -1 | 1) {
+    updateDraft((template: MacroTemplate) => { moveNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }, offset) })
+  }
+
+  function removeNodeAt(bodyPath: BodyPath, index: number, nodeId: string) {
+    if (!confirm("Remove macro node " + nodeId + "?")) return
+    updateDraft((template: MacroTemplate) => { removeNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+  }
+
+  function addElifAt(bodyPath: BodyPath, index: number) {
+    updateDraft((template: MacroTemplate) => {
+      addElifToIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }, { kind: "elif", condition: defaultCondition(template), body: [] })
+    })
+  }
+
+  function ensureElseAt(bodyPath: BodyPath, index: number) {
+    updateDraft((template: MacroTemplate) => { ensureElseForIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+  }
 
   function updateNode(nodeId: string, mutator: (node: FlowV2Node) => void) {
     updateDraft((template: MacroTemplate) => {
       const node = findNode(template.body, nodeId)
       if (node) mutator(node)
     })
-  }
-
-  function removeNode(nodeId: string) {
-    updateDraft((template: MacroTemplate) => { removeNodeFromList(template.body, nodeId) })
-  }
-
-  function moveNode(nodeId: string, offset: number) {
-    updateDraft((template: MacroTemplate) => { moveNodeInList(template.body, nodeId, offset) })
-  }
-
-  function removeNodeFromList(nodes: FlowV2Node[], nodeId: string): boolean {
-    const index = nodes.findIndex((node) => node.id === nodeId)
-    if (index >= 0) {
-      nodes.splice(index, 1)
-      return true
-    }
-    for (const node of nodes) {
-      if (node.type === "if") {
-        for (const branch of node.branches) if (removeNodeFromList(branch.body, nodeId)) return true
-        if (node.else && removeNodeFromList(node.else, nodeId)) return true
-      }
-      if (node.type === "for" && removeNodeFromList(node.body, nodeId)) return true
-    }
-    return false
-  }
-
-  function moveNodeInList(nodes: FlowV2Node[], nodeId: string, offset: number): boolean {
-    const index = nodes.findIndex((node) => node.id === nodeId)
-    if (index >= 0) {
-      const nextIndex = index + offset
-      if (nextIndex < 0 || nextIndex >= nodes.length) return true
-      const [node] = nodes.splice(index, 1)
-      nodes.splice(nextIndex, 0, node)
-      return true
-    }
-    for (const node of nodes) {
-      if (node.type === "if") {
-        for (const branch of node.branches) if (moveNodeInList(branch.body, nodeId, offset)) return true
-        if (node.else && moveNodeInList(node.else, nodeId, offset)) return true
-      }
-      if (node.type === "for" && moveNodeInList(node.body, nodeId, offset)) return true
-    }
-    return false
   }
 
   function setNodeId(oldId: string, nextId: string) {
@@ -101,6 +297,10 @@
         const found = findNode(node.body, nodeId)
         if (found) return found
       }
+      if (isControlTerminalNode(node) && node.body) {
+        const found = findNode(node.body, nodeId)
+        if (found) return found
+      }
     }
   }
 
@@ -108,15 +308,19 @@
     return { kind: "step_artifact", stepId: "", artifact: "captured_text" }
   }
 
-  function sourceKey(source: ArtifactChoice["source"]) {
-    if (!source.stepId) return ""
+  function sourceKey(source?: ArtifactChoice["source"]) {
+    if (!source?.stepId) return ""
     return source.stepId + ":" + source.artifact
   }
 
-  function sourceFromKey(key: string): ArtifactChoice["source"] {
-    if (!key) return emptyArtifactSource()
+  function sourceFromKey(key: string): ArtifactChoice["source"] | undefined {
+    if (!key) return undefined
     const [stepId, artifact] = key.split(":")
     return { kind: "step_artifact", stepId, artifact: artifact === "merged_text" ? "merged_text" : artifact === "extracted_text" ? "extracted_text" : "captured_text" }
+  }
+
+  function requiredSourceFromKey(key: string, fallback: ArtifactChoice["source"]): ArtifactChoice["source"] {
+    return sourceFromKey(key) ?? fallback
   }
 
   function artifactChoicesBefore(nodeId: string): ArtifactChoice[] {
@@ -137,6 +341,9 @@
           if (result.found) return result
         }
       } else if (node.type === "for") {
+        const result = collectArtifactChoicesBefore(node.body, targetNodeId, choices)
+        if (result.found) return result
+      } else if (isControlTerminalNode(node) && node.body) {
         const result = collectArtifactChoicesBefore(node.body, targetNodeId, choices)
         if (result.found) return result
       }
@@ -163,9 +370,9 @@
     onChange(next)
   }
 
-  function addArtifactPart(choices: ArtifactChoice[], message: MessageSpec, onChange: (message: MessageSpec) => void) {
+  function addArtifactPart(_choices: ArtifactChoice[], message: MessageSpec, onChange: (message: MessageSpec) => void) {
     const next = cloneMessage(message)
-    next.parts.push({ kind: "artifact", source: choices[0]?.source ?? emptyArtifactSource() })
+    next.parts.push({ kind: "artifact" })
     onChange(next)
   }
 
@@ -179,7 +386,11 @@
   function updateArtifactPart(message: MessageSpec, index: number, sourceKeyValue: string, onChange: (message: MessageSpec) => void) {
     const next = cloneMessage(message)
     const part = next.parts[index]
-    if (part?.kind === "artifact") part.source = sourceFromKey(sourceKeyValue)
+    if (part?.kind === "artifact") {
+      const source = sourceFromKey(sourceKeyValue)
+      if (source) part.source = source
+      else delete part.source
+    }
     onChange(next)
   }
 
@@ -195,21 +406,20 @@
   function removeMessagePart(message: MessageSpec, index: number, onChange: (message: MessageSpec) => void) {
     const next = cloneMessage(message)
     next.parts.splice(index, 1)
-    if (next.parts.length === 0) next.parts.push({ kind: "text", text: "" })
     onChange(next)
   }
 
   function addElif(nodeId: string) {
     updateDraft((template: MacroTemplate) => {
       const node = findNode(template.body, nodeId)
-      if (node?.type === "if") node.branches.push({ kind: "elif", condition: defaultCondition(template), body: [{ id: uniqueKey("return_elif", allNodeIds(template.body)), type: "return", reason: "elif" }] })
+      if (node?.type === "if") node.branches.push({ kind: "elif", condition: defaultCondition(template), body: [{ id: uniqueKey("finish_elif", allNodeIds(template.body)), type: "finish", reason: "elif" }] })
     })
   }
 
   function ensureElse(nodeId: string) {
     updateDraft((template: MacroTemplate) => {
       const node = findNode(template.body, nodeId)
-      if (node?.type === "if" && !node.else) node.else = [{ id: uniqueKey("return_else", allNodeIds(template.body)), type: "return", reason: "else" }]
+      if (node?.type === "if" && !node.else) node.else = [{ id: uniqueKey("finish_else", allNodeIds(template.body)), type: "finish", reason: "else" }]
     })
   }
 
@@ -293,35 +503,20 @@
     })
   }
 
-  function addNodeToBlock(target: BlockTarget, type: FlowV2Node["type"]) {
-    updateDraft((template: MacroTemplate) => {
-      const nodes = blockNodes(template, target)
-      if (nodes) nodes.push(defaultNode(template, type))
-    })
-  }
-
-  function blockNodes(template: MacroTemplate, target: BlockTarget): FlowV2Node[] | undefined {
-    if (target.kind === "root") return template.body
-    const node = findNode(template.body, target.nodeId)
-    if (target.kind === "for") return node?.type === "for" ? node.body : undefined
-    if (target.kind === "if-else") return node?.type === "if" ? (node.else ??= []) : undefined
-    return node?.type === "if" ? node.branches[target.branchIndex]?.body : undefined
-  }
-
   function defaultNode(template: MacroTemplate, type: FlowV2Node["type"]): FlowV2Node {
     const terminal = firstTerminalTarget()
-    const id = uniqueKey(type.replace(/[^A-Za-z0-9_-]/g, "_"), allNodeIds(template.body))
-    if (type === "send_line") return { id, type, terminal, message: { parts: [{ kind: "text", text: "" }] } }
+    const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
+    if (type === "send_line") return { id, type, terminal, message: { parts: [] } }
     if (type === "input_line") return { id, type, terminal, prompt: "Input", allowEmpty: false }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") return { id, type, capture: defaultCaptureSource("terminal-buffer") }
-    if (type === "extract_text") return { id, type, source: emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "last" }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
+    if (type === "extract_text") return { id, type, source: artifactChoices(template)[0]?.source ?? emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
     if (type === "parallel_send_capture") return { id, type, items: [defaultParallelItem(id + "_item", terminal)], merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true }, onItemFail: "pause" }
     if (type === "if") return { id, type, branches: [{ kind: "if", condition: defaultCondition(template), body: [] }] }
-    if (type === "for") return { id, type, range: { count: 1 }, body: [] }
-    if (type === "break") return { id, type, reason: "break" }
-    if (type === "continue") return { id, type, reason: "continue" }
-    return { id, type: "return", reason: "done" }
+    if (type === "for") return { id, type, range: { kind: "count", count: 1 }, body: [] }
+    if (type === "break") return { id, type, reason: "break", body: [] }
+    if (type === "continue") return { id, type, reason: "continue", body: [] }
+    return { id, type: "finish", reason: "done", body: [] }
   }
 
   function firstTerminalTarget(): TerminalTarget {
@@ -332,9 +527,36 @@
     return nodes.flatMap((node) => {
       const nested = node.type === "if"
         ? [...node.branches.flatMap((branch) => allNodeIds(branch.body)), ...(node.else ? allNodeIds(node.else) : [])]
-        : node.type === "for" ? allNodeIds(node.body) : []
+        : node.type === "for" ? allNodeIds(node.body)
+          : isControlTerminalNode(node) && node.body ? allNodeIds(node.body) : []
       return [node.id, ...nested]
     })
+  }
+
+  function allNodeChoices(nodes: FlowV2Node[]): Array<{ id: string; type: FlowV2Node["type"] }> {
+    return nodes.flatMap((node) => {
+      const nested = node.type === "if"
+        ? [...node.branches.flatMap((branch) => allNodeChoices(branch.body)), ...(node.else ? allNodeChoices(node.else) : [])]
+        : node.type === "for" ? allNodeChoices(node.body)
+          : isControlTerminalNode(node) && node.body ? allNodeChoices(node.body) : []
+      return [{ id: node.id, type: node.type }, ...nested]
+    })
+  }
+
+  function isActionType(type: FlowV2Node["type"]): boolean {
+    return type === "send_line" || type === "input_line" || type === "wait" || type === "capture-source" || type === "extract_text" || type === "parallel_send_capture"
+  }
+
+  function isControlTerminalNode(node: FlowV2Node): node is Extract<FlowV2Node, { type: "break" | "continue" | "finish" }> {
+    return node.type === "break" || node.type === "continue" || node.type === "finish"
+  }
+
+  function forRangeMode(node: Extract<FlowV2Node, { type: "for" }>): "count" | "forever" {
+    return node.range.kind === "forever" ? "forever" : "count"
+  }
+
+  function forRangeCount(node: Extract<FlowV2Node, { type: "for" }>): number {
+    return node.range.kind === "forever" ? 1 : node.range.count
   }
 
   function uniqueKey(prefix: string, existing: string[]) {
@@ -349,48 +571,59 @@
   }
 </script>
 
+<svelte:window onkeydown={handleInsertionKeydown} onresize={handleInsertionResize} />
+
+<details class="macro-section validation-panel validation-panel-compact" data-testid="macro-validation">
+  <summary>
+    <strong>Validation</strong>
+    <span class:ok={validation.ok} class:bad={!validation.ok} data-testid="macro-validation-summary">{validationSummary}</span>
+  </summary>
+  {#if validation.ok}
+    <p>Template validation passed.</p>
+  {:else}
+    <ul>{#each validation.issues as issue}<li><strong>{issue.path}</strong> {issue.message}</li>{/each}</ul>
+  {/if}
+</details>
+
+{#if insertionNotice}
+  <p class="macro-insertion-notice" data-testid="macro-insertion-notice">{insertionNotice}</p>
+{/if}
+
 <section class="macro-section">
   <div class="macro-section-title"><h3>Flow V2 Body</h3></div>
   <div class="step-list" data-testid="macro-step-list">
-    {@render NodeListEditor(draft.body, { kind: "root" }, false, "Root body")}
+    {@render NodeListEditor(draft.body, [], false, "Root body", false)}
   </div>
 </section>
 
-{#snippet NodeListEditor(nodes: FlowV2Node[], target: BlockTarget, allowLoopControls: boolean, label: string)}
+{#snippet NodeListEditor(nodes: FlowV2Node[], bodyPath: BodyPath, allowLoopControls: boolean, label: string, actionOnly: boolean)}
   <details class="flow-block" data-testid="flow-block" open>
     <summary class="step-title flow-block-title" data-testid="flow-block-summary">
       <strong>{label}</strong>
       <small>{nodes.length} nodes</small>
     </summary>
-    {#if target.kind !== "root"}
-      <div class="inline-actions flow-block-actions">
-          <button type="button" data-testid="block-add-send" onclick={() => addNodeToBlock(target, "send_line")}>send</button>
-          <button type="button" data-testid="block-add-wait" onclick={() => addNodeToBlock(target, "wait")}>wait</button>
-          <button type="button" data-testid="block-add-capture" onclick={() => addNodeToBlock(target, "capture-source")}>capture</button>
-          <button type="button" data-testid="block-add-extract" onclick={() => addNodeToBlock(target, "extract_text")}>extract</button>
-          <button type="button" data-testid="block-add-if" onclick={() => addNodeToBlock(target, "if")}>if</button>
-          <button type="button" data-testid="block-add-for" onclick={() => addNodeToBlock(target, "for")}>for</button>
-          {#if allowLoopControls}
-            <button type="button" data-testid="block-add-break" onclick={() => addNodeToBlock(target, "break")}>break</button>
-            <button type="button" data-testid="block-add-continue" onclick={() => addNodeToBlock(target, "continue")}>continue</button>
-          {/if}
-          <button type="button" data-testid="block-add-return" onclick={() => addNodeToBlock(target, "return")}>return</button>
+    {#if nodes.length === 0}
+      <div class="empty-flow-body" data-testid="empty-flow-body">
+        <button type="button" data-testid="empty-body-add" onclick={(event) => insertIntoEmptyBody(bodyPath, label, allowLoopControls, event, actionOnly)}>Add inside</button>
       </div>
     {/if}
     {#each nodes as node, index (node.id)}
-      {@render NodeEditor(node, index, allowLoopControls)}
+      {@render NodeEditor(node, index, bodyPath, allowLoopControls, actionOnly)}
     {/each}
   </details>
 {/snippet}
 
-{#snippet NodeEditor(node: FlowV2Node, index: number, allowLoopControls: boolean)}
-  <article class="step-editor flow-node-editor">
+{#snippet NodeEditor(node: FlowV2Node, index: number, bodyPath: BodyPath, allowLoopControls: boolean, actionOnly: boolean)}
+  <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)}>
     <div class="step-title">
       <strong>{index + 1}. {node.type}</strong>
-      <div class="inline-actions">
-        <button type="button" onclick={() => moveNode(node.id, -1)}>Up</button>
-        <button type="button" onclick={() => moveNode(node.id, 1)}>Down</button>
-        <button type="button" onclick={() => removeNode(node.id)}>Remove</button>
+      <div class="inline-actions node-menu" data-testid="node-menu">
+        <button type="button" data-testid="node-add-before" onclick={(event) => openInsertion(beforeAnchor(bodyPath, index, node.id), "Insert before: " + node.id, allowLoopControls, event, actionOnly)}>Add before</button>
+        <button type="button" data-testid="node-add-after" onclick={(event) => openInsertion(afterAnchor(bodyPath, index, node.id), "Insert after: " + node.id, allowLoopControls, event, actionOnly)}>Add after</button>
+        <button type="button" data-testid="node-toggle-collapse" aria-expanded={!isNodeCollapsed(node.id)} onclick={() => toggleNodeCollapsed(node.id)}>{isNodeCollapsed(node.id) ? "Expand" : "Collapse"}</button>
+        <button type="button" data-testid="node-move-up" onclick={() => moveNodeAt(bodyPath, index, -1)}>Move up</button>
+        <button type="button" data-testid="node-move-down" onclick={() => moveNodeAt(bodyPath, index, 1)}>Move down</button>
+        <button type="button" data-testid="node-remove" onclick={() => removeNodeAt(bodyPath, index, node.id)}>Remove</button>
       </div>
     </div>
     <div class="macro-row">
@@ -399,15 +632,15 @@
 
     {#if node.type === "send_line"}
       <label>Terminal
-        <select data-testid="send-line-terminal" value={choiceFromTarget(node.terminal)} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
-          {#each terminalChoices() as choice}<option value={choice.value}>{choice.label}</option>{/each}
+        <select data-testid="send-line-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
+          {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
       {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send_line") item.message = message }), artifactChoicesBefore(node.id))}
     {:else if node.type === "input_line"}
       <label>Terminal
-        <select data-testid="input-line-terminal" value={choiceFromTarget(node.terminal)} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
-          {#each terminalChoices() as choice}<option value={choice.value}>{choice.label}</option>{/each}
+        <select data-testid="input-line-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
+          {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
       <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "input_line") item.prompt = event.currentTarget.value })} /></label>
@@ -432,8 +665,8 @@
       {#if node.mode === "duration"}
         <label>Duration ms<input type="number" value={node.durationMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "duration") item.durationMs = Number(event.currentTarget.value) })} /></label>
       {:else if node.mode === "terminal-quiet"}
-        <label>Terminal<select value={choiceFromTarget(node.terminal)} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.terminal = targetFromChoice(event.currentTarget.value) })}>{#each terminalChoices() as choice}<option value={choice.value}>{choice.label}</option>{/each}</select></label>
-        <div class="macro-row"><label>Quiet ms<input type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "return" })}><option value="pause">pause</option><option value="return">return</option></select></label></div>
+        <label>Terminal<select value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.terminal = targetFromChoice(event.currentTarget.value) })}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
+        <div class="macro-row"><label>Quiet ms<input type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
       {:else}
         <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = event.currentTarget.value })} /></label>
       {/if}
@@ -444,23 +677,23 @@
     {:else if node.type === "if"}
       {#each node.branches as branch, branchIndex}
         <div class="flow-branch-card">
-          <strong>{branch.kind}</strong>
+          <div class="step-title"><strong>{branch.kind}</strong><button type="button" data-testid={branch.kind === "if" ? "node-add-inside-if" : "node-add-inside-elif"} onclick={(event) => openInsertion(insideAnchor(bodyPath, index, branch.kind === "if" ? "if" : "elif", branchIndex, node.id), "Insert inside " + branch.kind + ": " + node.id, allowLoopControls, event)}>Add inside {branch.kind}</button></div>
           {@render ConditionEditor(branch.condition, artifactChoicesBefore(node.id), (condition: TextMatchCondition) => updateNode(node.id, (item) => { if (item.type === "if") item.branches[branchIndex].condition = condition }))}
-          {@render NodeListEditor(branch.body, { kind: "if-branch", nodeId: node.id, branchIndex }, allowLoopControls, branch.kind + " body")}
+          {@render NodeListEditor(branch.body, [...bodyPath, { kind: "if-branch", nodeId: node.id, branchIndex }], allowLoopControls, branch.kind + " body", false)}
         </div>
       {/each}
-      <div class="inline-actions"><button type="button" data-testid="add-flow-elif" onclick={() => addElif(node.id)}>Add elif</button><button type="button" data-testid="add-flow-else" onclick={() => ensureElse(node.id)}>Add else</button></div>
-      {#if node.else}{@render NodeListEditor(node.else, { kind: "if-else", nodeId: node.id }, allowLoopControls, "else body")}{/if}
+      <div class="inline-actions"><button type="button" data-testid="add-flow-elif" onclick={() => addElifAt(bodyPath, index)}>Add elif</button>{#if !node.else}<button type="button" data-testid="add-flow-else" onclick={() => ensureElseAt(bodyPath, index)}>Add else</button>{/if}</div>
+      {#if node.else}<div class="flow-branch-card"><div class="step-title"><strong>else</strong><button type="button" data-testid="node-add-inside-else" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "else", undefined, node.id), "Insert inside else: " + node.id, allowLoopControls, event)}>Add inside else</button></div>{@render NodeListEditor(node.else, [...bodyPath, { kind: "if-else", nodeId: node.id }], allowLoopControls, "else body", false)}</div>{/if}
     {:else if node.type === "for"}
-      <label>Count<input type="number" value={node.range.count} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range.count = Number(event.currentTarget.value) })} /></label>
-      {@render NodeListEditor(node.body, { kind: "for", nodeId: node.id }, true, "for body")}
+      <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={forRangeMode(node)} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "for") return; item.range = event.currentTarget.value === "forever" ? { kind: "forever" } : { kind: "count", count: 1 } })}><option value="count">count</option><option value="forever">forever</option></select></label>{#if forRangeMode(node) === "count"}<label>Count<input data-testid="for-range-count" type="number" value={forRangeCount(node)} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range = { kind: "count", count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
+      <div class="inline-actions"><button type="button" data-testid="node-add-inside-for" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "for", undefined, node.id), "Insert inside for: " + node.id, true, event)}>Add inside for</button></div>{@render NodeListEditor(node.body, [...bodyPath, { kind: "for", nodeId: node.id }], true, "for body", false)}
     {:else if node.type === "parallel_send_capture"}
       <div class="macro-row"><label>Separator<input value={node.merge.separator} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "parallel_send_capture") item.merge.separator = event.currentTarget.value })} /></label><label class="checkbox-row"><input type="checkbox" checked={node.merge.includeEmptyCaptures} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "parallel_send_capture") item.merge.includeEmptyCaptures = event.currentTarget.checked })} />Include empty captures</label></div>
       {#each node.items as item}
         <div class="parallel-lane-card">
           <div class="step-title"><strong>{item.id}</strong><button type="button" onclick={() => updateNode(node.id, (parent) => { if (parent.type === "parallel_send_capture") parent.items = parent.items.filter((candidate) => candidate.id !== item.id) })}>Remove</button></div>
           <label>Item id<input value={item.id} oninput={(event) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (target) target.id = event.currentTarget.value })} /></label>
-          <label>Terminal<select value={choiceFromTarget(item.terminal)} onchange={(event) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (!target) return; const terminal = targetFromChoice(event.currentTarget.value); target.terminal = terminal; target.send.terminal = terminal; target.capture.capture.terminal = terminal; if (target.wait?.mode === "terminal-quiet") target.wait.terminal = terminal })}>{#each terminalChoices() as choice}<option value={choice.value}>{choice.label}</option>{/each}</select></label>
+          <label>Terminal<select value={choiceFromTarget(item.terminal)} title={terminalChoiceTitle(choiceFromTarget(item.terminal))} onchange={(event) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (!target) return; const terminal = targetFromChoice(event.currentTarget.value); target.terminal = terminal; target.send.terminal = terminal; target.capture.capture.terminal = terminal; if (target.wait?.mode === "terminal-quiet") target.wait.terminal = terminal })}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
           {@render MessagePartsEditor(item.send.message, (message: MessageSpec) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (target) target.send.message = message }), artifactChoicesBefore(node.id))}
           {@render ParallelItemWaitEditor(node.id, item)}
           {@render CaptureEditor(item.capture, terminalChoices, choiceFromTarget, targetFromChoice, defaultCaptureSource, (capture: CaptureSourceConfig) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (target) target.capture.capture = capture }))}
@@ -469,16 +702,54 @@
       <button type="button" data-testid="parallel-add-item" onclick={() => addParallelItem(node.id)}>Add item</button>
     {:else}
       <label>Reason<input value={node.reason ?? ""} oninput={(event) => updateNode(node.id, (item) => { if ("reason" in item) item.reason = event.currentTarget.value || undefined })} /></label>
+      {#if node.type === "finish" || node.type === "break" || node.type === "continue"}
+        <div class="inline-actions"><button type="button" data-testid="node-add-inside-control" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "control", undefined, node.id), "Insert action before " + node.type + ": " + node.id, false, event, true)}>Add action</button></div>
+        {@render NodeListEditor(node.body ?? [], [...bodyPath, { kind: "control", nodeId: node.id }], false, node.type + " action body", true)}
+      {/if}
     {/if}
   </article>
 {/snippet}
 
-{#if !validation.ok}
-  <section class="macro-section validation-panel" data-testid="macro-validation">
-    <h3>Validation</h3>
-    <p>{validation.issues.length} issues</p>
-    <ul>{#each validation.issues as issue}<li><strong>{issue.path}</strong> {issue.message}</li>{/each}</ul>
-  </section>
+{#if insertionAnchor}
+  <div class="macro-insertion-mode" class:anchored={insertionPaletteAnchored} class:centered={!insertionPaletteAnchored} data-testid="macro-insertion-mode" data-placement-mode={insertionPaletteMode}>
+    <button type="button" class="macro-insertion-scrim" data-testid="macro-insertion-cancel-scrim" aria-label="Cancel insertion" onclick={cancelInsertion}></button>
+    <section bind:this={insertionPaletteElement} class="floating-insertion-palette" class:anchored={insertionPaletteAnchored} class:above={insertionPosition?.placement === "above"} class:below={insertionPosition?.placement === "below"} style={insertionPaletteStyle} data-testid="macro-insertion-palette" aria-label="Insert macro node">
+      <div class="palette-heading"><span>{insertionSummary}</span><small>choose node</small></div>
+      <div class="step-palette" data-testid="macro-actions-palette">
+        <div class="palette-heading"><span>Actions</span><small>do work</small></div>
+        <div class="step-actions">
+          {#each actionPaletteItems as item}
+            <button type="button" data-testid={item.testId} title={item.type} onclick={() => insertFromPalette(item.type)}><span class="tool-label">{item.label}</span></button>
+          {/each}
+        </div>
+      </div>
+      {#if !insertionActionOnly}
+        <div class="step-palette flow-palette" data-testid="macro-flow-palette">
+          <div class="palette-heading"><span>Flow</span><small>py-like</small></div>
+          <div class="step-actions">
+            {#each flowPaletteItems as item}
+              {#if !item.loopOnly || insertionAllowsLoopControls}
+                <button type="button" data-testid={item.testId} title={item.type} onclick={() => insertFromPalette(item.type)}><span class="tool-label">{item.label}</span></button>
+              {/if}
+            {/each}
+          </div>
+        </div>
+      {/if}
+      <div class="step-palette move-existing-palette" data-testid="macro-move-existing-palette">
+        <div class="palette-heading"><span>Move existing</span><small>move node id here</small></div>
+        <div class="move-existing-row">
+          <select data-testid="macro-move-existing-select" value={moveNodeId} onchange={(event) => { moveNodeId = event.currentTarget.value }}>
+            <option value="">Select node id</option>
+            {#each movableNodeChoices() as choice}
+              <option value={choice.id}>{choice.id} · {choice.type}</option>
+            {/each}
+          </select>
+          <button type="button" data-testid="macro-move-existing" onclick={moveExistingNodeFromPalette} disabled={!moveNodeId}>Move</button>
+        </div>
+      </div>
+      <button type="button" data-testid="macro-insertion-cancel" onclick={cancelInsertion}>Cancel</button>
+    </section>
+  </div>
 {/if}
 
 {#snippet ParallelItemWaitEditor(parentId: string, item: ParallelSendCaptureItem)}
@@ -533,7 +804,7 @@
 
 {#snippet ExtractTextEditor(node: Extract<FlowV2Node, { type: "extract_text" }>, choices: ArtifactChoice[], updateExtract: (mutator: (item: Extract<FlowV2Node, { type: "extract_text" }>) => void) => void)}
   <label>Source
-    <select data-testid="extract-text-source" value={sourceKey(node.source)} onchange={(event) => updateExtract((item) => { item.source = sourceFromKey(event.currentTarget.value) })}>
+    <select data-testid="extract-text-source" value={sourceKey(node.source)} onchange={(event) => updateExtract((item) => { item.source = requiredSourceFromKey(event.currentTarget.value, item.source) })}>
       {#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
     </select>
   </label>
@@ -567,12 +838,12 @@
 
   <div class="macro-row">
     <label>Select
-      <select data-testid="extract-text-select-mode" value={node.select.mode} onchange={(event) => updateExtract((item) => { const mode = event.currentTarget.value; item.select = mode === "index" ? { mode, index: 0 } : mode === "range" ? { mode, start: 0 } : { mode: mode as "first" | "last" | "all" } })}>
-        <option value="first">first</option><option value="last">last</option><option value="all">all</option><option value="index">index</option><option value="range">range</option>
+      <select data-testid="extract-text-select-mode" value={node.select.mode} onchange={(event) => updateExtract((item) => { const mode = event.currentTarget.value; item.select = mode === "index" ? { mode, index: -1 } : mode === "range" ? { mode, start: -1 } : { mode: "all" } })}>
+        <option value="all">all</option><option value="index">index</option><option value="range">range</option>
       </select>
     </label>
-    {#if node.select.mode === "index"}<label>Index<input type="number" min="0" value={node.select.index} oninput={(event) => updateExtract((item) => { if (item.select.mode === "index") item.select.index = Number(event.currentTarget.value) })} /></label>{/if}
-    {#if node.select.mode === "range"}<label>Start<input type="number" min="0" value={node.select.start} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.start = Number(event.currentTarget.value) })} /></label><label>End<input type="number" min="0" value={node.select.end ?? ""} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.end = event.currentTarget.value === "" ? undefined : Number(event.currentTarget.value) })} /></label>{/if}
+    {#if node.select.mode === "index"}<label>Index<input type="number" value={node.select.index} oninput={(event) => updateExtract((item) => { if (item.select.mode === "index") item.select.index = Number(event.currentTarget.value) })} /></label>{/if}
+    {#if node.select.mode === "range"}<label>Start<input type="number" value={node.select.start} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.start = Number(event.currentTarget.value) })} /></label><label>End<input type="number" value={node.select.end ?? ""} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.end = event.currentTarget.value === "" ? undefined : Number(event.currentTarget.value) })} /></label>{/if}
   </div>
 
   <div class="macro-row">
@@ -582,7 +853,7 @@
       </select>
     </label>
     <label>Trim<select value={node.trim} onchange={(event) => updateExtract((item) => { item.trim = event.currentTarget.value as never })}><option value="none">none</option><option value="left">left</option><option value="right">right</option><option value="both">both</option></select></label>
-    <label>On empty<select value={node.onEmpty} onchange={(event) => updateExtract((item) => { item.onEmpty = event.currentTarget.value as never })}><option value="pause">pause</option><option value="fail">fail</option><option value="return">return</option></select></label>
+    <label>On empty<select data-testid="extract-text-on-empty" value={node.onEmpty} onchange={(event) => updateExtract((item) => { item.onEmpty = event.currentTarget.value as never })}><option value="pause">pause</option><option value="continue">continue</option><option value="fail">fail</option><option value="finish">finish</option></select></label>
   </div>
   {#if node.extract.kind === "regex"}
     <div class="macro-row"><label>Pattern<input data-testid="extract-text-regex-pattern" value={node.extract.pattern} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.pattern = event.currentTarget.value })} /></label><label>Flags<input value={node.extract.flags ?? ""} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.flags = event.currentTarget.value })} /></label><label>Group<input value={groupInputValue(node.extract.group)} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.group = groupFromInput(event.currentTarget.value) })} /></label></div>
@@ -591,7 +862,7 @@
 
 {#snippet CaptureEditor(node: { capture: CaptureSourceConfig }, terminalChoices: () => TerminalChoice[], choiceFromTarget: (target: TerminalTarget) => string, targetFromChoice: (choice: string) => TerminalTarget, defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig, onChange: (capture: CaptureSourceConfig) => void)}
   <label>Capture kind<select data-testid="capture-step-kind" value={node.capture.kind} onchange={(event) => onChange(defaultCaptureSource(event.currentTarget.value as CaptureSourceConfig["kind"]))}><option value="terminal-buffer">terminal-buffer</option><option value="text-box">text-box</option><option value="agent-event">agent-event</option></select></label>
-  <label>Terminal<select data-testid="capture-step-terminal" value={choiceFromTarget(node.capture.terminal)} onchange={(event) => { const next = JSON.parse(JSON.stringify(node.capture)) as CaptureSourceConfig; next.terminal = targetFromChoice(event.currentTarget.value); onChange(next) }}>{#each terminalChoices() as choice}<option value={choice.value}>{choice.label}</option>{/each}</select></label>
+  <label>Terminal<select data-testid="capture-step-terminal" value={choiceFromTarget(node.capture.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.capture.terminal))} onchange={(event) => { const next = JSON.parse(JSON.stringify(node.capture)) as CaptureSourceConfig; next.terminal = targetFromChoice(event.currentTarget.value); onChange(next) }}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
   {#if node.capture.kind === "terminal-buffer"}
     <label>Mode<select data-testid="capture-terminal-buffer-mode" value={node.capture.mode} onchange={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, mode: event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" }) }}><option value="scrollback-tail">screen text tail</option><option value="raw-stream-tail">raw stream tail (debug only)</option></select></label>
     <label>Max chars<input type="number" value={node.capture.maxChars} oninput={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, maxChars: Number(event.currentTarget.value) }) }} /></label>
@@ -605,7 +876,7 @@
 
 {#snippet ConditionEditor(condition: TextMatchCondition, choices: ArtifactChoice[], onChange: (condition: TextMatchCondition) => void)}
   <div class="condition-row">
-    <label>Source<select value={sourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: sourceFromKey(event.currentTarget.value) })}>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+    <label>Source<select value={sourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: requiredSourceFromKey(event.currentTarget.value, condition.source) })}>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
     <label>Matcher<select value={condition.matcher.kind} onchange={(event) => onChange({ ...condition, matcher: event.currentTarget.value === "regex" ? { kind: "regex", pattern: "READY", flags: "i" } : { kind: "simple", op: "contains", text: "READY" } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
     {#if condition.matcher.kind === "simple"}
       <label>Op<select value={condition.matcher.op} onchange={(event) => onChange(setSimpleMatcherOp(condition, event.currentTarget.value as SimpleTextMatchOp))}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label>

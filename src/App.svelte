@@ -10,6 +10,7 @@
     PANEL_MIN_WIDTH_PX,
     normalizePanelWidth,
     normalizeWorkspaceUiLayout,
+    type MacroInsertionPaletteMode,
     type WorkspacePanelKey,
     type WorkspaceUiLayout,
   } from './lib/workspace/uiLayoutTypes'
@@ -155,12 +156,16 @@
     })
   }
 
+  function setMacroInsertionPaletteMode(mode: MacroInsertionPaletteMode) {
+    void saveLayout({ ...layout, macroInsertionPaletteMode: mode })
+  }
+
   function beginPanelResize(panel: WorkspacePanelKey, event: PointerEvent) {
     event.preventDefault()
     const startX = event.clientX
     const startWidth = layout.panels[panel].widthPx
     const onMove = (moveEvent: PointerEvent) => {
-      const maxWidth = Math.max(PANEL_MIN_WIDTH_PX, Math.min(900, Math.floor(window.innerWidth * 0.6)))
+      const maxWidth = Math.max(PANEL_MIN_WIDTH_PX, Math.min(1200, Math.floor(window.innerWidth * 0.85)))
       const widthPx = Math.max(PANEL_MIN_WIDTH_PX, Math.min(maxWidth, startWidth + startX - moveEvent.clientX))
       layout = {
         ...layout,
@@ -376,5 +381,6 @@
     onTabKeydown={tabKeydown}
     onBeginPanelResize={beginPanelResize}
     onResetPanelWidth={resetPanelWidth}
+    onMacroInsertionPaletteModeChange={setMacroInsertionPaletteMode}
   />
 </main>

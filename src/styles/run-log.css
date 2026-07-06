@@ -210,8 +210,8 @@
 }
 
 .workspace-side-panel {
-  min-width: 280px;
-  max-width: 60vw;
+  min-width: 220px;
+  max-width: 85vw;
   min-height: 0;
   flex: 0 0 auto;
   position: relative;

@@ -2,6 +2,16 @@ import { expect, test } from 'bun:test'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { startShellDeckServer } from '../../server/httpServer'
 
+test('default seed creates two shell terminals and one text deck slot', () => {
+  const server = startShellDeckServer({ port: 0 })
+  try {
+    const snapshot = server.manager.deckSnapshot('local')
+    expect(snapshot.terminals.map((terminal) => terminal.backend)).toEqual(['real', 'real', 'text'])
+  } finally {
+    server.stop()
+  }
+})
+
 test('two websocket clients share terminal output, replay and reorder map', async () => {
   const server = startShellDeckServer({ port: 0, seed: false })
   try {

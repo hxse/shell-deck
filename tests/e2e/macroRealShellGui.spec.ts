@@ -13,7 +13,7 @@ function realShellTemplate(configId: string, terminal: { kind: 'id'; value: stri
       { id: 'send_real', type: 'send_line', terminal, message: { parts: [{ kind: 'text', text: "printf 'SD_REAL_MACRO_010\\n'" }] } },
       { id: 'wait_real', type: 'wait', mode: 'duration', durationMs: 800 },
       { id: 'capture_real', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal, mode: 'scrollback-tail', maxChars: 12000 } },
-      { id: 'if_real', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture_real', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_REAL_MACRO_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'return', reason: 'real shell ok' }] }] },
+      { id: 'if_real', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture_real', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_REAL_MACRO_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'finish', reason: 'real shell ok' }] }] },
     ],
   }
 }
