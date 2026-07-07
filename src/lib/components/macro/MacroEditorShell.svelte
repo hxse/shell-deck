@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TerminalIndexMapItem, TerminalSnapshot } from "../../protocol"
-  import type { CaptureSourceConfig, FlowV2Node, MacroTemplate, MessageSpec, ParallelSendCaptureItem, TerminalTarget, ValidationResult } from "../../macro/templateTypes"
+  import type { CaptureSourceConfig, FlowV2Node, MacroTemplate, TerminalTarget, ValidationResult } from "../../macro/templateTypes"
   import MacroStepList from "./MacroStepList.svelte"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
@@ -20,27 +20,12 @@
     draft = next
   }
 
-  function defaultParallelItem(rawId: string, terminal: TerminalTarget): ParallelSendCaptureItem {
-    const id = sanitizeId(rawId)
-    return {
-      id,
-      terminal,
-      send: { id: id + "_send", type: "send_line", terminal, message: defaultMessage("") },
-      wait: { id: id + "_wait", type: "wait", mode: "terminal-quiet", terminal, quietMs: 1000, maxMs: 600000, onTimeout: "pause" },
-      capture: { id: id + "_capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal, mode: "scrollback-tail", maxChars: 20000 } },
-    }
-  }
-
   function defaultCondition(template: MacroTemplate) {
     return { kind: "text_match" as const, source: defaultArtifactSource(template), matcher: { kind: "simple" as const, op: "contains" as const, text: "READY" }, scope: { kind: "whole" as const } }
   }
 
   function defaultArtifactSource(template: MacroTemplate) {
     return artifactChoices(template)[0]?.source ?? { kind: "step_artifact" as const, stepId: "capture_1", artifact: "captured_text" as const }
-  }
-
-  function defaultMessage(text: string): MessageSpec {
-    return text.length > 0 ? { parts: [{ kind: "text", text }] } : { parts: [] }
   }
 
   function terminalChoices() {
@@ -94,7 +79,7 @@
     const choices: Array<{ label: string; source: { kind: "step_artifact"; stepId: string; artifact: "captured_text" | "merged_text" | "extracted_text" } }> = []
     for (const node of nodes) {
       if (node.type === "capture-source") choices.push({ label: node.id + ".captured_text", source: { kind: "step_artifact", stepId: node.id, artifact: "captured_text" } })
-      if (node.type === "parallel_send_capture") choices.push({ label: node.id + ".merged_text", source: { kind: "step_artifact", stepId: node.id, artifact: "merged_text" } })
+      if (node.type === "parallel") choices.push({ label: node.id + ".merged_text", source: { kind: "step_artifact", stepId: node.id, artifact: "merged_text" } })
       if (node.type === "extract_text") choices.push({ label: node.id + ".extracted_text", source: { kind: "step_artifact", stepId: node.id, artifact: "extracted_text" } })
       if (node.type === "if") {
         for (const branch of node.branches) choices.push(...collectArtifactChoices(branch.body))
@@ -122,7 +107,6 @@
         {choiceFromTarget}
         {targetFromChoice}
         {defaultCaptureSource}
-        {defaultParallelItem}
         {defaultCondition}
         {artifactChoices}
         {insertionPaletteMode}

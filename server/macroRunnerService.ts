@@ -7,8 +7,10 @@ import type {
   InputLineNode,
   MacroTemplate,
   MessageSpec,
-  ParallelSendCaptureItem,
-  ParallelSendCaptureNode,
+  ParallelLane,
+  ParallelLaneNode,
+  ParallelLaneOutputNode,
+  ParallelNode,
   SendLineNode,
   TerminalTarget,
   TextFilterMatcher,
@@ -30,6 +32,7 @@ import { TerminalDeckManager } from "./terminalDeckManager"
 type ControlResult = "completed" | "suspended" | "break" | "continue" | "finish"
 type CaptureExecutionResult = { artifactRef: string; text: string }
 type CaptureExecutionOptions = { eventData?: Record<string, unknown>; captureIdentityId?: string }
+type ParallelLaneExecutionResult = { laneId: string; laneLabel: string; terminalAlias: string; text: string }
 
 type RuntimeState = {
   configId: string
@@ -205,7 +208,7 @@ export class MacroRunnerService {
     if (node.type === "wait") return await this.executeWait(runtime, node)
     if (node.type === "capture-source") return await this.executeCapture(runtime, node.id, node.capture)
     if (node.type === "extract_text") return await this.executeExtractText(runtime, node)
-    return await this.executeParallelSendCapture(runtime, node)
+    return await this.executeParallel(runtime, node, skipCompleted)
   }
 
   private async executeIf(runtime: RuntimeState, node: Extract<FlowV2Node, { type: "if" }>, skipCompleted: boolean): Promise<ControlResult> {
@@ -366,60 +369,64 @@ export class MacroRunnerService {
     return { artifactRef: captureArtifact.artifact.artifactRef, text }
   }
 
-  private async executeParallelSendCapture(runtime: RuntimeState, node: ParallelSendCaptureNode): Promise<ControlResult> {
-    await this.startStep(runtime, node.id)
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_send_capture_started", stepId: node.id, summary: "Parallel send/capture started: " + node.id, data: { itemIds: node.items.map((item) => item.id) } })
-    const results = await Promise.all(node.items.map((item) => this.executeParallelItem(runtime, node, item).catch((error) => ({ itemId: item.id, error }))))
-    const failed = results.find((result): result is { itemId: string; error: unknown } => "error" in result)
+  private async executeParallel(runtime: RuntimeState, node: ParallelNode, skipCompleted: boolean): Promise<ControlResult> {
+    const alreadyStarted = skipCompleted && this.hasRunEvent(runtime, "parallel_started", node.id)
+    if (!alreadyStarted) {
+      await this.startStep(runtime, node.id)
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_started", stepId: node.id, summary: "Parallel started: " + node.id, data: { laneIds: node.lanes.map((lane) => lane.id) } })
+    }
+    const results = await Promise.all(node.lanes.map((lane) => this.executeParallelLane(runtime, node, lane, skipCompleted).catch((error) => ({ laneId: lane.id, error }))))
+    const failed = results.find((result): result is { laneId: string; error: unknown } => "error" in result)
     if (failed) {
       if (!this.runtimeCanContinue(runtime)) return "suspended"
       const message = failed.error instanceof Error ? failed.error.message : String(failed.error)
-      if (node.onItemFail === "fail") await this.failRun(runtime, "parallel_item_failed", message, node.id)
-      else await this.pauseRun(runtime, "parallel_item_failed", message, node.id, { itemId: failed.itemId })
+      if (node.onLaneFail === "fail") await this.failRun(runtime, "parallel_lane_failed", message, node.id)
+      else await this.pauseRun(runtime, "parallel_lane_failed", message, node.id, { laneId: failed.laneId })
       return "suspended"
     }
     if (!this.runtimeCanContinue(runtime)) return "suspended"
-    const merged = results.map((result) => {
-      const ok = result as { itemId: string; terminalAlias: string; text: string }
-      if (!node.merge.includeEmptyCaptures && ok.text.length === 0) return ""
-      return node.merge.separator.replaceAll("{itemId}", ok.itemId).replaceAll("{terminalAlias}", ok.terminalAlias) + "\n" + ok.text
+    const merged = (results as ParallelLaneExecutionResult[]).map((result) => {
+      if (!node.merge.includeEmptyOutputs && result.text.length === 0) return ""
+      return node.merge.separator
+        .replaceAll("{laneId}", result.laneId)
+        .replaceAll("{laneLabel}", result.laneLabel)
+        .replaceAll("{terminalAlias}", result.terminalAlias) + result.text
     }).filter((text) => text.length > 0).join("\n\n")
     const artifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "parallel-merged", merged, "txt", node.id)
     this.setArtifact(runtime, node.id, "merged_text", artifact.artifact.artifactRef)
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_send_capture_joined", stepId: node.id, summary: "Parallel send/capture joined", data: { artifactRef: artifact.artifact.artifactRef, itemIds: node.items.map((item) => item.id) } })
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_joined", stepId: node.id, summary: "Parallel joined", data: { artifactRef: artifact.artifact.artifactRef, laneIds: node.lanes.map((lane) => lane.id) } })
     await this.completeStep(runtime, node.id)
     return "completed"
   }
 
-  private async executeParallelItem(runtime: RuntimeState, parent: ParallelSendCaptureNode, item: ParallelSendCaptureItem): Promise<{ itemId: string; terminalAlias: string; text: string }> {
-    const resolved = this.resolveTerminal(runtime, item.terminal)
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_send_capture_item_started", stepId: parent.id, summary: "Parallel item started: " + item.id, data: { itemId: item.id, terminalId: resolved.terminalId, terminalAlias: resolved.terminalAlias } })
-    const sendText = this.renderMessage(runtime, item.send.message)
-    const sendArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "parallel-send", sendText, "txt", parent.id)
-    const sendResult = this.manager.input(runtime.configId, { kind: "id", value: resolved.terminalId }, sendText + "\r")
-    if (!sendResult.ok) throw new Error("terminal_input_rejected:" + sendResult.reason)
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "terminal_line_sent", stepId: parent.id, summary: "Parallel item line sent: " + item.id, data: { itemId: item.id, terminalId: resolved.terminalId, artifactRef: sendArtifact.artifact.artifactRef, enter: true } })
-    if (item.wait) {
-      const completed = await this.executeParallelItemWait(runtime, parent.id, item.id, item.wait)
-      if (!completed) throw new Error("parallel_item_wait_incomplete:" + item.id)
+  private async executeParallelLane(runtime: RuntimeState, parent: ParallelNode, lane: ParallelLane, skipCompleted: boolean): Promise<ParallelLaneExecutionResult> {
+    const resolved = this.resolveTerminal(runtime, lane.terminal)
+    const output = lane.body[lane.body.length - 1] as ParallelLaneOutputNode
+    const actions = lane.body.slice(0, -1)
+    const laneAlreadyCompleted = skipCompleted && actions.length > 0 && actions.every((item) => runtime.completedSteps.has(item.id))
+    if (!laneAlreadyCompleted) {
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_lane_started", stepId: parent.id, summary: "Parallel lane started: " + lane.id, data: { laneId: lane.id, laneLabel: lane.label, terminalId: resolved.terminalId, terminalAlias: resolved.terminalAlias } })
     }
-    if (!this.runtimeCanContinue(runtime)) throw new Error("parallel_item_interrupted:" + item.id)
-    const capture = await this.captureSource(runtime, parent.id, item.capture.capture, { captureIdentityId: item.capture.id, eventData: { itemId: item.id, captureStepId: item.capture.id } })
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_send_capture_item_completed", stepId: parent.id, summary: "Parallel item completed: " + item.id, data: { itemId: item.id, terminalId: resolved.terminalId, capturedChars: capture.text.length, artifactRef: capture.artifactRef } })
-    return { itemId: item.id, terminalAlias: resolved.terminalAlias, text: capture.text }
+    for (const item of actions) {
+      if (!this.runtimeCanContinue(runtime)) throw new Error("parallel_lane_interrupted:" + lane.id)
+      if (skipCompleted && runtime.completedSteps.has(item.id)) continue
+      const result = await this.executeParallelLaneAction(runtime, item)
+      if (result !== "completed") throw new Error("parallel_lane_incomplete:" + lane.id + ":" + result)
+    }
+    if (!this.runtimeCanContinue(runtime)) throw new Error("parallel_lane_interrupted:" + lane.id)
+    const text = output.source.kind === "none" ? "" : this.readArtifactSource(runtime, output.source)
+    if (!laneAlreadyCompleted) {
+      await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "parallel_lane_completed", stepId: parent.id, summary: "Parallel lane completed: " + lane.id, data: { laneId: lane.id, laneLabel: lane.label, terminalId: resolved.terminalId, terminalAlias: resolved.terminalAlias, outputSource: output.source, outputChars: text.length } })
+    }
+    return { laneId: lane.id, laneLabel: lane.label, terminalAlias: resolved.terminalAlias, text }
   }
 
-  private async executeParallelItemWait(runtime: RuntimeState, parentStepId: string, itemId: string, wait: WaitNode): Promise<boolean> {
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "wait_started", stepId: parentStepId, summary: "Parallel item wait started: " + itemId, data: { itemId, mode: wait.mode } })
-    let completed = false
-    if (wait.mode === "duration") completed = await this.waitForDuration(runtime, wait.durationMs, "running")
-    else if (wait.mode === "terminal-quiet") completed = await this.waitForTerminalQuiet(runtime, wait)
-    if (!completed) {
-      if (this.runtimeCanContinue(runtime)) await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "wait_timeout", stepId: parentStepId, summary: "Parallel item wait did not complete: " + itemId, data: { itemId, mode: wait.mode, onTimeout: wait.mode === "terminal-quiet" ? wait.onTimeout : null } })
-      return false
-    }
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "wait_completed", stepId: parentStepId, summary: "Parallel item wait completed: " + itemId, data: { itemId, mode: wait.mode } })
-    return true
+  private async executeParallelLaneAction(runtime: RuntimeState, node: ParallelLaneNode): Promise<ControlResult> {
+    if (node.type === "send_line") return await this.executeSendLine(runtime, node)
+    if (node.type === "wait") return await this.executeWait(runtime, node)
+    if (node.type === "capture-source") return await this.executeCapture(runtime, node.id, node.capture)
+    if (node.type === "extract_text") return await this.executeExtractText(runtime, node)
+    return "completed"
   }
 
   private async executeExtractText(runtime: RuntimeState, node: ExtractTextNode): Promise<ControlResult> {
@@ -634,6 +641,10 @@ export class MacroRunnerService {
     return new Set(this.runEventStore.snapshot(configId, runId).replay.events.filter((event) => event.kind === "step_completed" && typeof event.stepId === "string").map((event) => event.stepId as string))
   }
 
+  private hasRunEvent(runtime: RuntimeState, kind: string, stepId: string): boolean {
+    return this.runEventStore.snapshot(runtime.configId, runtime.runId).replay.events.some((event) => event.kind === kind && event.stepId === stepId)
+  }
+
   private findNode(nodes: FlowV2Node[], stepId: string | null): FlowV2Node | undefined {
     if (!stepId) return undefined
     for (const node of nodes) {
@@ -651,6 +662,12 @@ export class MacroRunnerService {
       if (node.type === "for") {
         const found = this.findNode(node.body, stepId)
         if (found) return found
+      }
+      if (node.type === "parallel") {
+        for (const lane of node.lanes) {
+          const found = this.findNode(lane.body.filter((item) => item.type !== "output") as FlowV2Node[], stepId)
+          if (found) return found
+        }
       }
       if ((node.type === "break" || node.type === "continue" || node.type === "finish") && node.body) {
         const found = this.findNode(node.body, stepId)

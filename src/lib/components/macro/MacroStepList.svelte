@@ -1,8 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte"
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
+  import ParallelLaneTabs from "./ParallelLaneTabs.svelte"
   import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, ParallelSendCaptureItem, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
+  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
   type TerminalChoice = { value: string; label: string; title: string }
@@ -18,7 +19,6 @@
     choiceFromTarget,
     targetFromChoice,
     defaultCaptureSource,
-    defaultParallelItem,
     defaultCondition,
     artifactChoices,
     insertionPaletteMode,
@@ -30,7 +30,6 @@
     choiceFromTarget: (target: TerminalTarget) => string
     targetFromChoice: (choice: string) => TerminalTarget
     defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig
-    defaultParallelItem: (rawId: string, terminal: TerminalTarget) => ParallelSendCaptureItem
     defaultCondition: (template: MacroTemplate) => TextMatchCondition
     artifactChoices: (template: MacroTemplate) => ArtifactChoice[]
     insertionPaletteMode: MacroInsertionPaletteMode
@@ -46,6 +45,7 @@
   let insertionNotice = $state("")
   let moveNodeId = $state("")
   let collapsedNodeIds = $state<string[]>([])
+  let idEditNotice = $state("")
 
   const insertionPaletteAnchored = $derived(insertionPaletteMode === "anchored" && insertionPosition !== null)
   const insertionPaletteStyle = $derived(insertionPaletteAnchored && insertionPosition ? "--palette-x: " + insertionPosition.x + "px; --palette-y: " + insertionPosition.y + "px;" + (insertionPosition.maxHeight ? " --palette-max-height: " + insertionPosition.maxHeight + "px;" : "") : "")
@@ -57,7 +57,7 @@
     { type: "wait", label: "wait", testId: "add-step-wait" },
     { type: "capture-source", label: "capture", testId: "add-step-capture" },
     { type: "extract_text", label: "extract", testId: "add-step-extract" },
-    { type: "parallel_send_capture", label: "parallel", testId: "add-step-parallel-send-capture" },
+    { type: "parallel", label: "parallel", testId: "add-step-parallel" },
   ]
 
   const flowPaletteItems: Array<{ type: InsertableNodeType; label: string; testId: string; loopOnly?: boolean }> = [
@@ -276,8 +276,14 @@
     })
   }
 
-  function setNodeId(oldId: string, nextId: string) {
+  function setNodeId(oldId: string, nextId: string): boolean {
+    if (nextId !== oldId && allNodeIds(draft.body).includes(nextId)) {
+      idEditNotice = "Duplicate node id blocked: " + nextId
+      return false
+    }
+    idEditNotice = ""
     updateNode(oldId, (node) => { node.id = nextId })
+    return true
   }
 
   function findNode(nodes: FlowV2Node[], nodeId: string): FlowV2Node | undefined {
@@ -355,7 +361,7 @@
 
   function artifactOutputForNode(node: FlowV2Node): ArtifactChoice | null {
     if (node.type === "capture-source") return { label: node.id + ".captured_text", source: { kind: "step_artifact", stepId: node.id, artifact: "captured_text" } }
-    if (node.type === "parallel_send_capture") return { label: node.id + ".merged_text", source: { kind: "step_artifact", stepId: node.id, artifact: "merged_text" } }
+    if (node.type === "parallel") return { label: node.id + ".merged_text", source: { kind: "step_artifact", stepId: node.id, artifact: "merged_text" } }
     if (node.type === "extract_text") return { label: node.id + ".extracted_text", source: { kind: "step_artifact", stepId: node.id, artifact: "extracted_text" } }
     return null
   }
@@ -472,35 +478,50 @@
     return /^\d+$/.test(value) ? Number(value) : value
   }
 
-  function addParallelItem(nodeId: string) {
+  function addParallelLane(nodeId: string) {
+    updateDraft((template: MacroTemplate) => {
+      const node = findNode(template.body, nodeId)
+      if (node?.type !== "parallel") return
+      const terminal = nextParallelLaneTerminal(node.lanes)
+      node.lanes.push(defaultParallelLane(template, nextParallelLaneId(node.lanes), terminal, node.lanes.map((item) => item.id)))
+    })
+  }
+
+  function removeParallelLane(nodeId: string, laneId: string) {
     updateNode(nodeId, (node) => {
-      if (node.type !== "parallel_send_capture") return
-      const terminal = terminalChoices()[node.items.length]?.value ? targetFromChoice(terminalChoices()[node.items.length].value) : node.items[0]?.terminal ?? { kind: "index", value: 1 }
-      node.items.push(defaultParallelItem("item_" + (node.items.length + 1), terminal))
+      if (node.type !== "parallel" || node.lanes.length <= 1) return
+      if (!confirm("Remove parallel lane " + laneId + "?")) return
+      node.lanes = node.lanes.filter((lane) => lane.id !== laneId)
     })
   }
 
-  function setParallelItemWaitMode(parentId: string, itemId: string, mode: "none" | "duration" | "terminal-quiet") {
-    updateNode(parentId, (node) => {
-      if (node.type !== "parallel_send_capture") return
-      const item = node.items.find((candidate) => candidate.id === itemId)
-      if (!item) return
-      if (mode === "none") {
-        delete item.wait
-      } else if (mode === "duration") {
-        item.wait = { id: item.id + "_wait", type: "wait", mode, durationMs: 1500 }
-      } else {
-        item.wait = { id: item.id + "_wait", type: "wait", mode, terminal: item.terminal, quietMs: 1000, maxMs: 600000, onTimeout: "pause" }
-      }
+  function updateParallelLane(nodeId: string, laneId: string, mutator: (lane: ParallelLane) => void) {
+    updateNode(nodeId, (node) => {
+      if (node.type !== "parallel") return
+      const lane = node.lanes.find((candidate) => candidate.id === laneId)
+      if (lane) mutator(lane)
     })
   }
 
-  function updateParallelItemWait(parentId: string, itemId: string, mutator: (wait: NonNullable<ParallelSendCaptureItem["wait"]>) => void) {
-    updateNode(parentId, (node) => {
-      if (node.type !== "parallel_send_capture") return
-      const wait = node.items.find((candidate) => candidate.id === itemId)?.wait
-      if (wait) mutator(wait)
-    })
+  function defaultParallelLane(template: MacroTemplate, rawId: string, terminal: TerminalTarget, existingLaneIds: string[] = []): ParallelLane {
+    const ids = allNodeIds(template.body)
+    const id = uniqueKey(rawId, existingLaneIds)
+    return { id, label: id, terminal, body: [{ id: uniqueKey(id + "_output", [...ids, id]), type: "output", source: { kind: "none" } }] }
+  }
+
+  function nextParallelLaneId(lanes: ParallelLane[]): string {
+    const maxOrdinal = lanes.reduce((max, lane) => {
+      const match = /^lane_(\d+)$/.exec(lane.id)
+      return match ? Math.max(max, Number(match[1])) : max
+    }, 0)
+    const ordinal = maxOrdinal > 0 ? maxOrdinal + 1 : lanes.length + 1
+    return uniqueKey("lane_" + ordinal, lanes.map((lane) => lane.id))
+  }
+
+  function nextParallelLaneTerminal(lanes: ParallelLane[]): TerminalTarget {
+    const used = new Set(lanes.map((lane) => choiceFromTarget(lane.terminal)))
+    const choice = terminalChoices().find((item: TerminalChoice) => !used.has(item.value))
+    return choice ? targetFromChoice(choice.value) : lanes[0]?.terminal ?? firstTerminalTarget()
   }
 
   function defaultNode(template: MacroTemplate, type: FlowV2Node["type"]): FlowV2Node {
@@ -511,7 +532,7 @@
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") return { id, type, capture: defaultCaptureSource("terminal-buffer") }
     if (type === "extract_text") return { id, type, source: artifactChoices(template)[0]?.source ?? emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
-    if (type === "parallel_send_capture") return { id, type, items: [defaultParallelItem(id + "_item", terminal)], merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true }, onItemFail: "pause" }
+    if (type === "parallel") return { id, type, lanes: [defaultParallelLane(template, "lane_1", terminal)], merge: { kind: "sectioned_text", separator: "\n\n===== {laneId} | {laneLabel} | {terminalAlias} =====\n\n", includeEmptyOutputs: false }, onLaneFail: "pause" }
     if (type === "if") return { id, type, branches: [{ kind: "if", condition: defaultCondition(template), body: [] }] }
     if (type === "for") return { id, type, range: { kind: "count", count: 1 }, body: [] }
     if (type === "break") return { id, type, reason: "break", body: [] }
@@ -528,7 +549,8 @@
       const nested = node.type === "if"
         ? [...node.branches.flatMap((branch) => allNodeIds(branch.body)), ...(node.else ? allNodeIds(node.else) : [])]
         : node.type === "for" ? allNodeIds(node.body)
-          : isControlTerminalNode(node) && node.body ? allNodeIds(node.body) : []
+          : node.type === "parallel" ? node.lanes.flatMap((lane) => lane.body.map((item) => item.id))
+            : isControlTerminalNode(node) && node.body ? allNodeIds(node.body) : []
       return [node.id, ...nested]
     })
   }
@@ -544,7 +566,7 @@
   }
 
   function isActionType(type: FlowV2Node["type"]): boolean {
-    return type === "send_line" || type === "input_line" || type === "wait" || type === "capture-source" || type === "extract_text" || type === "parallel_send_capture"
+    return type === "send_line" || type === "input_line" || type === "wait" || type === "capture-source" || type === "extract_text" || type === "parallel"
   }
 
   function isControlTerminalNode(node: FlowV2Node): node is Extract<FlowV2Node, { type: "break" | "continue" | "finish" }> {
@@ -588,6 +610,9 @@
 {#if insertionNotice}
   <p class="macro-insertion-notice" data-testid="macro-insertion-notice">{insertionNotice}</p>
 {/if}
+{#if idEditNotice}
+  <p class="macro-insertion-notice" data-testid="macro-id-edit-notice">{idEditNotice}</p>
+{/if}
 
 <section class="macro-section">
   <div class="macro-section-title"><h3>Flow V2 Body</h3></div>
@@ -627,7 +652,7 @@
       </div>
     </div>
     <div class="macro-row">
-      <label>Node id<input value={node.id} oninput={(event) => setNodeId(node.id, event.currentTarget.value)} /></label>
+      <label>Node id<input data-testid="node-id-input" value={node.id} oninput={(event) => { if (!setNodeId(node.id, event.currentTarget.value)) event.currentTarget.value = node.id }} /></label>
     </div>
 
     {#if node.type === "send_line"}
@@ -687,19 +712,8 @@
     {:else if node.type === "for"}
       <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={forRangeMode(node)} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "for") return; item.range = event.currentTarget.value === "forever" ? { kind: "forever" } : { kind: "count", count: 1 } })}><option value="count">count</option><option value="forever">forever</option></select></label>{#if forRangeMode(node) === "count"}<label>Count<input data-testid="for-range-count" type="number" value={forRangeCount(node)} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range = { kind: "count", count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
       <div class="inline-actions"><button type="button" data-testid="node-add-inside-for" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "for", undefined, node.id), "Insert inside for: " + node.id, true, event)}>Add inside for</button></div>{@render NodeListEditor(node.body, [...bodyPath, { kind: "for", nodeId: node.id }], true, "for body", false)}
-    {:else if node.type === "parallel_send_capture"}
-      <div class="macro-row"><label>Separator<input value={node.merge.separator} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "parallel_send_capture") item.merge.separator = event.currentTarget.value })} /></label><label class="checkbox-row"><input type="checkbox" checked={node.merge.includeEmptyCaptures} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "parallel_send_capture") item.merge.includeEmptyCaptures = event.currentTarget.checked })} />Include empty captures</label></div>
-      {#each node.items as item}
-        <div class="parallel-lane-card">
-          <div class="step-title"><strong>{item.id}</strong><button type="button" onclick={() => updateNode(node.id, (parent) => { if (parent.type === "parallel_send_capture") parent.items = parent.items.filter((candidate) => candidate.id !== item.id) })}>Remove</button></div>
-          <label>Item id<input value={item.id} oninput={(event) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (target) target.id = event.currentTarget.value })} /></label>
-          <label>Terminal<select value={choiceFromTarget(item.terminal)} title={terminalChoiceTitle(choiceFromTarget(item.terminal))} onchange={(event) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (!target) return; const terminal = targetFromChoice(event.currentTarget.value); target.terminal = terminal; target.send.terminal = terminal; target.capture.capture.terminal = terminal; if (target.wait?.mode === "terminal-quiet") target.wait.terminal = terminal })}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
-          {@render MessagePartsEditor(item.send.message, (message: MessageSpec) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (target) target.send.message = message }), artifactChoicesBefore(node.id))}
-          {@render ParallelItemWaitEditor(node.id, item)}
-          {@render CaptureEditor(item.capture, terminalChoices, choiceFromTarget, targetFromChoice, defaultCaptureSource, (capture: CaptureSourceConfig) => updateNode(node.id, (parent) => { if (parent.type !== "parallel_send_capture") return; const target = parent.items.find((candidate) => candidate.id === item.id); if (target) target.capture.capture = capture }))}
-        </div>
-      {/each}
-      <button type="button" data-testid="parallel-add-item" onclick={() => addParallelItem(node.id)}>Add item</button>
+    {:else if node.type === "parallel"}
+      <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {choiceFromTarget} {targetFromChoice} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} />
     {:else}
       <label>Reason<input value={node.reason ?? ""} oninput={(event) => updateNode(node.id, (item) => { if ("reason" in item) item.reason = event.currentTarget.value || undefined })} /></label>
       {#if node.type === "finish" || node.type === "break" || node.type === "continue"}
@@ -751,26 +765,6 @@
     </section>
   </div>
 {/if}
-
-{#snippet ParallelItemWaitEditor(parentId: string, item: ParallelSendCaptureItem)}
-  <section class="message-part-row" data-testid="parallel-item-wait-editor">
-    <div class="step-title"><strong>Wait</strong></div>
-    <label>Mode
-      <select data-testid="parallel-item-wait-mode" value={item.wait?.mode ?? "none"} onchange={(event) => setParallelItemWaitMode(parentId, item.id, event.currentTarget.value as "none" | "duration" | "terminal-quiet")}>
-        <option value="none">none</option><option value="duration">duration</option><option value="terminal-quiet">terminal-quiet</option>
-      </select>
-    </label>
-    {#if item.wait?.mode === "duration"}
-      <label>Duration ms<input type="number" value={item.wait.durationMs} oninput={(event) => updateParallelItemWait(parentId, item.id, (wait) => { if (wait.mode === "duration") wait.durationMs = Number(event.currentTarget.value) })} /></label>
-    {:else if item.wait?.mode === "terminal-quiet"}
-      <div class="macro-row">
-        <label>Quiet ms<input type="number" value={item.wait.quietMs} oninput={(event) => updateParallelItemWait(parentId, item.id, (wait) => { if (wait.mode === "terminal-quiet") wait.quietMs = Number(event.currentTarget.value) })} /></label>
-        <label>Max ms<input type="number" value={item.wait.maxMs} oninput={(event) => updateParallelItemWait(parentId, item.id, (wait) => { if (wait.mode === "terminal-quiet") wait.maxMs = Number(event.currentTarget.value) })} /></label>
-        <label>On timeout<select value={item.wait.onTimeout} onchange={(event) => updateParallelItemWait(parentId, item.id, (wait) => { if (wait.mode === "terminal-quiet") wait.onTimeout = event.currentTarget.value as "pause" })}><option value="pause">pause</option></select></label>
-      </div>
-    {/if}
-  </section>
-{/snippet}
 
 {#snippet MessagePartsEditor(message: MessageSpec, onChange: (message: MessageSpec) => void, choices: ArtifactChoice[])}
   <div class="message-parts-editor" data-testid="message-parts-editor">

@@ -6,21 +6,21 @@ import type {
   FlowV2ArtifactSource,
   FlowV2Node,
   MacroTemplate,
-  ParallelSendCaptureItem,
+  ParallelLane,
   TextMatchCondition,
   ValidationIssue,
   ValidationResult,
 } from "./templateTypes"
 
-export const FLOW_V2_ACTION_TYPES = ["send_line", "input_line", "wait", "capture-source", "extract_text", "parallel_send_capture"] as const
+export const FLOW_V2_ACTION_TYPES = ["send_line", "input_line", "wait", "capture-source", "extract_text", "parallel"] as const
 export const FLOW_V2_CONTROL_TYPES = ["if", "for", "break", "continue", "finish"] as const
-export const FLOW_V2_FORBIDDEN_TYPES = ["sleep", "parse", "send_artifact", "parallel_all", "merge_parallel_results", "pause", "stop", "return", "goto", "branch", "complete", "fail"] as const
+export const FLOW_V2_FORBIDDEN_TYPES = ["sleep", "parse", "send_artifact", "parallel_all", "parallel_send_capture", "merge_parallel_results", "pause", "stop", "return", "goto", "branch", "complete", "fail"] as const
 
 const ACTION_TYPES = new Set<string>(FLOW_V2_ACTION_TYPES)
 const CONTROL_TYPES = new Set<string>(FLOW_V2_CONTROL_TYPES)
 const FORBIDDEN_TYPES = new Set<string>(FLOW_V2_FORBIDDEN_TYPES)
 const TEMPLATE_KEYS = new Set(["schemaVersion", "id", "name", "description", "configId", "body", "createdAt", "updatedAt"])
-const LEGACY_FIELD_KEYS = new Set(["steps", "next", "loopGuard", "goto", "branch", "complete", "pause", "stop", "fail", "parser", "parse", "captureStep", "fromParseStep", "conditions", "lanes"])
+const LEGACY_FIELD_KEYS = new Set(["steps", "next", "loopGuard", "goto", "branch", "complete", "pause", "stop", "fail", "parser", "parse", "captureStep", "fromParseStep", "conditions"])
 const ARTIFACT_SOURCE_KEYS = new Set(["kind", "stepId", "artifact"])
 const MESSAGE_KEYS = new Set(["parts"])
 const TEXT_PART_KEYS = new Set(["kind", "text"])
@@ -45,9 +45,11 @@ const TEXT_SELECT_INDEX_KEYS = new Set(["mode", "index"])
 const TEXT_SELECT_RANGE_KEYS = new Set(["mode", "start", "end"])
 const TEXT_EXTRACT_NONE_KEYS = new Set(["kind"])
 const TEXT_EXTRACT_REGEX_KEYS = new Set(["kind", "pattern", "flags", "group"])
-const PARALLEL_SEND_CAPTURE_KEYS = new Set(["id", "type", "items", "merge", "onItemFail"])
-const PARALLEL_ITEM_KEYS = new Set(["id", "terminal", "send", "wait", "capture"])
-const PARALLEL_MERGE_KEYS = new Set(["kind", "separator", "order", "includeEmptyCaptures"])
+const PARALLEL_KEYS = new Set(["id", "type", "lanes", "merge", "onLaneFail"])
+const PARALLEL_LANE_KEYS = new Set(["id", "label", "terminal", "body"])
+const PARALLEL_OUTPUT_KEYS = new Set(["id", "type", "source"])
+const PARALLEL_OUTPUT_NONE_KEYS = new Set(["kind"])
+const PARALLEL_MERGE_KEYS = new Set(["kind", "separator", "includeEmptyOutputs"])
 const IF_KEYS = new Set(["id", "type", "branches", "else"])
 const IF_BRANCH_KEYS = new Set(["kind", "condition", "body"])
 const CONDITION_KEYS = new Set(["kind", "source", "matcher", "scope"])
@@ -191,7 +193,7 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
     validateExtractTextNode(issues, path, node, context)
     return
   }
-  validateParallelSendCaptureNode(issues, path, node, context)
+  validateParallelNode(issues, path, node, context)
 }
 
 function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
@@ -362,89 +364,127 @@ function validateTextExtractSpec(issues: ValidationIssue[], path: string, extrac
   issues.push({ path: path + ".kind", message: "extract kind must be none or regex" })
 }
 
-function validateParallelSendCaptureNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
-  rejectUnknownKeys(issues, path, node, PARALLEL_SEND_CAPTURE_KEYS)
-  if (!Array.isArray(node.items) || node.items.length === 0) {
-    issues.push({ path: path + ".items", message: "parallel_send_capture must declare items" })
+function validateParallelNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
+  rejectUnknownKeys(issues, path, node, PARALLEL_KEYS)
+  if (!Array.isArray(node.lanes) || node.lanes.length === 0) {
+    issues.push({ path: path + ".lanes", message: "parallel must declare lanes" })
   } else {
-    validateParallelItems(issues, path + ".items", node.items, context)
+    validateParallelLanes(issues, path + ".lanes", node.lanes, context)
   }
   if (!isObject(node.merge)) {
-    issues.push({ path: path + ".merge", message: "parallel_send_capture merge must be an object" })
+    issues.push({ path: path + ".merge", message: "parallel merge must be an object" })
   } else {
     rejectUnknownKeys(issues, path + ".merge", node.merge, PARALLEL_MERGE_KEYS)
     if (node.merge.kind !== "sectioned_text") issues.push({ path: path + ".merge.kind", message: "merge kind must be sectioned_text" })
     validateString(issues, path + ".merge.separator", node.merge.separator, 1)
-    if (node.merge.order !== "item_order") issues.push({ path: path + ".merge.order", message: "merge order must be item_order" })
-    if (typeof node.merge.includeEmptyCaptures !== "boolean") issues.push({ path: path + ".merge.includeEmptyCaptures", message: "includeEmptyCaptures must be boolean" })
+    if (typeof node.merge.includeEmptyOutputs !== "boolean") issues.push({ path: path + ".merge.includeEmptyOutputs", message: "includeEmptyOutputs must be boolean" })
   }
-  if (node.onItemFail !== "pause" && node.onItemFail !== "fail") issues.push({ path: path + ".onItemFail", message: "onItemFail must be pause or fail" })
+  if (node.onLaneFail !== "pause" && node.onLaneFail !== "fail") issues.push({ path: path + ".onLaneFail", message: "onLaneFail must be pause or fail" })
   if (typeof node.id === "string") registerArtifactOutput(context, node.id, "merged_text")
 }
 
-function validateParallelItems(issues: ValidationIssue[], path: string, items: unknown[], context: ValidationContext) {
-  const itemIds = new Set<string>()
+function validateParallelLanes(issues: ValidationIssue[], path: string, lanes: unknown[], context: ValidationContext) {
+  const laneIds = new Set<string>()
+  const laneLabels = new Set<string>()
   const terminalKeys = new Map<string, string>()
-  for (const [index, item] of items.entries()) {
-    const itemPath = path + "[" + index + "]"
-    if (!isObject(item)) {
-      issues.push({ path: itemPath, message: "parallel item must be an object" })
+  for (const [index, lane] of lanes.entries()) {
+    const lanePath = path + "[" + index + "]"
+    if (!isObject(lane)) {
+      issues.push({ path: lanePath, message: "parallel lane must be an object" })
       continue
     }
-    rejectUnknownKeys(issues, itemPath, item, PARALLEL_ITEM_KEYS)
-    validatePublicId(issues, itemPath + ".id", item.id)
-    if (typeof item.id === "string") {
-      if (itemIds.has(item.id)) issues.push({ path: itemPath + ".id", message: "duplicate parallel item id" })
-      itemIds.add(item.id)
+    rejectUnknownKeys(issues, lanePath, lane, PARALLEL_LANE_KEYS)
+    validatePublicId(issues, lanePath + ".id", lane.id)
+    if (typeof lane.id === "string") {
+      if (laneIds.has(lane.id)) issues.push({ path: lanePath + ".id", message: "duplicate parallel lane id" })
+      laneIds.add(lane.id)
     }
-    issues.push(...validateTerminalTarget(itemPath + ".terminal", item.terminal, context.indexMap))
-    const itemKey = terminalIdentityKey(item.terminal, context.indexMap)
-    if (itemKey && typeof item.id === "string") {
-      const existing = terminalKeys.get(itemKey)
-      if (existing) issues.push({ path: itemPath + ".terminal", message: "duplicate parallel item terminal: " + itemKey + " already used by " + existing })
-      terminalKeys.set(itemKey, item.id)
+    validateString(issues, lanePath + ".label", lane.label, 0)
+    if (typeof lane.label === "string" && lane.label.trim()) {
+      const normalizedLabel = lane.label.trim()
+      if (laneLabels.has(normalizedLabel)) issues.push({ path: lanePath + ".label", message: "duplicate parallel lane label" })
+      laneLabels.add(normalizedLabel)
     }
-    validateParallelSend(issues, itemPath + ".send", item.send, item as ParallelSendCaptureItem, context)
-    if (item.wait !== undefined) validateParallelWait(issues, itemPath + ".wait", item.wait, item as ParallelSendCaptureItem, context)
-    validateParallelCapture(issues, itemPath + ".capture", item.capture, item as ParallelSendCaptureItem, context)
+    issues.push(...validateTerminalTarget(lanePath + ".terminal", lane.terminal, context.indexMap))
+    const laneKey = terminalIdentityKey(lane.terminal, context.indexMap)
+    if (laneKey && typeof lane.id === "string") {
+      const existing = terminalKeys.get(laneKey)
+      if (existing) issues.push({ path: lanePath + ".terminal", message: "duplicate parallel lane terminal: " + laneKey + " already used by " + existing })
+      terminalKeys.set(laneKey, lane.id)
+    }
+    validateParallelLaneBody(issues, lanePath + ".body", lane.body, lane as ParallelLane, context)
   }
 }
 
-function validateParallelSend(issues: ValidationIssue[], path: string, send: unknown, item: ParallelSendCaptureItem, context: ValidationContext) {
-  if (!isObject(send)) {
-    issues.push({ path, message: "parallel item send must be a send_line object" })
+function validateParallelLaneBody(issues: ValidationIssue[], path: string, body: unknown, lane: ParallelLane, context: ValidationContext) {
+  if (!Array.isArray(body)) {
+    issues.push({ path, message: "parallel lane body must be an array" })
     return
   }
-  if (send.type !== "send_line") issues.push({ path: path + ".type", message: "parallel item send must reuse send_line" })
-  rejectUnknownKeys(issues, path, send, SEND_LINE_KEYS)
-  issues.push(...validateTerminalTarget(path + ".terminal", send.terminal, context.indexMap))
-  validateSameTerminal(issues, path + ".terminal", item.terminal, send.terminal, context.indexMap, "parallel item send terminal must match item terminal")
-  validateMessageSpec(issues, path + ".message", send.message, context)
+  if (body.length === 0) {
+    issues.push({ path, message: "parallel lane body must end with output" })
+    return
+  }
+  const laneContext = childContext(context, context.loopDepth)
+  const laneOutputContext: ValidationContext = { ...context, artifactOutputs: new Map(), loopDepth: context.loopDepth }
+  let outputCount = 0
+  for (const [index, item] of body.entries()) {
+    const itemPath = path + "[" + index + "]"
+    if (!isObject(item)) {
+      issues.push({ path: itemPath, message: "parallel lane node must be an object" })
+      continue
+    }
+    validateNodeId(issues, itemPath + ".id", item.id, context)
+    if (typeof item.type !== "string") {
+      issues.push({ path: itemPath + ".type", message: "parallel lane node type must be a string" })
+      continue
+    }
+    if (item.type === "output") {
+      outputCount += 1
+      validateParallelOutputNode(issues, itemPath, item, laneOutputContext)
+      if (index !== body.length - 1) issues.push({ path: itemPath + ".type", message: "parallel lane output must be the final node" })
+      continue
+    }
+    if (index === body.length - 1) issues.push({ path: itemPath + ".type", message: "parallel lane must end with output" })
+    if (item.type === "send_line" || item.type === "wait" || item.type === "capture-source" || item.type === "extract_text") {
+      validateParallelLaneAction(issues, itemPath, item, lane, laneContext)
+      if (typeof item.id === "string") {
+        if (item.type === "capture-source") registerArtifactOutput(laneOutputContext, item.id, "captured_text")
+        if (item.type === "extract_text") registerArtifactOutput(laneOutputContext, item.id, "extracted_text")
+      }
+      continue
+    }
+    issues.push({ path: itemPath + ".type", message: "parallel lane only supports send_line, wait, capture-source, extract_text, and final output" })
+  }
+  if (outputCount === 0) issues.push({ path, message: "parallel lane must declare final output" })
+  if (outputCount > 1) issues.push({ path, message: "parallel lane must declare exactly one output" })
 }
 
-function validateParallelWait(issues: ValidationIssue[], path: string, wait: unknown, item: ParallelSendCaptureItem, context: ValidationContext) {
-  if (!isObject(wait)) {
-    issues.push({ path, message: "parallel item wait must be an object" })
-    return
+function validateParallelLaneAction(issues: ValidationIssue[], path: string, node: Record<string, unknown>, lane: ParallelLane, context: ValidationContext) {
+  validateActionNode(issues, path, node, context)
+  if (node.type === "send_line") validateSameTerminal(issues, path + ".terminal", lane.terminal, node.terminal, context.indexMap, "parallel lane send terminal must match lane terminal")
+  if (node.type === "wait") {
+    if (node.mode === "user-continue") issues.push({ path: path + ".mode", message: "parallel lane wait must not use user-continue" })
+    if (node.mode === "terminal-quiet") {
+      if (node.onTimeout !== "pause") issues.push({ path: path + ".onTimeout", message: "parallel lane wait onTimeout must be pause" })
+      validateSameTerminal(issues, path + ".terminal", lane.terminal, node.terminal, context.indexMap, "parallel lane wait terminal must match lane terminal")
+    }
   }
-  if (wait.type !== "wait") issues.push({ path: path + ".type", message: "parallel item wait must reuse wait" })
-  if (wait.mode === "user-continue") issues.push({ path: path + ".mode", message: "parallel item wait must not use user-continue" })
-  validateWaitNode(issues, path, wait, context)
-  if (wait.mode === "terminal-quiet") {
-    if (wait.onTimeout !== "pause") issues.push({ path: path + ".onTimeout", message: "parallel item wait onTimeout must be pause" })
-    validateSameTerminal(issues, path + ".terminal", item.terminal, wait.terminal, context.indexMap, "parallel item wait terminal must match item terminal")
-  }
+  if (node.type === "capture-source" && isObject(node.capture)) validateSameTerminal(issues, path + ".capture.terminal", lane.terminal, node.capture.terminal, context.indexMap, "parallel lane capture terminal must match lane terminal")
+  if (node.type === "extract_text" && (node.onEmpty === "continue" || node.onEmpty === "finish")) issues.push({ path: path + ".onEmpty", message: "parallel lane extract onEmpty must be pause or fail" })
 }
 
-function validateParallelCapture(issues: ValidationIssue[], path: string, captureNode: unknown, item: ParallelSendCaptureItem, context: ValidationContext) {
-  if (!isObject(captureNode)) {
-    issues.push({ path, message: "parallel item capture must be a capture-source object" })
+function validateParallelOutputNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, laneOutputContext: ValidationContext) {
+  rejectUnknownKeys(issues, path, node, PARALLEL_OUTPUT_KEYS)
+  if (!isObject(node.source)) {
+    issues.push({ path: path + ".source", message: "parallel output source must be an object" })
     return
   }
-  if (captureNode.type !== "capture-source") issues.push({ path: path + ".type", message: "parallel item capture must reuse capture-source" })
-  rejectUnknownKeys(issues, path, captureNode, CAPTURE_SOURCE_KEYS)
-  validateCaptureNodeConfig(issues, path + ".capture", captureNode.capture, context)
-  if (isObject(captureNode.capture)) validateSameTerminal(issues, path + ".capture.terminal", item.terminal, captureNode.capture.terminal, context.indexMap, "parallel item capture terminal must match item terminal")
+  if (node.source.kind === "none") {
+    rejectUnknownKeys(issues, path + ".source", node.source, PARALLEL_OUTPUT_NONE_KEYS)
+    return
+  }
+  validateArtifactSource(issues, path + ".source", node.source, laneOutputContext)
 }
 
 function validateControlNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {

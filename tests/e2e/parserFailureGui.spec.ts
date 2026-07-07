@@ -31,6 +31,6 @@ test('Flow V2 GUI rejects legacy parser action templates instead of running hidd
   await expect(page.getByTestId('add-step-send')).toBeVisible()
   await expect(page.getByTestId('add-step-capture')).toBeVisible()
   await expect(page.getByTestId('add-step-wait')).toBeVisible()
-  await expect(page.getByTestId('add-step-parallel-send-capture')).toBeVisible()
+  await expect(page.getByTestId('add-step-parallel')).toBeVisible()
   await expect(page.getByTestId('add-step-parse')).toHaveCount(0)
 })

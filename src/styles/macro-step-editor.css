@@ -271,3 +271,86 @@
   border-color: #8aa3bd;
   background: #edf4fa;
 }
+
+.parallel-tabs-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.parallel-tab-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.parallel-tab-strip button {
+  border: 1px solid #c8d3dd;
+  border-radius: 6px 6px 0 0;
+  background: #f5f7f9;
+  color: #334155;
+  padding: 6px 10px;
+}
+
+.parallel-tab-strip button.active {
+  background: #ffffff;
+  border-bottom-color: #ffffff;
+  color: #0f172a;
+  font-weight: 650;
+  box-shadow: 0 -1px 0 #2563eb inset;
+}
+
+.parallel-lane-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #cbd7e2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.parallel-lane-card.active-lane {
+  border-top-left-radius: 0;
+}
+
+.parallel-lane-controls {
+  justify-content: flex-end;
+}
+
+.parallel-lane-action {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #d8e0e8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.parallel-lane-insertion-palette {
+  width: min(100%, 420px);
+  box-shadow: 0 8px 24px rgba(20, 32, 44, 0.16);
+}
+
+.parallel-lane-insertion-palette .step-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.parallel-output-card {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0 0;
+  border: 0;
+  border-top: 1px solid #d8e0e8;
+  border-radius: 0;
+  background: transparent;
+}
+
+.parallel-output-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.parallel-output-card .step-title small {
+  color: #64748b;
+}

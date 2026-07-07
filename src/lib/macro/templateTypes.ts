@@ -129,28 +129,38 @@ export type ExtractTextNode = {
   onEmpty: TimeoutAction
 }
 
-export type ParallelSendCaptureItem = {
+export type ParallelLaneActionNode = SendLineNode | WaitNode | CaptureSourceNode | ExtractTextNode
+
+export type ParallelOutputSource = FlowV2ArtifactSource | { kind: "none" }
+
+export type ParallelLaneOutputNode = {
   id: string
-  terminal: TerminalTarget
-  send: SendLineNode
-  wait?: Extract<WaitNode, { mode: "duration" | "terminal-quiet" }>
-  capture: CaptureSourceNode
+  type: "output"
+  source: ParallelOutputSource
 }
 
-export type ParallelSendCaptureNode = {
+export type ParallelLaneNode = ParallelLaneActionNode | ParallelLaneOutputNode
+
+export type ParallelLane = {
   id: string
-  type: "parallel_send_capture"
-  items: ParallelSendCaptureItem[]
+  label: string
+  terminal: TerminalTarget
+  body: ParallelLaneNode[]
+}
+
+export type ParallelNode = {
+  id: string
+  type: "parallel"
+  lanes: ParallelLane[]
   merge: {
     kind: "sectioned_text"
     separator: string
-    order: "item_order"
-    includeEmptyCaptures: boolean
+    includeEmptyOutputs: boolean
   }
-  onItemFail: "pause" | "fail"
+  onLaneFail: "pause" | "fail"
 }
 
-export type FlowV2ActionNode = SendLineNode | InputLineNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelSendCaptureNode
+export type FlowV2ActionNode = SendLineNode | InputLineNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
 
 export type FlowV2IfBranch = {
   kind: "if" | "elif"

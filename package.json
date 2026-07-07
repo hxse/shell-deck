@@ -28,7 +28,8 @@
     "test:013": "bun test tests/unit/workspaceUiLayout.test.ts tests/unit/promptStore.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workspaceSidePanels.spec.ts",
     "test:014": "bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workspaceWorkbench.spec.ts",
     "test:016": "bun test tests/unit/flowV2Schema.test.ts tests/unit/macroTemplate.test.ts tests/unit/parallelAllValidator.test.ts tests/integration/macroRunnerFakeTerminal.test.ts tests/integration/agentEventCapture.test.ts tests/integration/parallelAllRunner.test.ts tests/integration/parserRuntimeRunner.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/captureSourceFlow.spec.ts tests/e2e/macroRunnerState.spec.ts tests/e2e/parallelAll.spec.ts tests/e2e/workspaceWorkbench.spec.ts",
-    "test:017": "bun test tests/unit/flowV2EditorCommands.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroNodeInsertion.spec.ts tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/workspaceWorkbench.spec.ts"
+    "test:017": "bun test tests/unit/flowV2EditorCommands.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroNodeInsertion.spec.ts tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/workspaceWorkbench.spec.ts",
+    "test:018": "bun test tests/unit/parallelAllValidator.test.ts tests/unit/flowV2Schema.test.ts tests/integration/macroRunnerFakeTerminal.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/parallelAll.spec.ts tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/macroRealShellMatrix.spec.ts"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",

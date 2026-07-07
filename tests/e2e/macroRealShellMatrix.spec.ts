@@ -95,31 +95,41 @@ test('real shell text_match if handles simple true branch', async ({ page, reque
   expect(run.run.replay.events.some((event) => event.kind === 'branch_decision' && event.data.matched === true)).toBe(true)
 })
 
-test('real shell parallel_send_capture fan-out fan-in uses real terminals', async ({ page, request }) => {
-  const configId = 'real-parallel-matrix-e2e-' + Date.now()
+test("real shell parallel lane fan-out fan-in uses real terminals", async ({ page, request }) => {
+  const configId = "real-parallel-matrix-e2e-" + Date.now()
   await createRealTerminal(request, configId)
   await createRealTerminal(request, configId)
-  await importTemplate(request, configId, baseTemplate(configId, 'real_parallel_send_capture', 'Real Parallel Send Capture', [
+  await importTemplate(request, configId, baseTemplate(configId, "real_parallel_lane_output", "Real Parallel Lane Output", [
     {
-      id: 'parallel_review',
-      type: 'parallel_send_capture',
-      items: [
-        { id: 'docs', terminal: { kind: 'alias', value: 'terminal_1' }, send: { id: 'send_docs', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_1' }, message: { parts: [{ kind: 'text', text: printf('SD_PARALLEL_DOCS_010') }] } }, wait: { id: 'wait_docs', type: 'wait', mode: 'terminal-quiet', terminal: { kind: 'alias', value: 'terminal_1' }, quietMs: 100, maxMs: 5000, onTimeout: 'pause' }, capture: { id: 'capture_docs', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'terminal_1' }, mode: 'scrollback-tail', maxChars: 12000 } } },
-        { id: 'tests', terminal: { kind: 'alias', value: 'terminal_2' }, send: { id: 'send_tests', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_2' }, message: { parts: [{ kind: 'text', text: printf('SD_PARALLEL_TESTS_010') }] } }, wait: { id: 'wait_tests', type: 'wait', mode: 'terminal-quiet', terminal: { kind: 'alias', value: 'terminal_2' }, quietMs: 100, maxMs: 5000, onTimeout: 'pause' }, capture: { id: 'capture_tests', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'terminal_2' }, mode: 'scrollback-tail', maxChars: 12000 } } },
+      id: "parallel_review",
+      type: "parallel",
+      lanes: [
+        { id: "docs", label: "Docs", terminal: { kind: "alias", value: "terminal_1" }, body: [
+          { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "terminal_1" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_DOCS_010") }] } },
+          { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "terminal_1" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
+          { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "terminal_1" }, mode: "scrollback-tail", maxChars: 12000 } },
+          { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs", artifact: "captured_text" } },
+        ] },
+        { id: "tests", label: "Tests", terminal: { kind: "alias", value: "terminal_2" }, body: [
+          { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "terminal_2" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_TESTS_010") }] } },
+          { id: "wait_tests", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "terminal_2" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
+          { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "terminal_2" }, mode: "scrollback-tail", maxChars: 12000 } },
+          { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },
+        ] },
       ],
-      merge: { kind: 'sectioned_text', separator: '===== {itemId} | {terminalAlias} =====', order: 'item_order', includeEmptyCaptures: true },
-      onItemFail: 'pause',
+      merge: { kind: "sectioned_text", separator: "===== {laneId} | {terminalAlias} =====", includeEmptyOutputs: true },
+      onLaneFail: "pause",
     },
-    { id: 'done', type: 'finish', reason: 'parallel real ok' },
+    { id: "done", type: "finish", reason: "parallel real ok" },
   ]))
 
-  await page.goto('/?configId=' + configId)
-  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
-  await expect(page.getByTestId('macro-template-item')).toContainText('Real Parallel Send Capture')
-  await page.getByTestId('macro-template-select').selectOption('real_parallel_send_capture')
-  await page.getByTestId('macro-control-start').click()
-  await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 10000 })
-  const runs = await (await request.get('/api/configs/' + configId + '/runs')).json() as { runs: Array<{ runId: string }> }
-  const run = await (await request.get('/api/configs/' + configId + '/runs/' + runs.runs[0].runId)).json() as { run: { replay: { events: Array<{ kind: string; data: Record<string, unknown> }> } } }
-  expect(run.run.replay.events.some((event) => event.kind === 'parallel_send_capture_joined')).toBe(true)
+  await page.goto("/?configId=" + configId)
+  await page.getByTestId("macro-template-drawer").evaluate((element: HTMLDetailsElement) => { element.open = true })
+  await expect(page.getByTestId("macro-template-item")).toContainText("Real Parallel Lane Output")
+  await page.getByTestId("macro-template-select").selectOption("real_parallel_lane_output")
+  await page.getByTestId("macro-control-start").click()
+  await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 10000 })
+  const runs = await (await request.get("/api/configs/" + configId + "/runs")).json() as { runs: Array<{ runId: string }> }
+  const run = await (await request.get("/api/configs/" + configId + "/runs/" + runs.runs[0].runId)).json() as { run: { replay: { events: Array<{ kind: string; data: Record<string, unknown> }> } } }
+  expect(run.run.replay.events.some((event) => event.kind === "parallel_joined")).toBe(true)
 })

@@ -232,30 +232,29 @@ test("agent-event capture requires explicit codex agent enum", () => {
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 })
 
-test("parallel_send_capture reuses send_line and capture-source schema and produces merged_text", () => {
+test("parallel lane output produces merged_text and must be final", () => {
   const template = validTemplate()
   template.body.push({
     id: "parallel_review",
-    type: "parallel_send_capture",
-    items: [
-      { id: "docs", terminal: { kind: "alias", value: "worker" }, send: { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "docs" }] } }, capture: { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } } },
-      { id: "tests", terminal: { kind: "alias", value: "reviewer" }, send: { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "tests" }] } }, capture: { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "reviewer" }, mode: "scrollback-tail", maxChars: 12000 } } },
+    type: "parallel",
+    lanes: [
+      { id: "docs", label: "Docs", terminal: { kind: "alias", value: "worker" }, body: [
+        { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
+        { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs", artifact: "captured_text" } },
+      ] },
+      { id: "tests", label: "Tests", terminal: { kind: "alias", value: "reviewer" }, body: [
+        { id: "output_tests", type: "output", source: { kind: "none" } },
+      ] },
     ],
-    merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true },
-    onItemFail: "pause",
+    merge: { kind: "sectioned_text", separator: "===== {laneId} =====", includeEmptyOutputs: true },
+    onLaneFail: "pause",
   })
   template.body.push({ id: "send_merge", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } })
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 
   const bad = structuredClone(template)
   const parallel = bad.body[4]
-  if (parallel.type !== "parallel_send_capture") throw new Error("missing parallel")
-  parallel.items[1].terminal = { kind: "alias", value: "worker" }
-  expect(issues(bad)).toContain("duplicate parallel item terminal")
-
-  const badFinish = structuredClone(template)
-  const badParallel = badFinish.body[4]
-  if (badParallel.type !== "parallel_send_capture") throw new Error("missing parallel")
-  badParallel.items[0].wait = { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 10, maxMs: 1000, onTimeout: "finish" }
-  expect(issues(badFinish)).toContain("parallel item wait onTimeout must be pause")
+  if (parallel.type !== "parallel") throw new Error("missing parallel")
+  parallel.lanes[0].body.push({ id: "late_send", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } })
+  expect(issues(bad)).toContain("parallel lane output must be the final node")
 })

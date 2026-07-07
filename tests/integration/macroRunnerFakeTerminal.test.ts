@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { expect, test } from "bun:test"
 import { AgentEventStore } from "../../src/lib/agentEvents/agentEventStore"
 import { MacroTemplateStore } from "../../src/lib/macro/templateStore"
-import type { MacroTemplate } from "../../src/lib/macro/templateTypes"
+import type { MacroTemplate, ParallelNode } from "../../src/lib/macro/templateTypes"
 import { RunEventStore } from "../../src/lib/runLog/runEventStore"
 import { TerminalDeckManager } from "../../server/terminalDeckManager"
 import { MacroRunnerService } from "../../server/macroRunnerService"
@@ -25,6 +25,31 @@ function harness() {
 function template(id: string, body: MacroTemplate["body"]): MacroTemplate {
   const now = "2026-01-01T00:00:00.000Z"
   return { schemaVersion: 2, id, name: id, description: "", configId: "local", body, createdAt: now, updatedAt: now }
+}
+
+function parallelReviewNode(waitOnDocs = false): ParallelNode {
+  const worker = { kind: "alias" as const, value: "worker" }
+  const reviewer = { kind: "alias" as const, value: "reviewer" }
+  const docsBody: ParallelNode["lanes"][number]["body"] = [
+    { id: "send_docs", type: "send_line", terminal: worker, message: { parts: [{ kind: "text", text: waitOnDocs ? "docs timeout" : "docs ready" }] } },
+    ...(waitOnDocs ? [{ id: "wait_docs", type: "wait" as const, mode: "terminal-quiet" as const, terminal: worker, quietMs: 50, maxMs: 100, onTimeout: "pause" as const }] : []),
+    { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: worker, mode: "scrollback-tail", maxChars: 12000 } },
+    { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs", artifact: "captured_text" } },
+  ]
+  return {
+    id: "parallel_review",
+    type: "parallel",
+    lanes: [
+      { id: "docs", label: "Docs", terminal: worker, body: docsBody },
+      { id: "tests", label: "Tests", terminal: reviewer, body: [
+        { id: "send_tests", type: "send_line", terminal: reviewer, message: { parts: [{ kind: "text", text: "tests ready" }] } },
+        { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: reviewer, mode: "scrollback-tail", maxChars: 12000 } },
+        { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },
+      ] },
+    ],
+    merge: { kind: "sectioned_text", separator: "===== {laneId} | {terminalAlias} =====", includeEmptyOutputs: true },
+    onLaneFail: "pause",
+  }
 }
 
 test("Flow V2 runner executes send_line, wait, capture, if.text_match and finish", async () => {
@@ -234,51 +259,33 @@ test("Flow V2 for forever loops until break", async () => {
   }
 })
 
-test("Flow V2 parallel_send_capture merges item captures for downstream send", async () => {
+test("Flow V2 parallel merges lane outputs for downstream send", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("parallel_flow", [
-      {
-        id: "parallel_review",
-        type: "parallel_send_capture",
-        items: [
-          { id: "docs", terminal: { kind: "alias", value: "worker" }, send: { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "docs ready" }] } }, capture: { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } } },
-          { id: "tests", terminal: { kind: "alias", value: "reviewer" }, send: { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "tests ready" }] } }, capture: { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "reviewer" }, mode: "scrollback-tail", maxChars: 12000 } } },
-        ],
-        merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true },
-        onItemFail: "pause",
-      },
+      parallelReviewNode(),
       { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "parallel_flow" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
     const events = h.service.snapshot("local").run?.replay.events ?? []
-    expect(events.map((event) => event.kind)).toContain("parallel_send_capture_joined")
-    const joinedIndex = events.findIndex((event) => event.kind === "parallel_send_capture_joined" && event.stepId === "parallel_review")
+    expect(events.map((event) => event.kind)).toContain("parallel_joined")
+    const joinedIndex = events.findIndex((event) => event.kind === "parallel_joined" && event.stepId === "parallel_review")
     const parentCompletions = events.map((event, index) => ({ event, index })).filter((entry) => entry.event.kind === "step_completed" && entry.event.stepId === "parallel_review")
     expect(parentCompletions.length).toBe(1)
     expect(parentCompletions[0].index).toBeGreaterThan(joinedIndex)
-    const merged = events.find((event) => event.kind === "parallel_send_capture_joined")?.data.artifactRef
+    const merged = events.find((event) => event.kind === "parallel_joined")?.data.artifactRef
     expect(String(merged)).toContain("parallel-merged")
   } finally {
     h.cleanup()
   }
 })
 
-test("Flow V2 parallel_send_capture pauses on item wait timeout before capture and merge", async () => {
+test("Flow V2 parallel pauses on lane wait timeout before capture and merge", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("parallel_wait_timeout", [
-      {
-        id: "parallel_review",
-        type: "parallel_send_capture",
-        items: [
-          { id: "docs", terminal: { kind: "alias", value: "worker" }, send: { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "docs timeout" }] } }, wait: { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 50, maxMs: 100, onTimeout: "pause" }, capture: { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } } },
-          { id: "tests", terminal: { kind: "alias", value: "reviewer" }, send: { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "tests ready" }] } }, capture: { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "reviewer" }, mode: "scrollback-tail", maxChars: 12000 } } },
-        ],
-        merge: { kind: "sectioned_text", separator: "===== {itemId} | {terminalAlias} =====", order: "item_order", includeEmptyCaptures: true },
-        onItemFail: "pause",
-      },
+      parallelReviewNode(true),
       { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "parallel_wait_timeout" })
@@ -289,10 +296,82 @@ test("Flow V2 parallel_send_capture pauses on item wait timeout before capture a
       clearInterval(noise)
     }
     const events = h.service.snapshot("local").run?.replay.events ?? []
-    expect(events.some((event) => event.kind === "wait_timeout" && event.stepId === "parallel_review" && event.data.itemId === "docs")).toBe(true)
-    expect(events.some((event) => event.kind === "parallel_send_capture_item_completed" && event.data.itemId === "docs")).toBe(false)
-    expect(events.some((event) => event.kind === "parallel_send_capture_joined")).toBe(false)
+    expect(events.some((event) => event.kind === "wait_timeout" && event.stepId === "wait_docs")).toBe(true)
+    expect(events.some((event) => event.kind === "parallel_lane_completed" && event.data.laneId === "docs")).toBe(false)
+    expect(events.some((event) => event.kind === "parallel_joined")).toBe(false)
     expect(events.some((event) => event.kind === "step_completed" && event.stepId === "parallel_review")).toBe(false)
+  } finally {
+    h.cleanup()
+  }
+})
+
+test("Flow V2 parallel resume skips completed lane sends", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("parallel_resume_skip", [
+      parallelReviewNode(true),
+      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "parallel_resume_skip" })
+    const noise = setInterval(() => h.manager.input("local", { kind: "alias", value: "worker" }, "tick"), 10)
+    try {
+      await waitFor(() => h.service.snapshot("local").status === "paused")
+    } finally {
+      clearInterval(noise)
+    }
+
+    const beforeResumeEvents = h.service.snapshot("local").run?.replay.events ?? []
+    expect(beforeResumeEvents.filter((event) => event.kind === "terminal_line_sent" && (event.stepId === "send_docs" || event.stepId === "send_tests")).map((event) => event.stepId)).toEqual(["send_docs", "send_tests"])
+
+    await h.service.resume("local")
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const afterResumeEvents = h.service.snapshot("local").run?.replay.events ?? []
+    expect(afterResumeEvents.filter((event) => event.kind === "step_started" && event.stepId === "parallel_review")).toHaveLength(1)
+    expect(afterResumeEvents.filter((event) => event.kind === "parallel_started" && event.stepId === "parallel_review")).toHaveLength(1)
+    expect(afterResumeEvents.filter((event) => event.kind === "terminal_line_sent" && event.stepId === "send_docs")).toHaveLength(1)
+    expect(afterResumeEvents.filter((event) => event.kind === "terminal_line_sent" && event.stepId === "send_tests")).toHaveLength(1)
+    expect(afterResumeEvents.filter((event) => event.kind === "parallel_lane_started" && event.data.laneId === "tests")).toHaveLength(1)
+    expect(afterResumeEvents.filter((event) => event.kind === "parallel_lane_completed" && event.data.laneId === "tests")).toHaveLength(1)
+    expect(afterResumeEvents.some((event) => event.kind === "parallel_joined")).toBe(true)
+  } finally {
+    h.cleanup()
+  }
+})
+
+test("Flow V2 parallel onLaneFail fail fails the run without joining", async () => {
+  const h = harness()
+  try {
+    const worker = { kind: "alias" as const, value: "worker" }
+    const reviewer = { kind: "alias" as const, value: "reviewer" }
+    const parallel: ParallelNode = {
+      id: "parallel_review",
+      type: "parallel",
+      lanes: [
+        { id: "docs", label: "Docs", terminal: worker, body: [
+          { id: "capture_docs_text_box", type: "capture-source", capture: { kind: "text-box", terminal: worker } },
+          { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs_text_box", artifact: "captured_text" } },
+        ] },
+        { id: "tests", label: "Tests", terminal: reviewer, body: [
+          { id: "send_tests", type: "send_line", terminal: reviewer, message: { parts: [{ kind: "text", text: "tests ready" }] } },
+          { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: reviewer, mode: "scrollback-tail", maxChars: 12000 } },
+          { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },
+        ] },
+      ],
+      merge: { kind: "sectioned_text", separator: "===== {laneId} | {terminalAlias} =====", includeEmptyOutputs: true },
+      onLaneFail: "fail",
+    }
+    h.templateStore.save("local", template("parallel_lane_fail", [
+      parallel,
+      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "parallel_lane_fail" })
+    await waitFor(() => h.service.snapshot("local").status === "failed")
+    const snapshot = h.service.snapshot("local")
+    const events = snapshot.run?.replay.events ?? []
+    expect(snapshot.status).toBe("failed")
+    expect(events.some((event) => event.kind === "step_failed" && event.stepId === "parallel_review" && event.data.code === "parallel_lane_failed")).toBe(true)
+    expect(events.some((event) => event.kind === "run_failed" && event.data.code === "parallel_lane_failed")).toBe(true)
+    expect(events.some((event) => event.kind === "parallel_joined")).toBe(false)
   } finally {
     h.cleanup()
   }

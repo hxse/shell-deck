@@ -17,7 +17,7 @@ Flow V2 supports these action nodes:
 - `wait`
 - `capture-source`
 - `extract_text`
-- `parallel_send_capture`
+- `parallel`
 
 Flow V2 controls:
 
@@ -113,17 +113,20 @@ A config can have at most one live macro run. Live includes running, paused, wai
 
 `finish`, `break`, and `continue` may include an optional action-only `body`. The runner executes that body first; only after the body completes does the control transfer take effect. The body may contain ordinary action nodes only. It must not contain `if`, `for`, `finish`, `break`, or `continue`.
 
-## Parallel Send Capture
+## Parallel
 
-`parallel_send_capture` is the only bounded parallel primitive. It is a limited fan-out/fan-in action, not a lane-local workflow language.
+`parallel` is the only bounded parallel primitive. It is a lane-tab fan-out/fan-in action: every lane runs a restricted sequential body and ends with a fixed `Output` node.
 
-Each item:
+Each lane:
 
+- has an id unique within the parent parallel node
+- has a non-empty label unique within the parent parallel node when set
 - chooses one unique terminal
-- reuses normal `send_line` schema for the send
-- may use a normal `wait` with `duration` or `terminal-quiet`; item `terminal-quiet.onTimeout` must be `pause`
-- reuses normal `capture-source` schema for capture
+- allows ordinary `send_line` actions before Output
+- allows ordinary `wait` actions with `duration` or `terminal-quiet`; lane `terminal-quiet.onTimeout` must be `pause`
+- allows ordinary `capture-source` and `extract_text` actions before Output
+- lane-local `extract_text.onEmpty` is limited to `pause` or `fail`
 
-The action mechanically merges all item captures into one `merged_text` artifact. Downstream `extract_text`, `send_line`, or `if.text_match` can reference that artifact.
+Each lane has a mandatory final `Output`; the action mechanically merges lane outputs into one `merged_text` artifact. Downstream `extract_text`, `send_line`, or `if.text_match` can reference that artifact.
 
-It does not allow nested parallel, item-local `input_line`, parse/AI action, or item-local `if/for/break/continue/finish`.
+It does not allow nested parallel, lane-local `input_line`, parse/AI action, or lane-local `if/for/break/continue/finish`. `Output` is mandatory, final, and not deletable.
