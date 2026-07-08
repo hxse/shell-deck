@@ -66,7 +66,7 @@
 
   function defaultCaptureSource(kind: CaptureSourceConfig["kind"]): CaptureSourceConfig {
     const terminal = firstTerminalTarget()
-    if (kind === "agent-event") return { kind, terminal, agent: { kind: "codex" }, eventKind: "stop", field: "last_assistant_message" }
+    if (kind === "agent-event") return { kind, terminal, agent: { kind: "codex" }, captureMode: "result_only" }
     if (kind === "text-box") return { kind, terminal }
     return { kind, terminal, mode: "scrollback-tail", maxChars: 20000 }
   }

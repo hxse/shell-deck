@@ -1,5 +1,5 @@
-export const AGENT_EVENT_KINDS = ['agent.session_started', 'agent.output', 'agent.error'] as const
-export const AGENT_EVENT_ADAPTERS = ['codex-session-start-hook', 'codex-stop-hook', 'codex-hook-error'] as const
+export const AGENT_EVENT_KINDS = ['agent.session_started', 'agent.prompt_submitted', 'agent.output', 'agent.error'] as const
+export const AGENT_EVENT_ADAPTERS = ['codex-session-start-hook', 'codex-user-prompt-submit-hook', 'codex-stop-hook', 'codex-hook-error'] as const
 
 export type AgentEventKind = typeof AGENT_EVENT_KINDS[number]
 export type AgentEventAdapter = typeof AGENT_EVENT_ADAPTERS[number]

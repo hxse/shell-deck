@@ -1,14 +1,14 @@
 export type AgentEvent = {
   protocolVersion: 1
   agentKind: 'codex'
-  eventKind: 'agent.session_started' | 'agent.output' | 'agent.error'
+  eventKind: 'agent.session_started' | 'agent.prompt_submitted' | 'agent.output' | 'agent.error'
   configId: string
   terminalId: string
   launchId: string
   agentSessionId: string
   agentTurnId?: string
   adapterMetadata: {
-    adapter: 'codex-session-start-hook' | 'codex-stop-hook' | 'codex-hook-error'
+    adapter: 'codex-session-start-hook' | 'codex-user-prompt-submit-hook' | 'codex-stop-hook' | 'codex-hook-error'
     codexSessionId: string
   }
   capturedText?: string
@@ -83,6 +83,19 @@ export function normalizeCodexHookPayload(payload: Record<string, unknown>, env:
       eventKind: 'agent.session_started',
       adapterMetadata: {
         adapter: 'codex-session-start-hook',
+        codexSessionId: sessionId,
+      },
+    }
+  }
+
+  if (hookName === 'UserPromptSubmit') {
+    return {
+      ...base,
+      eventKind: 'agent.prompt_submitted',
+      agentTurnId: requiredString(payload, 'turn_id'),
+      capturedText: requiredString(payload, 'prompt'),
+      adapterMetadata: {
+        adapter: 'codex-user-prompt-submit-hook',
         codexSessionId: sessionId,
       },
     }

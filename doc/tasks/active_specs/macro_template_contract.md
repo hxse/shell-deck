@@ -67,7 +67,7 @@ Invalid removed nodes and fields include `sleep`, `parse`, `parser`, `ai-json`, 
 
 - `terminal-buffer`: captures terminal scrollback tail and produces `captured_text`. `mode = scrollback-tail` is the default visible-screen-text renderer; `mode = raw-stream-tail` returns the raw PTY tail for debugging/direct stream forwarding.
 - `text-box`: captures a `backend = text` deck slot as plain text and produces `captured_text`. It has no terminal screen/raw stream semantics.
-- `agent-event`: captures an explicit agent event; V0 supports `agent.kind = codex`, `eventKind = stop`, `field = last_assistant_message`.
+- `agent-event`: captures explicit Codex hook events; V0 supports `agent.kind = codex` and required `captureMode = result_only | prompt_only | prompt_and_result`. It only uses `UserPromptSubmit.prompt` and `Stop.last_assistant_message`; transcript, reasoning, tool calls, and intermediate steps are out of scope.
 
 ## Text Extraction
 

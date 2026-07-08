@@ -78,7 +78,7 @@ function terminalBufferTemplate() {
 
 function agentEventTemplate() {
   return baseTemplate('codex_agent_event_gui', 'Codex AgentEvent GUI', [
-    { id: 'capture', type: 'capture-source', capture: { kind: 'agent-event', terminal, agent: { kind: 'codex' }, eventKind: 'stop', field: 'last_assistant_message' } },
+    { id: 'capture', type: 'capture-source', capture: { kind: 'agent-event', terminal, agent: { kind: 'codex' }, captureMode: 'result_only' } },
     { id: 'if_codex', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_CODEX_GUI_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'finish', reason: 'codex agent-event ok' }] }] },
   ])
 }

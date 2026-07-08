@@ -18,7 +18,7 @@ import type {
   WaitNode,
 } from "../src/lib/macro/templateTypes"
 import { AgentEventStore, agentEventKey } from "../src/lib/agentEvents/agentEventStore"
-import type { AgentEvent } from "../src/lib/agentEvents/agentEventTypes"
+import type { AgentEvent, AgentEventMatch } from "../src/lib/agentEvents/agentEventTypes"
 import { captureTerminalBuffer } from "../src/lib/capture/terminalBufferCapture"
 import { ParserRuntime } from "../src/lib/parser/parserRuntime"
 import type { MacroRunnerPauseReason, MacroRunnerSnapshot, MacroRunnerStatus, StartMacroRunRequest } from "../src/lib/macro/runnerTypes"
@@ -31,6 +31,8 @@ import { TerminalDeckManager } from "./terminalDeckManager"
 
 type ControlResult = "completed" | "suspended" | "break" | "continue" | "finish"
 type CaptureExecutionResult = { artifactRef: string; text: string }
+type AgentEventCaptureMode = "result_only" | "prompt_only" | "prompt_and_result"
+type CapturedAgentEvents = { text: string; raw: unknown; events: AgentEvent[]; turnId: string | null; sessionId: string | null; codexSessionId: string | null }
 type CaptureExecutionOptions = { eventData?: Record<string, unknown>; captureIdentityId?: string }
 type ParallelLaneExecutionResult = { laneId: string; laneLabel: string; terminalAlias: string; text: string }
 
@@ -109,6 +111,7 @@ export class MacroRunnerService {
       await this.failRun(runtime, "preflight_failed", "template has no body")
       return this.snapshotForRuntime(configId, runtime)
     }
+    this.initializeAgentEventBaselines(runtime)
     void this.run(runtime)
     return this.snapshotForRuntime(configId, runtime)
   }
@@ -359,14 +362,13 @@ export class MacroRunnerService {
       await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "capture_artifact_created", stepId, summary: "Text box capture artifact created", data: { captureKind: "text-box", terminalId: resolved.terminalId, artifactRef: captureArtifact.artifact.artifactRef, capturedChars: text.length, ...eventData } })
       return { artifactRef: captureArtifact.artifact.artifactRef, text }
     }
-    const event = this.nextAgentEventForCapture(runtime, options.captureIdentityId ?? stepId, resolved.terminalId)
-    if (!event) throw new Error("agent_event_not_ready:" + resolved.terminalId)
-    runtime.consumedAgentEvents.add(agentEventKey(event))
-    const rawArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "agent-event-raw", JSON.stringify(event, null, 2), "json", stepId)
-    const text = event.capturedText ?? ""
-    const captureArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "capture-agent", text, "txt", stepId)
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "capture_artifact_created", stepId, summary: "AgentEvent capture artifact created", data: { captureKind: "agent-event", agentKind: capture.agent.kind, eventKind: capture.eventKind, field: capture.field, terminalId: resolved.terminalId, agentSessionId: event.agentSessionId, codexSessionId: event.adapterMetadata.codexSessionId, launchId: event.launchId, agentTurnId: event.agentTurnId ?? null, artifactRef: captureArtifact.artifact.artifactRef, rawArtifactRef: rawArtifact.artifact.artifactRef, ...eventData } })
-    return { artifactRef: captureArtifact.artifact.artifactRef, text }
+    const captured = await this.waitForAgentEventsForCapture(runtime, options.captureIdentityId ?? stepId, resolved.terminalId, this.agentEventCaptureMode(capture))
+    if (!captured) throw new Error("agent_event_not_ready:" + resolved.terminalId)
+    for (const event of captured.events) runtime.consumedAgentEvents.add(agentEventKey(event))
+    const rawArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "agent-event-raw", JSON.stringify(captured.raw, null, 2), "json", stepId)
+    const captureArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "capture-agent", captured.text, "txt", stepId)
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "capture_artifact_created", stepId, summary: "AgentEvent capture artifact created", data: { captureKind: "agent-event", agentKind: capture.agent.kind, captureMode: this.agentEventCaptureMode(capture), terminalId: resolved.terminalId, agentSessionId: captured.sessionId, codexSessionId: captured.codexSessionId, agentTurnId: captured.turnId, artifactRef: captureArtifact.artifact.artifactRef, rawArtifactRef: rawArtifact.artifact.artifactRef, ...eventData } })
+    return { artifactRef: captureArtifact.artifact.artifactRef, text: captured.text }
   }
 
   private async executeParallel(runtime: RuntimeState, node: ParallelNode, skipCompleted: boolean): Promise<ControlResult> {
@@ -580,11 +582,112 @@ export class MacroRunnerService {
     return false
   }
 
-  private nextAgentEventForCapture(runtime: RuntimeState, captureStepId: string, terminalId: string): AgentEvent | undefined {
+  private initializeAgentEventBaselines(runtime: RuntimeState): void {
     this.agentEventStore.importSpool(runtime.configId)
-    const match = { configId: runtime.configId, terminalId, agentKind: "codex" as const, eventKind: "agent.output" as const, adapter: "codex-stop-hook" as const }
-    if (!runtime.agentEventBaselines.has(captureStepId)) runtime.agentEventBaselines.set(captureStepId, 0)
-    return this.agentEventStore.nextMatching(match, runtime.agentEventBaselines.get(captureStepId) ?? 0, runtime.consumedAgentEvents)
+    for (const target of this.agentEventCaptureTargets(runtime, runtime.template.body)) {
+      for (const eventKind of this.agentEventKindsForCaptureMode(target.captureMode)) {
+        const match = this.agentEventMatch(runtime.configId, target.terminalId, eventKind)
+        runtime.agentEventBaselines.set(this.agentEventBaselineKey(target.captureStepId, match), this.agentEventStore.countMatching(match))
+      }
+    }
+  }
+
+  private agentEventCaptureTargets(runtime: RuntimeState, nodes: FlowV2Node[]): Array<{ captureStepId: string; terminalId: string; captureMode: AgentEventCaptureMode }> {
+    const targets: Array<{ captureStepId: string; terminalId: string; captureMode: AgentEventCaptureMode }> = []
+    for (const node of nodes) {
+      if (node.type === "capture-source" && node.capture.kind === "agent-event") {
+        targets.push({ captureStepId: node.id, terminalId: this.resolveTerminal(runtime, node.capture.terminal).terminalId, captureMode: this.agentEventCaptureMode(node.capture) })
+      }
+      if (node.type === "if") {
+        for (const branch of node.branches) targets.push(...this.agentEventCaptureTargets(runtime, branch.body))
+        if (node.else) targets.push(...this.agentEventCaptureTargets(runtime, node.else))
+      }
+      if (node.type === "for") targets.push(...this.agentEventCaptureTargets(runtime, node.body))
+      if (node.type === "parallel") {
+        for (const lane of node.lanes) targets.push(...this.agentEventCaptureTargets(runtime, lane.body.filter((item) => item.type !== "output") as FlowV2Node[]))
+      }
+      if ((node.type === "break" || node.type === "continue" || node.type === "finish") && node.body) targets.push(...this.agentEventCaptureTargets(runtime, node.body))
+    }
+    return targets
+  }
+
+  private async waitForAgentEventsForCapture(runtime: RuntimeState, captureStepId: string, terminalId: string, captureMode: AgentEventCaptureMode): Promise<CapturedAgentEvents | undefined> {
+    const timeoutMs = Number(process.env.SHELL_DECK_AGENT_EVENT_CAPTURE_TIMEOUT_MS || 600000)
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() <= deadline) {
+      if (!this.runtimeCanContinue(runtime, "running")) return undefined
+      const captured = this.agentEventsForCapture(runtime, captureStepId, terminalId, captureMode)
+      if (captured) return captured
+      await delay(100)
+    }
+    return undefined
+  }
+
+  private agentEventsForCapture(runtime: RuntimeState, captureStepId: string, terminalId: string, captureMode: AgentEventCaptureMode): CapturedAgentEvents | undefined {
+    this.agentEventStore.importSpool(runtime.configId)
+    if (captureMode === "result_only") {
+      const event = this.nextAgentEventForCapture(runtime, captureStepId, terminalId, "agent.output")
+      return event ? this.capturedSingleAgentEvent(event) : undefined
+    }
+    if (captureMode === "prompt_only") {
+      const event = this.nextAgentEventForCapture(runtime, captureStepId, terminalId, "agent.prompt_submitted")
+      return event ? this.capturedSingleAgentEvent(event) : undefined
+    }
+    const promptMatch = this.agentEventMatch(runtime.configId, terminalId, "agent.prompt_submitted")
+    const outputMatch = this.agentEventMatch(runtime.configId, terminalId, "agent.output")
+    const prompts = this.agentEventStore.matching(promptMatch).slice(this.baselineForAgentEvent(runtime, captureStepId, promptMatch)).filter((event) => !runtime.consumedAgentEvents.has(agentEventKey(event)))
+    const outputs = this.agentEventStore.matching(outputMatch).slice(this.baselineForAgentEvent(runtime, captureStepId, outputMatch)).filter((event) => !runtime.consumedAgentEvents.has(agentEventKey(event)))
+    for (const promptEvent of prompts) {
+      const outputEvent = outputs.find((candidate) => candidate.agentTurnId && candidate.agentTurnId === promptEvent.agentTurnId && candidate.agentSessionId === promptEvent.agentSessionId)
+      if (outputEvent) return this.capturedPromptAndResult(promptEvent, outputEvent)
+    }
+    return undefined
+  }
+
+  private nextAgentEventForCapture(runtime: RuntimeState, captureStepId: string, terminalId: string, eventKind: "agent.prompt_submitted" | "agent.output"): AgentEvent | undefined {
+    const match = this.agentEventMatch(runtime.configId, terminalId, eventKind)
+    return this.agentEventStore.nextMatching(match, this.baselineForAgentEvent(runtime, captureStepId, match), runtime.consumedAgentEvents)
+  }
+
+  private baselineForAgentEvent(runtime: RuntimeState, captureStepId: string, match: AgentEventMatch): number {
+    const key = this.agentEventBaselineKey(captureStepId, match)
+    if (!runtime.agentEventBaselines.has(key)) runtime.agentEventBaselines.set(key, this.agentEventStore.countMatching(match))
+    return runtime.agentEventBaselines.get(key) ?? 0
+  }
+
+  private capturedSingleAgentEvent(event: AgentEvent): CapturedAgentEvents {
+    return { text: event.capturedText ?? "", raw: event, events: [event], turnId: event.agentTurnId ?? null, sessionId: event.agentSessionId, codexSessionId: event.adapterMetadata.codexSessionId }
+  }
+
+  private capturedPromptAndResult(promptEvent: AgentEvent, outputEvent: AgentEvent): CapturedAgentEvents {
+    const prompt = promptEvent.capturedText ?? ""
+    const result = outputEvent.capturedText ?? ""
+    return {
+      text: "===== user prompt =====\n" + prompt + "\n\n===== assistant result =====\n" + result,
+      raw: { promptEvent, outputEvent },
+      events: [promptEvent, outputEvent],
+      turnId: outputEvent.agentTurnId ?? promptEvent.agentTurnId ?? null,
+      sessionId: outputEvent.agentSessionId,
+      codexSessionId: outputEvent.adapterMetadata.codexSessionId,
+    }
+  }
+
+  private agentEventCaptureMode(capture: Extract<CaptureSourceConfig, { kind: "agent-event" }>): AgentEventCaptureMode {
+    return capture.captureMode
+  }
+
+  private agentEventKindsForCaptureMode(captureMode: AgentEventCaptureMode): Array<"agent.prompt_submitted" | "agent.output"> {
+    if (captureMode === "prompt_only") return ["agent.prompt_submitted"]
+    if (captureMode === "prompt_and_result") return ["agent.prompt_submitted", "agent.output"]
+    return ["agent.output"]
+  }
+
+  private agentEventMatch(configId: string, terminalId: string, eventKind: "agent.prompt_submitted" | "agent.output"): AgentEventMatch {
+    return { configId, terminalId, agentKind: "codex", eventKind, adapter: eventKind === "agent.prompt_submitted" ? "codex-user-prompt-submit-hook" : "codex-stop-hook" }
+  }
+
+  private agentEventBaselineKey(captureStepId: string, match: AgentEventMatch): string {
+    return [captureStepId, match.eventKind ?? "", match.adapter ?? ""].join("|")
   }
 
   private terminalSnapshot(configId: string, terminalId: string): TerminalSnapshot {

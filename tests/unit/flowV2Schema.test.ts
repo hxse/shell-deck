@@ -223,13 +223,26 @@ test("extract_text selects and extracts text into visible predecessor artifact",
   expect(validateFlowV2Template(continueOnEmpty, { indexMap }).ok).toBe(true)
 })
 
-test("agent-event capture requires explicit codex agent enum", () => {
+test("agent-event capture requires captureMode and rejects legacy eventKind/field", () => {
   const template = validTemplate()
-  template.body[2] = { id: "capture_codex", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, terminal: { kind: "alias", value: "worker" }, eventKind: "stop", field: "last_assistant_message" } }
+  template.body[2] = { id: "capture_codex", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, terminal: { kind: "alias", value: "worker" }, captureMode: "prompt_and_result" } }
   const ifNode = template.body[3]
   if (ifNode.type !== "if") throw new Error("missing if")
   ifNode.branches[0].condition.source.stepId = "capture_codex"
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
+
+  const missingMode = structuredClone(template)
+  if (missingMode.body[2].type !== "capture-source" || missingMode.body[2].capture.kind !== "agent-event") throw new Error("missing capture")
+  delete (missingMode.body[2].capture as Record<string, unknown>).captureMode
+  expect(issues(missingMode)).toContain("capture.captureMode:agent-event captureMode must be result_only, prompt_only or prompt_and_result")
+
+  const legacy = structuredClone(template)
+  if (legacy.body[2].type !== "capture-source" || legacy.body[2].capture.kind !== "agent-event") throw new Error("missing capture")
+  ;(legacy.body[2].capture as Record<string, unknown>).eventKind = "stop"
+  ;(legacy.body[2].capture as Record<string, unknown>).field = "last_assistant_message"
+  const text = issues(legacy)
+  expect(text).toContain("capture.eventKind:extra Flow V2 field is not allowed")
+  expect(text).toContain("capture.field:extra Flow V2 field is not allowed")
 })
 
 test("parallel lane output produces merged_text and must be final", () => {

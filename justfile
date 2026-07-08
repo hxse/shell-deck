@@ -106,6 +106,9 @@ test-017:
 test-018:
     bun run test:018
 
+test-019:
+    bun run test:019
+
 test-007: test-007-offline
 
 test-006: test-006-offline
@@ -123,8 +126,8 @@ test-001-online:
 # Convenience alias for the safe .001 probe only.
 test-001: test-001-offline
 
-# Shell-deck wrapped Codex entry. Put -- before codex when forwarding Codex flags:
+# Shell-deck wrapped Codex entry. With `just -f`, Codex runs in the invocation directory, not the shell-deck repo. Put -- before codex when forwarding Codex flags:
 #   just -f <shell-deck-root>/justfile -- codex --help
 #   printf 'Reply with ok\n' | just -f <shell-deck-root>/justfile -- codex exec -
 codex *args:
-    bun run scripts/shell-deck-codex.ts {{args}}
+    SHELL_DECK_TARGET_CWD={{quote(invocation_directory())}} bun run scripts/shell-deck-codex.ts {{args}}

@@ -34,8 +34,9 @@ const WAIT_ANY_KEYS = new Set(["id", "type", "mode", "durationMs", "terminal", "
 const CAPTURE_SOURCE_KEYS = new Set(["id", "type", "capture"])
 const CAPTURE_TERMINAL_BUFFER_KEYS = new Set(["kind", "terminal", "mode", "maxChars"])
 const CAPTURE_TEXT_BOX_KEYS = new Set(["kind", "terminal"])
-const CAPTURE_AGENT_EVENT_KEYS = new Set(["kind", "agent", "terminal", "eventKind", "field"])
+const CAPTURE_AGENT_EVENT_KEYS = new Set(["kind", "agent", "terminal", "captureMode"])
 const AGENT_KEYS = new Set(["kind"])
+const AGENT_EVENT_CAPTURE_MODES = new Set(["result_only", "prompt_only", "prompt_and_result"])
 const EXTRACT_TEXT_KEYS = new Set(["id", "type", "source", "split", "filters", "select", "extract", "trim", "onEmpty"])
 const TEXT_SPLIT_LINES_KEYS = new Set(["kind", "keepEmpty"])
 const TEXT_SPLIT_REGEX_KEYS = new Set(["kind", "pattern", "flags", "keepEmpty"])
@@ -246,8 +247,7 @@ function validateCaptureNodeConfig(issues: ValidationIssue[], path: string, capt
       rejectUnknownKeys(issues, path + ".agent", capture.agent, AGENT_KEYS)
       if (capture.agent.kind !== "codex") issues.push({ path: path + ".agent.kind", message: "V0 agent-event agent kind must be codex" })
     }
-    if (capture.eventKind !== "stop") issues.push({ path: path + ".eventKind", message: "V0 agent-event eventKind must be stop" })
-    if (capture.field !== "last_assistant_message") issues.push({ path: path + ".field", message: "V0 agent-event field must be last_assistant_message" })
+    if (!AGENT_EVENT_CAPTURE_MODES.has(String(capture.captureMode))) issues.push({ path: path + ".captureMode", message: "agent-event captureMode must be result_only, prompt_only or prompt_and_result" })
     return
   }
   issues.push({ path: path + ".kind", message: "capture kind must be terminal-buffer, text-box or agent-event" })

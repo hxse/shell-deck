@@ -30,6 +30,27 @@ test('Codex Stop hook normalizes assistant output and mirrors session id', () =>
   })
 })
 
+test('Codex UserPromptSubmit hook normalizes submitted prompt', () => {
+  const event = normalizeCodexHookPayload({
+    hook_event_name: 'UserPromptSubmit',
+    session_id: 'codex-session-p',
+    turn_id: 'turn-p',
+    prompt: 'review this task',
+  }, env, '2026-06-30T00:00:00.500Z')
+
+  expect(assertValidAgentEvent(event)).toBe(event)
+  expect(event).toMatchObject({
+    eventKind: 'agent.prompt_submitted',
+    agentSessionId: 'codex-session-p',
+    agentTurnId: 'turn-p',
+    capturedText: 'review this task',
+    adapterMetadata: {
+      adapter: 'codex-user-prompt-submit-hook',
+      codexSessionId: 'codex-session-p',
+    },
+  })
+})
+
 test('Codex SessionStart hook keeps codexSessionId available for tracing', () => {
   const event = normalizeCodexHookPayload({
     hook_event_name: 'SessionStart',

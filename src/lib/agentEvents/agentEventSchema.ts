@@ -52,6 +52,13 @@ export function validateAgentEvent(value: unknown): AgentEventValidationResult {
     }
   }
 
+  if (value.eventKind === 'agent.prompt_submitted') {
+    validateNonEmptyString(value.agentTurnId, 'agentTurnId', issues)
+    validateString(value.capturedText, 'capturedText', issues)
+    if (isRecord(value.adapterMetadata) && value.adapterMetadata.adapter !== 'codex-user-prompt-submit-hook') {
+      issues.push({ path: 'adapterMetadata.adapter', message: 'agent.prompt_submitted must use codex-user-prompt-submit-hook' })
+    }
+  }
   if (value.eventKind === 'agent.output') {
     validateNonEmptyString(value.agentTurnId, 'agentTurnId', issues)
     validateString(value.capturedText, 'capturedText', issues)

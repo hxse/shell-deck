@@ -18,6 +18,8 @@ export type ParserConfig =
   | { kind: "ai-json"; profileId: string }
   | { kind: "regex"; rules: BooleanNullRegexRule[] }
 
+export type AgentEventCaptureMode = "result_only" | "prompt_only" | "prompt_and_result"
+
 export type CaptureSourceConfig =
   | {
     kind: "terminal-buffer"
@@ -33,8 +35,7 @@ export type CaptureSourceConfig =
     kind: "agent-event"
     agent: { kind: "codex" }
     terminal: TerminalTarget
-    eventKind: "stop"
-    field: "last_assistant_message"
+    captureMode: AgentEventCaptureMode
   }
 
 export type ArtifactName = "captured_text" | "merged_text" | "extracted_text"

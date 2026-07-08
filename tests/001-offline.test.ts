@@ -25,11 +25,13 @@ test('A01 just codex recipe forwards args while injecting temporary hook config'
   const workDir = mkdtempSync(join(tmpdir(), 'shell-deck-001-a01-'))
   const fakeCodex = join(workDir, 'fake-codex')
   const argvPath = join(workDir, 'argv.json')
-  writeFileSync(fakeCodex, `#!/usr/bin/env bash\nprintf '%s\\n' "$@" | bun -e 'const fs=require("fs"); const lines=fs.readFileSync(0,"utf8").trim().split(/\\n/).filter(Boolean); fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(lines,null,2));'\n`)
+  const cwdPath = join(workDir, 'cwd.txt')
+  const dataRootPath = join(workDir, 'data-root.txt')
+  writeFileSync(fakeCodex, `#!/usr/bin/env bash\npwd > ${JSON.stringify(cwdPath)}\nprintf "%s\\n" "$SHELL_DECK_DATA_ROOT" > ${JSON.stringify(dataRootPath)}\nprintf '%s\\n' "$@" | bun -e 'const fs=require("fs"); const lines=fs.readFileSync(0,"utf8").trim().split(/\\n/).filter(Boolean); fs.writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(lines,null,2));'\n`)
   chmodSync(fakeCodex, 0o755)
 
   const result = spawnSync('just', ['-f', join(repoRoot, 'justfile'), '--', 'codex', '--help'], {
-    cwd: repoRoot,
+    cwd: workDir,
     env: {
       ...process.env,
       SHELL_DECK_CODEX_BIN: fakeCodex,
@@ -41,10 +43,13 @@ test('A01 just codex recipe forwards args while injecting temporary hook config'
   })
 
   expect(result.status).toBe(0)
+  expect(readFileSync(cwdPath, 'utf8').trim()).toBe(workDir)
+  expect(readFileSync(dataRootPath, 'utf8').trim()).toBe(repoRoot)
   const argv = JSON.parse(readFileSync(argvPath, 'utf8')) as string[]
   expect(argv).toContain('--dangerously-bypass-hook-trust')
   expect(argv).toContain('features.hooks=true')
   expect(argv.some((arg) => arg.startsWith('hooks.SessionStart='))).toBe(true)
+  expect(argv.some((arg) => arg.startsWith('hooks.UserPromptSubmit='))).toBe(true)
   expect(argv.some((arg) => arg.startsWith('hooks.Stop='))).toBe(true)
   expect(argv.at(-1)).toBe('--help')
   passedProbeIds.add('A01')
@@ -58,6 +63,14 @@ test('A03-A07 normalize Codex hook payloads and split accepted/spooled ingest', 
     cwd: repoRoot,
     model: 'gpt-test',
   }, env, '2026-06-27T00:00:00.000Z')
+  const prompt = normalizeCodexHookPayload({
+    hook_event_name: 'UserPromptSubmit',
+    session_id: 'codex-session-a',
+    turn_id: 'turn-a',
+    cwd: repoRoot,
+    model: 'gpt-test',
+    prompt: 'review task',
+  }, env, '2026-06-27T00:00:00.500Z')
   const stop = normalizeCodexHookPayload({
     hook_event_name: 'Stop',
     session_id: 'codex-session-a',
@@ -75,6 +88,13 @@ test('A03-A07 normalize Codex hook payloads and split accepted/spooled ingest', 
     agentSessionId: 'codex-session-a',
     adapterMetadata: { codexSessionId: 'codex-session-a' },
   })
+  expect(prompt).toMatchObject({
+    eventKind: 'agent.prompt_submitted',
+    agentTurnId: 'turn-a',
+    capturedText: 'review task',
+    agentSessionId: 'codex-session-a',
+    adapterMetadata: { codexSessionId: 'codex-session-a' },
+  })
   expect(stop).toMatchObject({
     eventKind: 'agent.output',
     agentTurnId: 'turn-a',
@@ -89,7 +109,10 @@ test('A03-A07 normalize Codex hook payloads and split accepted/spooled ingest', 
   ingest.online = false
   expect(ingest.post(stop, 'token-a')).toMatchObject({ ok: true, accepted: false, spooled: true })
   expect(ingest.importSpool()).toBe(1)
+  expect(ingest.post(prompt, 'token-a')).toMatchObject({ ok: true, accepted: false, spooled: true })
   expect(ingest.accepted.map((event) => event.eventKind)).toEqual(['agent.session_started', 'agent.output'])
+  expect(ingest.importSpool()).toBe(1)
+  expect(ingest.accepted.map((event) => event.eventKind)).toEqual(['agent.session_started', 'agent.output', 'agent.prompt_submitted'])
 
   for (const id of ['A03', 'A04', 'A05', 'A06', 'A07']) {
     passedProbeIds.add(id)

@@ -28,6 +28,19 @@ export function normalizeCodexHookPayload(payload: Record<string, unknown>, env:
     }
   }
 
+  if (hookName === 'UserPromptSubmit') {
+    return {
+      ...base,
+      eventKind: 'agent.prompt_submitted',
+      agentTurnId: requiredString(payload, 'turn_id'),
+      capturedText: requiredString(payload, 'prompt'),
+      adapterMetadata: {
+        adapter: 'codex-user-prompt-submit-hook',
+        codexSessionId: sessionId,
+      },
+    }
+  }
+
   if (hookName === 'Stop') {
     return {
       ...base,

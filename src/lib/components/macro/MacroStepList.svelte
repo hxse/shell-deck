@@ -862,7 +862,8 @@
     <label>Max chars<input type="number" value={node.capture.maxChars} oninput={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, maxChars: Number(event.currentTarget.value) }) }} /></label>
   {:else if node.capture.kind === "agent-event"}
     <label>Agent<select data-testid="capture-agent-kind" value={node.capture.agent.kind} onchange={() => onChange(keepCodexAgent(node.capture))}><option value="codex">codex</option></select></label>
-    <p class="hint">Codex Stop hook: last_assistant_message</p>
+    <label>Mode<select data-testid="capture-agent-mode" value={node.capture.captureMode ?? "result_only"} onchange={(event) => { if (node.capture.kind === "agent-event") onChange({ ...node.capture, captureMode: event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" }) }}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label>
+    <p class="hint">Codex hook fields only: UserPromptSubmit.prompt and Stop.last_assistant_message</p>
   {:else}
     <p class="hint">Text box capture reads the selected text deck slot as plain text.</p>
   {/if}
