@@ -39,7 +39,7 @@
 </script>
 
 <div class="tab-strip">
-  <div class="terminal-tabs" role="tablist" aria-label="Terminal tabs">
+  <div class="terminal-tabs" role="tablist" aria-label="Deck tabs">
     {#each terminals as terminal (terminal.terminalId)}
       <div
         class="terminal-tab"
@@ -80,8 +80,8 @@
           type="button"
           class="tab-close"
           data-testid="terminal-tab-close"
-          aria-label={"Close terminal " + terminal.terminalAlias}
-          title="Close terminal"
+          aria-label={"Close tab " + terminal.terminalAlias}
+          title="Close tab"
           onpointerdown={(event) => event.stopPropagation()}
           onclick={(event) => onClose(event, terminal)}
         >x</button>

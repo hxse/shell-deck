@@ -2,7 +2,7 @@
 
 ## Identity
 
-Each terminal has a stable id generated as `term_<shortUuid>`. Terminal indexes are dynamic and follow current visual order. Terminal aliases are terminal tab names and follow the terminal id when tabs are reordered.
+Each terminal has a stable id generated as `term_<shortUuid>`. Terminal indexes are dynamic and follow current visual order. Terminal aliases are tab names and follow the terminal id when tabs are reordered. Default aliases are backend-specific: shell/fake/real tabs use `shell_N`, and text tabs use `text_N`.
 
 Terminal refs use structured JSON:
 
@@ -20,7 +20,7 @@ Terminal ids, indexes, aliases, and deck snapshots are scoped by `configId`. The
 
 - `fake`: deterministic backend used by tests and offline demos.
 
-A fresh `just start` seeds the `local` config with two `real` terminals and one `text` deck slot. Test servers and explicit terminal creation can still request `fake`.
+A fresh `just start` seeds the `local` config with `shell_1`, `shell_2`, and `text_1`: two `real` shell tabs and one `text` tab. Test servers and explicit tab creation can still request `fake`.
 - `real`: shell PTY backend for local shell use.
 
 The browser/xterm view displays backend PTY output. The frontend does not local-echo terminal input as truth.
@@ -31,7 +31,7 @@ The server owns terminal replay and broadcasts `pty_output`, terminal snapshots,
 
 ## Reorder And Alias
 
-Terminal tabs can be reordered when the drag toggle is enabled. Reorder updates index mapping but does not change terminal ids. Double-click rename updates the terminal alias.
+Deck tabs can be reordered when the drag toggle is enabled. Reorder updates index mapping but does not change terminal ids. Double-click rename updates the terminal alias.
 
 ## Wrapped Codex Env
 

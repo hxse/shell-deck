@@ -3,7 +3,7 @@ import { expect, type APIRequestContext, type Page, test } from 'playwright/test
 test.skip(process.env.SHELL_DECK_RUN_ONLINE !== '1', '.010 Codex GUI smoke is online-only')
 
 const configId = 'codex-gui-online-e2e'
-const terminal = { kind: 'alias', value: 'terminal_1' }
+const terminal = { kind: 'alias', value: 'shell_1' }
 
 test('Codex-in-shell GUI smoke uses macro send_line then covers terminal-buffer and AgentEvent capture', async ({ page, request }) => {
   test.setTimeout(180_000)

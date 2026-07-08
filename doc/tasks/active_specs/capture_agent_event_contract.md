@@ -11,7 +11,7 @@ V0 capture source steps are explicit template steps:
 Supported capture kinds:
 
 - `terminal-buffer`: tails terminal replay, writes raw and normalized artifacts. `scrollback-tail` sets `captured_text` to normalized visible screen text; `raw-stream-tail` sets `captured_text` to the raw stream tail.
-- `text-box`: reads a `backend = text` deck slot as plain text and writes a captured text artifact.
+- `text-box`: reads a `backend = text` tab as plain text and writes a captured text artifact.
 - `agent-event`: selects matching Codex hook AgentEvents after the macro run-start baseline, writes raw event and captured text artifacts. It only consumes fields provided directly by Codex hooks; V0 does not read transcripts, TUI output, `codex exec --json`, reasoning, tool calls, or intermediate steps. It must not consume historical matching events from before the current run. If no new matching event has arrived yet, the capture step waits for one instead of fabricating or reusing stale text.
 
 AgentEvent capture requires `captureMode`:

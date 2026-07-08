@@ -425,7 +425,7 @@
         <div class="macro-row">
           <label>Lane id<input data-testid="parallel-lane-id-input" value={selectedLane.id} oninput={(event) => { if (!setLaneId(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.id }} /></label>
           <label>Label<input data-testid="parallel-lane-label-input" value={selectedLane.label} oninput={(event) => { if (!setLaneLabel(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.label }} /></label>
-          <label>Terminal<select data-testid="parallel-lane-terminal" value={choiceFromTarget(selectedLane.terminal)} onchange={(event) => setLaneTerminal(selectedLane.id, targetFromChoice(event.currentTarget.value))}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title} disabled={isTerminalChoiceUsedByOtherLane(selectedLane.id, choice.value)}>{choice.label}</option>{/each}</select></label>
+          <label>Lane tab<select data-testid="parallel-lane-terminal" value={choiceFromTarget(selectedLane.terminal)} onchange={(event) => setLaneTerminal(selectedLane.id, targetFromChoice(event.currentTarget.value))}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title} disabled={isTerminalChoiceUsedByOtherLane(selectedLane.id, choice.value)}>{choice.label}</option>{/each}</select></label>
         </div>
         {#if editNotice}
           <p class="macro-insertion-notice" data-testid="parallel-id-edit-notice">{editNotice}</p>
@@ -499,7 +499,7 @@
       {:else if item.capture.kind === "agent-event"}
         <div class="macro-row"><label>Agent<select value={item.capture.agent.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.agent = { kind: event.currentTarget.value as "codex" } })}><option value="codex">codex</option></select></label><label>Mode<select value={item.capture.captureMode ?? "result_only"} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.captureMode = event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" })}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label></div>
       {:else}
-        <p class="hint">Text box capture uses this lane terminal.</p>
+        <p class="hint">Text box capture reads this lane tab.</p>
       {/if}
     {:else}
       <label>Source<select value={sourceKey(item.source)} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.source = requiredSourceFromKey(event.currentTarget.value, action.source) })}>{#each laneArtifactChoices(lane, item.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>

@@ -78,7 +78,7 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
 
 
   first.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('Close terminal')
+    expect(dialog.message()).toContain('Close tab')
     await dialog.dismiss()
   })
   const createdTab = first.locator('[data-testid="terminal-tab"][data-terminal-id="' + createdTerminalId + '"]')
@@ -86,7 +86,7 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
   await expect(first.getByTestId('terminal-tab')).toHaveCount(3)
 
   first.once('dialog', async (dialog) => {
-    expect(dialog.message()).toContain('Close terminal')
+    expect(dialog.message()).toContain('Close tab')
     await dialog.accept()
   })
   await createdTab.getByTestId('terminal-tab-close').click()
@@ -135,7 +135,7 @@ test('text box deck slot can be created, edited, synced and copied', async ({ br
   await first.goto('/?configId=text-box-deck-e2e')
   await first.getByRole('button', { name: 'New text' }).click()
   await expect(first.getByTestId('terminal-tab')).toHaveCount(1)
-  await expect(first.getByTestId('terminal-tab')).toHaveAttribute('data-terminal-alias', 'terminal_1')
+  await expect(first.getByTestId('terminal-tab')).toHaveAttribute('data-terminal-alias', 'text_1')
   await expect(first.getByTestId('terminal-tab')).toContainText('text')
 
   await first.getByTestId('text-box-editor').fill('collected result\nline two')

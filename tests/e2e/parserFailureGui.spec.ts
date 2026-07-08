@@ -11,7 +11,7 @@ const legacyParserTemplate = {
   createdAt: '2026-06-30T00:00:00.000Z',
   updatedAt: '2026-06-30T00:00:00.000Z',
   steps: [
-    { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'terminal_1' }, mode: 'scrollback-tail', maxChars: 12000 }, next: 'parse' },
+    { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'alias', value: 'shell_1' }, mode: 'scrollback-tail', maxChars: 12000 }, next: 'parse' },
     { id: 'parse', type: 'parse', captureStep: 'capture', parser: { kind: 'ai-json', profileId: 'review-routing-v1' }, next: 'done' },
     { id: 'done', type: 'complete', reason: 'old parser path' },
   ],

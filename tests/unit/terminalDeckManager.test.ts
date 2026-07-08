@@ -10,6 +10,21 @@ function collect(manager: TerminalDeckManager, configId: string) {
   return { client, messages }
 }
 
+test('default tab aliases use backend-specific prefixes', () => {
+  const manager = new TerminalDeckManager()
+  const shell1 = manager.createTerminal('local', { backend: 'fake', terminalId: 'term_shell_a' })
+  const shell2 = manager.createTerminal('local', { backend: 'fake', terminalId: 'term_shell_b' })
+  const text1 = manager.createTerminal('local', { backend: 'text', terminalId: 'term_text_a' })
+  const shell3 = manager.createTerminal('local', { backend: 'fake', terminalId: 'term_shell_c' })
+  const text2 = manager.createTerminal('local', { backend: 'text', terminalId: 'term_text_b' })
+
+  expect(shell1.terminalAlias).toBe('shell_1')
+  expect(shell2.terminalAlias).toBe('shell_2')
+  expect(shell3.terminalAlias).toBe('shell_3')
+  expect(text1.terminalAlias).toBe('text_1')
+  expect(text2.terminalAlias).toBe('text_2')
+})
+
 test('fake backend fan-out, backend echo and replay', async () => {
   const manager = new TerminalDeckManager()
   const terminal = manager.createTerminal('local', { backend: 'fake', terminalId: 'term_local_a' })
@@ -65,8 +80,8 @@ test('reorder updates index map while terminal id remains stable', () => {
   const b = manager.createTerminal('local', { backend: 'fake', terminalId: 'term_b' })
   manager.moveTerminal('local', b.terminalId, 1)
   expect(manager.indexMap('local')).toEqual([
-    { index: 1, terminalId: 'term_b', terminalAlias: 'terminal_2' },
-    { index: 2, terminalId: 'term_a', terminalAlias: 'terminal_1' },
+    { index: 1, terminalId: 'term_b', terminalAlias: 'shell_2' },
+    { index: 2, terminalId: 'term_a', terminalAlias: 'shell_1' },
   ])
   expect(manager.resolveTerminal('local', { kind: 'id', value: a.terminalId }).terminalId).toBe('term_a')
 })

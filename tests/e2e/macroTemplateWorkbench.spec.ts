@@ -52,8 +52,9 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
 
   const sendTerminal = page.getByTestId('send-line-terminal').first()
   await expect(sendTerminal.locator('option')).toHaveCount(2)
-  await expect(sendTerminal.locator('option').first()).toContainText(/#1 \| alias:reviewer \| id:term_/)
-  await expect(sendTerminal).toHaveAttribute('title', /index: #1[\s\S]*alias: reviewer[\s\S]*id: term_/)
+  await expect(page.getByText('Target tab').first()).toBeVisible()
+  await expect(sendTerminal.locator('option').first()).toContainText(/#1 \| reviewer \| shell/)
+  await expect(sendTerminal).toHaveAttribute('title', /tab index: #1[\s\S]*alias: reviewer[\s\S]*id: term_[\s\S]*kind: shell/)
 
   const stepListBox = await page.getByTestId('macro-step-list').boundingBox()
   expect(stepListBox).toBeTruthy()
@@ -78,6 +79,7 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByTestId('wait-mode').last()).toHaveValue('duration')
   await insertAfterLast('add-step-input')
   await insertAfterLast('add-step-capture')
+  await expect(page.getByText('Source tab').first()).toBeVisible()
   await expect(page.getByTestId('capture-step-kind').last()).toHaveValue('terminal-buffer')
   await expect(page.getByTestId('capture-terminal-buffer-mode').last()).toHaveValue('scrollback-tail')
   await page.getByTestId('capture-terminal-buffer-mode').last().selectOption('raw-stream-tail')
@@ -91,6 +93,7 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByTestId('macro-id-edit-notice')).toContainText('Duplicate node id blocked: extract_text')
   await insertAfterLast('add-step-parallel')
   await expect(page.getByTestId("parallel-add-lane")).toBeVisible()
+  await expect(page.getByText('Lane tab')).toBeVisible()
   await expect(page.getByTestId("parallel-lane-tab")).toHaveText(["lane_1"])
   await page.getByTestId("parallel-lane-add-before-output").click()
   await expect(page.getByTestId("parallel-lane-action-palette")).toBeVisible()
@@ -103,7 +106,7 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await page.getByTestId("parallel-on-lane-fail").selectOption("fail")
   await expect(page.getByTestId("parallel-on-lane-fail")).toHaveValue("fail")
   await page.getByTestId("parallel-lane-tab").filter({ hasText: "lane_1" }).click()
-  await expect(page.getByTestId("parallel-lane-terminal").locator("option").filter({ hasText: /terminal_2/ })).toHaveAttribute("disabled", "")
+  await expect(page.getByTestId("parallel-lane-terminal").locator("option").filter({ hasText: /shell_2/ })).toHaveAttribute("disabled", "")
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toContain("Remove parallel lane lane_1")
     await dialog.accept()

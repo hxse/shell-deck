@@ -225,7 +225,7 @@
   function closeTerminalTab(event: MouseEvent, terminal: TerminalSnapshot) {
     event.stopPropagation()
     const label = terminal.terminalAlias || terminal.terminalId
-    if (!window.confirm('Close terminal ' + label + '?')) return
+    if (!window.confirm('Close tab ' + label + '?')) return
     client?.send({ type: 'close_terminal', terminalId: terminal.terminalId })
   }
 

@@ -656,14 +656,14 @@
     </div>
 
     {#if node.type === "send_line"}
-      <label>Terminal
+      <label>Target tab
         <select data-testid="send-line-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
           {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
       {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send_line") item.message = message }), artifactChoicesBefore(node.id))}
     {:else if node.type === "input_line"}
-      <label>Terminal
+      <label>Target tab
         <select data-testid="input-line-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
           {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
@@ -690,7 +690,7 @@
       {#if node.mode === "duration"}
         <label>Duration ms<input type="number" value={node.durationMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "duration") item.durationMs = Number(event.currentTarget.value) })} /></label>
       {:else if node.mode === "terminal-quiet"}
-        <label>Terminal<select value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.terminal = targetFromChoice(event.currentTarget.value) })}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
+        <label>Target tab<select value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.terminal = targetFromChoice(event.currentTarget.value) })}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
         <div class="macro-row"><label>Quiet ms<input type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
       {:else}
         <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = event.currentTarget.value })} /></label>
@@ -856,7 +856,7 @@
 
 {#snippet CaptureEditor(node: { capture: CaptureSourceConfig }, terminalChoices: () => TerminalChoice[], choiceFromTarget: (target: TerminalTarget) => string, targetFromChoice: (choice: string) => TerminalTarget, defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig, onChange: (capture: CaptureSourceConfig) => void)}
   <label>Capture kind<select data-testid="capture-step-kind" value={node.capture.kind} onchange={(event) => onChange(defaultCaptureSource(event.currentTarget.value as CaptureSourceConfig["kind"]))}><option value="terminal-buffer">terminal-buffer</option><option value="text-box">text-box</option><option value="agent-event">agent-event</option></select></label>
-  <label>Terminal<select data-testid="capture-step-terminal" value={choiceFromTarget(node.capture.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.capture.terminal))} onchange={(event) => { const next = JSON.parse(JSON.stringify(node.capture)) as CaptureSourceConfig; next.terminal = targetFromChoice(event.currentTarget.value); onChange(next) }}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
+  <label>Source tab<select data-testid="capture-step-terminal" value={choiceFromTarget(node.capture.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.capture.terminal))} onchange={(event) => { const next = JSON.parse(JSON.stringify(node.capture)) as CaptureSourceConfig; next.terminal = targetFromChoice(event.currentTarget.value); onChange(next) }}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
   {#if node.capture.kind === "terminal-buffer"}
     <label>Mode<select data-testid="capture-terminal-buffer-mode" value={node.capture.mode} onchange={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, mode: event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" }) }}><option value="scrollback-tail">screen text tail</option><option value="raw-stream-tail">raw stream tail (debug only)</option></select></label>
     <label>Max chars<input type="number" value={node.capture.maxChars} oninput={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, maxChars: Number(event.currentTarget.value) }) }} /></label>

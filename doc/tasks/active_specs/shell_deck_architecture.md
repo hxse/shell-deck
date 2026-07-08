@@ -19,7 +19,7 @@ Default local storage is under `SHELL_DECK_DATA_ROOT` if set, otherwise `.shell-
 
 ## Entrypoints
 
-- `just start`: local server with ai-json disabled; an empty `local` deck is seeded with two real shell terminals and one text deck slot.
+- `just start`: local server with ai-json disabled; an empty `local` deck is seeded with `shell_1`, `shell_2`, and `text_1` tabs.
 - `just start-mock-ai`: explicit mock ai-json mode for offline demos/tests.
 - `just start-codex-ai`: real codex-exec parser mode.
 - `just stop`: stops the server recorded in the local pid file.

@@ -10,15 +10,15 @@ export class ConfigStore {
     this.configId = assertValidPublicId(configId, 'configId')
   }
 
-  addTerminal(terminalId: string, alias?: string): number {
+  addTerminal(terminalId: string, alias?: string, defaultAliasPrefix = 'terminal'): number {
     if (this.terminalOrder.includes(terminalId)) {
       if (!this.terminalAliases.has(terminalId)) {
-        this.terminalAliases.set(terminalId, this.normalizeAvailableAlias(terminalId, alias ?? this.nextAlias()))
+        this.terminalAliases.set(terminalId, this.normalizeAvailableAlias(terminalId, alias ?? this.nextAlias(defaultAliasPrefix)))
       }
       return this.indexOf(terminalId)
     }
 
-    const normalizedAlias = this.normalizeAvailableAlias(terminalId, alias ?? this.nextAlias())
+    const normalizedAlias = this.normalizeAvailableAlias(terminalId, alias ?? this.nextAlias(defaultAliasPrefix))
     this.terminalOrder.push(terminalId)
     this.terminalAliases.set(terminalId, normalizedAlias)
     return this.indexOf(terminalId)
@@ -103,13 +103,13 @@ export class ConfigStore {
     return normalized
   }
 
-  private nextAlias(): string {
+  private nextAlias(prefix: string): string {
     for (let index = 1; index < 1000; index += 1) {
-      const candidate = 'terminal_' + index
+      const candidate = prefix + '_' + index
       if (![...this.terminalAliases.values()].includes(candidate)) {
         return candidate
       }
     }
-    throw new Error('terminal_alias_exhausted')
+    throw new Error('terminal_alias_exhausted:' + prefix)
   }
 }

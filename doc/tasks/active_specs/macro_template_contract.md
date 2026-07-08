@@ -4,7 +4,7 @@
 
 Macro templates are JSON documents stored per config. New/imported runnable templates use `schemaVersion: 2` and a structured `body` block tree.
 
-Templates do not store Codex session ids. Templates refer to terminals by structured refs: index, id, or alias. The macro editor presents each live terminal as one merged row, showing index, alias, and id together; hovering the control exposes the full mapping. Existing index/id/alias targets resolve through the current config `indexMap`, so tab reorder and alias rename are reflected by the next render without users manually syncing the three forms.
+Templates do not store Codex session ids. Templates refer to deck tabs through structured terminal refs: index, id, or alias. The JSON field remains `terminal` for runner/protocol compatibility, but the macro editor labels selectors by usage: `Target tab` for send/input/wait targets, `Source tab` for capture sources, and `Lane tab` inside parallel lanes. Each selector presents a live tab as one merged row with index, alias, kind, and hover details for the full id mapping. Existing index/id/alias targets resolve through the current config `indexMap`, so tab reorder and alias rename are reflected by the next render without users manually syncing the three forms.
 
 Shell-deck only supports the current macro template schema: `schemaVersion: 2` with a structured `body` block tree. Files or imports that do not validate against the current schema are invalid templates. The template store must fail loudly with `invalid_macro_template`; it must not skip, migrate, quarantine, silently ignore, or treat old formats as compatibility objects.
 
@@ -31,7 +31,7 @@ Invalid removed nodes and fields include `sleep`, `parse`, `parser`, `ai-json`, 
 
 ## Message Flow
 
-`send_line` writes the rendered message to a target deck slot. For shell/fake terminals it sends Enter; for `backend = text` slots it appends the rendered text as collected text. It does not distinguish prompts from shell commands.
+`send_line` writes the rendered message to a target tab. For shell/fake/real tabs it sends Enter; for `backend = text` tabs it appends the rendered text as collected text. It does not distinguish prompts from shell commands.
 
 `send_line.message.parts` is an ordered list. It may be empty. Each part is either literal text or a source artifact reference. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without adding implicit separators.
 
@@ -49,7 +49,7 @@ Invalid removed nodes and fields include `sleep`, `parse`, `parser`, `ai-json`, 
 }
 ```
 
-`input_line` pauses for user text. It stores a fixed `prompt`, `allowEmpty`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it, and the final textarea content is sent to the terminal with Enter.
+`input_line` pauses for user text. It stores a fixed `prompt`, `allowEmpty`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it, and the final textarea content is sent to the target tab with Enter.
 
 ## Wait Modes
 
@@ -63,10 +63,10 @@ Invalid removed nodes and fields include `sleep`, `parse`, `parser`, `ai-json`, 
 
 ## Capture Source
 
-`capture-source` is the only macro action that obtains text from a terminal or agent.
+`capture-source` is the only macro action that obtains text from a source tab or agent.
 
-- `terminal-buffer`: captures terminal scrollback tail and produces `captured_text`. `mode = scrollback-tail` is the default visible-screen-text renderer; `mode = raw-stream-tail` returns the raw PTY tail for debugging/direct stream forwarding.
-- `text-box`: captures a `backend = text` deck slot as plain text and produces `captured_text`. It has no terminal screen/raw stream semantics.
+- `terminal-buffer`: captures shell/fake/real tab scrollback tail and produces `captured_text`. `mode = scrollback-tail` is the default visible-screen-text renderer; `mode = raw-stream-tail` returns the raw PTY tail for debugging/direct stream forwarding.
+- `text-box`: captures a `backend = text` tab as plain text and produces `captured_text`. It has no terminal screen/raw stream semantics.
 - `agent-event`: captures explicit Codex hook events; V0 supports `agent.kind = codex` and required `captureMode = result_only | prompt_only | prompt_and_result`. It only uses `UserPromptSubmit.prompt` and `Stop.last_assistant_message`; transcript, reasoning, tool calls, and intermediate steps are out of scope.
 
 ## Text Extraction

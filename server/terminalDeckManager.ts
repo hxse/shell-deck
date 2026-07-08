@@ -42,6 +42,10 @@ export type CreateTerminalOptions = {
   rows?: number
 }
 
+function defaultAliasPrefix(backend: TerminalBackendKind): string {
+  return backend === 'text' ? 'text' : 'shell'
+}
+
 export class TerminalDeckManager {
   readonly configs = new Map<string, ConfigScope>()
   readonly clients = new Map<string, DeckClient>()
@@ -124,7 +128,7 @@ export class TerminalDeckManager {
           else pendingError = error
         },
       })
-      config.store.addTerminal(terminalId, options.terminalAlias)
+      config.store.addTerminal(terminalId, options.terminalAlias, defaultAliasPrefix(backendKind))
       config.terminals.set(terminalId, terminal)
       committed = true
     } catch (error) {

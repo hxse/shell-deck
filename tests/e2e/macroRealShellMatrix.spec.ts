@@ -35,7 +35,7 @@ test('real shell terminal target refs support index id and alias', async ({ page
   await importTemplate(request, configId, baseTemplate(configId, 'target_refs', 'Target Ref Smoke', [
     { id: 'send_index', type: 'send_line', terminal: { kind: 'index', value: 1 }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_INDEX_010') }] } },
     { id: 'send_id', type: 'send_line', terminal: { kind: 'id', value: first.terminalId }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ID_010') }] } },
-    { id: 'send_alias', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_2' }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ALIAS_010') }] } },
+    { id: 'send_alias', type: 'send_line', terminal: { kind: 'alias', value: 'shell_2' }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ALIAS_010') }] } },
     { id: 'done', type: 'finish', reason: 'targets ok' },
   ]))
 
@@ -104,16 +104,16 @@ test("real shell parallel lane fan-out fan-in uses real terminals", async ({ pag
       id: "parallel_review",
       type: "parallel",
       lanes: [
-        { id: "docs", label: "Docs", terminal: { kind: "alias", value: "terminal_1" }, body: [
-          { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "terminal_1" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_DOCS_010") }] } },
-          { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "terminal_1" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
-          { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "terminal_1" }, mode: "scrollback-tail", maxChars: 12000 } },
+        { id: "docs", label: "Docs", terminal: { kind: "alias", value: "shell_1" }, body: [
+          { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_DOCS_010") }] } },
+          { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "shell_1" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
+          { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "shell_1" }, mode: "scrollback-tail", maxChars: 12000 } },
           { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs", artifact: "captured_text" } },
         ] },
-        { id: "tests", label: "Tests", terminal: { kind: "alias", value: "terminal_2" }, body: [
-          { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "terminal_2" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_TESTS_010") }] } },
-          { id: "wait_tests", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "terminal_2" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
-          { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "terminal_2" }, mode: "scrollback-tail", maxChars: 12000 } },
+        { id: "tests", label: "Tests", terminal: { kind: "alias", value: "shell_2" }, body: [
+          { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "shell_2" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_TESTS_010") }] } },
+          { id: "wait_tests", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "shell_2" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
+          { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "shell_2" }, mode: "scrollback-tail", maxChars: 12000 } },
           { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },
         ] },
       ],

@@ -31,9 +31,16 @@
   function terminalChoices() {
     return indexMap.map((item: TerminalIndexMapItem) => ({
       value: terminalChoiceValue(item),
-      label: "#" + item.index + " | alias:" + item.terminalAlias + " | id:" + item.terminalId,
-      title: "index: #" + item.index + "\nalias: " + item.terminalAlias + "\nid: " + item.terminalId,
+      label: "#" + item.index + " | " + item.terminalAlias + " | " + tabKindLabel(item),
+      title: "tab index: #" + item.index + "\nalias: " + item.terminalAlias + "\nid: " + item.terminalId + "\nkind: " + tabKindLabel(item),
     }))
+  }
+
+  function tabKindLabel(item: TerminalIndexMapItem): string {
+    const backend = terminals.find((terminal: TerminalSnapshot) => terminal.terminalId === item.terminalId)?.backend
+    if (backend === "text") return "text"
+    if (backend === "real" || backend === "fake") return "shell"
+    return "tab"
   }
 
   function terminalChoiceValue(item: TerminalIndexMapItem): string {

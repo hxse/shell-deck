@@ -157,7 +157,7 @@ test('empty imported finish action body inserts action from empty body affordanc
       createdAt: '2026-07-07T00:00:00.000Z',
       updatedAt: '2026-07-07T00:00:00.000Z',
       body: [
-        { id: 'seed_send', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_1' }, message: { parts: [{ kind: 'text', text: 'seed' }] } },
+        { id: 'seed_send', type: 'send_line', terminal: { kind: 'alias', value: 'shell_1' }, message: { parts: [{ kind: 'text', text: 'seed' }] } },
         { id: 'done_move', type: 'finish', reason: 'move' },
         { id: 'done_insert', type: 'finish', reason: 'insert' },
       ],

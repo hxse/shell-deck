@@ -9,8 +9,8 @@ const template = {
   createdAt: '2026-07-03T00:00:00.000Z',
   updatedAt: '2026-07-03T00:00:00.000Z',
   body: [
-    { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'terminal_1' }, message: { parts: [{ kind: 'text', text: 'workbench-run' }] } },
-    { id: 'input', type: 'input_line', terminal: { kind: 'alias', value: 'terminal_1' }, prompt: 'Workbench input', allowEmpty: false },
+    { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'shell_1' }, message: { parts: [{ kind: 'text', text: 'workbench-run' }] } },
+    { id: 'input', type: 'input_line', terminal: { kind: 'alias', value: 'shell_1' }, prompt: 'Workbench input', allowEmpty: false },
     { id: 'done', type: 'finish', reason: 'ok' },
   ],
 }

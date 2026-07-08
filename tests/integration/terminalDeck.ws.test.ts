@@ -7,6 +7,7 @@ test('default seed creates two shell terminals and one text deck slot', () => {
   try {
     const snapshot = server.manager.deckSnapshot('local')
     expect(snapshot.terminals.map((terminal) => terminal.backend)).toEqual(['real', 'real', 'text'])
+    expect(snapshot.terminals.map((terminal) => terminal.terminalAlias)).toEqual(['shell_1', 'shell_2', 'text_1'])
   } finally {
     server.stop()
   }
