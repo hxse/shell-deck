@@ -1,5 +1,6 @@
 <script lang="ts">
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
+  import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type {
     CaptureSourceConfig,
     FlowV2ArtifactSource,
@@ -15,7 +16,6 @@
     TerminalTarget,
   } from "../../macro/templateTypes"
 
-  type TerminalChoice = { value: string; label: string; title: string }
   type ArtifactChoice = { label: string; source: FlowV2ArtifactSource }
   type LaneActionType = ParallelLaneActionNode["type"]
 
@@ -79,6 +79,58 @@
     updateLane(laneId, (lane) => {
       const action = lane.body.find((item): item is ParallelLaneActionNode => item.id === actionId && item.type !== "output")
       if (action) mutator(action)
+    })
+  }
+
+  function choiceForTarget(target: TerminalTarget): TerminalChoice | undefined {
+    return terminalChoiceForTarget(target, terminalChoices())
+  }
+
+  function laneChoice(lane: ParallelLane): TerminalChoice | undefined {
+    return choiceForTarget(lane.terminal)
+  }
+
+  function laneAllowsAction(lane: ParallelLane, type: LaneActionType): boolean {
+    const capabilities = laneChoice(lane)?.capabilities
+    if (!capabilities) return true
+    if (type === "wait") return capabilities.canWaitQuiet
+    return true
+  }
+
+  function laneActionPaletteItemsFor(lane: ParallelLane): Array<{ type: LaneActionType; label: string; testId: string }> {
+    return laneActionPaletteItems.filter((item) => laneAllowsAction(lane, item.type))
+  }
+
+  function laneCaptureKinds(lane: ParallelLane): CapabilityCaptureKind[] {
+    return laneChoice(lane)?.capabilities.captureKinds ?? ["terminal-buffer", "agent-event", "text-box"]
+  }
+
+  function defaultCaptureForLane(lane: ParallelLane, kind?: CaptureSourceConfig["kind"]): CaptureSourceConfig {
+    const selectedKind = kind ?? laneCaptureKinds(lane)[0] ?? "terminal-buffer"
+    const capture = defaultCaptureSource(selectedKind)
+    if ("terminal" in capture) capture.terminal = lane.terminal
+    return capture
+  }
+
+  function setLaneWaitMode(item: Extract<ParallelLaneActionNode, { type: "wait" }>, mode: string, terminal: TerminalTarget) {
+    const record = item as unknown as Record<string, unknown>
+    delete record.durationMs
+    delete record.terminal
+    delete record.quietMs
+    delete record.maxMs
+    delete record.onTimeout
+    if (mode === "duration") Object.assign(record, { mode: "duration", durationMs: 1500 })
+    if (mode === "terminal-quiet") Object.assign(record, { mode: "terminal-quiet", terminal, quietMs: 1000, maxMs: 600000, onTimeout: "pause" })
+  }
+
+  function incompatibleLaneActionIds(lane: ParallelLane, target: TerminalTarget): string[] {
+    const targetChoice = choiceForTarget(target)
+    if (!targetChoice) return []
+    return lane.body.flatMap((item) => {
+      if (item.type === "output") return []
+      if (item.type === "wait") return targetChoice.capabilities.canWaitQuiet ? [] : [item.id]
+      if (item.type === "capture-source") return isCaptureKindAllowed(targetChoice.capabilities, item.capture.kind) ? [] : [item.id]
+      return []
     })
   }
 
@@ -157,15 +209,25 @@
     })
   }
 
-  function setLaneTerminal(laneId: string, terminal: TerminalTarget) {
-    updateLane(laneId, (lane) => {
-      lane.terminal = terminal
-      for (const item of lane.body) {
-        if (item.type === "send_line") item.terminal = terminal
-        if (item.type === "wait" && item.mode === "terminal-quiet") item.terminal = terminal
-        if (item.type === "capture-source" && "terminal" in item.capture) item.capture.terminal = terminal
+  function setLaneTerminal(laneId: string, terminal: TerminalTarget): boolean {
+    const lane = parallelNode?.lanes.find((candidate) => candidate.id === laneId)
+    if (!lane) return false
+    const incompatible = incompatibleLaneActionIds(lane, terminal)
+    if (incompatible.length > 0) {
+      const target = choiceForTarget(terminal)
+      editNotice = "Lane tab change blocked; incompatible actions for " + (target?.terminalAlias ?? "target tab") + ": " + incompatible.join(", ")
+      return false
+    }
+    editNotice = ""
+    updateLane(laneId, (item) => {
+      item.terminal = terminal
+      for (const action of item.body) {
+        if (action.type === "send_line") action.terminal = terminal
+        if (action.type === "wait" && action.mode === "terminal-quiet") action.terminal = terminal
+        if (action.type === "capture-source" && "terminal" in action.capture) action.capture.terminal = terminal
       }
     })
+    return true
   }
 
   function isTerminalChoiceUsedByOtherLane(laneId: string, choiceValue: string): boolean {
@@ -253,9 +315,7 @@
     if (type === "send_line") return { id, type, terminal: lane.terminal, message: { parts: [] } }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") {
-      const capture = defaultCaptureSource("terminal-buffer")
-      if ("terminal" in capture) capture.terminal = lane.terminal
-      return { id, type, capture }
+      return { id, type, capture: defaultCaptureForLane(lane) }
     }
     return { id, type, source: laneArtifactChoices(lane, id)[0]?.source ?? emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
   }
@@ -425,7 +485,7 @@
         <div class="macro-row">
           <label>Lane id<input data-testid="parallel-lane-id-input" value={selectedLane.id} oninput={(event) => { if (!setLaneId(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.id }} /></label>
           <label>Label<input data-testid="parallel-lane-label-input" value={selectedLane.label} oninput={(event) => { if (!setLaneLabel(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.label }} /></label>
-          <label>Lane tab<select data-testid="parallel-lane-terminal" value={choiceFromTarget(selectedLane.terminal)} onchange={(event) => setLaneTerminal(selectedLane.id, targetFromChoice(event.currentTarget.value))}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title} disabled={isTerminalChoiceUsedByOtherLane(selectedLane.id, choice.value)}>{choice.label}</option>{/each}</select></label>
+          <label>Lane tab<select data-testid="parallel-lane-terminal" value={choiceFromTarget(selectedLane.terminal)} onchange={(event) => { const previous = choiceFromTarget(selectedLane.terminal); if (!setLaneTerminal(selectedLane.id, targetFromChoice(event.currentTarget.value))) event.currentTarget.value = previous }}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title} disabled={isTerminalChoiceUsedByOtherLane(selectedLane.id, choice.value)}>{choice.label}</option>{/each}</select></label>
         </div>
         {#if editNotice}
           <p class="macro-insertion-notice" data-testid="parallel-id-edit-notice">{editNotice}</p>
@@ -437,7 +497,7 @@
             <div class="step-palette">
               <div class="palette-heading"><span>Actions</span><small>send wait capture extract</small></div>
               <div class="step-actions">
-                {#each laneActionPaletteItems as item}
+                {#each laneActionPaletteItemsFor(selectedLane) as item}
                   <button type="button" data-testid={item.testId} onclick={() => insertLaneAction(item.type)}>{item.label}</button>
                 {/each}
               </div>
@@ -477,9 +537,7 @@
     {:else if item.type === "wait"}
       <label>Mode<select value={item.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => {
         if (action.type !== "wait") return
-        const mode = event.currentTarget.value
-        if (mode === "duration") Object.assign(action, { mode, durationMs: 1500 })
-        else Object.assign(action, { mode: "terminal-quiet", terminal: lane.terminal, quietMs: 1000, maxMs: 600000, onTimeout: "pause" })
+        setLaneWaitMode(action, event.currentTarget.value, lane.terminal)
       })}><option value="duration">duration</option><option value="terminal-quiet">terminal-quiet</option></select></label>
       {#if item.mode === "duration"}
         <label>Duration ms<input type="number" value={item.durationMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "wait" && action.mode === "duration") action.durationMs = Number(event.currentTarget.value) })} /></label>
@@ -490,8 +548,18 @@
         </div>
       {/if}
     {:else if item.type === "capture-source"}
-      <label>Capture kind<select value={item.capture.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source") { const capture = defaultCaptureSource(event.currentTarget.value as CaptureSourceConfig["kind"]); if ("terminal" in capture) capture.terminal = lane.terminal; action.capture = capture } })}><option value="terminal-buffer">terminal-buffer</option><option value="text-box">text-box</option><option value="agent-event">agent-event</option></select></label>
-      {#if item.capture.kind === "terminal-buffer"}
+      {@const selectedLaneChoice = laneChoice(lane)}
+      {@const allowedKinds = laneCaptureKinds(lane)}
+      {@const captureAllowed = selectedLaneChoice ? isCaptureKindAllowed(selectedLaneChoice.capabilities, item.capture.kind) : true}
+      {#if allowedKinds.length > 1}
+        <label>Capture kind<select value={item.capture.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source") action.capture = defaultCaptureForLane(lane, event.currentTarget.value as CaptureSourceConfig["kind"]) })}>{#each allowedKinds as kind}<option value={kind}>{kind}</option>{/each}</select></label>
+      {:else}
+        <p class="hint" data-testid="parallel-capture-kind-fixed">Capture kind: {allowedKinds[0] ?? item.capture.kind}</p>
+      {/if}
+      {#if !captureAllowed}
+        <p class="macro-insertion-notice" data-testid="parallel-capture-kind-invalid">Capture kind {item.capture.kind} is not valid for this lane tab.</p>
+        {#if allowedKinds[0]}<button type="button" data-testid="parallel-capture-kind-repair" onclick={() => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source") action.capture = defaultCaptureForLane(lane, allowedKinds[0]) })}>Use {allowedKinds[0]}</button>{/if}
+      {:else if item.capture.kind === "terminal-buffer"}
         <div class="macro-row">
           <label>Mode<select value={item.capture.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "terminal-buffer") action.capture.mode = event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" })}><option value="scrollback-tail">screen text</option><option value="raw-stream-tail">raw stream tail</option></select></label>
           <label>Max chars<input type="number" value={item.capture.maxChars} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "terminal-buffer") action.capture.maxChars = Number(event.currentTarget.value) })} /></label>
@@ -499,7 +567,7 @@
       {:else if item.capture.kind === "agent-event"}
         <div class="macro-row"><label>Agent<select value={item.capture.agent.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.agent = { kind: event.currentTarget.value as "codex" } })}><option value="codex">codex</option></select></label><label>Mode<select value={item.capture.captureMode ?? "result_only"} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.captureMode = event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" })}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label></div>
       {:else}
-        <p class="hint">Text box capture reads this lane tab.</p>
+        <p class="hint">Captures this text lane tab as plain text.</p>
       {/if}
     {:else}
       <label>Source<select value={sourceKey(item.source)} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.source = requiredSourceFromKey(event.currentTarget.value, action.source) })}>{#each laneArtifactChoices(lane, item.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>

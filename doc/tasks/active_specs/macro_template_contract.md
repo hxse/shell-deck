@@ -6,6 +6,18 @@ Macro templates are JSON documents stored per config. New/imported runnable temp
 
 Templates do not store Codex session ids. Templates refer to deck tabs through structured terminal refs: index, id, or alias. The JSON field remains `terminal` for runner/protocol compatibility, but the macro editor labels selectors by usage: `Target tab` for send/input/wait targets, `Source tab` for capture sources, and `Lane tab` inside parallel lanes. Each selector presents a live tab as one merged row with index, alias, kind, and hover details for the full id mapping. Existing index/id/alias targets resolve through the current config `indexMap`, so tab reorder and alias rename are reflected by the next render without users manually syncing the three forms.
 
+## Tab Capability Model
+
+Macro editor controls and runner start preflight are capability-aware when live deck tab snapshots are available. Structural template validation remains capability-agnostic when only JSON is available.
+
+Live tab capabilities are derived from `TerminalSnapshot.backend`:
+
+- `fake` and `real` are shell tabs: `send_line`, `input_line`, `wait.terminal-quiet`, `capture-source.terminal-buffer`, and `capture-source.agent-event` are available.
+- `text` is a text tab: `send_line`, `input_line`, and `capture-source.text-box` are available; `wait.terminal-quiet`, `terminal-buffer`, and `agent-event` are not available.
+
+If an imported or edited template points a shell-only action at a text tab, the editor must show validation instead of silently rewriting it. When the user explicitly changes a Source tab or Lane tab, the UI may convert to the first valid capture kind or block the change with a visible notice when existing actions are incompatible. Runner start preflight must reject live capability-invalid templates before execution. Error messages should name the action id, the tab alias, and the required capability.
+
+
 Shell-deck only supports the current macro template schema: `schemaVersion: 2` with a structured `body` block tree. Files or imports that do not validate against the current schema are invalid templates. The template store must fail loudly with `invalid_macro_template`; it must not skip, migrate, quarantine, silently ignore, or treat old formats as compatibility objects.
 
 ## Action Types
@@ -56,7 +68,7 @@ Invalid removed nodes and fields include `sleep`, `parse`, `parser`, `ai-json`, 
 `wait` only waits; it does not produce artifacts.
 
 - `duration`: fixed wait in milliseconds.
-- `terminal-quiet`: waits until a terminal has no output for `quietMs`, up to `maxMs`.
+- `terminal-quiet`: waits until a shell tab has no output for `quietMs`, up to `maxMs`. It is only valid for `backend = fake | real` tabs and must not target `backend = text` tabs.
 - `user-continue`: pauses until the user resumes.
 
 `capture-ready-or-user` is unsupported. Capture readiness belongs to the explicit `capture-source` step.
@@ -65,9 +77,9 @@ Invalid removed nodes and fields include `sleep`, `parse`, `parser`, `ai-json`, 
 
 `capture-source` is the only macro action that obtains text from a source tab or agent.
 
-- `terminal-buffer`: captures shell/fake/real tab scrollback tail and produces `captured_text`. `mode = scrollback-tail` is the default visible-screen-text renderer; `mode = raw-stream-tail` returns the raw PTY tail for debugging/direct stream forwarding.
-- `text-box`: captures a `backend = text` tab as plain text and produces `captured_text`. It has no terminal screen/raw stream semantics.
-- `agent-event`: captures explicit Codex hook events; V0 supports `agent.kind = codex` and required `captureMode = result_only | prompt_only | prompt_and_result`. It only uses `UserPromptSubmit.prompt` and `Stop.last_assistant_message`; transcript, reasoning, tool calls, and intermediate steps are out of scope.
+- `terminal-buffer`: captures shell/fake/real tab scrollback tail and produces `captured_text`. It is invalid for `backend = text` tabs. `mode = scrollback-tail` is the default visible-screen-text renderer; `mode = raw-stream-tail` returns the raw PTY tail for debugging/direct stream forwarding.
+- `text-box`: captures a `backend = text` tab as plain text and produces `captured_text`. It is invalid for shell/fake/real tabs. It has no terminal screen/raw stream semantics.
+- `agent-event`: captures explicit Codex hook events from shell/fake/real tabs; it is invalid for `backend = text` tabs. V0 supports `agent.kind = codex` and required `captureMode = result_only | prompt_only | prompt_and_result`. It only uses `UserPromptSubmit.prompt` and `Stop.last_assistant_message`; transcript, reasoning, tool calls, and intermediate steps are out of scope.
 
 ## Text Extraction
 
@@ -121,10 +133,13 @@ Each lane:
 
 - has an id unique within the parent parallel node
 - has a non-empty label unique within the parent parallel node when set
-- chooses one unique terminal
+- chooses one unique Lane tab
 - allows ordinary `send_line` actions before Output
-- allows ordinary `wait` actions with `duration` or `terminal-quiet`; lane `terminal-quiet.onTimeout` must be `pause`
-- allows ordinary `capture-source` and `extract_text` actions before Output
+- allows `wait` only when the Lane tab is shell/fake/real; text lanes do not expose or accept wait actions
+- shell/fake/real lanes may use `wait.duration` or `wait.terminal-quiet`; lane `terminal-quiet.onTimeout` must be `pause`
+- shell/fake/real lanes may capture `terminal-buffer` or `agent-event`
+- text lanes may capture `text-box` only
+- allows `extract_text` actions before Output
 - lane-local `extract_text.onEmpty` is limited to `pause` or `fail`
 
 Each lane has a mandatory final `Output`; the action mechanically merges lane outputs into one `merged_text` artifact. Downstream `extract_text`, `send_line`, or `if.text_match` can reference that artifact.

@@ -340,6 +340,8 @@ test("Flow V2 parallel resume skips completed lane sends", async () => {
 
 test("Flow V2 parallel onLaneFail fail fails the run without joining", async () => {
   const h = harness()
+  const previousAgentTimeout = process.env.SHELL_DECK_AGENT_EVENT_CAPTURE_TIMEOUT_MS
+  process.env.SHELL_DECK_AGENT_EVENT_CAPTURE_TIMEOUT_MS = "1"
   try {
     const worker = { kind: "alias" as const, value: "worker" }
     const reviewer = { kind: "alias" as const, value: "reviewer" }
@@ -348,8 +350,8 @@ test("Flow V2 parallel onLaneFail fail fails the run without joining", async () 
       type: "parallel",
       lanes: [
         { id: "docs", label: "Docs", terminal: worker, body: [
-          { id: "capture_docs_text_box", type: "capture-source", capture: { kind: "text-box", terminal: worker } },
-          { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs_text_box", artifact: "captured_text" } },
+          { id: "capture_docs_agent", type: "capture-source", capture: { kind: "agent-event", terminal: worker, agent: { kind: "codex" }, captureMode: "result_only" } },
+          { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs_agent", artifact: "captured_text" } },
         ] },
         { id: "tests", label: "Tests", terminal: reviewer, body: [
           { id: "send_tests", type: "send_line", terminal: reviewer, message: { parts: [{ kind: "text", text: "tests ready" }] } },
@@ -373,6 +375,8 @@ test("Flow V2 parallel onLaneFail fail fails the run without joining", async () 
     expect(events.some((event) => event.kind === "run_failed" && event.data.code === "parallel_lane_failed")).toBe(true)
     expect(events.some((event) => event.kind === "parallel_joined")).toBe(false)
   } finally {
+    if (previousAgentTimeout === undefined) delete process.env.SHELL_DECK_AGENT_EVENT_CAPTURE_TIMEOUT_MS
+    else process.env.SHELL_DECK_AGENT_EVENT_CAPTURE_TIMEOUT_MS = previousAgentTimeout
     h.cleanup()
   }
 })

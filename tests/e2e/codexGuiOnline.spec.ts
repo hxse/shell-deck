@@ -14,7 +14,7 @@ test('Codex-in-shell GUI smoke uses macro send_line then covers terminal-buffer 
   await page.goto('/?configId=' + configId)
   await expect(page.getByTestId('terminal-tab').first()).toContainText('real')
 
-  const codexCommand = "printf 'Reply with SD_CODEX_GUI_010 only\n' | just -f <shell-deck-root>/justfile -- codex exec -"
+  const codexCommand = "printf 'Reply with SD_CODEX_GUI_010 only\n' | just -f " + process.cwd() + "/justfile -- codex exec -"
   await importTemplate(request, codexPromptTemplate(codexCommand))
   await page.reload()
   await startTemplate(page, /Codex Macro Send Prompt/)

@@ -1,4 +1,15 @@
-# Logs
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+dist-ssr
+.svelte-kit/
+.vite/
+coverage/
+.nyc_output/
+
+# Logs and test output
 logs
 *.log
 npm-debug.log*
@@ -6,17 +17,21 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-.shell-deck/
 playwright-report/
 test-results/
 .playwright-mcp/
 
-# Editor directories and files
+# Local runtime data
+.shell-deck/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+
+# Editor / OS
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -29,3 +44,8 @@ test-results/
 
 # Local tool state
 .serena/
+.codex/
+.claude/
+.cursor/
+.jj/
+.jjconflict-*/

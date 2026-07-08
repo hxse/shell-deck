@@ -1,5 +1,6 @@
 import { assertValidPublicId } from "../identifier"
-import type { TerminalIndexMapItem } from "../protocol"
+import type { TerminalIndexMapItem, TerminalSnapshot } from "../protocol"
+import { isCaptureKindAllowed, tabInfoForTarget } from "./tabCapabilities"
 import { validateTerminalTarget } from "./terminalRef"
 import type {
   CaptureSourceConfig,
@@ -7,6 +8,7 @@ import type {
   FlowV2Node,
   MacroTemplate,
   ParallelLane,
+  TerminalTarget,
   TextMatchCondition,
   ValidationIssue,
   ValidationResult,
@@ -68,10 +70,12 @@ const REGEX_FLAGS_RE = /^[ims]*$/
 
 type ValidateOptions = {
   indexMap?: TerminalIndexMapItem[]
+  terminals?: TerminalSnapshot[]
 }
 
 type ValidationContext = {
   indexMap?: TerminalIndexMapItem[]
+  terminals?: TerminalSnapshot[]
   nodeIds: Set<string>
   artifactOutputs: Map<string, Set<string>>
   loopDepth: number
@@ -93,7 +97,7 @@ export function validateFlowV2Template(value: unknown, options: ValidateOptions 
   validateString(issues, "description", template.description, 0)
   validateIsoString(issues, "createdAt", template.createdAt)
   validateIsoString(issues, "updatedAt", template.updatedAt)
-  const context: ValidationContext = { indexMap: options.indexMap, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0 }
+  const context: ValidationContext = { indexMap: options.indexMap, terminals: options.terminals, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0 }
   validateNodeList(issues, "body", template.body, context, false)
   return { ok: issues.length === 0, issues }
 }
@@ -186,7 +190,7 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
   }
   if (node.type === "capture-source") {
     rejectUnknownKeys(issues, path, node, CAPTURE_SOURCE_KEYS)
-    validateCaptureNodeConfig(issues, path + ".capture", node.capture, context)
+    validateCaptureNodeConfig(issues, path + ".capture", node.capture, context, node.id)
     if (typeof node.id === "string") registerArtifactOutput(context, node.id, "captured_text")
     return
   }
@@ -206,6 +210,7 @@ function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<
   if (node.mode === "terminal-quiet") {
     rejectUnknownKeys(issues, path, node, WAIT_TERMINAL_QUIET_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
+    validateWaitQuietCapability(issues, path + ".terminal", node.terminal, context, node.id)
     validatePositiveInt(issues, path + ".quietMs", node.quietMs)
     validatePositiveInt(issues, path + ".maxMs", node.maxMs)
     if (Number.isInteger(node.quietMs) && Number.isInteger(node.maxMs) && Number(node.maxMs) < Number(node.quietMs)) issues.push({ path: path + ".maxMs", message: "maxMs must be greater than or equal to quietMs" })
@@ -221,7 +226,7 @@ function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<
   issues.push({ path: path + ".mode", message: "wait mode must be duration, terminal-quiet or user-continue" })
 }
 
-function validateCaptureNodeConfig(issues: ValidationIssue[], path: string, capture: unknown, context: ValidationContext) {
+function validateCaptureNodeConfig(issues: ValidationIssue[], path: string, capture: unknown, context: ValidationContext, actionId?: unknown) {
   if (!isObject(capture)) {
     issues.push({ path, message: "capture config must be an object" })
     return
@@ -229,6 +234,7 @@ function validateCaptureNodeConfig(issues: ValidationIssue[], path: string, capt
   if (capture.kind === "terminal-buffer") {
     rejectUnknownKeys(issues, path, capture, CAPTURE_TERMINAL_BUFFER_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", capture.terminal, context.indexMap))
+    validateCaptureCapability(issues, path + ".terminal", capture.kind, capture.terminal, context, actionId)
     if (capture.mode !== "scrollback-tail" && capture.mode !== "raw-stream-tail") issues.push({ path: path + ".mode", message: "terminal-buffer mode must be scrollback-tail or raw-stream-tail" })
     validatePositiveInt(issues, path + ".maxChars", capture.maxChars)
     return
@@ -236,11 +242,13 @@ function validateCaptureNodeConfig(issues: ValidationIssue[], path: string, capt
   if (capture.kind === "text-box") {
     rejectUnknownKeys(issues, path, capture, CAPTURE_TEXT_BOX_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", capture.terminal, context.indexMap))
+    validateCaptureCapability(issues, path + ".terminal", capture.kind, capture.terminal, context, actionId)
     return
   }
   if (capture.kind === "agent-event") {
     rejectUnknownKeys(issues, path, capture, CAPTURE_AGENT_EVENT_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", capture.terminal, context.indexMap))
+    validateCaptureCapability(issues, path + ".terminal", capture.kind, capture.terminal, context, actionId)
     if (!isObject(capture.agent)) {
       issues.push({ path: path + ".agent", message: "agent must be an object" })
     } else {
@@ -462,6 +470,11 @@ function validateParallelLaneBody(issues: ValidationIssue[], path: string, body:
 
 function validateParallelLaneAction(issues: ValidationIssue[], path: string, node: Record<string, unknown>, lane: ParallelLane, context: ValidationContext) {
   validateActionNode(issues, path, node, context)
+  const laneInfo = context.terminals ? tabInfoForTarget(lane.terminal, context.indexMap, context.terminals) : undefined
+  if (node.type === "wait" && laneInfo?.capabilities && !laneInfo.capabilities.canWaitQuiet) {
+    const label = laneInfo.item?.terminalAlias ?? laneInfo.terminal?.terminalAlias ?? "target tab"
+    issues.push({ path: path + ".type", message: String(node.id ?? "parallel lane wait") + ": target tab " + label + " does not support wait; required shell tab" })
+  }
   if (node.type === "send_line") validateSameTerminal(issues, path + ".terminal", lane.terminal, node.terminal, context.indexMap, "parallel lane send terminal must match lane terminal")
   if (node.type === "wait") {
     if (node.mode === "user-continue") issues.push({ path: path + ".mode", message: "parallel lane wait must not use user-continue" })
@@ -633,6 +646,24 @@ function validateArtifactSource(issues: ValidationIssue[], path: string, source:
     return
   }
   if (!artifacts.has(source.artifact)) issues.push({ path: path + ".artifact", message: "artifact is not produced by source step" })
+}
+
+function validateWaitQuietCapability(issues: ValidationIssue[], path: string, target: unknown, context: ValidationContext, actionId: unknown) {
+  if (!context.terminals || !isObject(target)) return
+  const info = tabInfoForTarget(target as TerminalTarget, context.indexMap, context.terminals)
+  if (!info.terminal || !info.capabilities || info.capabilities.canWaitQuiet) return
+  const label = info.item?.terminalAlias ?? info.terminal.terminalAlias ?? info.terminal.terminalId
+  const prefix = typeof actionId === "string" ? actionId + ": " : ""
+  issues.push({ path, message: prefix + "target tab " + label + " does not support terminal-quiet; required shell tab" })
+}
+
+function validateCaptureCapability(issues: ValidationIssue[], path: string, kind: unknown, target: unknown, context: ValidationContext, actionId: unknown) {
+  if (!context.terminals || !isObject(target) || typeof kind !== "string") return
+  const info = tabInfoForTarget(target as TerminalTarget, context.indexMap, context.terminals)
+  if (!info.terminal || !info.capabilities || isCaptureKindAllowed(info.capabilities, kind as CaptureSourceConfig["kind"])) return
+  const label = info.item?.terminalAlias ?? info.terminal.terminalAlias ?? info.terminal.terminalId
+  const prefix = typeof actionId === "string" ? actionId + ": " : ""
+  issues.push({ path, message: prefix + "target tab " + label + " does not support " + kind + " capture; allowed capture kinds: " + info.capabilities.captureKinds.join(", ") })
 }
 
 function validateSameTerminal(issues: ValidationIssue[], path: string, left: unknown, right: unknown, indexMap: TerminalIndexMapItem[] | undefined, message: string) {

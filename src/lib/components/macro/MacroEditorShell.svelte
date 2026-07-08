@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { TerminalIndexMapItem, TerminalSnapshot } from "../../protocol"
   import type { CaptureSourceConfig, FlowV2Node, MacroTemplate, TerminalTarget, ValidationResult } from "../../macro/templateTypes"
+  import { tabCapabilitiesForBackend, type TerminalChoice } from "../../macro/tabCapabilities"
   import MacroStepList from "./MacroStepList.svelte"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
@@ -28,19 +29,21 @@
     return artifactChoices(template)[0]?.source ?? { kind: "step_artifact" as const, stepId: "capture_1", artifact: "captured_text" as const }
   }
 
-  function terminalChoices() {
-    return indexMap.map((item: TerminalIndexMapItem) => ({
-      value: terminalChoiceValue(item),
-      label: "#" + item.index + " | " + item.terminalAlias + " | " + tabKindLabel(item),
-      title: "tab index: #" + item.index + "\nalias: " + item.terminalAlias + "\nid: " + item.terminalId + "\nkind: " + tabKindLabel(item),
-    }))
-  }
-
-  function tabKindLabel(item: TerminalIndexMapItem): string {
-    const backend = terminals.find((terminal: TerminalSnapshot) => terminal.terminalId === item.terminalId)?.backend
-    if (backend === "text") return "text"
-    if (backend === "real" || backend === "fake") return "shell"
-    return "tab"
+  function terminalChoices(): TerminalChoice[] {
+    return indexMap.flatMap((item: TerminalIndexMapItem) => {
+      const terminal = terminals.find((candidate: TerminalSnapshot) => candidate.terminalId === item.terminalId)
+      if (!terminal) return []
+      const capabilities = tabCapabilitiesForBackend(terminal.backend)
+      return [{
+        value: terminalChoiceValue(item),
+        label: "#" + item.index + " | " + item.terminalAlias + " | " + capabilities.kind,
+        title: "tab index: #" + item.index + "\nalias: " + item.terminalAlias + "\nid: " + item.terminalId + "\nkind: " + capabilities.kind,
+        index: item.index,
+        terminalId: item.terminalId,
+        terminalAlias: item.terminalAlias,
+        capabilities,
+      }]
+    })
   }
 
   function terminalChoiceValue(item: TerminalIndexMapItem): string {

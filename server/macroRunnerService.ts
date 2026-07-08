@@ -82,7 +82,7 @@ export class MacroRunnerService {
     if (storedLive) throw liveRunError(storedLive.runId)
 
     const template = this.templateStore.read(configId, request.templateId)
-    const validation = validateMacroTemplate(template, { indexMap: this.manager.indexMap(configId) })
+    const validation = validateMacroTemplate(template, { indexMap: this.manager.indexMap(configId), terminals: this.manager.deckSnapshot(configId).terminals })
     const run = await this.runEventStore.createRun(configId, { templateId: template.id, templateName: template.name })
     const runtime: RuntimeState = {
       configId,

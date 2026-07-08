@@ -6,11 +6,11 @@ import type { MacroTemplate, ValidationIssue, ValidationResult } from "./templat
 const PROFILE_BUNDLE_KEYS = ["prompt", "schema", "jsonSchema", "checkSet", "fixtures", "model", "replicas"]
 const BRANCH_OPERATORS = ["==", "!=", "is_null"]
 
-export function validateMacroTemplate(value: unknown, options: { indexMap?: unknown[] } = {}): ValidationResult {
+export function validateMacroTemplate(value: unknown, options: { indexMap?: unknown[]; terminals?: unknown[] } = {}): ValidationResult {
   return validateFlowV2Template(value, options as never)
 }
 
-export function assertValidMacroTemplate(value: unknown, options: { indexMap?: unknown[] } = {}): MacroTemplate {
+export function assertValidMacroTemplate(value: unknown, options: { indexMap?: unknown[]; terminals?: unknown[] } = {}): MacroTemplate {
   const result = validateMacroTemplate(value, options)
   if (!result.ok) throw new Error("invalid_macro_template:" + result.issues.map((issue) => issue.path + ":" + issue.message).join("; "))
   return value as MacroTemplate

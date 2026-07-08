@@ -4,9 +4,9 @@
   import ParallelLaneTabs from "./ParallelLaneTabs.svelte"
   import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
   import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
+  import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
-  type TerminalChoice = { value: string; label: string; title: string }
   type ArtifactChoice = { label: string; source: FlowV2ArtifactSource }
   type InsertableNodeType = FlowV2Node["type"]
   type InsertionPalettePosition = { x: number; y: number; placement: "above" | "below"; maxHeight?: number }
@@ -153,6 +153,53 @@
   function terminalChoiceTitle(value: string) {
     const choice = terminalChoices().find((item: TerminalChoice) => item.value === value)
     return choice?.title ?? choice?.label ?? value
+  }
+
+  function quietTerminalChoices(): TerminalChoice[] {
+    return terminalChoices().filter((choice: TerminalChoice) => choice.capabilities.canWaitQuiet)
+  }
+
+  function quietChoiceFromTarget(target: TerminalTarget): string {
+    const value = choiceFromTarget(target)
+    return quietTerminalChoices().some((choice) => choice.value === value) ? value : ""
+  }
+
+  function firstQuietTerminalTarget(): TerminalTarget | null {
+    const choice = quietTerminalChoices()[0]
+    return choice ? targetFromChoice(choice.value) : null
+  }
+
+  function choiceForTarget(target: TerminalTarget): TerminalChoice | undefined {
+    return terminalChoiceForTarget(target, terminalChoices())
+  }
+
+  function captureKindsForTarget(target: TerminalTarget): CapabilityCaptureKind[] {
+    return choiceForTarget(target)?.capabilities.captureKinds ?? ["terminal-buffer", "agent-event", "text-box"]
+  }
+
+  function defaultCaptureForTarget(kind: CaptureSourceConfig["kind"], terminal: TerminalTarget): CaptureSourceConfig {
+    if (kind === "agent-event") return { kind, terminal, agent: { kind: "codex" }, captureMode: "result_only" }
+    if (kind === "text-box") return { kind, terminal }
+    return { kind, terminal, mode: "scrollback-tail", maxChars: 20000 }
+  }
+
+  function defaultCaptureForFirstTab(): CaptureSourceConfig {
+    const terminal = firstTerminalTarget()
+    const kind = captureKindsForTarget(terminal)[0] ?? "terminal-buffer"
+    return defaultCaptureForTarget(kind, terminal)
+  }
+
+  function setWaitMode(item: WaitNode, mode: string, terminal: TerminalTarget | null = null) {
+    const record = item as unknown as Record<string, unknown>
+    delete record.durationMs
+    delete record.terminal
+    delete record.quietMs
+    delete record.maxMs
+    delete record.onTimeout
+    delete record.prompt
+    if (mode === "duration") Object.assign(record, { mode: "duration", durationMs: 1500 })
+    if (mode === "terminal-quiet" && terminal) Object.assign(record, { mode: "terminal-quiet", terminal, quietMs: 1000, maxMs: 600000, onTimeout: "pause" })
+    if (mode === "user-continue") Object.assign(record, { mode: "user-continue", prompt: "Continue when ready" })
   }
 
   function closeInsertion(restoreFocus: boolean) {
@@ -530,7 +577,7 @@
     if (type === "send_line") return { id, type, terminal, message: { parts: [] } }
     if (type === "input_line") return { id, type, terminal, prompt: "Input", allowEmpty: false }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
-    if (type === "capture-source") return { id, type, capture: defaultCaptureSource("terminal-buffer") }
+    if (type === "capture-source") return { id, type, capture: defaultCaptureForFirstTab() }
     if (type === "extract_text") return { id, type, source: artifactChoices(template)[0]?.source ?? emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
     if (type === "parallel") return { id, type, lanes: [defaultParallelLane(template, "lane_1", terminal)], merge: { kind: "sectioned_text", separator: "\n\n===== {laneId} | {laneLabel} | {terminalAlias} =====\n\n", includeEmptyOutputs: false }, onLaneFail: "pause" }
     if (type === "if") return { id, type, branches: [{ kind: "if", condition: defaultCondition(template), body: [] }] }
@@ -679,18 +726,15 @@
       <label>Mode
         <select data-testid="wait-mode" value={node.mode} onchange={(event) => updateNode(node.id, (item) => {
           if (item.type !== "wait") return
-          const mode = event.currentTarget.value
-          if (mode === "duration") Object.assign(item, { mode, durationMs: 1500 })
-          if (mode === "terminal-quiet") Object.assign(item, { mode, terminal: { kind: "index", value: 1 }, quietMs: 1000, maxMs: 600000, onTimeout: "pause" })
-          if (mode === "user-continue") Object.assign(item, { mode, prompt: "Continue when ready" })
+          setWaitMode(item, event.currentTarget.value, firstQuietTerminalTarget())
         })}>
-          <option value="duration">duration</option><option value="terminal-quiet">terminal-quiet</option><option value="user-continue">user-continue</option>
+          <option value="duration">duration</option><option value="terminal-quiet" disabled={quietTerminalChoices().length === 0}>terminal-quiet</option><option value="user-continue">user-continue</option>
         </select>
       </label>
       {#if node.mode === "duration"}
         <label>Duration ms<input type="number" value={node.durationMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "duration") item.durationMs = Number(event.currentTarget.value) })} /></label>
       {:else if node.mode === "terminal-quiet"}
-        <label>Target tab<select value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.terminal = targetFromChoice(event.currentTarget.value) })}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
+        <label>Target tab<select data-testid="wait-target-tab" value={quietChoiceFromTarget(node.terminal)} title={terminalChoiceTitle(quietChoiceFromTarget(node.terminal) || choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet" && event.currentTarget.value) item.terminal = targetFromChoice(event.currentTarget.value) })}><option value="" disabled>Choose shell tab</option>{#each quietTerminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
         <div class="macro-row"><label>Quiet ms<input type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
       {:else}
         <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = event.currentTarget.value })} /></label>
@@ -855,9 +899,19 @@
 {/snippet}
 
 {#snippet CaptureEditor(node: { capture: CaptureSourceConfig }, terminalChoices: () => TerminalChoice[], choiceFromTarget: (target: TerminalTarget) => string, targetFromChoice: (choice: string) => TerminalTarget, defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig, onChange: (capture: CaptureSourceConfig) => void)}
-  <label>Capture kind<select data-testid="capture-step-kind" value={node.capture.kind} onchange={(event) => onChange(defaultCaptureSource(event.currentTarget.value as CaptureSourceConfig["kind"]))}><option value="terminal-buffer">terminal-buffer</option><option value="text-box">text-box</option><option value="agent-event">agent-event</option></select></label>
-  <label>Source tab<select data-testid="capture-step-terminal" value={choiceFromTarget(node.capture.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.capture.terminal))} onchange={(event) => { const next = JSON.parse(JSON.stringify(node.capture)) as CaptureSourceConfig; next.terminal = targetFromChoice(event.currentTarget.value); onChange(next) }}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
-  {#if node.capture.kind === "terminal-buffer"}
+  {@const sourceChoice = choiceForTarget(node.capture.terminal)}
+  {@const allowedKinds = captureKindsForTarget(node.capture.terminal)}
+  {@const captureAllowed = sourceChoice ? isCaptureKindAllowed(sourceChoice.capabilities, node.capture.kind) : true}
+  <label>Source tab<select data-testid="capture-step-terminal" value={choiceFromTarget(node.capture.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.capture.terminal))} onchange={(event) => { const terminal = targetFromChoice(event.currentTarget.value); const allowed = captureKindsForTarget(terminal); const kind = allowed.includes(node.capture.kind) ? node.capture.kind : allowed[0] ?? "terminal-buffer"; onChange(defaultCaptureForTarget(kind, terminal)) }}>{#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
+  {#if allowedKinds.length > 1}
+    <label>Capture kind<select data-testid="capture-step-kind" value={node.capture.kind} onchange={(event) => onChange(defaultCaptureForTarget(event.currentTarget.value as CaptureSourceConfig["kind"], node.capture.terminal))}>{#each allowedKinds as kind}<option value={kind}>{kind}</option>{/each}</select></label>
+  {:else}
+    <p class="hint" data-testid="capture-kind-fixed">Capture kind: {allowedKinds[0] ?? node.capture.kind}</p>
+  {/if}
+  {#if !captureAllowed}
+    <p class="macro-insertion-notice" data-testid="capture-kind-invalid">Capture kind {node.capture.kind} is not valid for this source tab.</p>
+    {#if allowedKinds[0]}<button type="button" data-testid="capture-kind-repair" onclick={() => onChange(defaultCaptureForTarget(allowedKinds[0], node.capture.terminal))}>Use {allowedKinds[0]}</button>{/if}
+  {:else if node.capture.kind === "terminal-buffer"}
     <label>Mode<select data-testid="capture-terminal-buffer-mode" value={node.capture.mode} onchange={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, mode: event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" }) }}><option value="scrollback-tail">screen text tail</option><option value="raw-stream-tail">raw stream tail (debug only)</option></select></label>
     <label>Max chars<input type="number" value={node.capture.maxChars} oninput={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, maxChars: Number(event.currentTarget.value) }) }} /></label>
   {:else if node.capture.kind === "agent-event"}
@@ -865,7 +919,7 @@
     <label>Mode<select data-testid="capture-agent-mode" value={node.capture.captureMode ?? "result_only"} onchange={(event) => { if (node.capture.kind === "agent-event") onChange({ ...node.capture, captureMode: event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" }) }}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label>
     <p class="hint">Codex hook fields only: UserPromptSubmit.prompt and Stop.last_assistant_message</p>
   {:else}
-    <p class="hint">Text box capture reads the selected text deck slot as plain text.</p>
+    <p class="hint">Captures this text tab as plain text.</p>
   {/if}
 {/snippet}
 

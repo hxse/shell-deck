@@ -38,7 +38,7 @@
   let runnerInput = $state('')
   let runnerInputKey = $state('')
 
-  const validation = $derived(draft ? validateMacroTemplate(draft, { indexMap }) : { ok: true, issues: [] })
+  const validation = $derived(draft ? validateMacroTemplate(draft, { indexMap, terminals }) : { ok: true, issues: [] })
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
   const filteredTemplates = $derived(templates.filter((template) => !templateSearch.trim() || template.name.toLowerCase().includes(templateSearch.trim().toLowerCase()) || template.id.toLowerCase().includes(templateSearch.trim().toLowerCase())))
   const selectedTemplateName = $derived(templates.find((template) => template.id === selectedTemplateId)?.name ?? draft?.name ?? null)
