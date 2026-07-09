@@ -14,7 +14,7 @@ import type {
   ValidationResult,
 } from "./templateTypes"
 
-export const FLOW_V2_ACTION_TYPES = ["send", "input", "wait", "capture-source", "extract_text", "parallel"] as const
+export const FLOW_V2_ACTION_TYPES = ["send", "notify", "input", "wait", "capture-source", "extract_text", "parallel"] as const
 export const FLOW_V2_CONTROL_TYPES = ["if", "for", "break", "continue", "finish"] as const
 export const FLOW_V2_FORBIDDEN_TYPES = ["send_line", "input_line", "sleep", "parse", "send_artifact", "parallel_all", "parallel_send_capture", "merge_parallel_results", "pause", "stop", "return", "goto", "branch", "complete", "fail"] as const
 
@@ -28,6 +28,11 @@ const MESSAGE_KEYS = new Set(["parts"])
 const TEXT_PART_KEYS = new Set(["kind", "text"])
 const ARTIFACT_PART_KEYS = new Set(["kind", "source"])
 const SEND_KEYS = new Set(["id", "type", "terminal", "message", "enter"])
+const NOTIFY_KEYS = new Set(["id", "type", "level", "title", "message", "channels", "onFailure"])
+const NOTIFY_APP_CHANNEL_KEYS = new Set(["kind", "toast", "sound"])
+const NOTIFY_SYSTEM_CHANNEL_KEYS = new Set(["kind"])
+const NOTIFY_TELEGRAM_CHANNEL_KEYS = new Set(["kind", "profileId"])
+const NOTIFICATION_SOUND_VALUES = new Set(["none", "bell", "chime", "ping", "pulse", "success", "warning", "alert"])
 const INPUT_KEYS = new Set(["id", "type", "terminal", "prompt", "allowEmpty", "defaultSource", "enter"])
 const WAIT_DURATION_KEYS = new Set(["id", "type", "mode", "durationMs"])
 const WAIT_TERMINAL_QUIET_KEYS = new Set(["id", "type", "mode", "terminal", "quietMs", "maxMs", "onTimeout"])
@@ -186,6 +191,10 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
     if (node.defaultSource !== undefined) validateArtifactSource(issues, path + ".defaultSource", node.defaultSource, context)
     return
   }
+  if (node.type === "notify") {
+    validateNotifyNode(issues, path, node, context)
+    return
+  }
   if (node.type === "wait") {
     validateWaitNode(issues, path, node, context)
     return
@@ -201,6 +210,46 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
     return
   }
   validateParallelNode(issues, path, node, context)
+}
+
+function validateNotifyNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
+  rejectUnknownKeys(issues, path, node, NOTIFY_KEYS)
+  if (node.level !== "info" && node.level !== "success" && node.level !== "warning" && node.level !== "error") issues.push({ path: path + ".level", message: "level must be info, success, warning or error" })
+  validateString(issues, path + ".title", node.title, 1)
+  validateMessageSpec(issues, path + ".message", node.message, context)
+  validateNotifyChannels(issues, path + ".channels", node.channels)
+  if (node.onFailure !== "continue" && node.onFailure !== "pause" && node.onFailure !== "fail") issues.push({ path: path + ".onFailure", message: "onFailure must be continue, pause or fail" })
+}
+
+function validateNotifyChannels(issues: ValidationIssue[], path: string, channels: unknown) {
+  if (!Array.isArray(channels)) {
+    issues.push({ path, message: "notify channels must be an array" })
+    return
+  }
+  if (channels.length === 0) issues.push({ path, message: "notify channels must not be empty" })
+  for (const [index, channel] of channels.entries()) {
+    const channelPath = path + "[" + index + "]"
+    if (!isObject(channel)) {
+      issues.push({ path: channelPath, message: "notify channel must be an object" })
+      continue
+    }
+    if (channel.kind === "app") {
+      rejectUnknownKeys(issues, channelPath, channel, NOTIFY_APP_CHANNEL_KEYS)
+      if (typeof channel.toast !== "boolean") issues.push({ path: channelPath + ".toast", message: "toast must be boolean" })
+      if (typeof channel.sound !== "string" || !NOTIFICATION_SOUND_VALUES.has(channel.sound)) issues.push({ path: channelPath + ".sound", message: "sound must be none, bell, chime, ping, pulse, success, warning or alert" })
+      continue
+    }
+    if (channel.kind === "system") {
+      rejectUnknownKeys(issues, channelPath, channel, NOTIFY_SYSTEM_CHANNEL_KEYS)
+      continue
+    }
+    if (channel.kind === "telegram") {
+      rejectUnknownKeys(issues, channelPath, channel, NOTIFY_TELEGRAM_CHANNEL_KEYS)
+      validatePublicId(issues, channelPath + ".profileId", channel.profileId)
+      continue
+    }
+    issues.push({ path: channelPath + ".kind", message: "notify channel kind must be app, system or telegram" })
+  }
 }
 
 function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {

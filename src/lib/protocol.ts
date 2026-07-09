@@ -50,6 +50,25 @@ export type RunLogUpdatedMessage = {
   kind: RunEventKind
 }
 
+export type MacroNotificationLevel = 'info' | 'success' | 'warning' | 'error'
+export type MacroNotificationSound = 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert'
+export type MacroNotificationChannel =
+  | { kind: 'app'; toast: boolean; sound: MacroNotificationSound }
+  | { kind: 'system' }
+
+export type MacroNotificationMessage = {
+  type: 'macro_notification'
+  configId: string
+  runId: string
+  stepId: string
+  notificationId: string
+  createdAt: string
+  level: MacroNotificationLevel
+  title: string
+  message: string
+  channels: MacroNotificationChannel[]
+}
+
 export type ServerMessage =
   | { type: 'client_registered'; clientId: string; configId: string }
   | DeckSnapshot
@@ -63,6 +82,7 @@ export type ServerMessage =
   | { type: 'ui_layout_updated'; configId: string; layout: WorkspaceUiLayout }
   | PromptUpdatedMessage
   | RunLogUpdatedMessage
+  | MacroNotificationMessage
 
 export type ClientMessage =
   | { type: 'create_terminal'; backend?: TerminalBackendKind; cols?: number; rows?: number }

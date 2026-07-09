@@ -30,6 +30,7 @@ Flow V2 supports these action nodes:
 - `capture-source`
 - `extract_text`
 - `parallel`
+- `notify`
 
 Flow V2 controls:
 
@@ -148,3 +149,11 @@ Each lane:
 Each lane has a mandatory final `Output`; the action mechanically merges lane outputs into one `merged_text` artifact. Downstream `extract_text`, `send`, or `if.text_match` can reference that artifact.
 
 It does not allow nested parallel, lane-local `input`, parse/AI action, or lane-local `if/for/break/continue/finish`. `Output` is mandatory, final, and not deletable.
+
+## Notify
+
+`notify` emits a macro notification without writing to a terminal. It renders `message.parts` with the same ordered message-part semantics as `send`. Supported levels are `info`, `success`, `warning`, and `error`. Supported channels are `app`, `system`, and `telegram`.
+
+`app` is shell-deck's built-in floating notification with optional sound (`none | bell | chime | ping | pulse | success | warning | alert`); new UI nodes default to `success`. It renders as one floating notice; the user can close it with Dismiss or by clicking outside the notice, and that outside click is consumed before normal workspace interaction. A newer app notification replaces the current one. App sound volume is a browser-global Settings preference up to 1000% and is not stored in macro JSON. `system` is a browser Notification API notification; the browser asks for permission when needed and reports denied/unavailable state in the app floating notice. `telegram` references a local profile by `profileId`; macro template JSON must not contain bot tokens or channel ids. Runtime Telegram profiles live in ignored local config at `.shell-deck/notification-profiles.json`; the tracked example is `config/notification-profiles.example.json`. The Macro editor renders Telegram profile ids as a select populated from the local runtime config; it does not expose token or channel id fields. App floating notices and Telegram messages include notification time, notification id, run id, and step id metadata.
+
+`notify.onFailure` is `continue | pause | fail`. It applies to server-side delivery failures such as missing Telegram profile or Telegram HTTP failure. Browser-local permission denial for `system` is not a runner failure. Notify is not a parallel lane action in V0; put it after parent `parallel` fan-in when merged output is needed.

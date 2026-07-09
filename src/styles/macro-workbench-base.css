@@ -449,6 +449,7 @@
 .floating-insertion-palette {
   position: relative;
   z-index: 81;
+  box-sizing: border-box;
   width: min(360px, calc(100vw - 32px));
   max-height: min(var(--palette-max-height, 560px), calc(100vh - 24px));
   overflow: auto;

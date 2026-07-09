@@ -283,3 +283,37 @@ test("parallel lane output produces merged_text and must be final", () => {
   parallel.lanes[0].body.push({ id: "late_send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, enter: true })
   expect(issues(bad)).toContain("parallel lane output must be the final node")
 })
+
+test("Flow V2 accepts notify action with app system and telegram channels", () => {
+  const template = validTemplate()
+  template.body.splice(3, 0, {
+    id: "notify_done",
+    type: "notify",
+    level: "success",
+    title: "Done",
+    message: { parts: [{ kind: "text", text: "finished" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } }] },
+    channels: [{ kind: "app", toast: true, sound: "chime" }, { kind: "system" }, { kind: "telegram", profileId: "default" }],
+    onFailure: "continue",
+  })
+  expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
+
+  const bad = validTemplate()
+  bad.body.push({ id: "notify_bad", type: "notify", level: "loud", title: "", message: { parts: [] }, channels: [], onFailure: "retry" } as never)
+  const text = issues(bad)
+  expect(text).toContain("level must be info, success, warning or error")
+  expect(text).toContain("title:value must be a string with length >= 1")
+  expect(text).toContain("channels:notify channels must not be empty")
+  expect(text).toContain("onFailure:onFailure must be continue, pause or fail")
+
+  const badSound = validTemplate()
+  badSound.body.push({ id: "notify_bad_sound", type: "notify", level: "info", title: "Done", message: { parts: [] }, channels: [{ kind: "app", toast: true, sound: "loud" }], onFailure: "continue" } as never)
+  expect(issues(badSound)).toContain("channels[0].sound:sound must be none, bell, chime, ping, pulse, success, warning or alert")
+})
+
+test("notify does not allow Telegram secrets in macro JSON", () => {
+  const template = validTemplate()
+  template.body.push({ id: "notify_secret", type: "notify", level: "info", title: "Done", message: { parts: [] }, channels: [{ kind: "telegram", profileId: "default", botToken: "secret", channelId: "-1001" }], onFailure: "continue" } as never)
+  const text = issues(template)
+  expect(text).toContain("channels[0].botToken:extra Flow V2 field is not allowed")
+  expect(text).toContain("channels[0].channelId:extra Flow V2 field is not allowed")
+})

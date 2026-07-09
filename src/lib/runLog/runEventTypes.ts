@@ -45,6 +45,9 @@ export const RUN_EVENT_KINDS = [
   'parallel_send_capture_item_started',
   'parallel_send_capture_item_completed',
   'parallel_send_capture_joined',
+  'notification_requested',
+  'notification_delivered',
+  'notification_failed',
 ] as const
 
 export type RunEventKind = typeof RUN_EVENT_KINDS[number]

@@ -27,9 +27,11 @@ test('macro GUI smoke uses a real shell terminal for send capture and text_match
   expect(imported.status()).toBe(201)
 
   await page.goto('/?configId=' + configId)
-  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
+  await page.getByTestId('macro-template-drawer').click()
+  await expect(page.getByTestId('macro-template-drawer-body')).toBeVisible()
   await expect(page.getByTestId('macro-template-item')).toContainText('Real Shell GUI Template')
   await page.getByTestId('macro-template-select').selectOption('real_shell_gui_template')
+  await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 10000 })
   await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_010/)

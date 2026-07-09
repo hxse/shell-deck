@@ -42,6 +42,9 @@ const STEP_SCOPED = new Set<RunEventKind>([
   'parallel_send_capture_item_started',
   'parallel_send_capture_item_completed',
   'parallel_send_capture_joined',
+  'notification_requested',
+  'notification_delivered',
+  'notification_failed',
 ])
 const KIND_SET = new Set<string>(RUN_EVENT_KINDS)
 

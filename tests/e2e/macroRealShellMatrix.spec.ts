@@ -40,9 +40,11 @@ test('real shell terminal target refs support index id and alias', async ({ page
   ]))
 
   await page.goto('/?configId=' + configId)
-  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
+  await page.getByTestId('macro-template-drawer').click()
+  await expect(page.getByTestId('macro-template-drawer-body')).toBeVisible()
   await expect(page.getByTestId('macro-template-item')).toContainText('Target Ref Smoke')
   await page.getByTestId('macro-template-select').selectOption('target_refs')
+  await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 10000 })
   await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_TARGET_ID_010/)
@@ -63,9 +65,11 @@ test('wait duration and user-continue complete from GUI controls', async ({ page
   ]))
 
   await page.goto('/?configId=' + configId)
-  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
+  await page.getByTestId('macro-template-drawer').click()
+  await expect(page.getByTestId('macro-template-drawer-body')).toBeVisible()
   await expect(page.getByTestId('macro-template-item')).toContainText('Wait Modes Smoke')
   await page.getByTestId('macro-template-select').selectOption('wait_modes')
+  await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('waiting', { timeout: 5000 })
   await expect(page.getByTestId('macro-control-pause-resume')).toHaveText('Resume')
@@ -85,9 +89,11 @@ test('real shell text_match if handles simple true branch', async ({ page, reque
   ]))
 
   await page.goto('/?configId=' + configId)
-  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
+  await page.getByTestId('macro-template-drawer').click()
+  await expect(page.getByTestId('macro-template-drawer-body')).toBeVisible()
   await expect(page.getByTestId('macro-template-item')).toContainText('Text Match Branch')
   await page.getByTestId('macro-template-select').selectOption('text_match_branch')
+  await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 10000 })
   const runs = await (await request.get('/api/configs/' + configId + '/runs')).json() as { runs: Array<{ runId: string }> }
@@ -124,9 +130,11 @@ test("real shell parallel lane fan-out fan-in uses real terminals", async ({ pag
   ]))
 
   await page.goto("/?configId=" + configId)
-  await page.getByTestId("macro-template-drawer").evaluate((element: HTMLDetailsElement) => { element.open = true })
+  await page.getByTestId("macro-template-drawer").click()
+  await expect(page.getByTestId("macro-template-drawer-body")).toBeVisible()
   await expect(page.getByTestId("macro-template-item")).toContainText("Real Parallel Lane Output")
   await page.getByTestId("macro-template-select").selectOption("real_parallel_lane_output")
+  await page.getByTestId("macro-template-summary").click()
   await page.getByTestId("macro-control-start").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 10000 })
   const runs = await (await request.get("/api/configs/" + configId + "/runs")).json() as { runs: Array<{ runId: string }> }

@@ -1,0 +1,11 @@
+{
+  "telegram": {
+    "profiles": {
+      "default": {
+        "botToken": "123456:replace-me",
+        "channelId": "-1001234567890",
+        "disableWebPagePreview": true
+      }
+    }
+  }
+}

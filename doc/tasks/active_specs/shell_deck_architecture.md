@@ -15,7 +15,7 @@ shell-deck V0 is a local-first browser terminal deck plus macro runner. The desi
 
 ## Storage
 
-Default local storage is under `SHELL_DECK_DATA_ROOT` if set, otherwise `.shell-deck/` relative to the process working directory. Stored data includes macro templates, run logs, artifacts, AgentEvent JSONL, workspace panel layout, project prompts, and global prompts.
+Default local storage is under `SHELL_DECK_DATA_ROOT` if set, otherwise `.shell-deck/` relative to the process working directory. Stored data includes macro templates, run logs, artifacts, AgentEvent JSONL, workspace panel layout, project prompts, global prompts, and local notification profiles.
 
 ## Entrypoints
 

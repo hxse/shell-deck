@@ -5,12 +5,14 @@
   import MacroStepList from "./MacroStepList.svelte"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
-  let { draft = $bindable<MacroTemplate | null>(), terminals, indexMap, validation, insertionPaletteMode } = $props<{
+  let { draft = $bindable<MacroTemplate | null>(), terminals, indexMap, validation, insertionPaletteMode, telegramProfileIds = [], telegramProfilesError = '' } = $props<{
     draft: MacroTemplate | null
     terminals: TerminalSnapshot[]
     indexMap: TerminalIndexMapItem[]
     validation: ValidationResult
     insertionPaletteMode: MacroInsertionPaletteMode
+    telegramProfileIds?: string[]
+    telegramProfilesError?: string
   }>()
 
 
@@ -120,6 +122,8 @@
         {defaultCondition}
         {artifactChoices}
         {insertionPaletteMode}
+        {telegramProfileIds}
+        {telegramProfilesError}
       />
     </main>
   </div>

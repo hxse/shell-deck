@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { MacroRunnerSnapshot } from '../../macro/runnerTypes'
   import type { MacroTemplate, TemplateSummary } from '../../macro/templateTypes'
-  import type { MacroInsertionPaletteMode } from '../../workspace/uiLayoutTypes'
   import MacroRunDock from './MacroRunDock.svelte'
   import MacroTemplateSelector from './MacroTemplateSelector.svelte'
 
@@ -19,8 +18,6 @@
     runner,
     statusText,
     runnerInput,
-    insertionPaletteMode,
-    onInsertionPaletteModeChange,
     onTemplateSearchChange,
     onSelectTemplate,
     onCreateTemplate,
@@ -48,8 +45,6 @@
     runner: MacroRunnerSnapshot | null
     statusText: string
     runnerInput: string
-    insertionPaletteMode: MacroInsertionPaletteMode
-    onInsertionPaletteModeChange: (mode: MacroInsertionPaletteMode) => void
     onTemplateSearchChange: (value: string) => void
     onSelectTemplate: (templateId: string) => void
     onCreateTemplate: () => void
@@ -108,15 +103,5 @@
     <button type="button" role="tab" aria-selected={macroView === 'editor'} class:active={macroView === 'editor'} data-testid="macro-tab-editor" onclick={() => onViewChange('editor')}>Editor</button>
     <button type="button" role="tab" aria-selected={macroView === 'json'} class:active={macroView === 'json'} data-testid="macro-tab-json" onclick={() => onViewChange('json')}>JSON</button>
     <button type="button" role="tab" aria-selected={macroView === 'trace'} class:active={macroView === 'trace'} data-testid="macro-tab-trace" onclick={() => onViewChange('trace')}>Trace</button>
-    <button
-      type="button"
-      class="macro-insertion-placement-toggle"
-      data-testid="macro-insertion-placement-toggle"
-      aria-pressed={insertionPaletteMode === 'center'}
-      title={insertionPaletteMode === 'anchored' ? 'Insertion palette opens near the clicked button' : 'Insertion palette opens in the center'}
-      onclick={() => onInsertionPaletteModeChange(insertionPaletteMode === 'anchored' ? 'center' : 'anchored')}
-    >
-      Insert: {insertionPaletteMode === 'anchored' ? 'near' : 'center'}
-    </button>
   </div>
 </div>

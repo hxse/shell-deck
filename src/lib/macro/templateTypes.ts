@@ -4,6 +4,14 @@ export type TerminalTarget = TerminalRef
 export type TimeoutAction = "pause" | "fail" | "finish" | "continue"
 export type BranchOperator = "==" | "!=" | "is_null"
 export type SignalType = "boolean-null" | "string-enum"
+export type NotificationLevel = "info" | "success" | "warning" | "error"
+export type NotificationFailureAction = "continue" | "pause" | "fail"
+export type NotificationSound = "none" | "bell" | "chime" | "ping" | "pulse" | "success" | "warning" | "alert"
+
+export type NotifyChannel =
+  | { kind: "app"; toast: boolean; sound: NotificationSound }
+  | { kind: "system" }
+  | { kind: "telegram"; profileId: string }
 
 export type BooleanNullRegexRule = {
   signal: string
@@ -99,6 +107,16 @@ export type SendNode = {
   enter: boolean
 }
 
+export type NotifyNode = {
+  id: string
+  type: "notify"
+  level: NotificationLevel
+  title: string
+  message: MessageSpec
+  channels: NotifyChannel[]
+  onFailure: NotificationFailureAction
+}
+
 export type InputNode = {
   id: string
   type: "input"
@@ -163,7 +181,7 @@ export type ParallelNode = {
   onLaneFail: "pause" | "fail"
 }
 
-export type FlowV2ActionNode = SendNode | InputNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
+export type FlowV2ActionNode = SendNode | NotifyNode | InputNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
 
 export type FlowV2IfBranch = {
   kind: "if" | "elif"

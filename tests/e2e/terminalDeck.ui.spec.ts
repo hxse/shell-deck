@@ -71,8 +71,12 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
   await expect(late.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`).getByTestId('terminal-host')).toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)
 
   await expect(first.getByTestId('terminal-tab').first()).toHaveAttribute('draggable', 'false')
+  await first.getByTestId('settings-button').click()
+  await expect(first.getByTestId('settings-popover')).toBeVisible()
   await first.getByTestId('tab-drag-toggle').click()
   await expect(first.getByTestId('terminal-tab').first()).toHaveAttribute('draggable', 'true')
+  await first.getByTestId('settings-dismiss-layer').click()
+  await expect(first.getByTestId('settings-popover')).toHaveCount(0)
   await first.getByTestId('terminal-tab').first().dragTo(first.getByTestId('terminal-tab').nth(1))
   await expect(second.getByTestId('terminal-tab').nth(1)).toHaveAttribute('data-terminal-id', terminalId!)
 

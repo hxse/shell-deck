@@ -1,7 +1,10 @@
 import { expect, test } from 'playwright/test'
 
 async function openTemplateDrawer(page: { getByTestId: (id: string) => any }) {
-  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
+  if (await page.getByTestId('macro-template-drawer-body').count() === 0) {
+    await page.getByTestId('macro-template-drawer').click()
+  }
+  await expect(page.getByTestId('macro-template-drawer-body')).toBeVisible()
 }
 
 function boxesOverlap(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
@@ -21,11 +24,24 @@ test('Macro node insertion uses local anchors and floating palette', async ({ pa
   await page.goto('/?configId=macro-node-insertion-e2e')
   await openTemplateDrawer(page)
   await page.getByTestId('macro-create').click()
+  await page.getByTestId('macro-template-summary').click()
 
   await expect(page.getByTestId('macro-step-tool-rail')).toHaveCount(0)
   await expect(page.getByTestId('macro-insertion-palette')).toHaveCount(0)
   await expect(page.getByTestId('macro-run-controls')).toBeVisible()
+  await page.getByTestId('settings-button').click()
+  await expect(page.getByTestId('settings-popover')).toBeVisible()
   await expect(page.getByTestId('macro-insertion-placement-toggle')).toHaveText('Insert: near')
+  await expect(page.getByTestId('notification-volume')).toHaveValue('240')
+  await expect(page.getByTestId('notification-volume')).toHaveAttribute('max', '1000')
+  await expect(page.getByTestId('notification-success-sound-test')).toHaveText('Play success sound')
+  await page.getByTestId('notification-success-sound-test').click()
+  await page.getByTestId('settings-dismiss-layer').click()
+  await expect(page.getByTestId('settings-popover')).toHaveCount(0)
+  await page.getByTestId('settings-button').click()
+  await expect(page.getByTestId('settings-popover')).toBeVisible()
+  await page.getByTestId('settings-dismiss-layer').click()
+  await expect(page.getByTestId('settings-popover')).toHaveCount(0)
 
   await expect(page.getByTestId('empty-body-add')).toBeVisible()
   const emptyAdd = page.getByTestId('empty-body-add').first()
@@ -58,8 +74,12 @@ test('Macro node insertion uses local anchors and floating palette', async ({ pa
   await expect(emptyAdd).toBeFocused()
   await expect(page.getByTestId('macro-step-list')).toContainText('0 nodes')
 
+  await page.getByTestId('settings-button').click()
+  await expect(page.getByTestId('settings-popover')).toBeVisible()
   await page.getByTestId('macro-insertion-placement-toggle').click()
   await expect(page.getByTestId('macro-insertion-placement-toggle')).toHaveText('Insert: center')
+  await page.getByTestId('settings-dismiss-layer').click()
+  await expect(page.getByTestId('settings-popover')).toHaveCount(0)
   await emptyAdd.click()
   await expect(page.getByTestId('macro-insertion-mode')).toHaveAttribute('data-placement-mode', 'center')
   const centeredBox = await page.getByTestId('macro-insertion-palette').boundingBox()
@@ -69,8 +89,12 @@ test('Macro node insertion uses local anchors and floating palette', async ({ pa
   expect(Math.abs(centeredBox!.x + centeredBox!.width / 2 - viewport!.width / 2)).toBeLessThan(24)
   expect(Math.abs(centeredBox!.y + centeredBox!.height / 2 - viewport!.height / 2)).toBeLessThan(48)
   await page.keyboard.press('Escape')
+  await page.getByTestId('settings-button').click()
+  await expect(page.getByTestId('settings-popover')).toBeVisible()
   await page.getByTestId('macro-insertion-placement-toggle').click()
   await expect(page.getByTestId('macro-insertion-placement-toggle')).toHaveText('Insert: near')
+  await page.getByTestId('settings-dismiss-layer').click()
+  await expect(page.getByTestId('settings-popover')).toHaveCount(0)
 
   await page.getByTestId('empty-body-add').first().click()
   await page.getByTestId('add-step-send').click()
@@ -168,6 +192,7 @@ test('empty imported finish action body inserts action from empty body affordanc
   await page.goto('/?configId=' + configId)
   await openTemplateDrawer(page)
   await page.getByTestId('macro-template-select').selectOption('control_empty_template')
+  await page.getByTestId('macro-template-summary').click()
   await expect(page.getByTestId('macro-step-list')).toContainText('finish action body')
 
   await page.getByTestId('empty-body-add').first().click()

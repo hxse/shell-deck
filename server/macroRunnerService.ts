@@ -7,6 +7,8 @@ import type {
   InputNode,
   MacroTemplate,
   MessageSpec,
+  NotifyChannel,
+  NotifyNode,
   ParallelLane,
   ParallelLaneNode,
   ParallelLaneOutputNode,
@@ -28,6 +30,7 @@ import { RunEventStore } from "../src/lib/runLog/runEventStore"
 import type { TerminalSnapshot } from "../src/lib/protocol"
 import { MacroTemplateStore } from "../src/lib/macro/templateStore"
 import { TerminalDeckManager } from "./terminalDeckManager"
+import { NotificationService, type NotificationDispatcher } from "./notificationService"
 
 type ControlResult = "completed" | "suspended" | "break" | "continue" | "finish"
 type CaptureExecutionResult = { artifactRef: string; text: string }
@@ -65,6 +68,7 @@ export class MacroRunnerService {
     readonly runEventStore: RunEventStore,
     readonly agentEventStore = new AgentEventStore(runEventStore.rootDir),
     readonly parserRuntime = new ParserRuntime(runEventStore),
+    readonly notificationService: NotificationDispatcher = new NotificationService(runEventStore.rootDir),
   ) {}
 
   snapshot(configId: string): MacroRunnerSnapshot {
@@ -208,6 +212,7 @@ export class MacroRunnerService {
     if (node.type === "if") return await this.executeIf(runtime, node, skipCompleted)
     if (node.type === "for") return await this.executeFor(runtime, node)
     if (node.type === "send") return await this.executeSend(runtime, node)
+    if (node.type === "notify") return await this.executeNotify(runtime, node)
     if (node.type === "input") return await this.executeInput(runtime, node)
     if (node.type === "wait") return await this.executeWait(runtime, node)
     if (node.type === "capture-source") return await this.executeCapture(runtime, node.id, node.capture)
@@ -272,6 +277,54 @@ export class MacroRunnerService {
     if (!result.ok) throw new Error("terminal_input_rejected:" + result.reason)
     await this.completeStep(runtime, node.id)
     return "completed"
+  }
+
+  private async executeNotify(runtime: RuntimeState, node: NotifyNode): Promise<ControlResult> {
+    await this.startStep(runtime, node.id)
+    const message = this.renderMessage(runtime, node.message)
+    const createdAt = new Date().toISOString()
+    const notificationId = "notif_" + node.id + "_" + Date.now()
+    const artifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "notification-message", message, "txt", node.id)
+    const channels = node.channels.map((channel) => this.sanitizeNotifyChannel(channel))
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "notification_requested", stepId: node.id, summary: "Notification requested: " + node.title, data: { notificationId, createdAt, level: node.level, title: node.title, channels, onFailure: node.onFailure, message: { artifactRef: artifact.artifact.artifactRef, chars: message.length } } })
+
+    const browserChannels = channels.filter((channel): channel is Extract<ReturnType<MacroRunnerService["sanitizeNotifyChannel"]>, { kind: "app" | "system" }> => channel.kind === "app" || channel.kind === "system")
+    if (browserChannels.length > 0) {
+      this.manager.broadcastConfigMessage(runtime.configId, { type: "macro_notification", configId: runtime.configId, runId: runtime.runId, stepId: node.id, notificationId, createdAt, level: node.level, title: node.title, message, channels: browserChannels })
+    }
+
+    const failures: string[] = []
+    for (const channel of node.channels) {
+      if (channel.kind !== "telegram") continue
+      const result = await this.notificationService.sendTelegram({ profileId: channel.profileId, title: node.title, message, level: node.level, notificationId, runId: runtime.runId, stepId: node.id, createdAt })
+      if (result.ok) {
+        await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "notification_delivered", stepId: node.id, summary: "Telegram notification delivered: " + channel.profileId, data: { notificationId, createdAt, channel: { kind: "telegram", profileId: channel.profileId }, status: result.status } })
+      } else {
+        failures.push(result.code)
+        await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "notification_failed", stepId: node.id, summary: "Telegram notification failed: " + channel.profileId, data: { notificationId, createdAt, channel: { kind: "telegram", profileId: channel.profileId }, code: result.code, status: result.status ?? null, message: result.message } })
+      }
+    }
+
+    if (failures.length > 0) {
+      const messageText = "Notification failed: " + failures.join(", ")
+      if (node.onFailure === "fail") {
+        await this.failRun(runtime, "notification_failed", messageText, node.id)
+        return "suspended"
+      }
+      if (node.onFailure === "pause") {
+        await this.pauseRun(runtime, "notification_failed", messageText, node.id)
+        return "suspended"
+      }
+    }
+
+    await this.completeStep(runtime, node.id)
+    return "completed"
+  }
+
+  private sanitizeNotifyChannel(channel: NotifyChannel): NotifyChannel {
+    if (channel.kind === "telegram") return { kind: "telegram", profileId: channel.profileId }
+    if (channel.kind === "system") return { kind: "system" }
+    return { kind: "app", toast: channel.toast, sound: channel.sound }
   }
 
   private async executeInput(runtime: RuntimeState, node: InputNode): Promise<ControlResult> {

@@ -52,6 +52,7 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await expect(page.getByTestId("macro-panel")).toBeVisible()
   await expect(page.getByTestId("macro-template-item")).toContainText("Runner Input Template")
   await page.getByTestId("macro-template-select").selectOption("runner_input_template")
+  await page.getByTestId("macro-template-summary").click()
 
   await page.getByTestId("macro-control-start").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("waiting_user_input")
@@ -75,6 +76,7 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await otherPage.getByTestId("macro-template-summary").click()
   await expect(otherPage.getByTestId("macro-template-item")).toContainText("Runner Other Template")
   await otherPage.getByTestId("macro-template-select").selectOption("runner_other_template")
+  await otherPage.getByTestId("macro-template-summary").click()
   await otherPage.getByTestId("macro-control-start").click()
   await expect(otherPage.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
   await expect(otherPage.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:other-run/)
@@ -93,6 +95,7 @@ test("macro runner auto-saves draft before start and completes send", async ({ p
   await page.getByTestId("macro-template-summary").click()
 
   await page.getByTestId("macro-create").click()
+  await page.getByTestId("macro-template-summary").click()
   await page.getByTestId("empty-body-add").first().click()
   await page.getByTestId("add-step-send").click()
   await page.getByTestId("message-add-text").first().click()
@@ -111,6 +114,7 @@ test("macro runner auto-refreshes after delayed live run completes without manua
   await page.getByTestId("macro-template-summary").click()
   await expect(page.getByTestId("macro-template-item")).toContainText("Runner Delayed Template")
   await page.getByTestId("macro-template-select").selectOption("runner_delayed_template")
+  await page.getByTestId("macro-template-summary").click()
 
   await page.getByTestId("macro-control-start").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("running")

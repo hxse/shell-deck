@@ -50,6 +50,7 @@ test('macro prompt workbench uses selectors, grouped controls, trace tabs and li
   await expect(page.getByTestId('macro-template-actions')).toContainText('Import')
   await expect(page.getByTestId('macro-template-actions')).toContainText('Export')
   await expect(page.getByTestId('macro-template-actions')).toContainText('Delete')
+  await page.getByTestId('macro-template-summary').click()
 
   await expect(page.getByTestId('macro-run-controls')).toBeVisible()
   await page.getByTestId('macro-tab-json').click()

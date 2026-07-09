@@ -1,7 +1,10 @@
 import { expect, test, type Locator } from 'playwright/test'
 
 async function openTemplateDrawer(page: { getByTestId: (id: string) => Locator }) {
-  await page.getByTestId("macro-template-drawer").evaluate((element: HTMLDetailsElement) => { element.open = true })
+  if (await page.getByTestId("macro-template-drawer-body").count() === 0) {
+    await page.getByTestId("macro-template-drawer").click()
+  }
+  await expect(page.getByTestId("macro-template-drawer-body")).toBeVisible()
 }
 
 async function optionValue(select: Locator, text: string): Promise<string> {
@@ -31,6 +34,7 @@ test('macro controls filter wait and capture choices by live tab capability', as
   await openTemplateDrawer(page)
 
   await page.getByTestId('macro-create').click()
+  await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('empty-body-add').first().click()
   await page.getByTestId('add-step-wait').click()
   await page.getByTestId('wait-mode').selectOption('terminal-quiet')

@@ -14,12 +14,11 @@
 
   type MacroView = 'editor' | 'json' | 'trace'
 
-  let { configId, terminals, indexMap, insertionPaletteMode, onInsertionPaletteModeChange, onResetWidth, runLogRefreshToken = 0, runLogRefreshEvent = null } = $props<{
+  let { configId, terminals, indexMap, insertionPaletteMode, onResetWidth, runLogRefreshToken = 0, runLogRefreshEvent = null } = $props<{
     configId: string
     terminals: TerminalSnapshot[]
     indexMap: TerminalIndexMapItem[]
     insertionPaletteMode: MacroInsertionPaletteMode
-    onInsertionPaletteModeChange: (mode: MacroInsertionPaletteMode) => void
     onResetWidth?: () => void
     runLogRefreshToken?: number
     runLogRefreshEvent?: RunLogUpdatedMessage | null
@@ -37,6 +36,8 @@
   let runner = $state<MacroRunnerSnapshot | null>(null)
   let runnerInput = $state('')
   let runnerInputKey = $state('')
+  let telegramProfileIds = $state<string[]>([])
+  let telegramProfilesError = $state('')
 
   const validation = $derived(draft ? validateMacroTemplate(draft, { indexMap, terminals }) : { ok: true, issues: [] })
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
@@ -73,6 +74,7 @@
     try {
       const api = client()
       catalog = await api.profileCatalog()
+      await refreshTelegramProfileIds()
       templates = await api.list()
       if (selectedTemplateId && templates.some((item) => item.id === selectedTemplateId)) {
         draft = await api.read(selectedTemplateId)
@@ -196,6 +198,24 @@
     }
   }
 
+  async function refreshTelegramProfileIds() {
+    telegramProfilesError = ''
+    try {
+      telegramProfileIds = await loadTelegramProfileIds()
+    } catch (error) {
+      telegramProfileIds = []
+      telegramProfilesError = messageOf(error)
+    }
+  }
+
+  async function loadTelegramProfileIds(): Promise<string[]> {
+    const response = await fetch('/api/notification-profiles/telegram')
+    if (!response.ok) throw new Error('telegram_profiles_load_failed')
+    const body = await response.json() as { ok?: boolean; error?: unknown; profiles?: Array<{ profileId?: unknown }> }
+    if (body.ok === false) throw new Error(typeof body.error === 'string' ? body.error : 'telegram_profiles_unavailable')
+    return (body.profiles ?? []).flatMap((profile) => typeof profile.profileId === 'string' ? [profile.profileId] : [])
+  }
+
   function updateDraft(mutator: (template: MacroTemplate) => void) {
     if (!draft) return
     const next = JSON.parse(JSON.stringify(draft)) as MacroTemplate
@@ -284,8 +304,6 @@
     {runner}
     {statusText}
     {runnerInput}
-    {insertionPaletteMode}
-    onInsertionPaletteModeChange={onInsertionPaletteModeChange}
     onTemplateSearchChange={(value) => { templateSearch = value }}
     onSelectTemplate={selectTemplate}
     onCreateTemplate={createTemplate}
@@ -306,7 +324,7 @@
   {#if macroView === 'trace'}
     <MacroTraceView {configId} refreshToken={runLogRefreshToken} refreshEvent={runLogRefreshEvent} templateId={selectedTemplateId} templateName={selectedTemplateName} />
   {:else if macroView === 'editor'}
-    <MacroEditorShell bind:draft {terminals} {indexMap} {validation} {insertionPaletteMode} />
+    <MacroEditorShell bind:draft {terminals} {indexMap} {validation} {insertionPaletteMode} {telegramProfileIds} {telegramProfilesError} />
   {:else}
     <MacroJsonView {draft} {validation} {jsonPreview} onSaveTemplate={saveTemplate} onExportTemplate={exportTemplate} />
   {/if}

@@ -3,7 +3,7 @@
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
   import ParallelLaneTabs from "./ParallelLaneTabs.svelte"
   import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
+  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
   import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
@@ -22,6 +22,8 @@
     defaultCondition,
     artifactChoices,
     insertionPaletteMode,
+    telegramProfileIds = [],
+    telegramProfilesError = '',
   } = $props<{
     draft: MacroTemplate
     validation: ValidationResult
@@ -33,6 +35,8 @@
     defaultCondition: (template: MacroTemplate) => TextMatchCondition
     artifactChoices: (template: MacroTemplate) => ArtifactChoice[]
     insertionPaletteMode: MacroInsertionPaletteMode
+    telegramProfileIds?: string[]
+    telegramProfilesError?: string
   }>()
 
   let insertionAnchor = $state<InsertionAnchor | null>(null)
@@ -53,6 +57,7 @@
 
   const actionPaletteItems: Array<{ type: InsertableNodeType; label: string; testId: string }> = [
     { type: "send", label: "send", testId: "add-step-send" },
+    { type: "notify", label: "notify", testId: "add-step-notify" },
     { type: "input", label: "input", testId: "add-step-input" },
     { type: "wait", label: "wait", testId: "add-step-wait" },
     { type: "capture-source", label: "capture", testId: "add-step-capture" },
@@ -102,11 +107,20 @@
     if (!(target instanceof HTMLElement)) return null
     const rect = target.getBoundingClientRect()
     const margin = 12
+    const gap = 8
     const estimatedHalfWidth = 180
+    const estimatedHeight = Math.min(360, Math.max(0, window.innerHeight - margin * 2))
+    const preferred = rect.top > window.innerHeight / 2 ? "above" : "below"
+    const aboveSpace = Math.max(0, rect.top - gap - margin)
+    const belowSpace = Math.max(0, window.innerHeight - rect.bottom - gap - margin)
+    const placement = preferred === "above"
+      ? aboveSpace >= Math.min(estimatedHeight, belowSpace) ? "above" : "below"
+      : belowSpace >= Math.min(estimatedHeight, aboveSpace) ? "below" : "above"
+    const availableHeight = placement === "above" ? aboveSpace : belowSpace
+    const maxHeight = Math.max(0, availableHeight)
     const x = clamp(rect.left + rect.width / 2, margin + estimatedHalfWidth, window.innerWidth - margin - estimatedHalfWidth)
-    const placement = rect.top > window.innerHeight / 2 ? "above" : "below"
-    const y = placement === "above" ? Math.max(margin, rect.top - 8) : Math.min(window.innerHeight - margin, rect.bottom + 8)
-    return { x, y, placement }
+    const y = placement === "above" ? rect.top - gap : rect.bottom + gap
+    return { x, y, placement, maxHeight }
   }
 
   async function settleInsertionPalette(shouldFocus: boolean) {
@@ -131,8 +145,12 @@
       : belowSpace >= Math.min(height, aboveSpace) ? "below" : "above"
     const availableHeight = placement === "above" ? aboveSpace : belowSpace
     const maxHeight = Math.max(0, availableHeight)
+    const effectiveHeight = maxHeight > 0 ? Math.min(height, maxHeight) : height
     const x = clamp(triggerRect.left + triggerRect.width / 2, margin + width / 2, window.innerWidth - margin - width / 2)
-    const y = placement === "above" ? triggerRect.top - gap : triggerRect.bottom + gap
+    const rawY = placement === "above" ? triggerRect.top - gap : triggerRect.bottom + gap
+    const y = placement === "above"
+      ? clamp(rawY, margin + effectiveHeight, window.innerHeight - margin)
+      : clamp(rawY, margin, window.innerHeight - margin)
     insertionPosition = { x, y, placement, maxHeight }
   }
 
@@ -187,6 +205,43 @@
     const terminal = firstTerminalTarget()
     const kind = captureKindsForTarget(terminal)[0] ?? "terminal-buffer"
     return defaultCaptureForTarget(kind, terminal)
+  }
+
+  function notifyChannel(node: Extract<FlowV2Node, { type: "notify" }>, kind: NotifyChannel["kind"]): NotifyChannel | undefined {
+    return node.channels.find((channel) => channel.kind === kind)
+  }
+
+  function defaultNotifyChannel(kind: NotifyChannel["kind"]): NotifyChannel {
+    if (kind === "telegram") return { kind, profileId: "default" }
+    if (kind === "system") return { kind }
+    return { kind, toast: true, sound: "success" }
+  }
+
+  function setNotifyChannelEnabled(nodeId: string, kind: NotifyChannel["kind"], enabled: boolean) {
+    updateNode(nodeId, (node) => {
+      if (node.type !== "notify") return
+      const exists = node.channels.some((channel) => channel.kind === kind)
+      if (enabled && !exists) node.channels.push(defaultNotifyChannel(kind))
+      if (!enabled) node.channels = node.channels.filter((channel) => channel.kind !== kind)
+    })
+  }
+
+  function telegramProfileChoices(currentProfileId: string): string[] {
+    const choices = [...telegramProfileIds]
+    if (currentProfileId && !choices.includes(currentProfileId)) choices.unshift(currentProfileId)
+    return choices
+  }
+
+  function updateNotifyChannel(nodeId: string, kind: NotifyChannel["kind"], mutator: (channel: NotifyChannel) => void) {
+    updateNode(nodeId, (node) => {
+      if (node.type !== "notify") return
+      let channel = node.channels.find((item) => item.kind === kind)
+      if (!channel) {
+        channel = defaultNotifyChannel(kind)
+        node.channels.push(channel)
+      }
+      mutator(channel)
+    })
   }
 
   function setWaitMode(item: WaitNode, mode: string, terminal: TerminalTarget | null = null) {
@@ -575,6 +630,7 @@
     const terminal = firstTerminalTarget()
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
     if (type === "send") return { id, type, terminal, message: { parts: [] }, enter: true }
+    if (type === "notify") return { id, type, level: "info", title: "Macro notification", message: { parts: [] }, channels: [{ kind: "app", toast: true, sound: "success" }], onFailure: "continue" }
     if (type === "input") return { id, type, terminal, prompt: "Input", allowEmpty: false, enter: true }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") return { id, type, capture: defaultCaptureForFirstTab() }
@@ -613,7 +669,7 @@
   }
 
   function isActionType(type: FlowV2Node["type"]): boolean {
-    return type === "send" || type === "input" || type === "wait" || type === "capture-source" || type === "extract_text" || type === "parallel"
+    return type === "send" || type === "notify" || type === "input" || type === "wait" || type === "capture-source" || type === "extract_text" || type === "parallel"
   }
 
   function isControlTerminalNode(node: FlowV2Node): node is Extract<FlowV2Node, { type: "break" | "continue" | "finish" }> {
@@ -710,6 +766,37 @@
       </label>
       {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send") item.message = message }), artifactChoicesBefore(node.id))}
       <label class="checkbox-row"><input type="checkbox" data-testid="send-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
+    {:else if node.type === "notify"}
+      <div class="macro-row">
+        <label>Level<select data-testid="notify-level" value={node.level} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "notify") item.level = event.currentTarget.value as NotificationLevel })}><option value="info">info</option><option value="success">success</option><option value="warning">warning</option><option value="error">error</option></select></label>
+        <label>On failure<select data-testid="notify-on-failure" value={node.onFailure} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "notify") item.onFailure = event.currentTarget.value as "continue" | "pause" | "fail" })}><option value="continue">continue</option><option value="pause">pause</option><option value="fail">fail</option></select></label>
+      </div>
+      <label>Title<input data-testid="notify-title" value={node.title} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "notify") item.title = event.currentTarget.value })} /></label>
+      {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "notify") item.message = message }), artifactChoicesBefore(node.id))}
+      <div class="message-part-row" data-testid="notify-channels">
+        <div class="step-title"><strong>Channels</strong></div>
+        <div class="macro-row">
+          <label class="checkbox-row"><input type="checkbox" data-testid="notify-channel-app" checked={Boolean(notifyChannel(node, "app"))} onchange={(event) => setNotifyChannelEnabled(node.id, "app", event.currentTarget.checked)} />app</label>
+          <label class="checkbox-row"><input type="checkbox" data-testid="notify-channel-system" checked={Boolean(notifyChannel(node, "system"))} onchange={(event) => setNotifyChannelEnabled(node.id, "system", event.currentTarget.checked)} />system</label>
+          <label class="checkbox-row"><input type="checkbox" data-testid="notify-channel-telegram" checked={Boolean(notifyChannel(node, "telegram"))} onchange={(event) => setNotifyChannelEnabled(node.id, "telegram", event.currentTarget.checked)} />telegram</label>
+        </div>
+        {#if notifyChannel(node, "app")?.kind === "app"}
+          {@const appChannel = notifyChannel(node, "app")}
+          {#if appChannel?.kind === "app"}
+            <div class="macro-row">
+              <label class="checkbox-row"><input type="checkbox" data-testid="notify-app-toast" checked={appChannel.toast} onchange={(event) => updateNotifyChannel(node.id, "app", (channel) => { if (channel.kind === "app") channel.toast = event.currentTarget.checked })} />Toast</label>
+              <label>Sound<select data-testid="notify-app-sound" value={appChannel.sound} onchange={(event) => updateNotifyChannel(node.id, "app", (channel) => { if (channel.kind === "app") channel.sound = event.currentTarget.value as "none" | "bell" | "chime" | "ping" | "pulse" | "success" | "warning" | "alert" })}><option value="success">success</option><option value="bell">bell</option><option value="chime">chime</option><option value="ping">ping</option><option value="pulse">pulse</option><option value="warning">warning</option><option value="alert">alert</option><option value="none">none</option></select></label>
+            </div>
+          {/if}
+        {/if}
+        {#if notifyChannel(node, "telegram")?.kind === "telegram"}
+          {@const telegramChannel = notifyChannel(node, "telegram")}
+          {#if telegramChannel?.kind === "telegram"}
+            <label>Telegram profile<select data-testid="notify-telegram-profile" value={telegramChannel.profileId} onchange={(event) => updateNotifyChannel(node.id, "telegram", (channel) => { if (channel.kind === "telegram") channel.profileId = event.currentTarget.value })}>{#each telegramProfileChoices(telegramChannel.profileId) as profileId}<option value={profileId}>{profileId}</option>{/each}</select></label>
+            {#if telegramProfilesError}<p class="macro-insertion-notice" data-testid="notify-telegram-profile-status">Telegram profiles unavailable: {telegramProfilesError}</p>{/if}
+          {/if}
+        {/if}
+      </div>
     {:else if node.type === "input"}
       <label>Target tab
         <select data-testid="input-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.terminal = targetFromChoice(event.currentTarget.value) })}>

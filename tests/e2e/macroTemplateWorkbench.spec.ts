@@ -2,7 +2,10 @@ import { expect, test } from 'playwright/test'
 import { readFileSync } from 'node:fs'
 
 async function openTemplateDrawer(page: { getByTestId: (id: string) => any }) {
-  await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => { element.open = true })
+  if (await page.getByTestId('macro-template-drawer-body').count() === 0) {
+    await page.getByTestId('macro-template-drawer').click()
+  }
+  await expect(page.getByTestId('macro-template-drawer-body')).toBeVisible()
 }
 
 test('macro template workbench edits, saves, exports, imports and deletes Flow V2 templates', async ({ page, request }) => {
@@ -12,21 +15,25 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await page.goto('/?configId=macro-workbench-e2e')
   await expect(page.getByTestId('macro-panel')).toBeVisible()
   await expect(page.getByTestId('macro-sticky-head')).toBeVisible()
-  expect(await page.getByTestId('macro-template-drawer').evaluate((element: HTMLDetailsElement) => element.open)).toBe(false)
+  await expect(page.getByTestId('macro-template-drawer-body')).toHaveCount(0)
   await openTemplateDrawer(page)
 
   await expect(page.getByTestId('terminal-tab')).toHaveCount(2)
   await expect(page.getByTestId('macro-import')).toBeEnabled()
   await expect(page.getByTestId('macro-export')).toBeDisabled()
+  await page.getByTestId('macro-template-dismiss-layer').click()
+  await expect(page.getByTestId('macro-template-drawer-body')).toHaveCount(0)
 
   await page.getByTestId('terminal-tab').first().dblclick()
   await page.getByTestId('terminal-alias-input').fill('reviewer')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('terminal-tab').first()).toHaveAttribute('data-terminal-alias', 'reviewer')
 
+  await openTemplateDrawer(page)
   await page.getByTestId('macro-create').click()
   await expect(page.getByTestId('macro-name')).toHaveValue('New Macro Template')
   await page.getByTestId('macro-name').fill('Review Fix Loop')
+  await page.getByTestId('macro-template-summary').click()
   await expect(page.getByTestId('macro-step-tool-rail')).toHaveCount(0)
   await expect(page.getByTestId('macro-insertion-palette')).toHaveCount(0)
   await page.getByTestId('empty-body-add').first().click()
@@ -182,7 +189,9 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByText('Saved', { exact: true })).toBeVisible()
 
   await page.reload()
+  await openTemplateDrawer(page)
   await expect(page.getByTestId('macro-template-item')).toHaveCount(1)
+  await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-tab-json').click()
   await expect(page.getByTestId('macro-json-preview')).toContainText('"Review Fix Loop"')
   await page.getByTestId('macro-tab-editor').click()

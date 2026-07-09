@@ -24,6 +24,7 @@ test("terminal-buffer capture flow records source kind, terminal id and artifact
   await page.getByTestId("macro-template-summary").click()
   await expect(page.getByTestId("macro-template-item")).toContainText("Capture Terminal Buffer")
   await page.getByTestId("macro-template-select").selectOption("capture_terminal_buffer_template")
+  await page.getByTestId("macro-template-summary").click()
   await page.getByTestId("macro-control-start").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
 

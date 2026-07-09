@@ -15,6 +15,7 @@ import { ParserRuntime, type AiJsonParserMode } from '../src/lib/parser/parserRu
 import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
 import { UiLayoutStore } from '../src/lib/workspace/uiLayoutStore'
 import { PromptStore } from '../src/lib/prompts/promptStore'
+import { NotificationService } from './notificationService'
 import type { PromptScope, PromptScopeFilter } from '../src/lib/prompts/promptTypes'
 
 export type ShellDeckServer = {
@@ -42,8 +43,9 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const agentEventStore = new AgentEventStore(runEventStore.rootDir)
   const uiLayoutStore = new UiLayoutStore()
   const promptStore = new PromptStore()
+  const notificationService = new NotificationService(runEventStore.rootDir)
   const aiJsonParser = options.aiJsonParser ?? 'disabled'
-  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore, new ParserRuntime(runEventStore, { aiJsonMode: aiJsonParser }))
+  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore, new ParserRuntime(runEventStore, { aiJsonMode: aiJsonParser }), notificationService)
   runEventStore.subscribe((update) => {
     manager.broadcastConfigMessage(update.configId, {
       type: 'run_log_updated',
@@ -79,7 +81,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       }
 
       try {
-        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner, agentEventStore, uiLayoutStore, promptStore)
+        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner, agentEventStore, uiLayoutStore, promptStore, notificationService)
       } catch (error) {
         return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400)
       }
@@ -124,7 +126,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
 }
 
-async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService, agentEventStore: AgentEventStore, uiLayoutStore: UiLayoutStore, promptStore: PromptStore): Promise<Response> {
+async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService, agentEventStore: AgentEventStore, uiLayoutStore: UiLayoutStore, promptStore: PromptStore, notificationService: NotificationService): Promise<Response> {
   if (url.pathname === '/health') {
     return json({ ok: true, bind: bindHost, aiJsonParser: macroRunner.parserRuntime.optionsLabel() })
   }
@@ -220,6 +222,13 @@ async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, 
   }
   if (url.pathname === '/api/macro/profile-catalog' && req.method === 'GET') {
     return json(PROFILE_CATALOG_SUMMARY)
+  }
+  if (url.pathname === '/api/notification-profiles/telegram' && req.method === 'GET') {
+    try {
+      return json({ ok: true, profiles: notificationService.listTelegramProfileIds().map((profileId) => ({ profileId })) })
+    } catch (error) {
+      return json({ ok: false, profiles: [], error: error instanceof Error ? error.message : 'notification_profiles_unavailable' })
+    }
   }
   const snapshotMatch = /^\/api\/configs\/([^/]+)\/snapshot$/.exec(url.pathname)
   if (snapshotMatch && req.method === 'GET') {

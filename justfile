@@ -121,6 +121,16 @@ test-022:
 test-023:
     bun run test:023
 
+test-024:
+    bun run test:024
+
+notification-config-init:
+    mkdir -p .shell-deck
+    cp -n config/notification-profiles.example.json .shell-deck/notification-profiles.json
+
+notification-telegram-smoke profile="default":
+    bun run scripts/smokeTelegramNotification.ts {{profile}}
+
 test-007: test-007-offline
 
 test-006: test-006-offline

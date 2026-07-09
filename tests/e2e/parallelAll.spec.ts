@@ -44,6 +44,7 @@ test("parallel e2e runs lane tabs and preserves merged artifact in run log", asy
   await page.getByTestId("macro-template-summary").click()
   await expect(page.getByTestId("macro-template-item")).toContainText("Parallel Lane Output")
   await page.getByTestId("macro-template-select").selectOption("parallel_e2e_template")
+  await page.getByTestId("macro-template-summary").click()
   await page.getByTestId("macro-control-start").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
 
