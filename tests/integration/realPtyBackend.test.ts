@@ -1,5 +1,7 @@
+import { hostname, userInfo } from 'node:os'
 import { expect, test } from 'bun:test'
 import type { ServerMessage } from '../../src/lib/protocol'
+import { defaultRealShellCwd } from '../../server/realPtyBackend'
 import { TerminalDeckManager } from '../../server/terminalDeckManager'
 
 test('real shell backend uses stdin pipe and returns shell output', async () => {
@@ -7,6 +9,17 @@ test('real shell backend uses stdin pipe and returns shell output', async () => 
   const terminal = manager.createTerminal('local', { backend: 'real', terminalId: 'term_real_a' })
   const messages: ServerMessage[] = []
   manager.connectClient('local', (message) => messages.push(message), 'real-client')
+
+  const expectedCwd = defaultRealShellCwd()
+  await waitFor(() => homePromptVisible(outputText(messages, terminal.terminalId)), 5000)
+  expect(outputText(messages, terminal.terminalId)).toContain('\x1b[1;92m')
+  manager.input('local', terminal.terminalId, 'printf "__SD_PWD__%s__" "$PWD"\r')
+  await waitFor(() => outputText(messages, terminal.terminalId).includes('__SD_PWD__'), 5000)
+  expect(outputText(messages, terminal.terminalId)).toContain('__SD_PWD__' + expectedCwd + '__')
+
+  manager.input('local', terminal.terminalId, 'alias ls\r')
+  await waitFor(() => outputText(messages, terminal.terminalId).includes("alias ls='ls --color=auto'"), 5000)
+  expect(outputText(messages, terminal.terminalId)).toContain("alias ls='ls --color=auto'")
 
   manager.input('local', terminal.terminalId, 'printf __SD_OK__\r')
   await waitFor(() => outputText(messages, terminal.terminalId).includes('__SD_OK__'), 5000)
@@ -50,4 +63,15 @@ function outputText(messages: ServerMessage[], terminalId: string) {
     .filter((message): message is Extract<ServerMessage, { type: 'pty_output' }> => message.type === 'pty_output' && message.terminalId === terminalId)
     .map((message) => message.data)
     .join('')
+}
+
+function homePromptVisible(text: string) {
+  const visibleText = stripAnsi(text)
+  const user = userInfo().username
+  const host = hostname().split('.')[0]
+  return visibleText.includes('[' + user + '@' + host + ':~]$ ') || visibleText.includes('[' + user + '@' + host + ':~]# ')
+}
+
+function stripAnsi(text: string) {
+  return text.replace(/\x1b\[[0-9;]*m/g, '')
 }

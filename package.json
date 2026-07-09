@@ -33,7 +33,8 @@
     "test:019": "bun test tests/001-offline.test.ts tests/unit/codexHookAdapter.test.ts tests/unit/agentEventIngest.test.ts tests/unit/flowV2Schema.test.ts tests/integration/agentEventCapture.test.ts",
     "test:020": "bun test tests/unit/terminalDeckManager.test.ts tests/integration/terminalDeck.ws.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/terminalDeck.ui.spec.ts tests/e2e/macroTemplateWorkbench.spec.ts",
     "test:021": "bun test tests/unit/tabCapabilities.test.ts tests/unit/tabCapabilityValidation.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTabCapabilities.spec.ts",
-    "test:022": "bun test tests/unit/flowV2Schema.test.ts tests/unit/macroTemplate.test.ts tests/unit/parallelAllValidator.test.ts tests/integration/macroRunnerFakeTerminal.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/macroNodeInsertion.spec.ts tests/e2e/workspaceWorkbench.spec.ts tests/e2e/parallelAll.spec.ts"
+    "test:022": "bun test tests/unit/flowV2Schema.test.ts tests/unit/macroTemplate.test.ts tests/unit/parallelAllValidator.test.ts tests/integration/macroRunnerFakeTerminal.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/macroNodeInsertion.spec.ts tests/e2e/workspaceWorkbench.spec.ts tests/e2e/parallelAll.spec.ts",
+    "test:023": "bun test tests/unit/realPtyBackend.test.ts tests/unit/terminalFont.test.ts tests/integration/realPtyBackend.test.ts"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",

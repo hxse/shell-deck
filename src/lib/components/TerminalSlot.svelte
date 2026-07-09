@@ -3,6 +3,7 @@
   import { Terminal } from '@xterm/xterm'
   import '@xterm/xterm/css/xterm.css'
   import type { TerminalSnapshot } from '../protocol'
+  import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_WEIGHT, TERMINAL_FONT_WEIGHT_BOLD } from '../terminalFont'
   import type { TerminalDeckClient } from '../terminalDeckClient'
 
   let { terminal, client } = $props<{
@@ -25,7 +26,9 @@
       convertEol: true,
       cursorBlink: true,
       theme: { background: '#111316', foreground: '#e6edf3' },
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+      fontFamily: TERMINAL_FONT_FAMILY,
+      fontWeight: TERMINAL_FONT_WEIGHT,
+      fontWeightBold: TERMINAL_FONT_WEIGHT_BOLD,
       fontSize: 14,
       lineHeight: 1.2,
     })

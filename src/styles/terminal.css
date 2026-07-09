@@ -1,5 +1,9 @@
 
 
+:root {
+  --shell-deck-terminal-font-family: "Maple Mono NF CN", "Maple Mono NF", "Maple Mono CN", "Maple Mono", "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
 .terminal-pane {
   min-width: 0;
   min-height: 0;
@@ -290,7 +294,7 @@ select,
   box-sizing: border-box;
   background: #fbfdff;
   color: #1f2933;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-family: var(--shell-deck-terminal-font-family);
   font-size: 13px;
   line-height: 1.45;
   outline: none;

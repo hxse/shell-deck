@@ -140,7 +140,7 @@ int main(int argc, char **argv) {
     dup2(slave_fd, STDERR_FILENO);
     if (slave_fd > STDERR_FILENO) close(slave_fd);
     setenv("TERM", "xterm-256color", 1);
-    setenv("PS1", "$ ", 1);
+    if (getenv("PS1") == NULL) setenv("PS1", "\\[\\e[1;92m\\][\\u@\\h:\\w]\\$\\[\\e[0m\\] ", 1);
     execvp(argv[3], &argv[3]);
     perror("execvp");
     _exit(127);
