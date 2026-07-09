@@ -18,7 +18,7 @@ function validTemplate(): MacroTemplate {
     createdAt: now,
     updatedAt: now,
     body: [
-      { id: "send_worker", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "printf READY" }] } },
+      { id: "send_worker", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "printf READY" }] }, enter: true },
       { id: "wait_worker", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 10, maxMs: 1000, onTimeout: "pause" },
       { id: "capture_worker", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       {
@@ -60,12 +60,12 @@ test("Flow V2 accepts message parts, capture, text_match and finish", () => {
 test("Flow V2 hard-cuts v1 steps and legacy action names", () => {
   const template = validTemplate() as unknown as Record<string, unknown>
   template.schemaVersion = 1
-  template.steps = [{ id: "old", type: "send_line", text: "legacy" }]
+  template.steps = [{ id: "old", type: "send", text: "legacy", enter: true }]
   const text = issues(template)
   expect(text).toContain("schemaVersion:Flow V2 template schemaVersion must be 2")
   expect(text).toContain("steps:legacy control/parser fields are not allowed in Flow V2")
 
-  for (const type of ["sleep", "parse", "send_artifact", "parallel_all", "merge_parallel_results", "branch", "goto", "pause", "stop", "complete", "fail"]) {
+  for (const type of ["send_line", "input_line", "sleep", "parse", "send_artifact", "parallel_all", "merge_parallel_results", "branch", "goto", "pause", "stop", "complete", "fail"]) {
     const bad = validTemplate()
     bad.body.push({ id: "bad_" + type, type } as never)
     expect(issues(bad)).toContain("legacy Flow V1 node type is unsupported in Flow V2")
@@ -109,7 +109,7 @@ test("for supports count and forever range modes", () => {
 
 test("finish break and continue support action-only bodies", () => {
   const template = validTemplate()
-  template.body.push({ id: "finish_with_action", type: "finish", reason: "done", body: [{ id: "send_before_finish", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before finish" }] } }] })
+  template.body.push({ id: "finish_with_action", type: "finish", reason: "done", body: [{ id: "send_before_finish", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before finish" }] }, enter: true }]})
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 
   const bad = validTemplate()
@@ -119,42 +119,54 @@ test("finish break and continue support action-only bodies", () => {
 
 test("legacy parser and wait tokens are allowed inside user text fields", () => {
   const template = validTemplate()
-  template.body[0] = { id: "send_text", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "please mention ai-json and capture-ready-or-user literally" }] } }
+  template.body[0] = { id: "send_text", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "please mention ai-json and capture-ready-or-user literally" }] }, enter: true }
   const ifNode = template.body[3]
   if (ifNode.type !== "if") throw new Error("missing if")
   ifNode.branches[0].condition.matcher = { kind: "simple", op: "contains", text: "ai-json" }
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 })
 
-test("send_line and input_line enforce message source rules", () => {
+test("send and input enforce message source rules", () => {
   const emptyMessage = validTemplate()
-  emptyMessage.body[0] = { id: "send_empty", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } }
+  emptyMessage.body[0] = { id: "send_empty", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, enter: true }
   expect(validateFlowV2Template(emptyMessage, { indexMap }).ok).toBe(true)
 
+  const newlineMessage = validTemplate()
+  newlineMessage.body[0] = { id: "send_newline", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "  hello\n\n" }] }, enter: true }
+  expect(validateFlowV2Template(newlineMessage, { indexMap }).ok).toBe(true)
+
   const artifactNone = validTemplate()
-  artifactNone.body[0] = { id: "send_none", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact" }] } }
+  artifactNone.body[0] = { id: "send_none", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact" }] }, enter: true }
   expect(validateFlowV2Template(artifactNone, { indexMap }).ok).toBe(true)
 
+  const sendWithoutEnter = validTemplate()
+  sendWithoutEnter.body[0] = { id: "send_no_enter", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } } as never
+  expect(issues(sendWithoutEnter)).toContain("enter:enter must be boolean")
+
+  const inputWithoutEnter = validTemplate()
+  inputWithoutEnter.body[0] = { id: "input_no_enter", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false } as never
+  expect(issues(inputWithoutEnter)).toContain("enter:enter must be boolean")
+
   const send = validTemplate()
-  send.body[0] = { id: "send_bad", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] } } as never
+  send.body[0] = { id: "send_bad", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] }, enter: true } as never
   expect(issues(send)).toContain("message part kind must be text or artifact")
 
   const joined = validTemplate()
-  joined.body[0] = { id: "send_join", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { join: "newline", parts: [{ kind: "text", text: "legacy" }] } } as never
+  joined.body[0] = { id: "send_join", type: "send", terminal: { kind: "alias", value: "worker" }, message: { join: "newline", parts: [{ kind: "text", text: "legacy" }] }, enter: true } as never
   expect(issues(joined)).toContain("message.join:extra Flow V2 field is not allowed")
 
   const input = validTemplate()
-  input.body[0] = { id: "input_bad", type: "input_line", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, message: { parts: [{ kind: "text", text: "legacy" }] } } as never
+  input.body[0] = { id: "input_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, message: { parts: [{ kind: "text", text: "legacy" }] }, enter: true } as never
   expect(issues(input)).toContain("message:extra Flow V2 field is not allowed")
 
   const defaultBeforeCapture = validTemplate()
-  defaultBeforeCapture.body[0] = { id: "input_default_bad", type: "input_line", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } } as never
+  defaultBeforeCapture.body[0] = { id: "input_default_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }, enter: true } as never
   expect(issues(defaultBeforeCapture)).toContain("artifact source must reference an earlier artifact-producing step")
 })
 
 test("artifact sources must reference visible predecessor outputs", () => {
   const template = validTemplate()
-  template.body[0] = { id: "send_before_capture", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } }] } } as never
+  template.body[0] = { id: "send_before_capture", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } }] }, enter: true } as never
   expect(issues(template)).toContain("artifact source must reference an earlier artifact-producing step")
 })
 
@@ -262,12 +274,12 @@ test("parallel lane output produces merged_text and must be final", () => {
     merge: { kind: "sectioned_text", separator: "===== {laneId} =====", includeEmptyOutputs: true },
     onLaneFail: "pause",
   })
-  template.body.push({ id: "send_merge", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } })
+  template.body.push({ id: "send_merge", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, enter: true })
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 
   const bad = structuredClone(template)
   const parallel = bad.body[4]
   if (parallel.type !== "parallel") throw new Error("missing parallel")
-  parallel.lanes[0].body.push({ id: "late_send", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } })
+  parallel.lanes[0].body.push({ id: "late_send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, enter: true })
   expect(issues(bad)).toContain("parallel lane output must be the final node")
 })

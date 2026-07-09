@@ -14,9 +14,9 @@ import type {
   ValidationResult,
 } from "./templateTypes"
 
-export const FLOW_V2_ACTION_TYPES = ["send_line", "input_line", "wait", "capture-source", "extract_text", "parallel"] as const
+export const FLOW_V2_ACTION_TYPES = ["send", "input", "wait", "capture-source", "extract_text", "parallel"] as const
 export const FLOW_V2_CONTROL_TYPES = ["if", "for", "break", "continue", "finish"] as const
-export const FLOW_V2_FORBIDDEN_TYPES = ["sleep", "parse", "send_artifact", "parallel_all", "parallel_send_capture", "merge_parallel_results", "pause", "stop", "return", "goto", "branch", "complete", "fail"] as const
+export const FLOW_V2_FORBIDDEN_TYPES = ["send_line", "input_line", "sleep", "parse", "send_artifact", "parallel_all", "parallel_send_capture", "merge_parallel_results", "pause", "stop", "return", "goto", "branch", "complete", "fail"] as const
 
 const ACTION_TYPES = new Set<string>(FLOW_V2_ACTION_TYPES)
 const CONTROL_TYPES = new Set<string>(FLOW_V2_CONTROL_TYPES)
@@ -27,8 +27,8 @@ const ARTIFACT_SOURCE_KEYS = new Set(["kind", "stepId", "artifact"])
 const MESSAGE_KEYS = new Set(["parts"])
 const TEXT_PART_KEYS = new Set(["kind", "text"])
 const ARTIFACT_PART_KEYS = new Set(["kind", "source"])
-const SEND_LINE_KEYS = new Set(["id", "type", "terminal", "message"])
-const INPUT_LINE_KEYS = new Set(["id", "type", "terminal", "prompt", "allowEmpty", "defaultSource"])
+const SEND_KEYS = new Set(["id", "type", "terminal", "message", "enter"])
+const INPUT_KEYS = new Set(["id", "type", "terminal", "prompt", "allowEmpty", "defaultSource", "enter"])
 const WAIT_DURATION_KEYS = new Set(["id", "type", "mode", "durationMs"])
 const WAIT_TERMINAL_QUIET_KEYS = new Set(["id", "type", "mode", "terminal", "quietMs", "maxMs", "onTimeout"])
 const WAIT_USER_CONTINUE_KEYS = new Set(["id", "type", "mode", "prompt"])
@@ -170,17 +170,19 @@ function validateActionOnlyNodeList(issues: ValidationIssue[], path: string, nod
 }
 
 function validateActionNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
-  if (node.type === "send_line") {
-    rejectUnknownKeys(issues, path, node, SEND_LINE_KEYS)
+  if (node.type === "send") {
+    rejectUnknownKeys(issues, path, node, SEND_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
     validateMessageSpec(issues, path + ".message", node.message, context)
+    if (typeof node.enter !== "boolean") issues.push({ path: path + ".enter", message: "enter must be boolean" })
     return
   }
-  if (node.type === "input_line") {
-    rejectUnknownKeys(issues, path, node, INPUT_LINE_KEYS)
+  if (node.type === "input") {
+    rejectUnknownKeys(issues, path, node, INPUT_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
     validateString(issues, path + ".prompt", node.prompt, 1)
     if (typeof node.allowEmpty !== "boolean") issues.push({ path: path + ".allowEmpty", message: "allowEmpty must be boolean" })
+    if (typeof node.enter !== "boolean") issues.push({ path: path + ".enter", message: "enter must be boolean" })
     if (node.defaultSource !== undefined) validateArtifactSource(issues, path + ".defaultSource", node.defaultSource, context)
     return
   }
@@ -454,7 +456,7 @@ function validateParallelLaneBody(issues: ValidationIssue[], path: string, body:
       continue
     }
     if (index === body.length - 1) issues.push({ path: itemPath + ".type", message: "parallel lane must end with output" })
-    if (item.type === "send_line" || item.type === "wait" || item.type === "capture-source" || item.type === "extract_text") {
+    if (item.type === "send" || item.type === "wait" || item.type === "capture-source" || item.type === "extract_text") {
       validateParallelLaneAction(issues, itemPath, item, lane, laneContext)
       if (typeof item.id === "string") {
         if (item.type === "capture-source") registerArtifactOutput(laneOutputContext, item.id, "captured_text")
@@ -462,7 +464,7 @@ function validateParallelLaneBody(issues: ValidationIssue[], path: string, body:
       }
       continue
     }
-    issues.push({ path: itemPath + ".type", message: "parallel lane only supports send_line, wait, capture-source, extract_text, and final output" })
+    issues.push({ path: itemPath + ".type", message: "parallel lane only supports send, wait, capture-source, extract_text, and final output" })
   }
   if (outputCount === 0) issues.push({ path, message: "parallel lane must declare final output" })
   if (outputCount > 1) issues.push({ path, message: "parallel lane must declare exactly one output" })
@@ -475,7 +477,7 @@ function validateParallelLaneAction(issues: ValidationIssue[], path: string, nod
     const label = laneInfo.item?.terminalAlias ?? laneInfo.terminal?.terminalAlias ?? "target tab"
     issues.push({ path: path + ".type", message: String(node.id ?? "parallel lane wait") + ": target tab " + label + " does not support wait; required shell tab" })
   }
-  if (node.type === "send_line") validateSameTerminal(issues, path + ".terminal", lane.terminal, node.terminal, context.indexMap, "parallel lane send terminal must match lane terminal")
+  if (node.type === "send") validateSameTerminal(issues, path + ".terminal", lane.terminal, node.terminal, context.indexMap, "parallel lane send terminal must match lane terminal")
   if (node.type === "wait") {
     if (node.mode === "user-continue") issues.push({ path: path + ".mode", message: "parallel lane wait must not use user-continue" })
     if (node.mode === "terminal-quiet") {

@@ -9,8 +9,8 @@ const template = {
   createdAt: '2026-07-03T00:00:00.000Z',
   updatedAt: '2026-07-03T00:00:00.000Z',
   body: [
-    { id: 'send', type: 'send_line', terminal: { kind: 'alias', value: 'shell_1' }, message: { parts: [{ kind: 'text', text: 'workbench-run' }] } },
-    { id: 'input', type: 'input_line', terminal: { kind: 'alias', value: 'shell_1' }, prompt: 'Workbench input', allowEmpty: false },
+    { id: 'send', type: 'send', terminal: { kind: 'alias', value: 'shell_1' }, message: { parts: [{ kind: 'text', text: 'workbench-run' }] }, enter: true },
+    { id: 'input', type: 'input', terminal: { kind: 'alias', value: 'shell_1' }, prompt: 'Workbench input', allowEmpty: false, enter: true },
     { id: 'done', type: 'finish', reason: 'ok' },
   ],
 }
@@ -73,11 +73,11 @@ test('macro prompt workbench uses selectors, grouped controls, trace tabs and li
   await expect(page.getByTestId('run-derived-status')).toHaveText('completed')
   await expect(page.getByTestId('run-node-log').first()).toBeVisible()
   await page.getByTestId('run-tab-ai').click()
-  await expect(page.getByTestId('run-ai-trace')).toContainText('terminal_line_sent')
+  await expect(page.getByTestId('run-ai-trace')).toContainText('terminal_text_sent')
   await expect(page.getByTestId('run-ai-trace')).toContainText('user_input_requested')
   await expect(page.getByTestId('run-ai-trace')).toContainText('artifacts/send-')
   await page.getByTestId('run-trace-copy').click()
-  await expect.poll(async () => await page.evaluate(() => navigator.clipboard.readText())).toContain('terminal_line_sent')
+  await expect.poll(async () => await page.evaluate(() => navigator.clipboard.readText())).toContain('terminal_text_sent')
   await page.getByTestId('run-tab-log').click()
   const runId = (await page.getByTestId('run-list-item').first().locator('span').textContent())?.trim()
   expect(runId).toBeTruthy()

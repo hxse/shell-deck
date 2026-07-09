@@ -30,7 +30,7 @@ function lane(alias: "docs" | "tests") {
     label: alias,
     terminal,
     body: [
-      { id: "send_" + alias, type: "send_line" as const, terminal, message: { parts: [{ kind: "text" as const, text: "review " + alias }] } },
+      { id: "send_" + alias, type: "send" as const, terminal, message: { parts: [{ kind: "text" as const, text: "review " + alias }] }, enter: true },
       { id: "wait_" + alias, type: "wait" as const, mode: "terminal-quiet" as const, terminal, quietMs: 10, maxMs: 1000, onTimeout: "pause" as const },
       { id: "capture_" + alias, type: "capture-source" as const, capture: { kind: "terminal-buffer" as const, terminal, mode: "scrollback-tail" as const, maxChars: 12000 } },
       { id: "output_" + alias, type: "output" as const, source: { kind: "step_artifact" as const, stepId: "capture_" + alias, artifact: "captured_text" as const } },
@@ -44,7 +44,7 @@ function text(value: MacroTemplate) {
 
 test("parallel validates lane tabs with mandatory final output", () => {
   const base = template()
-  base.body.push({ id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } })
+  base.body.push({ id: "send_merged", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, enter: true })
   expect(validateFlowV2Template(base, { indexMap }).ok).toBe(true)
 })
 
@@ -85,14 +85,14 @@ test("parallel rejects duplicate terminals, duplicate lane ids and labels, misma
   const mismatch = template()
   const node = mismatch.body[0] as ParallelNode
   const send = node.lanes[0].body[0]
-  if (send.type !== "send_line") throw new Error("missing send")
+  if (send.type !== "send") throw new Error("missing send")
   send.terminal = { kind: "alias", value: "worker" }
   expect(text(mismatch)).toContain("parallel lane send terminal must match lane terminal")
 
   const bad = template()
   const badParallel = bad.body[0] as ParallelNode
   badParallel.lanes[0].body.splice(1, 0, { id: "nested", type: "if", branches: [] } as never)
-  expect(text(bad)).toContain("parallel lane only supports send_line, wait, capture-source, extract_text, and final output")
+  expect(text(bad)).toContain("parallel lane only supports send, wait, capture-source, extract_text, and final output")
 })
 
 test("parallel output can be none and cannot reference another lane", () => {

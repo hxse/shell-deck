@@ -9,7 +9,7 @@ const template = {
   createdAt: "2026-06-30T00:00:00.000Z",
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
-    { id: "ask", type: "input_line", terminal: { kind: "alias", value: "shell_1" }, prompt: "Direction", allowEmpty: false },
+    { id: "ask", type: "input", terminal: { kind: "alias", value: "shell_1" }, prompt: "Direction", allowEmpty: false, enter: true },
     { id: "done", type: "finish", reason: "ok" },
   ],
 }
@@ -23,7 +23,7 @@ const otherTemplate = {
   createdAt: "2026-06-30T00:00:00.000Z",
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
-    { id: "send", type: "send_line", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "other-run" }] } },
+    { id: "send", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "other-run" }] }, enter: true },
     { id: "done", type: "finish", reason: "ok" },
   ],
 }
@@ -37,7 +37,7 @@ const delayedTemplate = {
   createdAt: "2026-06-30T00:00:00.000Z",
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
-    { id: "send", type: "send_line", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "delayed-run" }] } },
+    { id: "send", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "delayed-run" }] }, enter: true },
     { id: "wait", type: "wait", mode: "duration", durationMs: 1200 },
     { id: "done", type: "finish", reason: "ok" },
   ],
@@ -86,7 +86,7 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:from-ui/)
 })
 
-test("macro runner auto-saves draft before start and completes send_line", async ({ page, request }) => {
+test("macro runner auto-saves draft before start and completes send", async ({ page, request }) => {
   await request.post("/api/configs/runner-draft-e2e/terminals?backend=fake")
   await page.goto("/?configId=runner-draft-e2e")
   await expect(page.getByTestId("macro-panel")).toBeVisible()

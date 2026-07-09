@@ -44,7 +44,7 @@ test('store rejects appending event refs for missing artifacts', async () => {
     const store = new RunEventStore(root)
     const created = await store.createRun('local')
     await expect(store.appendEvent('local', created.runId, {
-      kind: 'terminal_line_sent',
+      kind: 'terminal_text_sent',
       stepId: 'send_review',
       summary: 'bad ref',
       data: { artifactRef: 'artifacts/missing.txt' },

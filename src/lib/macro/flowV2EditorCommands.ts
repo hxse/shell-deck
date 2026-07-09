@@ -252,7 +252,7 @@ function isActionOnlyBodyPath(path: BodyPath): boolean {
 }
 
 function isActionNode(node: FlowV2Node): boolean {
-  return node.type === "send_line" || node.type === "input_line" || node.type === "wait" || node.type === "capture-source" || node.type === "extract_text" || node.type === "parallel"
+  return node.type === "send" || node.type === "input" || node.type === "wait" || node.type === "capture-source" || node.type === "extract_text" || node.type === "parallel"
 }
 
 function isControlTerminalNode(node: FlowV2Node): node is Extract<FlowV2Node, { type: "break" | "continue" | "finish" }> {

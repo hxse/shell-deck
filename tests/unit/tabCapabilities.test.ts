@@ -25,16 +25,16 @@ const choices: TerminalChoice[] = terminals.map((terminal) => ({
 test("maps shell and text tab capabilities", () => {
   expect(tabCapabilitiesForBackend("fake")).toEqual({
     kind: "shell",
-    canSendLine: true,
-    canInputLine: true,
+    canSend: true,
+    canInput: true,
     canWaitQuiet: true,
     captureKinds: ["terminal-buffer", "agent-event"],
   })
   expect(tabCapabilitiesForBackend("real").kind).toBe("shell")
   expect(tabCapabilitiesForBackend("text")).toEqual({
     kind: "text",
-    canSendLine: true,
-    canInputLine: true,
+    canSend: true,
+    canInput: true,
     canWaitQuiet: false,
     captureKinds: ["text-box"],
   })

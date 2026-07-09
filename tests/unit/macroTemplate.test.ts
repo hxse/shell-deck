@@ -19,7 +19,7 @@ function template(id = "tmpl_v2"): MacroTemplate {
     createdAt: now,
     updatedAt: now,
     body: [
-      { id: "send", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello" }] } },
+      { id: "send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello" }] }, enter: true },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       { id: "finish_done", type: "finish", reason: "done" },
     ],

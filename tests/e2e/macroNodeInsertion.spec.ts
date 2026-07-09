@@ -74,7 +74,7 @@ test('Macro node insertion uses local anchors and floating palette', async ({ pa
 
   await page.getByTestId('empty-body-add').first().click()
   await page.getByTestId('add-step-send').click()
-  await expect(page.getByTestId('macro-step-list')).toContainText('1. send_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('1. send')
 
   await page.getByTestId('node-toggle-collapse').first().click()
   await expect(page.getByTestId('node-toggle-collapse').first()).toHaveText('Expand')
@@ -84,16 +84,16 @@ test('Macro node insertion uses local anchors and floating palette', async ({ pa
   await page.getByTestId('node-add-before').first().click()
   await page.getByTestId('add-step-wait').click()
   await expect(page.getByTestId('macro-step-list')).toContainText('1. wait')
-  await expect(page.getByTestId('macro-step-list')).toContainText('2. send_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('2. send')
 
   await page.getByTestId('node-add-after').nth(1).click()
   await expect(page.getByTestId('macro-move-existing-palette')).toBeVisible()
   const moveOptions = await page.getByTestId('macro-move-existing-select').locator('option').allTextContents()
-  expect(moveOptions.some((text) => text.includes('send_line'))).toBe(false)
+  expect(moveOptions.some((text) => text.includes('send'))).toBe(false)
   await page.getByTestId('macro-move-existing-select').selectOption('wait')
   await page.getByTestId('macro-move-existing').click()
   await expect(page.getByTestId('macro-insertion-palette')).toHaveCount(0)
-  await expect(page.getByTestId('macro-step-list')).toContainText('1. send_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('1. send')
   await expect(page.getByTestId('macro-step-list')).toContainText('2. wait')
 
   await insertAfterLast(page, 'add-flow-if')
@@ -135,7 +135,7 @@ test('Macro node insertion uses local anchors and floating palette', async ({ pa
     await dialog.dismiss()
   })
   await page.getByTestId('node-remove').first().click()
-  await expect(page.getByTestId('macro-step-list')).toContainText('1. send_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('1. send')
 
   await page.getByTestId('macro-tab-json').click()
   await expect(page.getByTestId('macro-json-preview')).toContainText('"branches"')
@@ -157,7 +157,7 @@ test('empty imported finish action body inserts action from empty body affordanc
       createdAt: '2026-07-07T00:00:00.000Z',
       updatedAt: '2026-07-07T00:00:00.000Z',
       body: [
-        { id: 'seed_send', type: 'send_line', terminal: { kind: 'alias', value: 'shell_1' }, message: { parts: [{ kind: 'text', text: 'seed' }] } },
+        { id: 'seed_send', type: 'send', terminal: { kind: 'alias', value: 'shell_1' }, message: { parts: [{ kind: 'text', text: 'seed' }] }, enter: true },
         { id: 'done_move', type: 'finish', reason: 'move' },
         { id: 'done_insert', type: 'finish', reason: 'insert' },
       ],
@@ -180,7 +180,7 @@ test('empty imported finish action body inserts action from empty body affordanc
   await expect(page.getByTestId('macro-insertion-palette')).toContainText('Insert into finish action body')
   await page.getByTestId('add-step-send').click()
   await expect(page.getByTestId('macro-insertion-palette')).toHaveCount(0)
-  await expect(page.getByTestId('macro-step-list')).toContainText('send_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('send')
   await page.getByTestId('macro-tab-json').click()
-  await expect(page.getByTestId('macro-json-preview')).toContainText('"type": "send_line"')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"type": "send"')
 })

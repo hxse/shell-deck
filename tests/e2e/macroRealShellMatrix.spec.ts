@@ -33,9 +33,9 @@ test('real shell terminal target refs support index id and alias', async ({ page
   const first = await createRealTerminal(request, configId)
   const second = await createRealTerminal(request, configId)
   await importTemplate(request, configId, baseTemplate(configId, 'target_refs', 'Target Ref Smoke', [
-    { id: 'send_index', type: 'send_line', terminal: { kind: 'index', value: 1 }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_INDEX_010') }] } },
-    { id: 'send_id', type: 'send_line', terminal: { kind: 'id', value: first.terminalId }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ID_010') }] } },
-    { id: 'send_alias', type: 'send_line', terminal: { kind: 'alias', value: 'shell_2' }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ALIAS_010') }] } },
+    { id: 'send_index', type: 'send', terminal: { kind: 'index', value: 1 }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_INDEX_010') }] }, enter: true },
+    { id: 'send_id', type: 'send', terminal: { kind: 'id', value: first.terminalId }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ID_010') }] }, enter: true },
+    { id: 'send_alias', type: 'send', terminal: { kind: 'alias', value: 'shell_2' }, message: { parts: [{ kind: 'text', text: printf('SD_TARGET_ALIAS_010') }] }, enter: true },
     { id: 'done', type: 'finish', reason: 'targets ok' },
   ]))
 
@@ -48,7 +48,7 @@ test('real shell terminal target refs support index id and alias', async ({ page
   await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_TARGET_ID_010/)
   const runs = await (await request.get('/api/configs/' + configId + '/runs')).json() as { runs: Array<{ runId: string }> }
   const run = await (await request.get('/api/configs/' + configId + '/runs/' + runs.runs[0].runId)).json() as { run: { replay: { events: Array<{ kind: string; data: Record<string, unknown> }> } } }
-  const sentTargets = run.run.replay.events.filter((event) => event.kind === 'terminal_line_sent').map((event) => event.data.terminalId)
+  const sentTargets = run.run.replay.events.filter((event) => event.kind === 'terminal_text_sent').map((event) => event.data.terminalId)
   expect(sentTargets).toContain(first.terminalId)
   expect(sentTargets).toContain(second.terminalId)
 })
@@ -78,7 +78,7 @@ test('real shell text_match if handles simple true branch', async ({ page, reque
   const terminal = await createRealTerminal(request, configId)
   const target = { kind: 'id', value: terminal.terminalId }
   await importTemplate(request, configId, baseTemplate(configId, 'text_match_branch', 'Text Match Branch', [
-    { id: 'send_branch', type: 'send_line', terminal: target, message: { parts: [{ kind: 'text', text: printf('SD_BRANCH_TRUE_010') }] } },
+    { id: 'send_branch', type: 'send', terminal: target, message: { parts: [{ kind: 'text', text: printf('SD_BRANCH_TRUE_010') }] }, enter: true },
     { id: 'wait_branch', type: 'wait', mode: 'duration', durationMs: 800 },
     { id: 'capture_branch', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: target, mode: 'scrollback-tail', maxChars: 12000 } },
     { id: 'if_branch', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture_branch', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_BRANCH_TRUE_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done_regex', type: 'finish', reason: 'text match ok' }] }] },
@@ -105,13 +105,13 @@ test("real shell parallel lane fan-out fan-in uses real terminals", async ({ pag
       type: "parallel",
       lanes: [
         { id: "docs", label: "Docs", terminal: { kind: "alias", value: "shell_1" }, body: [
-          { id: "send_docs", type: "send_line", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_DOCS_010") }] } },
+          { id: "send_docs", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_DOCS_010") }] }, enter: true },
           { id: "wait_docs", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "shell_1" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
           { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "shell_1" }, mode: "scrollback-tail", maxChars: 12000 } },
           { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs", artifact: "captured_text" } },
         ] },
         { id: "tests", label: "Tests", terminal: { kind: "alias", value: "shell_2" }, body: [
-          { id: "send_tests", type: "send_line", terminal: { kind: "alias", value: "shell_2" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_TESTS_010") }] } },
+          { id: "send_tests", type: "send", terminal: { kind: "alias", value: "shell_2" }, message: { parts: [{ kind: "text", text: printf("SD_PARALLEL_TESTS_010") }] }, enter: true },
           { id: "wait_tests", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "shell_2" }, quietMs: 100, maxMs: 5000, onTimeout: "pause" },
           { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "shell_2" }, mode: "scrollback-tail", maxChars: 12000 } },
           { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },

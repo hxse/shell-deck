@@ -12,8 +12,8 @@ Macro editor controls and runner start preflight are capability-aware when live 
 
 Live tab capabilities are derived from `TerminalSnapshot.backend`:
 
-- `fake` and `real` are shell tabs: `send_line`, `input_line`, `wait.terminal-quiet`, `capture-source.terminal-buffer`, and `capture-source.agent-event` are available.
-- `text` is a text tab: `send_line`, `input_line`, and `capture-source.text-box` are available; `wait.terminal-quiet`, `terminal-buffer`, and `agent-event` are not available.
+- `fake` and `real` are shell tabs: `send`, `input`, `wait.terminal-quiet`, `capture-source.terminal-buffer`, and `capture-source.agent-event` are available.
+- `text` is a text tab: `send`, `input`, and `capture-source.text-box` are available; `wait.terminal-quiet`, `terminal-buffer`, and `agent-event` are not available.
 
 If an imported or edited template points a shell-only action at a text tab, the editor must show validation instead of silently rewriting it. When the user explicitly changes a Source tab or Lane tab, the UI may convert to the first valid capture kind or block the change with a visible notice when existing actions are incompatible. Runner start preflight must reject live capability-invalid templates before execution. Error messages should name the action id, the tab alias, and the required capability.
 
@@ -24,8 +24,8 @@ Shell-deck only supports the current macro template schema: `schemaVersion: 2` w
 
 Flow V2 supports these action nodes:
 
-- `send_line`
-- `input_line`
+- `send`
+- `input`
 - `wait`
 - `capture-source`
 - `extract_text`
@@ -39,29 +39,32 @@ Flow V2 controls:
 - `continue`
 - `finish`
 
-Invalid removed nodes and fields include `sleep`, `parse`, `parser`, `ai-json`, `branch`, `goto`, `next`, `loopGuard`, `pause`, `stop`, `complete`, `fail`, `parallel_all`, `merge_parallel_results`, and `send_artifact`.
+Invalid removed nodes and fields include `send_line`, `input_line`, `sleep`, `parse`, `parser`, `ai-json`, `branch`, `goto`, `next`, `loopGuard`, `pause`, `stop`, `complete`, `fail`, `parallel_all`, `merge_parallel_results`, and `send_artifact`.
 
 ## Message Flow
 
-`send_line` writes the rendered message to a target tab. For shell/fake/real tabs it sends Enter; for `backend = text` tabs it appends the rendered text as collected text. It does not distinguish prompts from shell commands.
+`send` writes rendered message text to a target tab. It stores explicit `enter: boolean`; new UI nodes default to `enter: true`.
 
-`send_line.message.parts` is an ordered list. It may be empty. Each part is either literal text or a source artifact reference. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without adding implicit separators.
+`send.message.parts` is an ordered list. It may be empty. Each part is either literal text or a source artifact reference. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without adding implicit separators and without trimming leading or trailing whitespace. Newline characters inside text or artifacts are user content.
 
 ```json
 {
   "id": "send_review",
-  "type": "send_line",
+  "type": "send",
   "terminal": { "kind": "alias", "value": "worker" },
   "message": {
     "parts": [
       { "kind": "text", "text": "修复这些问题:\n\n" },
       { "kind": "artifact", "source": { "kind": "step_artifact", "stepId": "capture_review", "artifact": "captured_text" } }
     ]
-  }
+  },
+  "enter": true
 }
 ```
 
-`input_line` pauses for user text. It stores a fixed `prompt`, `allowEmpty`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it, and the final textarea content is sent to the target tab with Enter.
+`input` pauses for user text. It stores a fixed `prompt`, `allowEmpty`, explicit `enter: boolean`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it. The final textarea content is raw user content and is not trimmed. `allowEmpty = false` rejects only zero-length input.
+
+Macro submit uses LF. Runtime write payload is `content + (enter ? "\n" : "")` for shell/fake/real and text tabs. The macro layer must not append CR. Template JSON must not mutate `message` or user input to include the submit sequence; runtime `terminal_text_sent` events record both `content.artifactRef` and exact `write.artifactRef`, plus `enter` and `enterSequence = lf | none`.
 
 ## Wait Modes
 
@@ -134,7 +137,7 @@ Each lane:
 - has an id unique within the parent parallel node
 - has a non-empty label unique within the parent parallel node when set
 - chooses one unique Lane tab
-- allows ordinary `send_line` actions before Output
+- allows ordinary `send` actions before Output
 - allows `wait` only when the Lane tab is shell/fake/real; text lanes do not expose or accept wait actions
 - shell/fake/real lanes may use `wait.duration` or `wait.terminal-quiet`; lane `terminal-quiet.onTimeout` must be `pause`
 - shell/fake/real lanes may capture `terminal-buffer` or `agent-event`
@@ -142,6 +145,6 @@ Each lane:
 - allows `extract_text` actions before Output
 - lane-local `extract_text.onEmpty` is limited to `pause` or `fail`
 
-Each lane has a mandatory final `Output`; the action mechanically merges lane outputs into one `merged_text` artifact. Downstream `extract_text`, `send_line`, or `if.text_match` can reference that artifact.
+Each lane has a mandatory final `Output`; the action mechanically merges lane outputs into one `merged_text` artifact. Downstream `extract_text`, `send`, or `if.text_match` can reference that artifact.
 
-It does not allow nested parallel, lane-local `input_line`, parse/AI action, or lane-local `if/for/break/continue/finish`. `Output` is mandatory, final, and not deletable.
+It does not allow nested parallel, lane-local `input`, parse/AI action, or lane-local `if/for/break/continue/finish`. `Output` is mandatory, final, and not deletable.

@@ -34,7 +34,7 @@ test('operational events are step-scoped in V0', () => {
     'wait_completed',
     'wait_timeout',
     'wait_manual_continue',
-    'terminal_line_sent',
+    'terminal_text_sent',
     'user_input_requested',
     'user_input_submitted',
     'sleep_started',

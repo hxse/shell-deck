@@ -50,7 +50,7 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByTestId('macro-validation-summary')).toHaveText('success')
   await expect(page.getByTestId('message-part-row')).toHaveCount(0)
 
-  const sendTerminal = page.getByTestId('send-line-terminal').first()
+  const sendTerminal = page.getByTestId('send-terminal').first()
   await expect(sendTerminal.locator('option')).toHaveCount(2)
   await expect(page.getByText('Target tab').first()).toBeVisible()
   await expect(sendTerminal.locator('option').first()).toContainText(/#1 \| reviewer \| shell/)
@@ -144,8 +144,8 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await insertAfterLast('add-flow-finish')
 
   await expect(page.getByTestId('macro-step-list')).not.toContainText('Body JSON')
-  await expect(page.getByTestId('macro-step-list')).toContainText('send_line')
-  await expect(page.getByTestId('macro-step-list')).toContainText('input_line')
+  await expect(page.getByTestId('macro-step-list')).toContainText('send')
+  await expect(page.getByTestId('macro-step-list')).toContainText('input')
   await expect(page.getByTestId('macro-step-list')).toContainText('wait')
   await expect(page.getByTestId('macro-step-list')).toContainText('capture-source')
   await expect(page.getByTestId('macro-step-list')).toContainText('extract_text')

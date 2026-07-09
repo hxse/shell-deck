@@ -91,19 +91,21 @@ export type TextMatchCondition = {
     | { kind: "lines"; mode: "first" | "last" | "any" | "all"; includeEmptyLines?: boolean }
 }
 
-export type SendLineNode = {
+export type SendNode = {
   id: string
-  type: "send_line"
+  type: "send"
   terminal: TerminalTarget
   message: MessageSpec
+  enter: boolean
 }
 
-export type InputLineNode = {
+export type InputNode = {
   id: string
-  type: "input_line"
+  type: "input"
   terminal: TerminalTarget
   prompt: string
   allowEmpty: boolean
+  enter: boolean
   defaultSource?: FlowV2ArtifactSource
 }
 
@@ -130,7 +132,7 @@ export type ExtractTextNode = {
   onEmpty: TimeoutAction
 }
 
-export type ParallelLaneActionNode = SendLineNode | WaitNode | CaptureSourceNode | ExtractTextNode
+export type ParallelLaneActionNode = SendNode | WaitNode | CaptureSourceNode | ExtractTextNode
 
 export type ParallelOutputSource = FlowV2ArtifactSource | { kind: "none" }
 
@@ -161,7 +163,7 @@ export type ParallelNode = {
   onLaneFail: "pause" | "fail"
 }
 
-export type FlowV2ActionNode = SendLineNode | InputLineNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
+export type FlowV2ActionNode = SendNode | InputNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
 
 export type FlowV2IfBranch = {
   kind: "if" | "elif"

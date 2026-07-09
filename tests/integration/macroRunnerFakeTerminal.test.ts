@@ -27,11 +27,17 @@ function template(id: string, body: MacroTemplate["body"]): MacroTemplate {
   return { schemaVersion: 2, id, name: id, description: "", configId: "local", body, createdAt: now, updatedAt: now }
 }
 
+function nestedArtifactRef(event: { data: Record<string, unknown> } | undefined, key: "content" | "write"): string {
+  const value = event?.data[key]
+  if (!value || typeof value !== "object" || !("artifactRef" in value)) return ""
+  return String((value as { artifactRef: unknown }).artifactRef)
+}
+
 function parallelReviewNode(waitOnDocs = false): ParallelNode {
   const worker = { kind: "alias" as const, value: "worker" }
   const reviewer = { kind: "alias" as const, value: "reviewer" }
   const docsBody: ParallelNode["lanes"][number]["body"] = [
-    { id: "send_docs", type: "send_line", terminal: worker, message: { parts: [{ kind: "text", text: waitOnDocs ? "docs timeout" : "docs ready" }] } },
+    { id: "send_docs", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: waitOnDocs ? "docs timeout" : "docs ready" }] }, enter: true },
     ...(waitOnDocs ? [{ id: "wait_docs", type: "wait" as const, mode: "terminal-quiet" as const, terminal: worker, quietMs: 50, maxMs: 100, onTimeout: "pause" as const }] : []),
     { id: "capture_docs", type: "capture-source", capture: { kind: "terminal-buffer", terminal: worker, mode: "scrollback-tail", maxChars: 12000 } },
     { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs", artifact: "captured_text" } },
@@ -42,7 +48,7 @@ function parallelReviewNode(waitOnDocs = false): ParallelNode {
     lanes: [
       { id: "docs", label: "Docs", terminal: worker, body: docsBody },
       { id: "tests", label: "Tests", terminal: reviewer, body: [
-        { id: "send_tests", type: "send_line", terminal: reviewer, message: { parts: [{ kind: "text", text: "tests ready" }] } },
+        { id: "send_tests", type: "send", terminal: reviewer, message: { parts: [{ kind: "text", text: "tests ready" }] }, enter: true },
         { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: reviewer, mode: "scrollback-tail", maxChars: 12000 } },
         { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },
       ] },
@@ -52,11 +58,11 @@ function parallelReviewNode(waitOnDocs = false): ParallelNode {
   }
 }
 
-test("Flow V2 runner executes send_line, wait, capture, if.text_match and finish", async () => {
+test("Flow V2 runner executes send, wait, capture, if.text_match and finish", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("flow_happy", [
-      { id: "send", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello ready" }] } },
+      { id: "send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello ready" }] }, enter: true },
       { id: "wait", type: "wait", mode: "duration", durationMs: 1 },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "hello ready" }, scope: { kind: "whole" } }, body: [{ id: "finish_ok", type: "finish", reason: "ok" }] }] },
@@ -77,32 +83,32 @@ test("Flow V2 control terminal action body runs before finish", async () => {
   try {
     h.templateStore.save("local", template("finish_action_body", [
       { id: "finish_done", type: "finish", reason: "done", body: [
-        { id: "send_before_finish", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before-return-action" }] } },
+        { id: "send_before_finish", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before-return-action" }] }, enter: true },
       ] },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "finish_action_body" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
     const events = h.service.snapshot("local").run?.replay.events ?? []
-    expect(events.some((event) => event.kind === "terminal_line_sent" && event.stepId === "send_before_finish")).toBe(true)
+    expect(events.some((event) => event.kind === "terminal_text_sent" && event.stepId === "send_before_finish")).toBe(true)
     expect(events.some((event) => event.kind === "step_completed" && event.stepId === "finish_done")).toBe(true)
   } finally {
     h.cleanup()
   }
 })
 
-test("Flow V2 send_line concatenates ordered text and source parts without implicit separators", async () => {
+test("Flow V2 send concatenates ordered text and source parts without implicit separators", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("send_parts_flow", [
-      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-context" }] } },
+      { id: "seed", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-context" }] }, enter: true },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
-      { id: "send_composite", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "prefix[" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" } }, { kind: "text", text: "]suffix" }] } },
+      { id: "send_composite", type: "send", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "prefix[" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" } }, { kind: "text", text: "]suffix" }] }, enter: true },
       { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "send_parts_flow" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
-    const line = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "terminal_line_sent" && event.stepId === "send_composite")
-    const sent = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(line?.data.artifactRef))
+    const line = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "terminal_text_sent" && event.stepId === "send_composite")
+    const sent = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), nestedArtifactRef(line, "content"))
     expect(sent.startsWith("prefix[")).toBe(true)
     expect(sent.startsWith("prefix[\n")).toBe(false)
     expect(sent).toContain("seed-context")
@@ -112,11 +118,51 @@ test("Flow V2 send_line concatenates ordered text and source parts without impli
   }
 })
 
+test("Flow V2 send enter true records content and LF write payload", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("send_enter_true", [
+      { id: "send_submit", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "submit me" }] }, enter: true },
+      { id: "finish_done", type: "finish", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "send_enter_true" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const event = h.service.snapshot("local").run?.replay.events.find((item) => item.kind === "terminal_text_sent" && item.stepId === "send_submit")
+    expect(event?.data.enter).toBe(true)
+    expect(event?.data.enterSequence).toBe("lf")
+    const runId = String(h.service.snapshot("local").runId)
+    expect(h.runStore.readArtifact("local", runId, nestedArtifactRef(event, "content"))).toBe("submit me")
+    expect(h.runStore.readArtifact("local", runId, nestedArtifactRef(event, "write"))).toBe("submit me\n")
+  } finally {
+    h.cleanup()
+  }
+})
+
+test("Flow V2 send enter false writes exact content without submit payload", async () => {
+  const h = harness()
+  try {
+    h.templateStore.save("local", template("send_enter_false", [
+      { id: "send_raw", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "raw text" }] }, enter: false },
+      { id: "finish_done", type: "finish", reason: "done" },
+    ]), h.manager.indexMap("local"))
+    await h.service.start("local", { templateId: "send_enter_false" })
+    await waitFor(() => h.service.snapshot("local").status === "completed")
+    const event = h.service.snapshot("local").run?.replay.events.find((item) => item.kind === "terminal_text_sent" && item.stepId === "send_raw")
+    expect(event?.data.enter).toBe(false)
+    expect(event?.data.enterSequence).toBe("none")
+    const runId = String(h.service.snapshot("local").runId)
+    expect(h.runStore.readArtifact("local", runId, nestedArtifactRef(event, "content"))).toBe("raw text")
+    expect(h.runStore.readArtifact("local", runId, nestedArtifactRef(event, "write"))).toBe("raw text")
+  } finally {
+    h.cleanup()
+  }
+})
+
 test("terminal-buffer raw-stream-tail uses raw artifact as captured_text", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("raw_capture_flow", [
-      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-raw" }] } },
+      { id: "seed", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "seed-raw" }] }, enter: true },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "raw-stream-tail", maxChars: 12000 } },
       { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
@@ -131,11 +177,11 @@ test("terminal-buffer raw-stream-tail uses raw artifact as captured_text", async
   }
 })
 
-test("Flow V2 send_line can append rendered text to a text box deck slot", async () => {
+test("Flow V2 send can append rendered text to a text box deck slot", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("send_to_text_box", [
-      { id: "send_collect", type: "send_line", terminal: { kind: "alias", value: "collector" }, message: { parts: [{ kind: "text", text: "collected result" }] } },
+      { id: "send_collect", type: "send", terminal: { kind: "alias", value: "collector" }, message: { parts: [{ kind: "text", text: "collected result" }] }, enter: true },
       { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "send_to_text_box" })
@@ -171,10 +217,10 @@ test("Flow V2 extract_text filters and selects captured text for downstream send
   const h = harness()
   try {
     h.templateStore.save("local", template("extract_text_flow", [
-      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "alpha" }] } },
+      { id: "seed", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "alpha" }] }, enter: true },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       { id: "extract_last", type: "extract_text", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, split: { kind: "lines", keepEmpty: false }, filters: [{ kind: "exclude", matcher: { kind: "regex", pattern: "^\\s*[$#>]\\s*$" } }], select: { mode: "index", index: -1 }, extract: { kind: "regex", pattern: "^ECHO:(.*)$", group: 1 }, trim: "both", onEmpty: "pause" },
-      { id: "send_extract", type: "send_line", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "got:" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "extract_last", artifact: "extracted_text" } }] } },
+      { id: "send_extract", type: "send", terminal: { kind: "alias", value: "reviewer" }, message: { parts: [{ kind: "text", text: "got:" }, { kind: "artifact", source: { kind: "step_artifact", stepId: "extract_last", artifact: "extracted_text" } }] }, enter: true },
       { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "extract_text_flow" })
@@ -182,21 +228,21 @@ test("Flow V2 extract_text filters and selects captured text for downstream send
     const events = h.service.snapshot("local").run?.replay.events ?? []
     const extracted = events.find((event) => event.kind === "text_extracted" && event.stepId === "extract_last")
     expect(extracted?.data.outputChars).toBeGreaterThan(0)
-    const sent = events.find((event) => event.kind === "terminal_line_sent" && event.stepId === "send_extract")
-    const text = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(sent?.data.artifactRef))
+    const sent = events.find((event) => event.kind === "terminal_text_sent" && event.stepId === "send_extract")
+    const text = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), nestedArtifactRef(sent, "content"))
     expect(text).toContain("got:alpha")
   } finally {
     h.cleanup()
   }
 })
 
-test("Flow V2 input_line uses one defaultSource as editable runtime input", async () => {
+test("Flow V2 input uses one defaultSource as editable runtime input", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("input_flow", [
-      { id: "seed", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "default context" }] } },
+      { id: "seed", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "default context" }] }, enter: true },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
-      { id: "input", type: "input_line", terminal: { kind: "alias", value: "worker" }, prompt: "Direction", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" } },
+      { id: "input", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Direction", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, enter: true },
       { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "input_flow" })
@@ -204,9 +250,9 @@ test("Flow V2 input_line uses one defaultSource as editable runtime input", asyn
     expect(h.service.snapshot("local").waitingInput?.defaultText).toContain("default context")
     await h.service.submitInput("local", "fix it")
     await waitFor(() => h.service.snapshot("local").status === "completed")
-    const line = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "terminal_line_sent" && event.stepId === "input")
-    expect(line?.data.artifactRef).toBeTruthy()
-    const sent = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), String(line?.data.artifactRef))
+    const line = h.service.snapshot("local").run?.replay.events.find((event) => event.kind === "terminal_text_sent" && event.stepId === "input")
+    expect(nestedArtifactRef(line, "content")).toBeTruthy()
+    const sent = h.runStore.readArtifact("local", String(h.service.snapshot("local").runId), nestedArtifactRef(line, "content"))
     expect(sent).toBe("fix it")
   } finally {
     h.cleanup()
@@ -221,9 +267,9 @@ test("Flow V2 extract_text onEmpty continue skips to next loop iteration", async
       { id: "capture_empty", type: "capture-source", capture: { kind: "text-box", terminal: { kind: "alias", value: "collector" } } },
       { id: "loop_count", type: "for", range: { kind: "count", count: 2 }, body: [
         { id: "extract_empty", type: "extract_text", source: { kind: "step_artifact", stepId: "capture_empty", artifact: "captured_text" }, split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "both", onEmpty: "continue" },
-        { id: "send_should_skip", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "should-not-run" }] } },
+        { id: "send_should_skip", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "should-not-run" }] }, enter: true },
       ] },
-      { id: "send_after_loop", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "after-loop" }] } },
+      { id: "send_after_loop", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "after-loop" }] }, enter: true },
       { id: "finish_done", type: "finish", reason: "done" },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "extract_continue_loop" })
@@ -231,8 +277,8 @@ test("Flow V2 extract_text onEmpty continue skips to next loop iteration", async
     const events = h.service.snapshot("local").run?.replay.events ?? []
     const transitions = events.filter((event) => event.kind === "control_transition" && event.stepId === "loop_count")
     expect(transitions).toHaveLength(2)
-    expect(events.some((event) => event.kind === "terminal_line_sent" && event.stepId === "send_should_skip")).toBe(false)
-    expect(events.some((event) => event.kind === "terminal_line_sent" && event.stepId === "send_after_loop")).toBe(true)
+    expect(events.some((event) => event.kind === "terminal_text_sent" && event.stepId === "send_should_skip")).toBe(false)
+    expect(events.some((event) => event.kind === "terminal_text_sent" && event.stepId === "send_after_loop")).toBe(true)
   } finally {
     h.cleanup()
   }
@@ -243,7 +289,7 @@ test("Flow V2 for forever loops until break", async () => {
   try {
     h.templateStore.save("local", template("forever_break", [
       { id: "loop_forever", type: "for", range: { kind: "forever" }, body: [
-        { id: "send_loop", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "FOREVER_BREAK_READY" }] } },
+        { id: "send_loop", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "FOREVER_BREAK_READY" }] }, enter: true },
         { id: "capture_loop", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
         { id: "if_break", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_loop", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "FOREVER_BREAK_READY" }, scope: { kind: "whole" } }, body: [{ id: "break_loop", type: "break", reason: "matched" }] }] },
       ] },
@@ -264,7 +310,7 @@ test("Flow V2 parallel merges lane outputs for downstream send", async () => {
   try {
     h.templateStore.save("local", template("parallel_flow", [
       parallelReviewNode(),
-      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+      { id: "send_merged", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, enter: true },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "parallel_flow" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
@@ -286,7 +332,7 @@ test("Flow V2 parallel pauses on lane wait timeout before capture and merge", as
   try {
     h.templateStore.save("local", template("parallel_wait_timeout", [
       parallelReviewNode(true),
-      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+      { id: "send_merged", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, enter: true },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "parallel_wait_timeout" })
     const noise = setInterval(() => h.manager.input("local", { kind: "alias", value: "worker" }, "tick"), 10)
@@ -310,7 +356,7 @@ test("Flow V2 parallel resume skips completed lane sends", async () => {
   try {
     h.templateStore.save("local", template("parallel_resume_skip", [
       parallelReviewNode(true),
-      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+      { id: "send_merged", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, enter: true },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "parallel_resume_skip" })
     const noise = setInterval(() => h.manager.input("local", { kind: "alias", value: "worker" }, "tick"), 10)
@@ -321,15 +367,15 @@ test("Flow V2 parallel resume skips completed lane sends", async () => {
     }
 
     const beforeResumeEvents = h.service.snapshot("local").run?.replay.events ?? []
-    expect(beforeResumeEvents.filter((event) => event.kind === "terminal_line_sent" && (event.stepId === "send_docs" || event.stepId === "send_tests")).map((event) => event.stepId)).toEqual(["send_docs", "send_tests"])
+    expect(beforeResumeEvents.filter((event) => event.kind === "terminal_text_sent" && (event.stepId === "send_docs" || event.stepId === "send_tests")).map((event) => event.stepId)).toEqual(["send_docs", "send_tests"])
 
     await h.service.resume("local")
     await waitFor(() => h.service.snapshot("local").status === "completed")
     const afterResumeEvents = h.service.snapshot("local").run?.replay.events ?? []
     expect(afterResumeEvents.filter((event) => event.kind === "step_started" && event.stepId === "parallel_review")).toHaveLength(1)
     expect(afterResumeEvents.filter((event) => event.kind === "parallel_started" && event.stepId === "parallel_review")).toHaveLength(1)
-    expect(afterResumeEvents.filter((event) => event.kind === "terminal_line_sent" && event.stepId === "send_docs")).toHaveLength(1)
-    expect(afterResumeEvents.filter((event) => event.kind === "terminal_line_sent" && event.stepId === "send_tests")).toHaveLength(1)
+    expect(afterResumeEvents.filter((event) => event.kind === "terminal_text_sent" && event.stepId === "send_docs")).toHaveLength(1)
+    expect(afterResumeEvents.filter((event) => event.kind === "terminal_text_sent" && event.stepId === "send_tests")).toHaveLength(1)
     expect(afterResumeEvents.filter((event) => event.kind === "parallel_lane_started" && event.data.laneId === "tests")).toHaveLength(1)
     expect(afterResumeEvents.filter((event) => event.kind === "parallel_lane_completed" && event.data.laneId === "tests")).toHaveLength(1)
     expect(afterResumeEvents.some((event) => event.kind === "parallel_joined")).toBe(true)
@@ -354,7 +400,7 @@ test("Flow V2 parallel onLaneFail fail fails the run without joining", async () 
           { id: "output_docs", type: "output", source: { kind: "step_artifact", stepId: "capture_docs_agent", artifact: "captured_text" } },
         ] },
         { id: "tests", label: "Tests", terminal: reviewer, body: [
-          { id: "send_tests", type: "send_line", terminal: reviewer, message: { parts: [{ kind: "text", text: "tests ready" }] } },
+          { id: "send_tests", type: "send", terminal: reviewer, message: { parts: [{ kind: "text", text: "tests ready" }] }, enter: true },
           { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: reviewer, mode: "scrollback-tail", maxChars: 12000 } },
           { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },
         ] },
@@ -364,7 +410,7 @@ test("Flow V2 parallel onLaneFail fail fails the run without joining", async () 
     }
     h.templateStore.save("local", template("parallel_lane_fail", [
       parallel,
-      { id: "send_merged", type: "send_line", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] } },
+      { id: "send_merged", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, enter: true },
     ]), h.manager.indexMap("local"))
     await h.service.start("local", { templateId: "parallel_lane_fail" })
     await waitFor(() => h.service.snapshot("local").status === "failed")

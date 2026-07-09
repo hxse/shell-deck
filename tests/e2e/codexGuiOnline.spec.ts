@@ -5,7 +5,7 @@ test.skip(process.env.SHELL_DECK_RUN_ONLINE !== '1', '.010 Codex GUI smoke is on
 const configId = 'codex-gui-online-e2e'
 const terminal = { kind: 'alias', value: 'shell_1' }
 
-test('Codex-in-shell GUI smoke uses macro send_line then covers terminal-buffer and AgentEvent capture', async ({ page, request }) => {
+test('Codex-in-shell GUI smoke uses macro send then covers terminal-buffer and AgentEvent capture', async ({ page, request }) => {
   test.setTimeout(180_000)
 
   const terminalResponse = await request.post('/api/configs/' + configId + '/terminals?backend=real')
@@ -21,7 +21,7 @@ test('Codex-in-shell GUI smoke uses macro send_line then covers terminal-buffer 
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 20_000 })
 
   const sendRunner = await latestRunnerEvents(request)
-  expect(sendRunner.some((event) => event.kind === 'terminal_line_sent' && event.stepId === 'send_codex_prompt')).toBe(true)
+  expect(sendRunner.some((event) => event.kind === 'terminal_text_sent' && event.stepId === 'send_codex_prompt')).toBe(true)
 
   await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_CODEX_GUI_010/, { timeout: 150_000 })
   await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /hook: Stop Completed/, { timeout: 150_000 })
@@ -64,7 +64,7 @@ async function latestRunnerEvents(request: APIRequestContext) {
 
 function codexPromptTemplate(command: string) {
   return baseTemplate('codex_macro_send_prompt_gui', 'Codex Macro Send Prompt', [
-    { id: 'send_codex_prompt', type: 'send_line', terminal, message: { parts: [{ kind: 'text', text: command }] } },
+    { id: 'send_codex_prompt', type: 'send', terminal, message: { parts: [{ kind: 'text', text: command }] }, enter: true },
     { id: 'done', type: 'finish', reason: 'sent' },
   ])
 }

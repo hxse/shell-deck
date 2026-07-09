@@ -4,7 +4,7 @@
 
 Flow V2 macro templates do not expose a `parse` or `ai-json` action. Parser profiles are not part of the runnable macro language after `20260627A.016`.
 
-When users want AI parsing, they run an agent such as Codex in a normal terminal, use `send_line` to send text to that terminal, use `capture-source` to capture the response, and use `if.text_match` to route on the captured text.
+When users want AI parsing, they run an agent such as Codex in a normal terminal, use `send` to send text to that terminal, use `capture-source` to capture the response, and use `if.text_match` to route on the captured text.
 
 ## Retained Internal/Probe Surface
 

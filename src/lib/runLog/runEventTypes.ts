@@ -18,7 +18,7 @@ export const RUN_EVENT_KINDS = [
   'capture_wait_started',
   'capture_artifact_created',
   'text_extracted',
-  'terminal_line_sent',
+  'terminal_text_sent',
   'user_input_requested',
   'user_input_submitted',
   'sleep_started',

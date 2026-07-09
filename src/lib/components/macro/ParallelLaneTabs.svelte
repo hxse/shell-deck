@@ -45,7 +45,7 @@
   const parallelNode = $derived(findParallel(draft.body, nodeId))
   const selectedLane = $derived(parallelNode?.lanes.find((lane) => lane.id === selectedLaneId) ?? parallelNode?.lanes[0])
   const laneActionPaletteItems: Array<{ type: LaneActionType; label: string; testId: string }> = [
-    { type: "send_line", label: "send", testId: "parallel-add-send" },
+    { type: "send", label: "send", testId: "parallel-add-send" },
     { type: "wait", label: "wait", testId: "parallel-add-wait" },
     { type: "capture-source", label: "capture", testId: "parallel-add-capture" },
     { type: "extract_text", label: "extract", testId: "parallel-add-extract" },
@@ -222,7 +222,7 @@
     updateLane(laneId, (item) => {
       item.terminal = terminal
       for (const action of item.body) {
-        if (action.type === "send_line") action.terminal = terminal
+        if (action.type === "send") action.terminal = terminal
         if (action.type === "wait" && action.mode === "terminal-quiet") action.terminal = terminal
         if (action.type === "capture-source" && "terminal" in action.capture) action.capture.terminal = terminal
       }
@@ -312,7 +312,7 @@
 
   function defaultAction(template: MacroTemplate, lane: ParallelLane, type: LaneActionType): ParallelLaneActionNode {
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
-    if (type === "send_line") return { id, type, terminal: lane.terminal, message: { parts: [] } }
+    if (type === "send") return { id, type, terminal: lane.terminal, message: { parts: [] }, enter: true }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") {
       return { id, type, capture: defaultCaptureForLane(lane) }
@@ -532,8 +532,9 @@
     </div>
     <label>Action id<input data-testid="parallel-action-id-input" value={item.id} oninput={(event) => { if (!setLaneActionId(lane.id, item.id, event.currentTarget.value)) event.currentTarget.value = item.id }} /></label>
 
-    {#if item.type === "send_line"}
-      {@render MessagePartsEditor(item.message, (message: MessageSpec) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send_line") action.message = message }), messageChoices(lane, item.id))}
+    {#if item.type === "send"}
+      {@render MessagePartsEditor(item.message, (message: MessageSpec) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.message = message }), messageChoices(lane, item.id))}
+      <label class="checkbox-row"><input type="checkbox" data-testid="parallel-send-enter-checkbox" checked={item.enter} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.enter = event.currentTarget.checked })} />Submit with Enter</label>
     {:else if item.type === "wait"}
       <label>Mode<select value={item.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => {
         if (action.type !== "wait") return

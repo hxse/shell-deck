@@ -6,8 +6,8 @@ export type CapabilityCaptureKind = CaptureSourceConfig["kind"]
 
 export type TabCapabilities = {
   kind: TabCapabilityKind
-  canSendLine: boolean
-  canInputLine: boolean
+  canSend: boolean
+  canInput: boolean
   canWaitQuiet: boolean
   captureKinds: CapabilityCaptureKind[]
 }
@@ -24,16 +24,16 @@ export type TerminalChoice = {
 
 const SHELL_CAPABILITIES: TabCapabilities = {
   kind: "shell",
-  canSendLine: true,
-  canInputLine: true,
+  canSend: true,
+  canInput: true,
   canWaitQuiet: true,
   captureKinds: ["terminal-buffer", "agent-event"],
 }
 
 const TEXT_CAPABILITIES: TabCapabilities = {
   kind: "text",
-  canSendLine: true,
-  canInputLine: true,
+  canSend: true,
+  canInput: true,
   canWaitQuiet: false,
   captureKinds: ["text-box"],
 }

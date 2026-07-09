@@ -62,7 +62,7 @@ test('replay reports missing artifact refs as recoverable error', () => {
   try {
     writeEvents(root, 'local', 'run_missing_artifact', [
       event('run_missing_artifact', 1, 'evt_start', 'run_started'),
-      event('run_missing_artifact', 2, 'evt_artifact', 'terminal_line_sent', { artifactRef: 'artifacts/missing.txt' }, 'send_review'),
+      event('run_missing_artifact', 2, 'evt_artifact', 'terminal_text_sent', { terminalId: 'term_worker', enter: false, enterSequence: 'none', content: { artifactRef: 'artifacts/missing.txt', chars: 5 }, write: { artifactRef: 'artifacts/missing.txt', chars: 5 } }, 'send_review'),
     ])
     const replay = new RunEventReplay(root, new ArtifactStore(root)).replay('local', 'run_missing_artifact')
     expect(replay.ok).toBe(false)
@@ -71,7 +71,7 @@ test('replay reports missing artifact refs as recoverable error', () => {
     expect(replay.events).toHaveLength(1)
     const node = buildRunNodeLogs(replay.events, replay.error).find((item) => item.nodeId === 'send_review')
     expect(node?.missingArtifactRefs).toEqual(['artifacts/missing.txt'])
-    expect(node?.failedEvent?.kind).toBe('terminal_line_sent')
+    expect(node?.failedEvent?.kind).toBe('terminal_text_sent')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

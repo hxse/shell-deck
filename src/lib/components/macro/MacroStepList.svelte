@@ -52,8 +52,8 @@
   const validationSummary = $derived(validation.ok ? "success" : validation.issues.length + " issues - " + (validation.issues[0] ? validation.issues[0].path + " " + validation.issues[0].message : ""))
 
   const actionPaletteItems: Array<{ type: InsertableNodeType; label: string; testId: string }> = [
-    { type: "send_line", label: "send", testId: "add-step-send" },
-    { type: "input_line", label: "input", testId: "add-step-input" },
+    { type: "send", label: "send", testId: "add-step-send" },
+    { type: "input", label: "input", testId: "add-step-input" },
     { type: "wait", label: "wait", testId: "add-step-wait" },
     { type: "capture-source", label: "capture", testId: "add-step-capture" },
     { type: "extract_text", label: "extract", testId: "add-step-extract" },
@@ -574,8 +574,8 @@
   function defaultNode(template: MacroTemplate, type: FlowV2Node["type"]): FlowV2Node {
     const terminal = firstTerminalTarget()
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
-    if (type === "send_line") return { id, type, terminal, message: { parts: [] } }
-    if (type === "input_line") return { id, type, terminal, prompt: "Input", allowEmpty: false }
+    if (type === "send") return { id, type, terminal, message: { parts: [] }, enter: true }
+    if (type === "input") return { id, type, terminal, prompt: "Input", allowEmpty: false, enter: true }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") return { id, type, capture: defaultCaptureForFirstTab() }
     if (type === "extract_text") return { id, type, source: artifactChoices(template)[0]?.source ?? emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
@@ -613,7 +613,7 @@
   }
 
   function isActionType(type: FlowV2Node["type"]): boolean {
-    return type === "send_line" || type === "input_line" || type === "wait" || type === "capture-source" || type === "extract_text" || type === "parallel"
+    return type === "send" || type === "input" || type === "wait" || type === "capture-source" || type === "extract_text" || type === "parallel"
   }
 
   function isControlTerminalNode(node: FlowV2Node): node is Extract<FlowV2Node, { type: "break" | "continue" | "finish" }> {
@@ -702,23 +702,25 @@
       <label>Node id<input data-testid="node-id-input" value={node.id} oninput={(event) => { if (!setNodeId(node.id, event.currentTarget.value)) event.currentTarget.value = node.id }} /></label>
     </div>
 
-    {#if node.type === "send_line"}
+    {#if node.type === "send"}
       <label>Target tab
-        <select data-testid="send-line-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
+        <select data-testid="send-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send") item.terminal = targetFromChoice(event.currentTarget.value) })}>
           {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
-      {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send_line") item.message = message }), artifactChoicesBefore(node.id))}
-    {:else if node.type === "input_line"}
+      {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send") item.message = message }), artifactChoicesBefore(node.id))}
+      <label class="checkbox-row"><input type="checkbox" data-testid="send-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
+    {:else if node.type === "input"}
       <label>Target tab
-        <select data-testid="input-line-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input_line") item.terminal = targetFromChoice(event.currentTarget.value) })}>
+        <select data-testid="input-terminal" value={choiceFromTarget(node.terminal)} title={terminalChoiceTitle(choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.terminal = targetFromChoice(event.currentTarget.value) })}>
           {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
-      <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "input_line") item.prompt = event.currentTarget.value })} /></label>
-      <label class="checkbox-row"><input type="checkbox" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input_line") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
+      <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = event.currentTarget.value })} /></label>
+      <label class="checkbox-row"><input type="checkbox" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
+      <label class="checkbox-row"><input type="checkbox" data-testid="input-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
       <label>Default source
-        <select data-testid="input-line-default-source" value={node.defaultSource ? sourceKey(node.defaultSource) : ""} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "input_line") return; item.defaultSource = event.currentTarget.value ? sourceFromKey(event.currentTarget.value) : undefined })}>
+        <select data-testid="input-default-source" value={node.defaultSource ? sourceKey(node.defaultSource) : ""} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "input") return; item.defaultSource = event.currentTarget.value ? sourceFromKey(event.currentTarget.value) : undefined })}>
           <option value="">none</option>{#each artifactChoicesBefore(node.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
         </select>
       </label>

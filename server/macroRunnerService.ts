@@ -4,14 +4,14 @@ import type {
   ExtractTextNode,
   FlowV2ArtifactSource,
   FlowV2Node,
-  InputLineNode,
+  InputNode,
   MacroTemplate,
   MessageSpec,
   ParallelLane,
   ParallelLaneNode,
   ParallelLaneOutputNode,
   ParallelNode,
-  SendLineNode,
+  SendNode,
   TerminalTarget,
   TextFilterMatcher,
   TextMatchCondition,
@@ -35,6 +35,7 @@ type AgentEventCaptureMode = "result_only" | "prompt_only" | "prompt_and_result"
 type CapturedAgentEvents = { text: string; raw: unknown; events: AgentEvent[]; turnId: string | null; sessionId: string | null; codexSessionId: string | null }
 type CaptureExecutionOptions = { eventData?: Record<string, unknown>; captureIdentityId?: string }
 type ParallelLaneExecutionResult = { laneId: string; laneLabel: string; terminalAlias: string; text: string }
+const MACRO_ENTER_SEQUENCE = "\n"
 
 type RuntimeState = {
   configId: string
@@ -168,10 +169,10 @@ export class MacroRunnerService {
     const runtime = this.runtimeOrThrow(configId)
     const waiting = runtime.waitingInput
     if (runtime.status !== "waiting_user_input" || !waiting) throw new Error("runner_not_waiting_for_input")
-    if (!waiting.allowEmpty && text.length === 0) throw new Error("input_line_empty_not_allowed")
+    if (!waiting.allowEmpty && text.length === 0) throw new Error("input_empty_not_allowed")
     const node = this.findNode(runtime.template.body, waiting.stepId)
-    if (!node || node.type !== "input_line") throw new Error("waiting_input_step_missing")
-    await this.sendInputLine(runtime, node, text)
+    if (!node || node.type !== "input") throw new Error("waiting_input_step_missing")
+    await this.sendInput(runtime, node, text)
     runtime.status = "running"
     runtime.waitingInput = null
     void this.run(runtime)
@@ -206,8 +207,8 @@ export class MacroRunnerService {
     if (node.type === "break" || node.type === "continue" || node.type === "finish") return await this.executeControlTerminal(runtime, node, skipCompleted)
     if (node.type === "if") return await this.executeIf(runtime, node, skipCompleted)
     if (node.type === "for") return await this.executeFor(runtime, node)
-    if (node.type === "send_line") return await this.executeSendLine(runtime, node)
-    if (node.type === "input_line") return await this.executeInputLine(runtime, node)
+    if (node.type === "send") return await this.executeSend(runtime, node)
+    if (node.type === "input") return await this.executeInput(runtime, node)
     if (node.type === "wait") return await this.executeWait(runtime, node)
     if (node.type === "capture-source") return await this.executeCapture(runtime, node.id, node.capture)
     if (node.type === "extract_text") return await this.executeExtractText(runtime, node)
@@ -262,20 +263,18 @@ export class MacroRunnerService {
     return "completed"
   }
 
-  private async executeSendLine(runtime: RuntimeState, node: SendLineNode): Promise<ControlResult> {
+  private async executeSend(runtime: RuntimeState, node: SendNode): Promise<ControlResult> {
     await this.startStep(runtime, node.id)
     const text = this.renderMessage(runtime, node.message)
     const resolved = this.resolveTerminal(runtime, node.terminal)
     await this.appendTerminalRef(runtime, node.id, node.terminal, resolved)
-    const artifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "send", text, "txt", node.id)
-    const result = this.manager.input(runtime.configId, { kind: "id", value: resolved.terminalId }, text + "\r")
+    const result = await this.writeTerminalText(runtime, node.id, resolved.terminalId, "send", text, node.enter, "Text sent to terminal")
     if (!result.ok) throw new Error("terminal_input_rejected:" + result.reason)
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "terminal_line_sent", stepId: node.id, summary: "Line sent to terminal", data: { terminalId: resolved.terminalId, artifactRef: artifact.artifact.artifactRef, enter: true } })
     await this.completeStep(runtime, node.id)
     return "completed"
   }
 
-  private async executeInputLine(runtime: RuntimeState, node: InputLineNode): Promise<ControlResult> {
+  private async executeInput(runtime: RuntimeState, node: InputNode): Promise<ControlResult> {
     await this.startStep(runtime, node.id)
     const resolved = this.resolveTerminal(runtime, node.terminal)
     const defaultText = node.defaultSource ? this.readArtifactSource(runtime, node.defaultSource) : undefined
@@ -285,20 +284,27 @@ export class MacroRunnerService {
     return "suspended"
   }
 
-  private async sendInputLine(runtime: RuntimeState, node: InputLineNode, userInput: string): Promise<void> {
+  private async sendInput(runtime: RuntimeState, node: InputNode, userInput: string): Promise<void> {
     const inputArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "user-input", userInput, "txt", node.id)
     await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "user_input_submitted", stepId: node.id, summary: "User input submitted", data: { artifactRef: inputArtifact.artifact.artifactRef } })
-    const text = userInput
     const resolved = this.resolveTerminal(runtime, node.terminal)
     await this.appendTerminalRef(runtime, node.id, node.terminal, resolved)
-    const artifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, "input-line", text, "txt", node.id)
-    const result = this.manager.input(runtime.configId, { kind: "id", value: resolved.terminalId }, text + "\r")
+    const result = await this.writeTerminalText(runtime, node.id, resolved.terminalId, "input", userInput, node.enter, "Input text sent to terminal")
     if (!result.ok) {
       await this.pauseRun(runtime, "terminal_input_rejected", result.reason, node.id)
       return
     }
-    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "terminal_line_sent", stepId: node.id, summary: "Input line sent to terminal", data: { terminalId: resolved.terminalId, artifactRef: artifact.artifact.artifactRef, enter: true } })
     await this.completeStep(runtime, node.id)
+  }
+
+  private async writeTerminalText(runtime: RuntimeState, stepId: string, terminalId: string, prefix: string, content: string, enter: boolean, summary: string) {
+    const payload = content + (enter ? MACRO_ENTER_SEQUENCE : "")
+    const contentArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, prefix + "-content", content, "txt", stepId)
+    const writeArtifact = payload === content ? contentArtifact : await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, prefix + "-write", payload, "txt", stepId)
+    const result = this.manager.input(runtime.configId, { kind: "id", value: terminalId }, payload)
+    if (!result.ok) return result
+    await this.runEventStore.appendEvent(runtime.configId, runtime.runId, { kind: "terminal_text_sent", stepId, summary, data: { terminalId, enter, enterSequence: enter ? "lf" : "none", content: { artifactRef: contentArtifact.artifact.artifactRef, chars: content.length }, write: { artifactRef: writeArtifact.artifact.artifactRef, chars: payload.length } } })
+    return result
   }
 
   private async executeWait(runtime: RuntimeState, node: WaitNode): Promise<ControlResult> {
@@ -424,7 +430,7 @@ export class MacroRunnerService {
   }
 
   private async executeParallelLaneAction(runtime: RuntimeState, node: ParallelLaneNode): Promise<ControlResult> {
-    if (node.type === "send_line") return await this.executeSendLine(runtime, node)
+    if (node.type === "send") return await this.executeSend(runtime, node)
     if (node.type === "wait") return await this.executeWait(runtime, node)
     if (node.type === "capture-source") return await this.executeCapture(runtime, node.id, node.capture)
     if (node.type === "extract_text") return await this.executeExtractText(runtime, node)
