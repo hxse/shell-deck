@@ -1,5 +1,6 @@
 import { assertValidPublicId } from '../identifier'
 import { assertEventId, assertRunId, assertStepId } from './identifier'
+import { validateExecutionPath, validateLoopIterationData } from './loopIterationEventSchema'
 import { RUN_EVENT_KINDS, type RunEvent, type RunEventKind, type ValidationIssue, type ValidationResult } from './runEventTypes'
 
 const RUN_SCOPED = new Set<RunEventKind>(['run_started', 'run_completed', 'run_failed', 'run_interrupted', 'run_stopped'])
@@ -8,6 +9,8 @@ const STEP_SCOPED = new Set<RunEventKind>([
   'step_started',
   'step_completed',
   'step_failed',
+  'loop_iteration_started',
+  'loop_iteration_completed',
   'terminal_ref_resolved',
   'wait_started',
   'wait_completed',
@@ -83,6 +86,17 @@ export function validateRunEvent(value: unknown, options: RunEventValidationOpti
     issues.push({ path: 'summary', message: 'summary must be a non-empty string' })
   }
   if (!isRecord(value.data)) issues.push({ path: 'data', message: 'data must be an object' })
+  else {
+    if (Object.prototype.hasOwnProperty.call(value.data, 'executionPath')) {
+      validateExecutionPath(value.data.executionPath, 'data.executionPath', issues)
+    }
+    if (Object.prototype.hasOwnProperty.call(value.data, 'nextExecutionPath')) {
+      validateExecutionPath(value.data.nextExecutionPath, 'data.nextExecutionPath', issues)
+    }
+    if (Object.prototype.hasOwnProperty.call(value.data, 'nextStepId') && value.data.nextStepId !== null) {
+      validateId(value.data.nextStepId, 'data.nextStepId', assertStepId, issues)
+    }
+  }
 
   if (typeof value.configId === 'string' && options.configId !== undefined && value.configId !== options.configId) {
     issues.push({ path: 'configId', message: 'configId does not match run scope' })
@@ -100,6 +114,9 @@ export function validateRunEvent(value: unknown, options: RunEventValidationOpti
     }
     if (!RUN_SCOPED.has(value.kind) && !STEP_SCOPED.has(value.kind) && !CONTEXT_SCOPED.has(value.kind)) {
       issues.push({ path: 'kind', message: 'kind has no scope contract' })
+    }
+    if ((value.kind === 'loop_iteration_started' || value.kind === 'loop_iteration_completed') && isRecord(value.data)) {
+      validateLoopIterationData(value.data, value.stepId, issues)
     }
     if (Object.prototype.hasOwnProperty.call(value, 'stepId') && value.stepId !== undefined) {
       validateId(value.stepId, 'stepId', assertStepId, issues)

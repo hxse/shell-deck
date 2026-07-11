@@ -12,8 +12,15 @@ export class AgentEventStore {
 
   append(event: AgentEvent): AgentEvent {
     const valid = assertValidAgentEvent(event)
-    appendJsonLine(this.eventsPath(valid.configId), valid)
+    this.appendValidatedIfNew(valid)
     return valid
+  }
+
+  private appendValidatedIfNew(event: AgentEvent): boolean {
+    const key = agentEventKey(event)
+    if (this.list(event.configId).some((candidate) => agentEventKey(candidate) === key)) return false
+    appendJsonLine(this.eventsPath(event.configId), event)
+    return true
   }
 
   spool(event: AgentEvent): string {
@@ -36,8 +43,7 @@ export class AgentEventStore {
       try {
         for (const event of readEventsFromJsonl(importingPath)) {
           if (event.configId !== configId) throw new Error('spool_config_mismatch:' + event.configId)
-          this.append(event)
-          imported += 1
+          if (this.appendValidatedIfNew(event)) imported += 1
         }
         unlinkSync(importingPath)
       } catch (error) {
@@ -59,7 +65,14 @@ export class AgentEventStore {
   }
 
   matching(match: AgentEventMatch): AgentEvent[] {
-    return this.list(match.configId).filter((event) => matchesAgentEvent(event, match))
+    const seen = new Set<string>()
+    return this.list(match.configId).filter((event) => {
+      if (!matchesAgentEvent(event, match)) return false
+      const key = agentEventKey(event)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
   }
 
   countMatching(match: AgentEventMatch): number {

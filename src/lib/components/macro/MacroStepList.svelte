@@ -1,8 +1,12 @@
 <script lang="ts">
   import { tick } from "svelte"
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
+  import MessagePartsEditor from "./MessagePartsEditor.svelte"
   import ParallelLaneTabs from "./ParallelLaneTabs.svelte"
+  import TemplatableScalarField from "./TemplatableScalarField.svelte"
   import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
+  import { FOR_TEXT_TEMPLATE_TOKEN } from "../../macro/scopedTextTemplate"
+  import { hasNonDefaultTextListItems, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
   import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
@@ -468,55 +472,6 @@
     return null
   }
 
-  function cloneMessage(message: MessageSpec): MessageSpec {
-    return JSON.parse(JSON.stringify(message)) as MessageSpec
-  }
-
-  function addTextPart(message: MessageSpec, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    next.parts.push({ kind: "text", text: "" })
-    onChange(next)
-  }
-
-  function addArtifactPart(_choices: ArtifactChoice[], message: MessageSpec, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    next.parts.push({ kind: "artifact" })
-    onChange(next)
-  }
-
-  function updateTextPart(message: MessageSpec, index: number, text: string, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    const part = next.parts[index]
-    if (part?.kind === "text") part.text = text
-    onChange(next)
-  }
-
-  function updateArtifactPart(message: MessageSpec, index: number, sourceKeyValue: string, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    const part = next.parts[index]
-    if (part?.kind === "artifact") {
-      const source = sourceFromKey(sourceKeyValue)
-      if (source) part.source = source
-      else delete part.source
-    }
-    onChange(next)
-  }
-
-  function moveMessagePart(message: MessageSpec, index: number, offset: number, onChange: (message: MessageSpec) => void) {
-    const target = index + offset
-    if (target < 0 || target >= message.parts.length) return
-    const next = cloneMessage(message)
-    const [part] = next.parts.splice(index, 1)
-    next.parts.splice(target, 0, part)
-    onChange(next)
-  }
-
-  function removeMessagePart(message: MessageSpec, index: number, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    next.parts.splice(index, 1)
-    onChange(next)
-  }
-
   function addElif(nodeId: string) {
     updateDraft((template: MacroTemplate) => {
       const node = findNode(template.body, nodeId)
@@ -676,12 +631,63 @@
     return node.type === "break" || node.type === "continue" || node.type === "finish"
   }
 
-  function forRangeMode(node: Extract<FlowV2Node, { type: "for" }>): "count" | "forever" {
-    return node.range.kind === "forever" ? "forever" : "count"
+  function forRangeMode(node: Extract<FlowV2Node, { type: "for" }>): "count" | "forever" | "text-list" {
+    if (node.range.kind === "forever" || node.range.kind === "text-list") return node.range.kind
+    return "count"
   }
 
   function forRangeCount(node: Extract<FlowV2Node, { type: "for" }>): number {
-    return node.range.kind === "forever" ? 1 : node.range.count
+    return "count" in node.range ? node.range.count : 1
+  }
+
+  function setForRangeMode(nodeId: string, mode: "count" | "forever" | "text-list"): boolean {
+    const current = findNode(draft.body, nodeId)
+    if (current?.type !== "for") return false
+    if (current.range.kind === "text-list" && mode !== "text-list" && hasNonDefaultTextListItems(current.range.items)) {
+      if (!confirm("Switching from text-list will discard its items. Continue?")) return false
+    }
+    updateNode(nodeId, (node) => {
+      if (node.type !== "for") return
+      if (mode === "text-list") node.range = { kind: "text-list", items: [""] }
+      else if (mode === "forever") node.range = { kind: "forever" }
+      else node.range = { kind: "count", count: 1 }
+    })
+    return true
+  }
+
+  function addTextListItem(nodeId: string) {
+    updateNode(nodeId, (node) => {
+      if (node.type === "for" && node.range.kind === "text-list") node.range.items.push("")
+    })
+  }
+
+  function updateTextListItem(nodeId: string, itemIndex: number, value: string) {
+    updateNode(nodeId, (node) => {
+      if (node.type === "for" && node.range.kind === "text-list") node.range.items[itemIndex] = value
+    })
+  }
+
+  function removeTextListItem(nodeId: string, itemIndex: number) {
+    updateNode(nodeId, (node) => {
+      if (node.type !== "for" || node.range.kind !== "text-list" || node.range.items.length <= 1) return
+      node.range.items.splice(itemIndex, 1)
+    })
+  }
+
+  function moveTextListItem(nodeId: string, itemIndex: number, offset: -1 | 1) {
+    updateNode(nodeId, (node) => {
+      if (node.type !== "for" || node.range.kind !== "text-list") return
+      const target = itemIndex + offset
+      if (target < 0 || target >= node.range.items.length) return
+      const [item] = node.range.items.splice(itemIndex, 1)
+      node.range.items.splice(target, 0, item)
+    })
+  }
+
+  function forBodyTemplateScope(node: Extract<FlowV2Node, { type: "for" }>, inherited: TextTemplateScope | null): TextTemplateScope | null {
+    return node.range.kind === "text-list"
+      ? { forStepId: node.id, shadowedForStepId: inherited?.forStepId }
+      : inherited
   }
 
   function uniqueKey(prefix: string, existing: string[]) {
@@ -720,11 +726,11 @@
 <section class="macro-section">
   <div class="macro-section-title"><h3>Flow V2 Body</h3></div>
   <div class="step-list" data-testid="macro-step-list">
-    {@render NodeListEditor(draft.body, [], false, "Root body", false)}
+    {@render NodeListEditor(draft.body, [], false, "Root body", false, null)}
   </div>
 </section>
 
-{#snippet NodeListEditor(nodes: FlowV2Node[], bodyPath: BodyPath, allowLoopControls: boolean, label: string, actionOnly: boolean)}
+{#snippet NodeListEditor(nodes: FlowV2Node[], bodyPath: BodyPath, allowLoopControls: boolean, label: string, actionOnly: boolean, templateScope: TextTemplateScope | null)}
   <details class="flow-block" data-testid="flow-block" open>
     <summary class="step-title flow-block-title" data-testid="flow-block-summary">
       <strong>{label}</strong>
@@ -736,15 +742,15 @@
       </div>
     {/if}
     {#each nodes as node, index (node.id)}
-      {@render NodeEditor(node, index, bodyPath, allowLoopControls, actionOnly)}
+      {@render NodeEditor(node, index, bodyPath, allowLoopControls, actionOnly, templateScope)}
     {/each}
   </details>
 {/snippet}
 
-{#snippet NodeEditor(node: FlowV2Node, index: number, bodyPath: BodyPath, allowLoopControls: boolean, actionOnly: boolean)}
+{#snippet NodeEditor(node: FlowV2Node, index: number, bodyPath: BodyPath, allowLoopControls: boolean, actionOnly: boolean, templateScope: TextTemplateScope | null)}
   <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)}>
     <div class="step-title">
-      <strong>{index + 1}. {node.type}</strong>
+      <strong>{index + 1}. {node.type}{#if node.type === "for" && node.range.kind === "text-list"} <small data-testid="for-text-list-summary">text-list · {FOR_TEXT_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
       <div class="inline-actions node-menu" data-testid="node-menu">
         <button type="button" data-testid="node-add-before" onclick={(event) => openInsertion(beforeAnchor(bodyPath, index, node.id), "Insert before: " + node.id, allowLoopControls, event, actionOnly)}>Add before</button>
         <button type="button" data-testid="node-add-after" onclick={(event) => openInsertion(afterAnchor(bodyPath, index, node.id), "Insert after: " + node.id, allowLoopControls, event, actionOnly)}>Add after</button>
@@ -764,15 +770,15 @@
           {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
-      {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send") item.message = message }), artifactChoicesBefore(node.id))}
+      <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send") item.message = message })} choices={artifactChoicesBefore(node.id)} {templateScope} />
       <label class="checkbox-row"><input type="checkbox" data-testid="send-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
     {:else if node.type === "notify"}
       <div class="macro-row">
         <label>Level<select data-testid="notify-level" value={node.level} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "notify") item.level = event.currentTarget.value as NotificationLevel })}><option value="info">info</option><option value="success">success</option><option value="warning">warning</option><option value="error">error</option></select></label>
         <label>On failure<select data-testid="notify-on-failure" value={node.onFailure} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "notify") item.onFailure = event.currentTarget.value as "continue" | "pause" | "fail" })}><option value="continue">continue</option><option value="pause">pause</option><option value="fail">fail</option></select></label>
       </div>
-      <label>Title<input data-testid="notify-title" value={node.title} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "notify") item.title = event.currentTarget.value })} /></label>
-      {@render MessagePartsEditor(node.message, (message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "notify") item.message = message }), artifactChoicesBefore(node.id))}
+      <TemplatableScalarField label="Title" value={node.title} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "notify") item.title = value })} {templateScope} testId="notify-title" />
+      <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "notify") item.message = message })} choices={artifactChoicesBefore(node.id)} {templateScope} />
       <div class="message-part-row" data-testid="notify-channels">
         <div class="step-title"><strong>Channels</strong></div>
         <div class="macro-row">
@@ -803,7 +809,7 @@
           {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
-      <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = event.currentTarget.value })} /></label>
+      <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = value })} {templateScope} testId="input-prompt" />
       <label class="checkbox-row"><input type="checkbox" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
       <label class="checkbox-row"><input type="checkbox" data-testid="input-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
       <label>Default source
@@ -826,7 +832,7 @@
         <label>Target tab<select data-testid="wait-target-tab" value={quietChoiceFromTarget(node.terminal)} title={terminalChoiceTitle(quietChoiceFromTarget(node.terminal) || choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet" && event.currentTarget.value) item.terminal = targetFromChoice(event.currentTarget.value) })}><option value="" disabled>Choose shell tab</option>{#each quietTerminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
         <div class="macro-row"><label>Quiet ms<input type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
       {:else}
-        <label>Prompt<input value={node.prompt} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = event.currentTarget.value })} /></label>
+        <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = value })} {templateScope} testId="wait-user-continue-prompt" />
       {/if}
     {:else if node.type === "capture-source"}
       {@render CaptureEditor({ capture: node.capture }, terminalChoices, choiceFromTarget, targetFromChoice, defaultCaptureSource, (capture: CaptureSourceConfig) => updateNode(node.id, (item) => { if (item.type === "capture-source") item.capture = capture }))}
@@ -837,21 +843,32 @@
         <div class="flow-branch-card">
           <div class="step-title"><strong>{branch.kind}</strong><button type="button" data-testid={branch.kind === "if" ? "node-add-inside-if" : "node-add-inside-elif"} onclick={(event) => openInsertion(insideAnchor(bodyPath, index, branch.kind === "if" ? "if" : "elif", branchIndex, node.id), "Insert inside " + branch.kind + ": " + node.id, allowLoopControls, event)}>Add inside {branch.kind}</button></div>
           {@render ConditionEditor(branch.condition, artifactChoicesBefore(node.id), (condition: TextMatchCondition) => updateNode(node.id, (item) => { if (item.type === "if") item.branches[branchIndex].condition = condition }))}
-          {@render NodeListEditor(branch.body, [...bodyPath, { kind: "if-branch", nodeId: node.id, branchIndex }], allowLoopControls, branch.kind + " body", false)}
+          {@render NodeListEditor(branch.body, [...bodyPath, { kind: "if-branch", nodeId: node.id, branchIndex }], allowLoopControls, branch.kind + " body", false, templateScope)}
         </div>
       {/each}
       <div class="inline-actions"><button type="button" data-testid="add-flow-elif" onclick={() => addElifAt(bodyPath, index)}>Add elif</button>{#if !node.else}<button type="button" data-testid="add-flow-else" onclick={() => ensureElseAt(bodyPath, index)}>Add else</button>{/if}</div>
-      {#if node.else}<div class="flow-branch-card"><div class="step-title"><strong>else</strong><button type="button" data-testid="node-add-inside-else" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "else", undefined, node.id), "Insert inside else: " + node.id, allowLoopControls, event)}>Add inside else</button></div>{@render NodeListEditor(node.else, [...bodyPath, { kind: "if-else", nodeId: node.id }], allowLoopControls, "else body", false)}</div>{/if}
+      {#if node.else}<div class="flow-branch-card"><div class="step-title"><strong>else</strong><button type="button" data-testid="node-add-inside-else" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "else", undefined, node.id), "Insert inside else: " + node.id, allowLoopControls, event)}>Add inside else</button></div>{@render NodeListEditor(node.else, [...bodyPath, { kind: "if-else", nodeId: node.id }], allowLoopControls, "else body", false, templateScope)}</div>{/if}
     {:else if node.type === "for"}
-      <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={forRangeMode(node)} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "for") return; item.range = event.currentTarget.value === "forever" ? { kind: "forever" } : { kind: "count", count: 1 } })}><option value="count">count</option><option value="forever">forever</option></select></label>{#if forRangeMode(node) === "count"}<label>Count<input data-testid="for-range-count" type="number" value={forRangeCount(node)} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range = { kind: "count", count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
-      <div class="inline-actions"><button type="button" data-testid="node-add-inside-for" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "for", undefined, node.id), "Insert inside for: " + node.id, true, event)}>Add inside for</button></div>{@render NodeListEditor(node.body, [...bodyPath, { kind: "for", nodeId: node.id }], true, "for body", false)}
+      <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={forRangeMode(node)} onchange={(event) => { const previous = forRangeMode(node); const mode = event.currentTarget.value as "count" | "forever" | "text-list"; if (!setForRangeMode(node.id, mode)) event.currentTarget.value = previous }}><option value="count">count</option><option value="forever">forever</option><option value="text-list">text-list</option></select></label>{#if forRangeMode(node) === "count"}<label>Count<input data-testid="for-range-count" type="number" value={forRangeCount(node)} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range = { kind: "count", count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
+      {#if node.range.kind === "text-list"}
+        <div class="text-list-items" data-testid="for-text-list-items">
+          <div class="step-title"><strong>Items</strong><button type="button" data-testid="for-text-list-add" onclick={() => addTextListItem(node.id)}>Add item</button></div>
+          {#each node.range.items as item, itemIndex}
+            <div class="message-part-row text-list-item-card" data-testid="for-text-list-item-card">
+              <div class="step-title"><strong>Item {itemIndex + 1}</strong><div class="inline-actions"><button type="button" disabled={itemIndex === 0} onclick={() => moveTextListItem(node.id, itemIndex, -1)}>Up</button><button type="button" disabled={itemIndex === node.range.items.length - 1} onclick={() => moveTextListItem(node.id, itemIndex, 1)}>Down</button><button type="button" disabled={node.range.items.length <= 1} onclick={() => removeTextListItem(node.id, itemIndex)}>Remove</button></div></div>
+              <LineNumberedTextarea testId="for-text-list-item" value={item} rows={3} ariaLabel={"Text-list item " + (itemIndex + 1)} onInput={(value: string) => updateTextListItem(node.id, itemIndex, value)} />
+            </div>
+          {/each}
+        </div>
+      {/if}
+      <div class="inline-actions"><button type="button" data-testid="node-add-inside-for" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "for", undefined, node.id), "Insert inside for: " + node.id, true, event)}>Add inside for</button></div>{@render NodeListEditor(node.body, [...bodyPath, { kind: "for", nodeId: node.id }], true, "for body", false, forBodyTemplateScope(node, templateScope))}
     {:else if node.type === "parallel"}
-      <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {choiceFromTarget} {targetFromChoice} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} />
+      <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {choiceFromTarget} {targetFromChoice} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} {templateScope} />
     {:else}
       <label>Reason<input value={node.reason ?? ""} oninput={(event) => updateNode(node.id, (item) => { if ("reason" in item) item.reason = event.currentTarget.value || undefined })} /></label>
       {#if node.type === "finish" || node.type === "break" || node.type === "continue"}
         <div class="inline-actions"><button type="button" data-testid="node-add-inside-control" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "control", undefined, node.id), "Insert action before " + node.type + ": " + node.id, false, event, true)}>Add action</button></div>
-        {@render NodeListEditor(node.body ?? [], [...bodyPath, { kind: "control", nodeId: node.id }], false, node.type + " action body", true)}
+        {@render NodeListEditor(node.body ?? [], [...bodyPath, { kind: "control", nodeId: node.id }], false, node.type + " action body", true, templateScope)}
       {/if}
     {/if}
   </article>
@@ -898,36 +915,6 @@
     </section>
   </div>
 {/if}
-
-{#snippet MessagePartsEditor(message: MessageSpec, onChange: (message: MessageSpec) => void, choices: ArtifactChoice[])}
-  <div class="message-parts-editor" data-testid="message-parts-editor">
-    <div class="inline-actions">
-      <button type="button" data-testid="message-add-text" onclick={() => addTextPart(message, onChange)}>Add Text</button>
-      <button type="button" data-testid="message-add-source" title="Add source artifact" onclick={() => addArtifactPart(choices, message, onChange)}>Add Source</button>
-    </div>
-    {#each message.parts as part, partIndex}
-      <div class="message-part-row" data-testid="message-part-row">
-        <div class="step-title">
-          <strong>{partIndex + 1}. {part.kind}</strong>
-          <div class="inline-actions">
-            <button type="button" onclick={() => moveMessagePart(message, partIndex, -1, onChange)}>Up</button>
-            <button type="button" onclick={() => moveMessagePart(message, partIndex, 1, onChange)}>Down</button>
-            <button type="button" onclick={() => removeMessagePart(message, partIndex, onChange)}>Remove</button>
-          </div>
-        </div>
-        {#if part.kind === "text"}
-          <label>Text<LineNumberedTextarea testId="message-text-part" value={part.text} ariaLabel="Message text part" onInput={(value: string) => updateTextPart(message, partIndex, value, onChange)} /></label>
-        {:else}
-          <label>Source artifact
-            <select data-testid="message-source-part" value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(message, partIndex, event.currentTarget.value, onChange)}>
-              <option value="">none</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
-            </select>
-          </label>
-        {/if}
-      </div>
-    {/each}
-  </div>
-{/snippet}
 
 {#snippet ExtractTextEditor(node: Extract<FlowV2Node, { type: "extract_text" }>, choices: ArtifactChoice[], updateExtract: (mutator: (item: Extract<FlowV2Node, { type: "extract_text" }>) => void) => void)}
   <label>Source
@@ -1026,3 +1013,26 @@
     <label>Scope<select value={condition.scope.kind === "lines" ? "lines:" + condition.scope.mode : "whole"} onchange={(event) => { const value = event.currentTarget.value; onChange({ ...condition, scope: value === "whole" ? { kind: "whole" } : { kind: "lines", mode: value.split(":")[1] as never, includeEmptyLines: false } }) }}><option value="whole">whole</option><option value="lines:first">lines.first</option><option value="lines:last">lines.last</option><option value="lines:any">lines.any</option><option value="lines:all">lines.all</option></select></label>
   </div>
 {/snippet}
+
+<style>
+  .text-list-items {
+    display: grid;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .text-list-item-card {
+    min-width: 0;
+    background: #fbfdff;
+  }
+
+  .text-list-item-card > .step-title {
+    flex-wrap: wrap;
+  }
+
+  [data-testid="for-text-list-summary"] {
+    color: #376b91;
+    font-size: 11px;
+    font-weight: 700;
+  }
+</style>

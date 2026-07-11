@@ -1,5 +1,6 @@
 <script lang="ts">
-  import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
+  import MessagePartsEditor from "./MessagePartsEditor.svelte"
+  import type { TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type {
     CaptureSourceConfig,
@@ -28,6 +29,7 @@
     targetFromChoice,
     defaultCaptureSource,
     outerArtifactChoices,
+    templateScope = null,
   } = $props<{
     draft: MacroTemplate
     nodeId: string
@@ -37,6 +39,7 @@
     targetFromChoice: (choice: string) => TerminalTarget
     defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig
     outerArtifactChoices: ArtifactChoice[]
+    templateScope?: TextTemplateScope | null
   }>()
 
   let selectedLaneId = $state("")
@@ -408,55 +411,6 @@
   function outputSourceFromKey(key: string): ParallelOutputSource {
     return sourceFromKey(key) ?? { kind: "none" }
   }
-
-  function cloneMessage(message: MessageSpec): MessageSpec {
-    return JSON.parse(JSON.stringify(message)) as MessageSpec
-  }
-
-  function addTextPart(message: MessageSpec, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    next.parts.push({ kind: "text", text: "" })
-    onChange(next)
-  }
-
-  function addArtifactPart(message: MessageSpec, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    next.parts.push({ kind: "artifact" })
-    onChange(next)
-  }
-
-  function updateTextPart(message: MessageSpec, index: number, text: string, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    const part = next.parts[index]
-    if (part?.kind === "text") part.text = text
-    onChange(next)
-  }
-
-  function updateArtifactPart(message: MessageSpec, index: number, key: string, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    const part = next.parts[index]
-    if (part?.kind === "artifact") {
-      const source = sourceFromKey(key)
-      if (source) part.source = source
-      else delete part.source
-    }
-    onChange(next)
-  }
-
-  function removeMessagePart(message: MessageSpec, index: number, onChange: (message: MessageSpec) => void) {
-    const next = cloneMessage(message)
-    next.parts.splice(index, 1)
-    onChange(next)
-  }
-
-  function moveMessagePart(message: MessageSpec, index: number, offset: number, onChange: (message: MessageSpec) => void) {
-    const target = index + offset
-    if (target < 0 || target >= message.parts.length) return
-    const next = cloneMessage(message)
-    const [part] = next.parts.splice(index, 1)
-    next.parts.splice(target, 0, part)
-    onChange(next)
-  }
 </script>
 
 {#if parallelNode}
@@ -533,7 +487,7 @@
     <label>Action id<input data-testid="parallel-action-id-input" value={item.id} oninput={(event) => { if (!setLaneActionId(lane.id, item.id, event.currentTarget.value)) event.currentTarget.value = item.id }} /></label>
 
     {#if item.type === "send"}
-      {@render MessagePartsEditor(item.message, (message: MessageSpec) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.message = message }), messageChoices(lane, item.id))}
+      <MessagePartsEditor message={item.message} onChange={(message: MessageSpec) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.message = message })} choices={messageChoices(lane, item.id)} {templateScope} testId="parallel-message-parts-editor" textPartTestId="parallel-message-text-part" />
       <label class="checkbox-row"><input type="checkbox" data-testid="parallel-send-enter-checkbox" checked={item.enter} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.enter = event.currentTarget.checked })} />Submit with Enter</label>
     {:else if item.type === "wait"}
       <label>Mode<select value={item.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => {
@@ -586,20 +540,4 @@
     <label>Output id<input data-testid="parallel-output-id-input" value={output.id} oninput={(event) => { if (!setLaneOutputId(lane.id, output.id, event.currentTarget.value)) event.currentTarget.value = output.id }} /></label>
     <label>Source<select value={outputSourceKey(output.source)} onchange={(event) => updateLane(lane.id, (item) => { const node = item.body.find((candidate): candidate is ParallelLaneOutputNode => candidate.id === output.id && candidate.type === "output"); if (node) node.source = outputSourceFromKey(event.currentTarget.value) })}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
   </article>
-{/snippet}
-
-{#snippet MessagePartsEditor(message: MessageSpec, onChange: (message: MessageSpec) => void, choices: ArtifactChoice[])}
-  <div class="message-parts-editor" data-testid="parallel-message-parts-editor">
-    <div class="inline-actions"><button type="button" onclick={() => addTextPart(message, onChange)}>Add Text</button><button type="button" onclick={() => addArtifactPart(message, onChange)}>Add Source</button></div>
-    {#each message.parts as part, index}
-      <div class="message-part-row">
-        <div class="step-title"><strong>{index + 1}. {part.kind}</strong><div class="inline-actions"><button type="button" onclick={() => moveMessagePart(message, index, -1, onChange)}>Up</button><button type="button" onclick={() => moveMessagePart(message, index, 1, onChange)}>Down</button><button type="button" onclick={() => removeMessagePart(message, index, onChange)}>Remove</button></div></div>
-        {#if part.kind === "text"}
-          <LineNumberedTextarea value={part.text} rows={3} onInput={(value: string) => updateTextPart(message, index, value, onChange)} />
-        {:else}
-          <label>Source<select value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(message, index, event.currentTarget.value, onChange)}><option value="">none</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
-        {/if}
-      </div>
-    {/each}
-  </div>
 {/snippet}

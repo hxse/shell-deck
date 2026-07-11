@@ -67,6 +67,24 @@ test('AgentEvent spool ignores writing files and imports only atomically publish
   }
 })
 
+test('AgentEvent store appends each event identity once across direct and spool ingest', () => {
+  const root = mkdtempSync(join(tmpdir(), 'shell-deck-025-agent-dedupe-'))
+  try {
+    const store = new AgentEventStore(root)
+    const event = agentOutput({ terminalId: 'term_dedupe' })
+
+    store.append(event)
+    store.append(structuredClone(event))
+    expect(store.list('local')).toHaveLength(1)
+
+    store.spool(structuredClone(event))
+    expect(store.importSpool('local')).toBe(0)
+    expect(store.list('local')).toHaveLength(1)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('AgentEvent matching is config scoped even when terminal ids are equal', () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-006-config-scope-'))
   try {

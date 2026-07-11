@@ -9,6 +9,8 @@ export const RUN_EVENT_KINDS = [
   'step_started',
   'step_completed',
   'step_failed',
+  'loop_iteration_started',
+  'loop_iteration_completed',
   'artifact_created',
   'terminal_ref_resolved',
   'wait_started',

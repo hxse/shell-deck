@@ -149,7 +149,7 @@ test("send and input enforce message source rules", () => {
 
   const send = validTemplate()
   send.body[0] = { id: "send_bad", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] }, enter: true } as never
-  expect(issues(send)).toContain("message part kind must be text or artifact")
+  expect(issues(send)).toContain("message part kind must be text, template or artifact")
 
   const joined = validTemplate()
   joined.body[0] = { id: "send_join", type: "send", terminal: { kind: "alias", value: "worker" }, message: { join: "newline", parts: [{ kind: "text", text: "legacy" }] }, enter: true } as never

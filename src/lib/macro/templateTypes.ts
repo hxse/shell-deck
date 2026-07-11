@@ -54,8 +54,12 @@ export type FlowV2ArtifactSource = {
   artifact: ArtifactName
 }
 
+export type ScopedTemplateText = { kind: "template"; template: string }
+export type TemplatableScalarText = string | ScopedTemplateText
+
 export type MessagePart =
   | { kind: "text"; text: string }
+  | ScopedTemplateText
   | { kind: "artifact"; source?: FlowV2ArtifactSource }
 
 export type MessageSpec = {
@@ -111,7 +115,7 @@ export type NotifyNode = {
   id: string
   type: "notify"
   level: NotificationLevel
-  title: string
+  title: TemplatableScalarText
   message: MessageSpec
   channels: NotifyChannel[]
   onFailure: NotificationFailureAction
@@ -121,7 +125,7 @@ export type InputNode = {
   id: string
   type: "input"
   terminal: TerminalTarget
-  prompt: string
+  prompt: TemplatableScalarText
   allowEmpty: boolean
   enter: boolean
   defaultSource?: FlowV2ArtifactSource
@@ -130,7 +134,7 @@ export type InputNode = {
 export type WaitNode =
   | { id: string; type: "wait"; mode: "duration"; durationMs: number }
   | { id: string; type: "wait"; mode: "terminal-quiet"; terminal: TerminalTarget; quietMs: number; maxMs: number; onTimeout: TimeoutAction }
-  | { id: string; type: "wait"; mode: "user-continue"; prompt: string }
+  | { id: string; type: "wait"; mode: "user-continue"; prompt: TemplatableScalarText }
 
 export type CaptureSourceNode = {
   id: string
@@ -189,7 +193,10 @@ export type FlowV2IfBranch = {
   body: FlowV2Node[]
 }
 
-export type FlowV2ForRange = { kind?: "count"; count: number } | { kind: "forever" }
+export type FlowV2ForRange =
+  | { kind?: "count"; count: number }
+  | { kind: "forever" }
+  | { kind: "text-list"; items: string[] }
 
 export type FlowV2ControlTerminalNode =
   | { id: string; type: "break"; reason?: string; body?: FlowV2ActionNode[] }

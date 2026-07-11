@@ -2,6 +2,7 @@ import { assertValidPublicId } from "../identifier"
 import type { TerminalIndexMapItem, TerminalSnapshot } from "../protocol"
 import { isCaptureKindAllowed, tabInfoForTarget } from "./tabCapabilities"
 import { validateTerminalTarget } from "./terminalRef"
+import { isScopedTemplateText, scopedTemplateSyntaxIssue } from "./scopedTextTemplate"
 import type {
   CaptureSourceConfig,
   FlowV2ArtifactSource,
@@ -26,6 +27,7 @@ const LEGACY_FIELD_KEYS = new Set(["steps", "next", "loopGuard", "goto", "branch
 const ARTIFACT_SOURCE_KEYS = new Set(["kind", "stepId", "artifact"])
 const MESSAGE_KEYS = new Set(["parts"])
 const TEXT_PART_KEYS = new Set(["kind", "text"])
+const TEMPLATE_PART_KEYS = new Set(["kind", "template"])
 const ARTIFACT_PART_KEYS = new Set(["kind", "source"])
 const SEND_KEYS = new Set(["id", "type", "terminal", "message", "enter"])
 const NOTIFY_KEYS = new Set(["id", "type", "level", "title", "message", "channels", "onFailure"])
@@ -68,6 +70,7 @@ const LINES_SCOPE_KEYS = new Set(["kind", "mode", "includeEmptyLines"])
 const FOR_KEYS = new Set(["id", "type", "range", "body"])
 const RANGE_COUNT_KEYS = new Set(["kind", "count"])
 const RANGE_FOREVER_KEYS = new Set(["kind"])
+const RANGE_TEXT_LIST_KEYS = new Set(["kind", "items"])
 const CONTROL_TERMINAL_KEYS = new Set(["id", "type", "reason", "body"])
 const SIMPLE_OPS = new Set(["contains", "not_contains", "equals", "not_equals", "starts_with", "ends_with"])
 const LINE_MODES = new Set(["first", "last", "any", "all"])
@@ -84,6 +87,7 @@ type ValidationContext = {
   nodeIds: Set<string>
   artifactOutputs: Map<string, Set<string>>
   loopDepth: number
+  textTemplateScopes: string[]
 }
 
 export function validateFlowV2Template(value: unknown, options: ValidateOptions = {}): ValidationResult {
@@ -102,7 +106,7 @@ export function validateFlowV2Template(value: unknown, options: ValidateOptions 
   validateString(issues, "description", template.description, 0)
   validateIsoString(issues, "createdAt", template.createdAt)
   validateIsoString(issues, "updatedAt", template.updatedAt)
-  const context: ValidationContext = { indexMap: options.indexMap, terminals: options.terminals, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0 }
+  const context: ValidationContext = { indexMap: options.indexMap, terminals: options.terminals, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0, textTemplateScopes: [] }
   validateNodeList(issues, "body", template.body, context, false)
   return { ok: issues.length === 0, issues }
 }
@@ -185,7 +189,7 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
   if (node.type === "input") {
     rejectUnknownKeys(issues, path, node, INPUT_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
-    validateString(issues, path + ".prompt", node.prompt, 1)
+    validateTemplatableScalarText(issues, path + ".prompt", node.prompt, context, 1)
     if (typeof node.allowEmpty !== "boolean") issues.push({ path: path + ".allowEmpty", message: "allowEmpty must be boolean" })
     if (typeof node.enter !== "boolean") issues.push({ path: path + ".enter", message: "enter must be boolean" })
     if (node.defaultSource !== undefined) validateArtifactSource(issues, path + ".defaultSource", node.defaultSource, context)
@@ -215,7 +219,7 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
 function validateNotifyNode(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
   rejectUnknownKeys(issues, path, node, NOTIFY_KEYS)
   if (node.level !== "info" && node.level !== "success" && node.level !== "warning" && node.level !== "error") issues.push({ path: path + ".level", message: "level must be info, success, warning or error" })
-  validateString(issues, path + ".title", node.title, 1)
+  validateTemplatableScalarText(issues, path + ".title", node.title, context, 1)
   validateMessageSpec(issues, path + ".message", node.message, context)
   validateNotifyChannels(issues, path + ".channels", node.channels)
   if (node.onFailure !== "continue" && node.onFailure !== "pause" && node.onFailure !== "fail") issues.push({ path: path + ".onFailure", message: "onFailure must be continue, pause or fail" })
@@ -270,7 +274,7 @@ function validateWaitNode(issues: ValidationIssue[], path: string, node: Record<
   }
   if (node.mode === "user-continue") {
     rejectUnknownKeys(issues, path, node, WAIT_USER_CONTINUE_KEYS)
-    validateString(issues, path + ".prompt", node.prompt, 1)
+    validateTemplatableScalarText(issues, path + ".prompt", node.prompt, context, 1)
     return
   }
   rejectUnknownKeys(issues, path, node, WAIT_ANY_KEYS)
@@ -560,7 +564,11 @@ function validateControlNode(issues: ValidationIssue[], path: string, node: Reco
   if (node.type === "for") {
     rejectUnknownKeys(issues, path, node, FOR_KEYS)
     validateForRange(issues, path + ".range", node.range)
-    validateNodeList(issues, path + ".body", node.body, childContext(context, context.loopDepth + 1), true)
+    const bodyContext = childContext(context, context.loopDepth + 1)
+    if (isObject(node.range) && node.range.kind === "text-list" && typeof node.id === "string") {
+      bodyContext.textTemplateScopes = [...context.textTemplateScopes, node.id]
+    }
+    validateNodeList(issues, path + ".body", node.body, bodyContext, true)
     return
   }
   if (node.type === "break" || node.type === "continue") {
@@ -587,7 +595,14 @@ function validateForRange(issues: ValidationIssue[], path: string, range: unknow
     rejectUnknownKeys(issues, path, range, RANGE_FOREVER_KEYS)
     return
   }
-  issues.push({ path: path + ".kind", message: "for range kind must be count or forever" })
+  if (range.kind === "text-list") {
+    rejectUnknownKeys(issues, path, range, RANGE_TEXT_LIST_KEYS)
+    if (!Array.isArray(range.items)) { issues.push({ path: path + ".items", message: "text-list items must be an array" }); return }
+    if (range.items.length === 0) issues.push({ path: path + ".items", message: "text-list items must not be empty" })
+    range.items.forEach((item, index) => { if (typeof item !== "string") issues.push({ path: path + ".items[" + index + "]", message: "text-list item must be a string" }) })
+    return
+  }
+  issues.push({ path: path + ".kind", message: "for range kind must be count, forever or text-list" })
 }
 
 function validateControlTerminalFields(issues: ValidationIssue[], path: string, node: Record<string, unknown>, context: ValidationContext) {
@@ -671,11 +686,14 @@ function validateMessageSpec(issues: ValidationIssue[], path: string, message: u
     if (part.kind === "text") {
       rejectUnknownKeys(issues, partPath, part, TEXT_PART_KEYS)
       validateString(issues, partPath + ".text", part.text, 0)
+    } else if (part.kind === "template") {
+      rejectUnknownKeys(issues, partPath, part, TEMPLATE_PART_KEYS)
+      validateScopedTemplateValue(issues, partPath + ".template", part.template, context)
     } else if (part.kind === "artifact") {
       rejectUnknownKeys(issues, partPath, part, ARTIFACT_PART_KEYS)
       if (part.source !== undefined) validateArtifactSource(issues, partPath + ".source", part.source, context)
     } else {
-      issues.push({ path: partPath + ".kind", message: "message part kind must be text or artifact" })
+      issues.push({ path: partPath + ".kind", message: "message part kind must be text, template or artifact" })
     }
   }
 }
@@ -741,7 +759,7 @@ function terminalIdentityKey(target: unknown, indexMap?: TerminalIndexMapItem[])
 }
 
 function childContext(context: ValidationContext, loopDepth: number): ValidationContext {
-  return { ...context, loopDepth, artifactOutputs: cloneArtifactOutputs(context.artifactOutputs) }
+  return { ...context, loopDepth, artifactOutputs: cloneArtifactOutputs(context.artifactOutputs), textTemplateScopes: [...context.textTemplateScopes] }
 }
 
 function cloneArtifactOutputs(outputs: Map<string, Set<string>>): Map<string, Set<string>> {
@@ -783,6 +801,26 @@ function validateInt(issues: ValidationIssue[], path: string, value: unknown) {
 
 function validateTimeoutAction(issues: ValidationIssue[], path: string, value: unknown, allowed: Set<string>) {
   if (typeof value !== "string" || !allowed.has(value)) issues.push({ path, message: "value must be one of " + [...allowed].join(", ") })
+}
+
+function validateTemplatableScalarText(issues: ValidationIssue[], path: string, value: unknown, context: ValidationContext, minLength: number) {
+  if (typeof value === "string") { validateString(issues, path, value, minLength); return }
+  if (!isScopedTemplateText(value)) {
+    issues.push({ path, message: "value must be a literal string or scoped template object" })
+    return
+  }
+  rejectUnknownKeys(issues, path, value as unknown as Record<string, unknown>, TEMPLATE_PART_KEYS)
+  validateScopedTemplateValue(issues, path + ".template", value.template, context)
+}
+
+function validateScopedTemplateValue(issues: ValidationIssue[], path: string, value: unknown, context: ValidationContext) {
+  if (typeof value !== "string") {
+    issues.push({ path, message: "template must be a string" })
+    return
+  }
+  const syntaxIssue = scopedTemplateSyntaxIssue(value)
+  if (syntaxIssue) issues.push({ path, message: syntaxIssue })
+  if (context.textTemplateScopes.length === 0) issues.push({ path, message: "template requires an enclosing text-list for" })
 }
 
 function validateString(issues: ValidationIssue[], path: string, value: unknown, minLength: number) {

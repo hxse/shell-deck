@@ -46,7 +46,7 @@ Invalid removed nodes and fields include `send_line`, `input_line`, `sleep`, `pa
 
 `send` writes rendered message text to a target tab. It stores explicit `enter: boolean`; new UI nodes default to `enter: true`.
 
-`send.message.parts` is an ordered list. It may be empty. Each part is either literal text or a source artifact reference. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without adding implicit separators and without trimming leading or trailing whitespace. Newline characters inside text or artifacts are user content.
+`send.message.parts` is an ordered list. It may be empty. Each part is literal text, scoped template text, or a source artifact reference. Literal `{ "kind": "text", "text": string }` never interpolates braces. Scoped `{ "kind": "template", "template": string }` is valid only under a lexical text-list binding and replaces exact `{{text}}` tokens once; item text, artifacts, and rendered output are never scanned recursively. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without implicit separators or trimming; newlines and surrounding whitespace are user content.
 
 ```json
 {
@@ -63,9 +63,17 @@ Invalid removed nodes and fields include `send_line`, `input_line`, `sleep`, `pa
 }
 ```
 
-`input` pauses for user text. It stores a fixed `prompt`, `allowEmpty`, explicit `enter: boolean`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it. The final textarea content is raw user content and is not trimmed. `allowEmpty = false` rejects only zero-length input.
+`input` pauses for user text. Its `prompt` may be a literal string or scoped template scalar; it also stores `allowEmpty`, explicit `enter: boolean`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it. The final textarea content is raw user content, is not trimmed, and is never template-expanded. `allowEmpty = false` rejects only zero-length input.
 
 Macro submit uses LF. Runtime write payload is `content + (enter ? "\n" : "")` for shell/fake/real and text tabs. The macro layer must not append CR. Template JSON must not mutate `message` or user input to include the submit sequence; runtime `terminal_text_sent` events record both `content.artifactRef` and exact `write.artifactRef`, plus `enter` and `enterSequence = lf | none`.
+
+## Scoped Text Templates
+
+A text-list loop binds its current item to the fixed name `text`. The only token grammar is exact `{{text}}`; expressions, whitespace variants, paths, filters, indexes, escaping rules, and outer-binding access are unsupported. A template must contain at least one exact token and may contain it more than once.
+
+Template-capable content is deliberately limited to six UI surfaces: normal send message text parts, parallel-lane send message text parts, notify title, notify message text parts, input prompt, and user-continue wait prompt. Condition/filter/extract text, ids and metadata, text-list items, control reasons, terminal/artifact/profile selectors, parallel labels, and merge separators remain literal/non-template fields.
+
+Text-list scope is lexical. If/elif/else, control-terminal action bodies, inner count/forever loops, and parallel lane bodies inherit the current binding. An inner text-list shadows it and leaving that body restores the outer binding. A template outside any text-list scope is invalid for save/import/start; moving an existing template out of scope preserves its type and text so the editor can show an inline error and let the user explicitly turn template mode off. The editor exposes template mode as a default-off per-field/part checkbox and edits text-list items as independent multiline cards without trimming, splitting, or deduplicating them.
 
 ## Wait Modes
 
@@ -122,10 +130,13 @@ A config can have at most one live macro run. Live includes running, paused, wai
 
 `pause` and `stop` are runner controls, not template nodes. Completion is represented by `finish`.
 
-`for.range` supports two modes:
+`for.range` supports three modes:
 
-- count: `{ "kind": "count", "count": 3 }`; reading legacy `{ "count": 3 }` is allowed, but new UI writes explicit `kind`.
+- count: `{ "kind": "count", "count": 3 }`; reading `{ "count": 3 }` is allowed, but new UI writes explicit `kind`.
 - forever: `{ "kind": "forever" }`; it runs until `break`, `finish`, stop, or fail, and must not store `count`.
+- text-list: `{ "kind": "text-list", "items": string[] }`; `items` must contain at least one string. Empty strings are valid items, and order, duplicates, Unicode, newlines, and surrounding whitespace are preserved byte-for-byte.
+
+Normal in-process pause/resume uses an occurrence-aware execution cursor rather than a static completed-step set. Sequence position, selected if branch, loop iteration/binding, parallel lane position, wait/input/capture suspension state, and occurrence-aware artifacts resume at the same dynamic invocation. Static step completion remains a UI/log summary only. Cursor snapshots are JSON-serializable, but server restart still leaves an in-flight run interrupted rather than hydrating and resuming it.
 
 `finish`, `break`, and `continue` may include an optional action-only `body`. The runner executes that body first; only after the body completes does the control transfer take effect. The body may contain ordinary action nodes only. It must not contain `if`, `for`, `finish`, `break`, or `continue`.
 
@@ -152,8 +163,8 @@ It does not allow nested parallel, lane-local `input`, parse/AI action, or lane-
 
 ## Notify
 
-`notify` emits a macro notification without writing to a terminal. It renders `message.parts` with the same ordered message-part semantics as `send`. Supported levels are `info`, `success`, `warning`, and `error`. Supported channels are `app`, `system`, and `telegram`.
+`notify` emits a macro notification without writing to a terminal. Its title is a literal/template scalar and its `message.parts` use the same ordered literal/template/artifact semantics as `send`. Title and message must both render successfully before any channel delivery begins. Supported levels are `info`, `success`, `warning`, and `error`. Supported channels are `app`, `system`, and `telegram`.
 
 `app` is shell-deck's built-in floating notification with optional sound (`none | bell | chime | ping | pulse | success | warning | alert`); new UI nodes default to `success`. It renders as one floating notice; the user can close it with Dismiss or by clicking outside the notice, and that outside click is consumed before normal workspace interaction. A newer app notification replaces the current one. App sound volume is a browser-global Settings preference up to 1000% and is not stored in macro JSON. `system` is a browser Notification API notification; the browser asks for permission when needed and reports denied/unavailable state in the app floating notice. `telegram` references a local profile by `profileId`; macro template JSON must not contain bot tokens or channel ids. Runtime Telegram profiles live in ignored local config at `.shell-deck/notification-profiles.json`; the tracked example is `config/notification-profiles.example.json`. The Macro editor renders Telegram profile ids as a select populated from the local runtime config; it does not expose token or channel id fields. App floating notices and Telegram messages include notification time, notification id, run id, and step id metadata.
 
-`notify.onFailure` is `continue | pause | fail`. It applies to server-side delivery failures such as missing Telegram profile or Telegram HTTP failure. Browser-local permission denial for `system` is not a runner failure. Notify is not a parallel lane action in V0; put it after parent `parallel` fan-in when merged output is needed.
+`notify.onFailure` is `continue | pause | fail`. It applies to server-side delivery failures such as missing Telegram profile or Telegram HTTP failure. If a failure pauses the run after another channel succeeded, normal resume retries only undelivered/failed channels; it must not rebroadcast the browser notification or redeliver a successful Telegram profile. Browser-local permission denial for `system` is not a runner failure. Notify is not a parallel lane action in V0; put it after parent `parallel` fan-in when merged output is needed.

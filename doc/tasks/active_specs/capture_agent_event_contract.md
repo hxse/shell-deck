@@ -20,6 +20,10 @@ AgentEvent capture requires `captureMode`:
 - `prompt_only`: captures the next `UserPromptSubmit.prompt` as `captured_text`.
 - `prompt_and_result`: waits for `UserPromptSubmit.prompt` and `Stop.last_assistant_message` with the same `agentSessionId` and the same `agentTurnId`, then writes sectioned text containing both.
 
+Inside loops or parallel lanes, AgentEvent baseline, consumed event identity, waiting state, and active timeout budget belong to the dynamic capture occurrence identified by `executionPath`. Pausing and resuming in the same runner runtime continues that occurrence; later loop iterations cannot reuse already consumed events. `capture_wait_started` and `capture_artifact_created` include the occurrence path for tracing. Server restart does not restore this in-memory waiting/consumption cursor and leaves the run interrupted.
+
+At run start, spool import completes before each static capture target records its per-event-kind baseline. Consumption is keyed by `agentEventKey`: consumed identities beyond an unconsumed hole remain sparse cursor entries, and the high-water mark advances only across the contiguous consumed prefix. It must not skip an unconsumed event merely because a later event was consumed. `prompt_and_result` scans the eligible prompt and output streams independently and pairs matching `agentSessionId` / `agentTurnId`, so an out-of-order arrival is retained once the complete pair exists.
+
 ## Terminal Buffer
 
 Terminal-buffer `scrollback-tail` renders visible terminal text instead of treating every carriage return as a newline. Raw and normalized artifacts are both traceable; `raw-stream-tail` is available when the user explicitly wants the raw PTY stream.
@@ -51,4 +55,4 @@ Codex `SessionStart`, `UserPromptSubmit`, and `Stop` hooks are the supported ada
 
 ## Ingest And Spool
 
-When local HTTP ingest is available, hooks can POST to `/api/agent-events`. Offline hook fallback writes atomically published JSONL spool files; server import folds spool into the append-only AgentEvent store.
+When local HTTP ingest is available, hooks can POST to `/api/agent-events`. Offline hook fallback writes atomically published JSONL spool files; server import folds spool into the append-only AgentEvent store. Direct append and spool import both deduplicate by `agentEventKey`: receiving the same identity again is an idempotent no-op, creates no second store entry, and does not increment the spool import count.

@@ -44,7 +44,7 @@ just start-mock-ai  # explicit mock ai-json for offline demos/tests
 just start-codex-ai # real codex exec parser; may use auth/network/model quota
 ```
 
-If a macro uses `ai-json` while the server is in disabled mode, the run pauses with `ai_json_adapter_not_configured`. This avoids silently using mock AI or silently spending model quota.
+Flow V2 does not expose `parse` or `ai-json` as macro actions. These parser-mode server entries remain for explicit developer probes and do not change the runnable macro language.
 
 ## Terminal Deck
 
@@ -91,24 +91,52 @@ The macro workbench supports:
 - searchable template selection
 - template create/save/duplicate/delete with delete confirmation in one toolbar
 - import/export JSON backups
-- visual editing for top-level macro steps and basic `parallel_all` lane id/terminal fields
-- JSON preview/import/export for advanced fields, including lane internals
+- visual editing for nested Flow V2 bodies, including `if`, `for`, control action bodies, and bounded parallel lanes
+- JSON preview/import/export for the complete `schemaVersion: 2` document
 - structured branch conditions only; no expression strings and no JS eval
 
-Common V0 step types:
+Flow V2 action nodes are `send`, `notify`, `input`, `wait`, `capture-source`, `extract_text`, and `parallel`. Control nodes are `if`, `for`, `break`, `continue`, and `finish`. A parallel lane ends with its mandatory `output` node; it is not a general top-level action.
 
-- `send_line`: writes text to target terminal and presses Enter
-- `sleep`: waits for a fixed duration
-- `wait`: duration, terminal quiet, capture-ready-or-user, or user-continue
-- `input_line`: pauses for user text, sends it to target terminal, then continues
-- `capture-source`: terminal-buffer or AgentEvent capture
-- `parse`: regex or ai-json parser over a capture artifact
-- `branch`, `goto`, `pause`, `complete`, `fail`, `stop`
-- `parallel_all`: bounded fan-out/fan-in across different terminals inside one macro run
+Use a `text-list` range when the same body should run once for each piece of text. Plain text remains literal, including braces. To use the current item, explicitly enable the default-off `Use {{text}} template` checkbox for that field or message part; the stored value then uses `{ "kind": "template", "template": "...{{text}}..." }`.
+
+```json
+{
+  "id": "for_phases",
+  "type": "for",
+  "range": {
+    "kind": "text-list",
+    "items": ["阶段 1：处理高频策略", "阶段 2：处理中频策略"]
+  },
+  "body": [
+    {
+      "id": "send_phase",
+      "type": "send",
+      "terminal": { "kind": "alias", "value": "worker" },
+      "message": {
+        "parts": [
+          { "kind": "template", "template": "请执行：{{text}}" }
+        ]
+      },
+      "enter": true
+    }
+  ]
+}
+```
+
+Template mode is limited to six user-visible content surfaces:
+
+- normal `send.message` text parts
+- parallel-lane `send.message` text parts
+- `notify.title`
+- `notify.message` text parts
+- `input.prompt`
+- `wait.user-continue.prompt`
+
+The checkbox is available only inside a lexical `text-list for` scope. `if` branches, control action bodies, inner count/forever loops, and parallel lanes inherit the current item. An inner text-list shadows the outer item until its body ends. V0 does not provide outer-binding access, named variables, or a general expression language; all other strings remain literal or keep their existing field-specific grammar.
 
 ## Observability
 
-Each macro run writes one append-only event log plus artifacts. The visual node log and AI-readable trace derive from that same event log. Expand nodes to inspect inputs, waits, captures, parser results, branch decisions, parallel lane events, and artifact refs.
+Each macro run writes one append-only event log plus artifacts. The visual node log and AI-readable trace derive from that same event log. Expand nodes to inspect inputs, waits, captures, extraction results, branch decisions, loop iterations, parallel lane events, and artifact refs.
 
 ## Offline Test Gate
 
@@ -146,8 +174,7 @@ They may require Codex auth, network, and model quota. If unavailable, record th
 
 - No authentication or access control; keep default local bind unless you understand the LAN risk.
 - No Codex session binding or session restore; use `codex resume` manually in a terminal if needed.
-- `ai-json` real parser depends on Codex structured output compatibility and external model availability.
-- Full nested visual editing for `parallel_all` lane internals is deferred; use JSON for advanced lane steps/conditions.
-- Crash recovery for the tiny window where terminal input was sent but the event was not written is deferred; normal pause/resume duplicate-send prevention is implemented.
+- Normal pause/resume continues the exact dynamic macro occurrence only while the same runner runtime is alive. Server restart leaves an in-flight run interrupted; it does not hydrate and resume the execution cursor.
+- Crash-safe exactly-once delivery is not guaranteed for the window where a terminal or notification side effect succeeds before its event/checkpoint is appended.
 
 Run Log / AI Trace lives under the Macro Trace tab, follows the selected macro template, and updates from server run events automatically.
