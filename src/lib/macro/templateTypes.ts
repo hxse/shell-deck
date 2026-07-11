@@ -199,7 +199,7 @@ export type TextListItem = {
 }
 
 export type FlowV2ForRange =
-  | { kind?: "count"; count: number }
+  | { kind: "count"; count: number }
   | { kind: "forever" }
   | { kind: "text-list"; items: TextListItem[] }
 

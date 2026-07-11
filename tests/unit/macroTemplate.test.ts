@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "bun:test"
@@ -35,7 +35,7 @@ test("macro template rejects legacy v1 steps and session fields", () => {
   const legacy = { schemaVersion: 1, id: "legacy", name: "legacy", description: "", configId: "local", steps: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z", codexSessionId: "abc" }
   const text = validateMacroTemplate(legacy, { indexMap }).issues.map((issue) => issue.path + ":" + issue.message).join("\n")
   expect(text).toContain("schemaVersion:Flow V2 template schemaVersion must be 2")
-  expect(text).toContain("steps:legacy control/parser fields are not allowed in Flow V2")
+  expect(text).toContain("template.steps:extra Flow V2 field is not allowed")
   expect(text).toContain("codexSessionId:macro template must not persist Codex session fields")
 })
 
@@ -58,6 +58,59 @@ test("store creates, saves, duplicates and imports Flow V2 templates", () => {
     const imported = store.import("local", { ...template("imported"), configId: "elsewhere" }, indexMap)
     expect(imported.id).toBe("imported")
     expect(imported.configId).toBe("local")
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test("store hard cuts noncanonical shapes across save, import, read, list and duplicate", () => {
+  const root = mkdtempSync(join(tmpdir(), "shell-deck-macro-hard-cut-"))
+  try {
+    const store = new MacroTemplateStore(root)
+    store.save("local", template("valid_current"), indexMap)
+    const templateDir = join(root, ".shell-deck", "configs", "local", "templates")
+    const baselineFiles = readdirSync(templateDir).sort()
+    const oldCount = {
+      ...template("old_count"),
+      body: [{
+        id: "old_loop",
+        type: "for",
+        range: { count: 2 },
+        body: [{ id: "loop_finish", type: "finish", reason: "done" }],
+      }],
+    }
+    const extraTerminalField = {
+      ...template("extra_terminal_field"),
+      body: template("extra_terminal_field").body.map((node) => node.id === "send"
+        ? { ...node, terminal: { kind: "alias", value: "worker", alias: "old" } }
+        : node),
+    }
+    const missingId = { ...template("missing_id"), id: undefined }
+    const missingCreatedAt = { ...template("missing_created_at"), createdAt: undefined }
+    const inheritedKindRange = Object.assign(Object.create({ kind: "count" }), { count: 2 })
+    const inheritedKind = {
+      ...template("inherited_kind"),
+      body: [{ id: "inherited_loop", type: "for", range: inheritedKindRange, body: [{ id: "inherited_finish", type: "finish", reason: "done" }] }],
+    }
+
+    for (const value of [oldCount, extraTerminalField, missingId, missingCreatedAt, inheritedKind]) {
+      expect(() => store.save("local", value as never, indexMap)).toThrow()
+      expect(readdirSync(templateDir).sort()).toEqual(baselineFiles)
+    }
+    for (const value of [oldCount, extraTerminalField, missingId, missingCreatedAt, inheritedKind]) {
+      expect(() => store.import("local", value, indexMap)).toThrow("invalid_macro_template")
+      expect(readdirSync(templateDir).sort()).toEqual(baselineFiles)
+    }
+
+    const diskPath = join(templateDir, "old_count.json")
+    const original = JSON.stringify(oldCount, null, 2) + "\n"
+    writeFileSync(diskPath, original, "utf8")
+    const invalidDiskFiles = readdirSync(templateDir).sort()
+    expect(() => store.read("local", "old_count")).toThrow("invalid_macro_template")
+    expect(() => store.duplicate("local", "old_count", indexMap)).toThrow("invalid_macro_template")
+    expect(() => store.list("local")).toThrow("invalid_macro_template")
+    expect(readFileSync(diskPath, "utf8")).toBe(original)
+    expect(readdirSync(templateDir).sort()).toEqual(invalidDiskFiles)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

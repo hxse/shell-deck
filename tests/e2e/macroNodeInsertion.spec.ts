@@ -19,6 +19,61 @@ async function insertAfterLast(page: { getByTestId: (id: string) => any }, testI
   await expect(page.getByTestId('macro-insertion-palette')).toHaveCount(0)
 }
 
+test('count editor persists only the explicit discriminator and rejects old imports', async ({ page, request }) => {
+  const configId = 'macro-count-canonical-e2e-' + Date.now()
+  await request.post('/api/configs/' + configId + '/terminals?backend=fake')
+  await page.goto('/?configId=' + configId)
+  await openTemplateDrawer(page)
+  await page.getByTestId('macro-create').click()
+  await expect(page.getByTestId('macro-template-select')).not.toHaveValue('')
+  const templateId = await page.getByTestId('macro-template-select').inputValue()
+  await page.getByTestId('macro-template-summary').click()
+
+  await page.getByTestId('empty-body-add').first().click()
+  await page.getByTestId('add-flow-for').click()
+  const rangeMode = page.getByTestId('for-range-mode')
+  await expect(rangeMode).toHaveValue('count')
+  await rangeMode.selectOption('forever')
+  await expect(page.getByTestId('for-range-count')).toHaveCount(0)
+  await rangeMode.selectOption('count')
+  await expect(page.getByTestId('for-range-count')).toHaveValue('1')
+  await page.getByTestId('node-add-inside-for').click()
+  await page.getByTestId('add-step-wait').click()
+  await page.getByTestId('macro-tab-json').click()
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"kind": "count"')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"count": 1')
+  await page.getByTestId('macro-tab-editor').click()
+
+  await openTemplateDrawer(page)
+  const saveResponsePromise = page.waitForResponse((response) => response.request().method() === 'PUT' && response.url().endsWith('/api/configs/' + configId + '/templates/' + templateId))
+  await page.getByTestId('macro-save').click()
+  expect((await saveResponsePromise).status()).toBe(200)
+  const savedResponse = await request.get('/api/configs/' + configId + '/templates/' + templateId)
+  expect(savedResponse.status()).toBe(200)
+  const savedBody = await savedResponse.json() as { template: { body: Array<{ type: string; range?: unknown }> } }
+  expect(savedBody.template.body[0]).toMatchObject({ type: 'for', range: { kind: 'count', count: 1 } })
+
+  const rejected = await request.post('/api/configs/' + configId + '/templates/import', {
+    data: {
+      ...savedBody.template,
+      id: 'old_count_import',
+      name: 'Old Count Import',
+      body: [{ id: 'old_loop', type: 'for', range: { count: 2 }, body: [] }],
+    },
+  })
+  expect(rejected.status()).toBe(422)
+
+  await page.reload()
+  await openTemplateDrawer(page)
+  const optionValues = await page.getByTestId('macro-template-select').locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))
+  expect(optionValues).toContain(templateId)
+  expect(optionValues).not.toContain('old_count_import')
+  await page.getByTestId('macro-template-select').selectOption(templateId)
+  await page.getByTestId('macro-template-summary').click()
+  await expect(page.getByTestId('for-range-mode')).toHaveValue('count')
+  await expect(page.getByTestId('for-range-count')).toHaveValue('1')
+})
+
 test('Macro node insertion uses local anchors and floating palette', async ({ page, request }) => {
   await request.post('/api/configs/macro-node-insertion-e2e/terminals?backend=fake')
   await page.goto('/?configId=macro-node-insertion-e2e')

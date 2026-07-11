@@ -14,5 +14,5 @@ test("parallel_all is rejected in the Flow V2 macro language", () => {
     body: [{ id: "parallel", type: "parallel_all", lanes: [], join: { mode: "all_success" } }],
   })
   expect(result.ok).toBe(false)
-  expect(result.issues.map((issue) => issue.message).join("\n")).toContain("legacy Flow V1 node type is unsupported in Flow V2")
+  expect(result.issues.map((issue) => issue.path + ":" + issue.message).join("\n")).toContain("body[0].type:unsupported Flow V2 node type")
 })

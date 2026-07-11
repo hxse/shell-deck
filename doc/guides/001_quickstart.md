@@ -50,11 +50,13 @@ Flow V2 does not expose `parse` or `ai-json` as macro actions. These parser-mode
 
 Open two browser tabs to the same URL and config. Terminal output, terminal order, aliases, and replay are synchronized by the server. A fresh `just start` opens two real shell terminals by default.
 
-V0 terminal refs:
+Macro terminal refs use one of these complete JSON objects:
 
 - `{ "kind": "index", "value": 1 }`: convenient dynamic position
 - `{ "kind": "id", "value": "term_..." }`: stable terminal id
 - `{ "kind": "alias", "value": "reviewer" }`: terminal tab rename alias
+
+Each ref contains exactly `kind` and `value`. Macro JSON does not accept scalar terminal refs or additional fields.
 
 Double-click a terminal tab to rename it. That alias is the macro-visible alias. Use the tab close button to remove a terminal; shell-deck asks for confirmation before closing. Dragging terminal tabs is behind the drag toggle to avoid accidental reorder.
 
@@ -97,7 +99,22 @@ The macro workbench supports:
 
 Flow V2 action nodes are `send`, `notify`, `input`, `wait`, `capture-source`, `extract_text`, and `parallel`. Control nodes are `if`, `for`, `break`, `continue`, and `finish`. A parallel lane ends with its mandatory `output` node; it is not a general top-level action.
 
-Use a `text-list` range when the same body should run once for each structured item. Each item has a user-editable single-line `key` and multiline `value`; the loop generates a pure one-based numeric `index` from its current position. Plain text remains literal, including braces. To interpolate the current item, explicitly enable the default-off `Use loop template` checkbox and insert exact `{{index}}`, `{{key}}`, or `{{value}}` tokens. Old string items and `{{text}}` template syntax are invalid and are not migrated.
+A count loop always stores an explicit discriminator:
+
+```json
+{
+  "id": "for_three",
+  "type": "for",
+  "range": { "kind": "count", "count": 3 },
+  "body": [
+    { "id": "wait_between", "type": "wait", "mode": "duration", "durationMs": 1000 }
+  ]
+}
+```
+
+The count range object contains exactly `kind` and the positive integer `count`.
+
+Use a `text-list` range when the same body should run once for each structured item. Each item is exactly `{ "key": string, "value": string }`, with a user-editable single-line `key` and multiline `value`; the loop generates a pure one-based numeric `index` from its current position. Plain text remains literal, including braces. To interpolate the current item, explicitly enable the default-off `Use loop template` checkbox and insert exact `{{index}}`, `{{key}}`, or `{{value}}` tokens. Template parts accept only those three exact tokens.
 
 ```json
 {
@@ -145,6 +162,20 @@ The checkbox is available only inside a lexical `text-list for` scope. `if` bran
 
 Macro multiline content editors keep one spare visual line, grow automatically to their row cap, and then scroll internally. You can drag them taller temporarily (up to 60% of the viewport); that manual height is intentionally not saved and resets when the editor is reopened or the page reloads.
 
+## Macro Runner HTTP
+
+Read the current runner snapshot with `GET /api/configs/<configId>/runner`. Control it with `POST /api/configs/<configId>/runner/<action>` and one of these exact JSON bodies:
+
+| Action | JSON body |
+| --- | --- |
+| `start` | `{ "templateId": "tmpl_current" }` |
+| `pause` | `{}` |
+| `resume` | `{}` |
+| `stop` | `{}` |
+| `input` | `{ "text": "user input" }` |
+
+The request object cannot contain additional fields. `templateId` must be a non-empty string. Input `text` may be empty at the HTTP boundary; the waiting node's `allowEmpty` setting decides whether the service accepts it. A zero-byte empty HTTP body is interpreted as `{}`, so it is valid only for pause/resume/stop; a whitespace-only body is malformed JSON. Malformed JSON, non-object JSON, missing or invalid required fields, and unknown fields return HTTP 422 before the action reaches the runner. Runtime state conflicts return HTTP 409. Resume always continues from the server-owned occurrence cursor.
+
 ## Observability
 
 Each macro run writes one append-only event log plus artifacts. The visual node log and AI-readable trace derive from that same event log. Expand nodes to inspect inputs, waits, captures, extraction results, branch decisions, loop iterations, parallel lane events, and artifact refs.
@@ -176,7 +207,6 @@ Online probes are explicit and optional:
 just test-001-online
 just test-006-online
 just test-007-online
-just test-008-online
 ```
 
 They may require Codex auth, network, and model quota. If unavailable, record the blocked reason instead of treating them as default failures.

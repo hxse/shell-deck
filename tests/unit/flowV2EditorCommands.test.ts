@@ -19,7 +19,7 @@ function template(): MacroTemplate {
         type: "if",
         branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_1", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "READY" }, scope: { kind: "whole" } }, body: [] }],
       },
-      { id: "loop", type: "for", range: { count: 2 }, body: [] },
+      { id: "loop", type: "for", range: { kind: "count", count: 2 }, body: [] },
     ],
   }
 }

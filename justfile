@@ -130,6 +130,9 @@ test-025:
 test-026:
     bun run test:026
 
+
+test-027:
+    bun run test:027
 notification-config-init:
     mkdir -p .shell-deck
     cp -n config/notification-profiles.example.json .shell-deck/notification-profiles.json

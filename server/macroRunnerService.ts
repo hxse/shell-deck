@@ -18,6 +18,7 @@ import type {
   SendNode,
   TerminalTarget,
   TextFilterMatcher,
+  TextListItem,
   TextMatchCondition,
   WaitNode,
 } from "../src/lib/macro/templateTypes"
@@ -83,7 +84,6 @@ type RuntimeState = {
   checkpointDrain: boolean
   runActive: boolean
   runAgainRequested: boolean
-  mockCaptureText: string
   token: number
 }
 
@@ -140,7 +140,6 @@ export class MacroRunnerService {
       checkpointDrain: false,
       runActive: false,
       runAgainRequested: false,
-      mockCaptureText: request.mockCaptureText ?? "mock capture ready ai-fixable",
       token: this.nextToken++,
     }
     this.runtimes.set(configId, runtime)
@@ -167,7 +166,7 @@ export class MacroRunnerService {
     return this.snapshotForRuntime(configId, runtime)
   }
 
-  async resume(configId: string, _nextStepId?: string): Promise<MacroRunnerSnapshot> {
+  async resume(configId: string): Promise<MacroRunnerSnapshot> {
     const runtime = this.runtimeOrThrow(configId)
     await this.waitForOperationsIdle(runtime)
     this.beginOperation(runtime)
@@ -396,10 +395,25 @@ export class MacroRunnerService {
   private async executeFor(runtime: RuntimeState, node: Extract<FlowV2Node, { type: "for" }>, context: ExecutionContext): Promise<ControlResult> {
     await this.startStep(runtime, node.id, context)
     const key = invocationKey(context, node.id)
-    const rangeKind = node.range.kind ?? "count"
-    const forever = rangeKind === "forever"
-    const items = node.range.kind === "text-list" ? node.range.items : undefined
-    const total = forever ? Number.POSITIVE_INFINITY : items ? items.length : ("count" in node.range ? node.range.count : 1)
+    const rangeKind = node.range.kind
+    let forever = false
+    let items: TextListItem[] | undefined
+    let total: number
+    switch (node.range.kind) {
+      case "count":
+        total = node.range.count
+        break
+      case "forever":
+        forever = true
+        total = Number.POSITIVE_INFINITY
+        break
+      case "text-list":
+        items = node.range.items
+        total = items.length
+        break
+      default:
+        assertNever(node.range)
+    }
     let index = runtime.cursor.loopIterations.get(key) ?? 0
 
     while (index < total) {
@@ -1534,6 +1548,10 @@ export class MacroRunnerService {
     const run = this.runEventStore.snapshot(configId, runtime.runId)
     return { configId, status: runtime.status, runId: runtime.runId, templateId: runtime.template.id, templateName: runtime.template.name, currentStepId: runtime.currentStepId, waitingInput: runtime.waitingInput, pauseReason: runtime.pauseReason, run, runs }
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error("unreachable_macro_variant:" + JSON.stringify(value))
 }
 
 function liveRunError(runId: string): Error & { existingRunId?: string } {

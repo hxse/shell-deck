@@ -2,9 +2,9 @@
 
 ## Template Storage
 
-Macro templates are JSON documents stored per config. New/imported runnable templates use `schemaVersion: 2` and a structured `body` block tree.
+Macro templates are JSON documents stored per config. Every runnable template uses `schemaVersion: 2` and a structured `body` block tree.
 
-Templates do not store Codex session ids. Templates refer to deck tabs through structured terminal refs: index, id, or alias. The JSON field remains `terminal` for runner/protocol compatibility, but the macro editor labels selectors by usage: `Target tab` for send/input/wait targets, `Source tab` for capture sources, and `Lane tab` inside parallel lanes. Each selector presents a live tab as one merged row with index, alias, kind, and hover details for the full id mapping. Existing index/id/alias targets resolve through the current config `indexMap`, so tab reorder and alias rename are reflected by the next render without users manually syncing the three forms.
+Templates do not store Codex session ids. Templates refer to deck tabs through structured terminal refs: `{ "kind": "index", "value": positiveInt }`, `{ "kind": "id", "value": TerminalId }`, or `{ "kind": "alias", "value": PublicId }`. Every Macro TerminalRef is a JSON object with exactly the own enumerable fields `kind` and `value`; scalar refs and objects with additional fields are invalid. The only JSON field name for the reference is `terminal`, while the macro editor labels selectors by usage: `Target tab` for send/input/wait targets, `Source tab` for capture sources, and `Lane tab` inside parallel lanes. Each selector presents a live tab as one merged row with index, alias, kind, and hover details for the full id mapping. Index/id/alias targets resolve through the current config `indexMap`, so tab reorder and alias rename are reflected by the next render without users manually syncing the three forms.
 
 ## Tab Capability Model
 
@@ -15,10 +15,10 @@ Live tab capabilities are derived from `TerminalSnapshot.backend`:
 - `fake` and `real` are shell tabs: `send`, `input`, `wait.terminal-quiet`, `capture-source.terminal-buffer`, and `capture-source.agent-event` are available.
 - `text` is a text tab: `send`, `input`, and `capture-source.text-box` are available; `wait.terminal-quiet`, `terminal-buffer`, and `agent-event` are not available.
 
-If an imported or edited template points a shell-only action at a text tab, the editor must show validation instead of silently rewriting it. When the user explicitly changes a Source tab or Lane tab, the UI may convert to the first valid capture kind or block the change with a visible notice when existing actions are incompatible. Runner start preflight must reject live capability-invalid templates before execution. Error messages should name the action id, the tab alias, and the required capability.
+If an imported or edited template points a shell-only action at a text tab, the editor must show validation instead of silently rewriting it. When the user explicitly changes a Source tab or Lane tab, the UI may convert to the first valid capture kind or block the change with a visible notice when existing actions do not support the selected tab. Runner start preflight must reject live capability-invalid templates before execution. Error messages should name the action id, the tab alias, and the required capability.
 
 
-Shell-deck only supports the current macro template schema: `schemaVersion: 2` with a structured `body` block tree. Files or imports that do not validate against the current schema are invalid templates. The template store must fail loudly with `invalid_macro_template`; it must not skip, migrate, quarantine, silently ignore, or treat old formats as compatibility objects.
+Shell-deck only supports the current macro template schema: `schemaVersion: 2` with a structured `body` block tree. Every file and import must validate completely before it can be listed, read, duplicated, exported, saved, imported, or started. The template store must fail loudly with `invalid_macro_template`; it must not skip, migrate, quarantine, normalize, rewrite, or silently ignore invalid documents.
 
 ## Action Types
 
@@ -39,8 +39,6 @@ Flow V2 controls:
 - `break`
 - `continue`
 - `finish`
-
-Invalid removed nodes and fields include `send_line`, `input_line`, `sleep`, `parse`, `parser`, `ai-json`, `branch`, `goto`, `next`, `loopGuard`, `pause`, `stop`, `complete`, `fail`, `parallel_all`, `merge_parallel_results`, and `send_artifact`.
 
 ## Message Flow
 
@@ -132,11 +130,23 @@ A config can have at most one live macro run. Live includes running, paused, wai
 
 `pause` and `stop` are runner controls, not template nodes. Completion is represented by `finish`.
 
+Runner HTTP actions use `POST /api/configs/<configId>/runner/<action>` with these exact JSON bodies:
+
+- `start`: `{ "templateId": nonEmptyString }`
+- `pause`: `{}`
+- `resume`: `{}`
+- `stop`: `{}`
+- `input`: `{ "text": string }`
+
+Each body must be a JSON object with exactly the listed fields. A zero-byte empty HTTP body is interpreted as `{}`, so it is valid only for pause/resume/stop; a whitespace-only body is malformed JSON. Malformed JSON, arrays, `null`, scalars, missing or invalid required fields, and unknown fields return HTTP 422 before service dispatch and do not change run state or cursor. Unknown fields take precedence over missing required fields. Request errors use `{ "ok": false, "error": string }` with `runner_request_missing_field:<action>:<field>`, `runner_request_invalid_field:<action>:<field>`, or `runner_request_unknown_field:<action>:<field>`; a non-object body uses field `body`. Runtime state and live-run conflicts return HTTP 409. Empty input text passes request validation and is accepted or rejected by the waiting input node's `allowEmpty`; resume position is always owned by the server occurrence cursor.
+
 `for.range` supports three modes:
 
-- count: `{ "kind": "count", "count": 3 }`; reading `{ "count": 3 }` is allowed, but new UI writes explicit `kind`.
+- count: exactly `{ "kind": "count", "count": positiveInt }`.
 - forever: `{ "kind": "forever" }`; it runs until `break`, `finish`, stop, or fail, and must not store `count`.
-- text-list: `{ "kind": "text-list", "items": Array<{ "key": string, "value": string }> }`; `items` must be non-empty and every item must contain exactly `key` and `value`. Key may be empty or repeated but cannot contain CR/LF; Value may be empty, repeated, or multiline. Old string items, mixed arrays, `entry-list`, aliases, migration, and conversion are unsupported and fail current-schema validation.
+- text-list: `{ "kind": "text-list", "items": Array<{ "key": string, "value": string }> }`; `items` must be non-empty and every item must contain exactly `key` and `value`. Key may be empty or repeated but cannot contain CR/LF; Value may be empty, repeated, or multiline.
+
+Each range object accepts only the fields shown for its variant. A missing or unknown discriminator, an additional field, or a text-list item with any other shape fails current-schema validation.
 
 Normal in-process pause/resume uses an occurrence-aware execution cursor rather than a static completed-step set. Sequence position, selected if branch, loop iteration/binding, parallel lane position, wait/input/capture suspension state, and occurrence-aware artifacts resume at the same dynamic invocation. Static step completion remains a UI/log summary only. Cursor snapshots are JSON-serializable, but server restart still leaves an in-flight run interrupted rather than hydrating and resuming it.
 

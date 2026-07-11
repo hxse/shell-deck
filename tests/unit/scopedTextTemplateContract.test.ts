@@ -114,7 +114,7 @@ test("text-list range is strict and validation does not normalize items", () => 
   const aliasIssues = issueText(aliases)
   expect(aliasIssues).toContain("range.values:extra Flow V2 field is not allowed")
   expect(aliasIssues).toContain("range.as:extra Flow V2 field is not allowed")
-  expect(aliasIssues).toContain("text-list items must be an array")
+  expect(aliasIssues).toContain("text-list range must own an enumerable items field")
 
   const legacyStrings = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
   legacyStrings.body[0].range.items = ["legacy"]
@@ -143,6 +143,17 @@ test("text-list range is strict and validation does not normalize items", () => 
   const inheritedIssues = issueText(inheritedFields)
   expect(inheritedIssues).toContain("items[0].key:value must be a string")
   expect(inheritedIssues).toContain("items[0].value:value must be a string")
+
+  const hiddenFields = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  const hiddenItem: Record<string, unknown> = {}
+  Object.defineProperties(hiddenItem, {
+    key: { value: "hidden key", enumerable: false },
+    value: { value: "hidden value", enumerable: false },
+  })
+  hiddenFields.body[0].range.items = [hiddenItem]
+  const hiddenIssues = issueText(hiddenFields)
+  expect(hiddenIssues).toContain("items[0].key:value must be a string")
+  expect(hiddenIssues).toContain("items[0].value:value must be a string")
 
   const multilineKey = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
   multilineKey.body[0].range.items = [{ key: "bad\nkey", value: "allowed\r\nvalue" }]
@@ -336,9 +347,9 @@ const unsupportedMatrixCases: UnsupportedMatrixCase[] = [
   { group: "notify sound", path: ["body", 0, "body", 3, "channels", 0, "sound"], expectedIssue: "sound:sound must be none, bell, chime, ping, pulse, success, warning or alert" },
   { group: "notification profile selector", path: ["body", 0, "body", 3, "channels", 1, "profileId"], expectedIssue: "profileId:value must be a public id string" },
   { group: "duration wait config", path: ["body", 0, "body", 4, "durationMs"], expectedIssue: "durationMs:value must be a positive integer" },
-  { group: "terminal-quiet target", path: ["body", 0, "body", 6, "terminal"], expectedIssue: "terminal:terminal target must be" },
+  { group: "terminal-quiet target", path: ["body", 0, "body", 6, "terminal"], expectedIssue: "terminal.template:extra terminal target field is not allowed" },
   { group: "terminal-quiet onTimeout", path: ["body", 0, "body", 6, "onTimeout"], expectedIssue: "onTimeout:value must be one of pause, finish" },
-  { group: "capture terminal selector", path: ["body", 0, "body", 0, "capture", "terminal"], expectedIssue: "capture.terminal:terminal target must be" },
+  { group: "capture terminal selector", path: ["body", 0, "body", 0, "capture", "terminal"], expectedIssue: "capture.terminal.template:extra terminal target field is not allowed" },
   { group: "capture mode", path: ["body", 0, "body", 0, "capture", "mode"], expectedIssue: "mode:terminal-buffer mode must be scrollback-tail or raw-stream-tail" },
   { group: "capture maxChars", path: ["body", 0, "body", 0, "capture", "maxChars"], expectedIssue: "maxChars:value must be a positive integer" },
   { group: "if condition matcher", path: ["body", 0, "body", 7, "branches", 0, "condition", "matcher", "text"], expectedIssue: "matcher.text:value must be a string" },
@@ -350,7 +361,7 @@ const unsupportedMatrixCases: UnsupportedMatrixCase[] = [
   { group: "parallel lane label", path: ["body", 0, "body", 9, "lanes", 0, "label"], expectedIssue: "label:value must be a string" },
   { group: "parallel merge separator", path: ["body", 0, "body", 9, "merge", "separator"], expectedIssue: "separator:value must be a string" },
   { group: "control reason", path: ["body", 0, "body", 10, "reason"], expectedIssue: "reason:value must be a string" },
-  { group: "terminal selector", path: ["body", 0, "body", 1, "terminal"], expectedIssue: "terminal:terminal target must be" },
+  { group: "terminal selector", path: ["body", 0, "body", 1, "terminal"], expectedIssue: "terminal.template:extra terminal target field is not allowed" },
   { group: "artifact stepId reference", path: ["body", 0, "body", 1, "message", "parts", 1, "source", "stepId"], expectedIssue: "stepId:value must be a public id string" },
   { group: "artifact name reference", path: ["body", 0, "body", 1, "message", "parts", 1, "source", "artifact"], expectedIssue: "artifact:artifact must be captured_text, merged_text or extracted_text" },
 ]

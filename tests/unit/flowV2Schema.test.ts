@@ -57,29 +57,32 @@ test("Flow V2 accepts message parts, capture, text_match and finish", () => {
   expect(validateFlowV2Template(validTemplate(), { indexMap }).ok).toBe(true)
 })
 
-test("Flow V2 hard-cuts v1 steps and legacy action names", () => {
+test("Flow V2 current allowlist rejects unknown template fields and node types", () => {
   const template = validTemplate() as unknown as Record<string, unknown>
   template.schemaVersion = 1
   template.steps = [{ id: "old", type: "send", text: "legacy", enter: true }]
   const text = issues(template)
   expect(text).toContain("schemaVersion:Flow V2 template schemaVersion must be 2")
-  expect(text).toContain("steps:legacy control/parser fields are not allowed in Flow V2")
+  expect(text).toContain("template.steps:extra Flow V2 field is not allowed")
 
   for (const type of ["send_line", "input_line", "sleep", "parse", "send_artifact", "parallel_all", "merge_parallel_results", "branch", "goto", "pause", "stop", "complete", "fail"]) {
     const bad = validTemplate()
     bad.body.push({ id: "bad_" + type, type } as never)
-    expect(issues(bad)).toContain("legacy Flow V1 node type is unsupported in Flow V2")
+    expect(issues(bad)).toContain("type:unsupported Flow V2 node type")
   }
 
   const oldReturn = validTemplate()
   oldReturn.body.push({ id: "old_return", type: "return", reason: "old" } as never)
-  expect(issues(oldReturn)).toContain("return is unsupported in Flow V2; use finish")
+  expect(issues(oldReturn)).toContain("type:unsupported Flow V2 node type")
 })
 
 test("wait only supports duration, terminal-quiet and user-continue", () => {
   const template = validTemplate()
   template.body.push({ id: "wait_bad", type: "wait", mode: "capture-ready-or-user", captureStep: "capture_worker", timeoutMs: 1000, onTimeout: "pause" } as never)
-  expect(issues(template)).toContain("legacy wait mode is not allowed in Flow V2")
+  const invalidModeIssues = issues(template)
+  expect(invalidModeIssues).toContain("mode:wait mode must be duration, terminal-quiet or user-continue")
+  expect(invalidModeIssues).toContain("captureStep:extra Flow V2 field is not allowed")
+  expect(invalidModeIssues).toContain("timeoutMs:extra Flow V2 field is not allowed")
 
   const timeoutContinue = validTemplate()
   const wait = timeoutContinue.body[1]
@@ -89,14 +92,30 @@ test("wait only supports duration, terminal-quiet and user-continue", () => {
 })
 
 
-test("for supports count and forever range modes", () => {
+test("for requires explicit count, forever or text-list range discriminators", () => {
   const counted = validTemplate()
   counted.body.push({ id: "loop_count", type: "for", range: { kind: "count", count: 2 }, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] })
   expect(validateFlowV2Template(counted, { indexMap }).ok).toBe(true)
 
-  const legacyCount = validTemplate()
-  legacyCount.body.push({ id: "loop_legacy_count", type: "for", range: { count: 2 }, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] })
-  expect(validateFlowV2Template(legacyCount, { indexMap }).ok).toBe(true)
+  const untaggedCount = validTemplate()
+  untaggedCount.body.push({ id: "loop_untagged_count", type: "for", range: { count: 2 }, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] } as never)
+  expect(issues(untaggedCount)).toContain("range.kind:for range kind must be count, forever or text-list")
+
+  const inheritedKind = validTemplate()
+  const inheritedKindRange = Object.assign(Object.create({ kind: "count" }), { count: 2 })
+  inheritedKind.body.push({ id: "loop_inherited_kind", type: "for", range: inheritedKindRange, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] } as never)
+  expect(issues(inheritedKind)).toContain("range.kind:for range kind must be count, forever or text-list")
+
+  const hiddenCount = validTemplate()
+  const hiddenCountRange: Record<string, unknown> = { kind: "count" }
+  Object.defineProperty(hiddenCountRange, "count", { value: 2, enumerable: false })
+  hiddenCount.body.push({ id: "loop_hidden_count", type: "for", range: hiddenCountRange, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] } as never)
+  expect(issues(hiddenCount)).toContain("range.count:count range must own an enumerable count field")
+
+  const inheritedItems = validTemplate()
+  const inheritedItemsRange = Object.assign(Object.create({ items: [{ key: "phase", value: "work" }] }), { kind: "text-list" })
+  inheritedItems.body.push({ id: "loop_inherited_items", type: "for", range: inheritedItemsRange, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] } as never)
+  expect(issues(inheritedItems)).toContain("range.items:text-list range must own an enumerable items field")
 
   const forever = validTemplate()
   forever.body.push({ id: "loop_forever", type: "for", range: { kind: "forever" }, body: [{ id: "break_loop", type: "break", reason: "done" }] })
@@ -105,6 +124,56 @@ test("for supports count and forever range modes", () => {
   const bad = validTemplate()
   bad.body.push({ id: "loop_bad", type: "for", range: { kind: "forever", count: 1 }, body: [{ id: "break_loop", type: "break", reason: "done" }] } as never)
   expect(issues(bad)).toContain("range.count:extra Flow V2 field is not allowed")
+
+  const unknownKind = validTemplate()
+  unknownKind.body.push({ id: "loop_unknown", type: "for", range: { kind: "times", count: 2 }, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] } as never)
+  expect(issues(unknownKind)).toContain("range.kind:for range kind must be count, forever or text-list")
+
+  const countWithExtraField = validTemplate()
+  countWithExtraField.body.push({ id: "loop_count_extra", type: "for", range: { kind: "count", count: 2, items: [] }, body: [{ id: "finish_loop", type: "finish", reason: "loop" }] } as never)
+  expect(issues(countWithExtraField)).toContain("range.items:extra Flow V2 field is not allowed")
+})
+
+test("Macro terminal refs require exact own enumerable kind and value fields", () => {
+  for (const terminal of [
+    { kind: "index" as const, value: 1 },
+    { kind: "id" as const, value: "term_worker" },
+    { kind: "alias" as const, value: "worker" },
+  ]) {
+    const template = validTemplate()
+    const send = template.body[0]
+    if (send.type !== "send") throw new Error("missing send")
+    send.terminal = terminal
+    expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
+  }
+
+  const extraField = validTemplate()
+  const extraFieldSend = extraField.body[0]
+  if (extraFieldSend.type !== "send") throw new Error("missing send")
+  extraFieldSend.terminal = { kind: "alias", value: "worker", terminalId: "term_worker" } as never
+  expect(issues(extraField)).toContain("body[0].terminal.terminalId:extra terminal target field is not allowed")
+
+  for (const scalar of ["worker", 1]) {
+    const template = validTemplate()
+    const send = template.body[0]
+    if (send.type !== "send") throw new Error("missing send")
+    send.terminal = scalar as never
+    expect(issues(template)).toContain("body[0].terminal:terminal target must be")
+  }
+
+  const inheritedFields = validTemplate()
+  const inheritedFieldsSend = inheritedFields.body[0]
+  if (inheritedFieldsSend.type !== "send") throw new Error("missing send")
+  inheritedFieldsSend.terminal = Object.create({ kind: "alias", value: "worker" }) as never
+  expect(issues(inheritedFields)).toContain("body[0].terminal:terminal target must own enumerable kind and value fields")
+
+  const hiddenValue = validTemplate()
+  const hiddenValueSend = hiddenValue.body[0]
+  if (hiddenValueSend.type !== "send") throw new Error("missing send")
+  const hiddenValueRef: Record<string, unknown> = { kind: "alias" }
+  Object.defineProperty(hiddenValueRef, "value", { value: "worker", enumerable: false })
+  hiddenValueSend.terminal = hiddenValueRef as never
+  expect(issues(hiddenValue)).toContain("body[0].terminal:terminal target must own enumerable kind and value fields")
 })
 
 test("finish break and continue support action-only bodies", () => {

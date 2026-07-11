@@ -632,15 +632,6 @@
     return node.type === "break" || node.type === "continue" || node.type === "finish"
   }
 
-  function forRangeMode(node: Extract<FlowV2Node, { type: "for" }>): "count" | "forever" | "text-list" {
-    if (node.range.kind === "forever" || node.range.kind === "text-list") return node.range.kind
-    return "count"
-  }
-
-  function forRangeCount(node: Extract<FlowV2Node, { type: "for" }>): number {
-    return "count" in node.range ? node.range.count : 1
-  }
-
   function setForRangeMode(nodeId: string, mode: "count" | "forever" | "text-list"): boolean {
     const current = findNode(draft.body, nodeId)
     if (current?.type !== "for") return false
@@ -871,7 +862,7 @@
       <div class="inline-actions"><button type="button" data-testid="add-flow-elif" onclick={() => addElifAt(bodyPath, index)}>Add elif</button>{#if !node.else}<button type="button" data-testid="add-flow-else" onclick={() => ensureElseAt(bodyPath, index)}>Add else</button>{/if}</div>
       {#if node.else}<div class="flow-branch-card"><div class="step-title"><strong>else</strong><button type="button" data-testid="node-add-inside-else" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "else", undefined, node.id), "Insert inside else: " + node.id, allowLoopControls, event)}>Add inside else</button></div>{@render NodeListEditor(node.else, [...bodyPath, { kind: "if-else", nodeId: node.id }], allowLoopControls, "else body", false, templateScope)}</div>{/if}
     {:else if node.type === "for"}
-      <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={forRangeMode(node)} onchange={(event) => { const previous = forRangeMode(node); const mode = event.currentTarget.value as "count" | "forever" | "text-list"; if (!setForRangeMode(node.id, mode)) event.currentTarget.value = previous }}><option value="count">count</option><option value="forever">forever</option><option value="text-list">text-list</option></select></label>{#if forRangeMode(node) === "count"}<label>Count<input data-testid="for-range-count" type="number" value={forRangeCount(node)} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range = { kind: "count", count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
+      <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={node.range.kind} onchange={(event) => { const previous = node.range.kind; const mode = event.currentTarget.value as "count" | "forever" | "text-list"; if (!setForRangeMode(node.id, mode)) event.currentTarget.value = previous }}><option value="count">count</option><option value="forever">forever</option><option value="text-list">text-list</option></select></label>{#if node.range.kind === "count"}<label>Count<input data-testid="for-range-count" type="number" value={node.range.count} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range = { kind: "count", count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
       {#if node.range.kind === "text-list"}
         <div class="text-list-items" data-testid="for-text-list-items">
           <div class="step-title"><strong>Items</strong><button type="button" data-testid="for-text-list-add" onclick={() => addTextListItem(node.id)}>Add item</button></div>

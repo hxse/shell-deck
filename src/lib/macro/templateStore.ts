@@ -81,9 +81,9 @@ export class MacroTemplateStore {
   import(configId: string, value: unknown, indexMap: TerminalIndexMapItem[] = []): MacroTemplate {
     const incoming = parseCurrentTemplate(value)
     const now = new Date().toISOString()
-    const candidateId = typeof incoming.id === "string" ? incoming.id : createTemplateId()
+    const candidateId = incoming.id
     const id = existsSync(this.templatePath(configId, candidateId)) ? createTemplateId() : candidateId
-    const template: MacroTemplate = { ...incoming, id, configId: assertValidPublicId(configId, "configId"), createdAt: typeof incoming.createdAt === "string" ? incoming.createdAt : now, updatedAt: now }
+    const template: MacroTemplate = { ...incoming, id, configId: assertValidPublicId(configId, "configId"), createdAt: incoming.createdAt, updatedAt: now }
     return this.save(configId, template, indexMap)
   }
 

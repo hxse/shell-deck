@@ -23,8 +23,8 @@ export class MacroRunnerClient {
     return await this.action('pause', {})
   }
 
-  async resume(nextStepId?: string): Promise<MacroRunnerSnapshot> {
-    return await this.action('resume', nextStepId ? { nextStepId } : {})
+  async resume(): Promise<MacroRunnerSnapshot> {
+    return await this.action('resume', {})
   }
 
   async stop(): Promise<MacroRunnerSnapshot> {

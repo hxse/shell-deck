@@ -17,13 +17,10 @@ import type {
 
 export const FLOW_V2_ACTION_TYPES = ["send", "notify", "input", "wait", "capture-source", "extract_text", "parallel"] as const
 export const FLOW_V2_CONTROL_TYPES = ["if", "for", "break", "continue", "finish"] as const
-export const FLOW_V2_FORBIDDEN_TYPES = ["send_line", "input_line", "sleep", "parse", "send_artifact", "parallel_all", "parallel_send_capture", "merge_parallel_results", "pause", "stop", "return", "goto", "branch", "complete", "fail"] as const
 
 const ACTION_TYPES = new Set<string>(FLOW_V2_ACTION_TYPES)
 const CONTROL_TYPES = new Set<string>(FLOW_V2_CONTROL_TYPES)
-const FORBIDDEN_TYPES = new Set<string>(FLOW_V2_FORBIDDEN_TYPES)
 const TEMPLATE_KEYS = new Set(["schemaVersion", "id", "name", "description", "configId", "body", "createdAt", "updatedAt"])
-const LEGACY_FIELD_KEYS = new Set(["steps", "next", "loopGuard", "goto", "branch", "complete", "pause", "stop", "fail", "parser", "parse", "captureStep", "fromParseStep", "conditions"])
 const ARTIFACT_SOURCE_KEYS = new Set(["kind", "stepId", "artifact"])
 const MESSAGE_KEYS = new Set(["parts"])
 const TEXT_PART_KEYS = new Set(["kind", "text"])
@@ -96,7 +93,6 @@ export function validateFlowV2Template(value: unknown, options: ValidateOptions 
   if (!isObject(value)) return invalid("template", "Flow V2 template must be an object")
   rejectUnknownKeys(issues, "template", value, TEMPLATE_KEYS)
   rejectStringExpressionFields(issues, "template", value)
-  rejectLegacyFields(issues, value, "")
   rejectSessionFields(issues, value, "")
 
   const template = value as MacroTemplate
@@ -131,10 +127,6 @@ function validateNode(issues: ValidationIssue[], path: string, node: unknown, co
     issues.push({ path: path + ".type", message: "node type must be a string" })
     return
   }
-  if (FORBIDDEN_TYPES.has(node.type)) {
-    issues.push({ path: path + ".type", message: node.type === "return" ? "return is unsupported in Flow V2; use finish" : "legacy Flow V1 node type is unsupported in Flow V2: " + node.type })
-    return
-  }
   if (ACTION_TYPES.has(node.type)) {
     validateActionNode(issues, path, node, context)
     return
@@ -161,10 +153,6 @@ function validateActionOnlyNodeList(issues: ValidationIssue[], path: string, nod
     validateNodeId(issues, nodePath + ".id", node.id, context)
     if (typeof node.type !== "string") {
       issues.push({ path: nodePath + ".type", message: "node type must be a string" })
-      continue
-    }
-    if (FORBIDDEN_TYPES.has(node.type)) {
-      issues.push({ path: nodePath + ".type", message: node.type === "return" ? "return is unsupported in Flow V2; use finish" : "legacy Flow V1 node type is unsupported in Flow V2: " + node.type })
       continue
     }
     if (ACTION_TYPES.has(node.type)) {
@@ -587,9 +575,14 @@ function validateForRange(issues: ValidationIssue[], path: string, range: unknow
     issues.push({ path, message: "for node must declare range object" })
     return
   }
-  if (range.kind === undefined || range.kind === "count") {
+  if (!hasOwnEnumerableField(range, "kind")) {
+    issues.push({ path: path + ".kind", message: "for range kind must be count, forever or text-list" })
+    return
+  }
+  if (range.kind === "count") {
     rejectUnknownKeys(issues, path, range, RANGE_COUNT_KEYS)
-    validatePositiveInt(issues, path + ".count", range.count)
+    if (hasOwnEnumerableField(range, "count")) validatePositiveInt(issues, path + ".count", range.count)
+    else issues.push({ path: path + ".count", message: "count range must own an enumerable count field" })
     return
   }
   if (range.kind === "forever") {
@@ -598,6 +591,10 @@ function validateForRange(issues: ValidationIssue[], path: string, range: unknow
   }
   if (range.kind === "text-list") {
     rejectUnknownKeys(issues, path, range, RANGE_TEXT_LIST_KEYS)
+    if (!hasOwnEnumerableField(range, "items")) {
+      issues.push({ path: path + ".items", message: "text-list range must own an enumerable items field" })
+      return
+    }
     if (!Array.isArray(range.items)) { issues.push({ path: path + ".items", message: "text-list items must be an array" }); return }
     if (range.items.length === 0) issues.push({ path: path + ".items", message: "text-list items must not be empty" })
     range.items.forEach((item, index) => {
@@ -607,8 +604,8 @@ function validateForRange(issues: ValidationIssue[], path: string, range: unknow
         return
       }
       rejectUnknownKeys(issues, itemPath, item, TEXT_LIST_ITEM_KEYS)
-      const key = Object.prototype.hasOwnProperty.call(item, "key") ? item.key : undefined
-      const value = Object.prototype.hasOwnProperty.call(item, "value") ? item.value : undefined
+      const key = hasOwnEnumerableField(item, "key") ? item.key : undefined
+      const value = hasOwnEnumerableField(item, "value") ? item.value : undefined
       validateString(issues, itemPath + ".key", key, 0)
       if (typeof key === "string" && /[\r\n]/.test(key)) {
         issues.push({ path: itemPath + ".key", message: "text-list item key must not contain CR or LF" })
@@ -866,21 +863,6 @@ function rejectUnknownKeys(issues: ValidationIssue[], path: string, value: Recor
   for (const key of Object.keys(value)) if (!allowed.has(key)) issues.push({ path: path + "." + key, message: "extra Flow V2 field is not allowed" })
 }
 
-function rejectLegacyFields(issues: ValidationIssue[], value: unknown, path: string) {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => rejectLegacyFields(issues, item, path + "[" + index + "]"))
-    return
-  }
-  if (!isObject(value)) return
-  if (typeof value.type === "string" && FORBIDDEN_TYPES.has(value.type)) issues.push({ path: path ? path + ".type" : "type", message: "legacy Flow V1 node type is unsupported in Flow V2: " + value.type })
-  for (const [key, child] of Object.entries(value)) {
-    const childPath = path ? path + "." + key : key
-    if (LEGACY_FIELD_KEYS.has(key)) issues.push({ path: childPath, message: "legacy control/parser fields are not allowed in Flow V2" })
-    if (key === "kind" && child === "ai-json") issues.push({ path: childPath, message: "legacy parser kind is not allowed in Flow V2" })
-    if (key === "mode" && child === "capture-ready-or-user") issues.push({ path: childPath, message: "legacy wait mode is not allowed in Flow V2" })
-    rejectLegacyFields(issues, child, childPath)
-  }
-}
 
 function rejectSessionFields(issues: ValidationIssue[], value: unknown, path: string) {
   if (Array.isArray(value)) {
@@ -906,4 +888,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function invalid(path: string, message: string): ValidationResult {
   return { ok: false, issues: [{ path, message }] }
+}
+
+function hasOwnEnumerableField(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.propertyIsEnumerable.call(value, key)
 }

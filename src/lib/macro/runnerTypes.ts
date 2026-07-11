@@ -38,8 +38,6 @@ export type MacroRunnerSnapshot = {
 
 export type StartMacroRunRequest = {
   templateId: string
-  mockCaptureText?: string
-  mockCaptureReady?: boolean
 }
 
 export type SubmitMacroInputRequest = {

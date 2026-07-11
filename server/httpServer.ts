@@ -34,6 +34,15 @@ type StartOptions = {
   seedBackend?: TerminalBackendKind
 }
 
+type RunnerAction = 'start' | 'pause' | 'resume' | 'stop' | 'input'
+
+type RunnerActionRequest =
+  | { action: 'start'; templateId: string }
+  | { action: 'pause' }
+  | { action: 'resume' }
+  | { action: 'stop' }
+  | { action: 'input'; text: string }
+
 export function startShellDeckServer(options: StartOptions = {}): ShellDeckServer {
   const host = options.host ?? '127.0.0.1'
   const bindHost = host
@@ -318,19 +327,36 @@ async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, 
   const runnerActionMatch = /^\/api\/configs\/([^/]+)\/runner\/(start|pause|resume|stop|input)$/.exec(url.pathname)
   if (runnerActionMatch && req.method === 'POST') {
     const configId = parseConfigId(runnerActionMatch[1])
-    manager.ensureConfig(configId)
-    const body = asRecord(await requestJson(req))
+    const action = runnerActionMatch[2] as RunnerAction
+    let actionRequest: RunnerActionRequest
     try {
-      const action = runnerActionMatch[2]
-      const runner = action === 'start'
-        ? await macroRunner.start(configId, { templateId: stringField(body, 'templateId'), mockCaptureText: optionalStringField(body, 'mockCaptureText'), mockCaptureReady: optionalBooleanField(body, 'mockCaptureReady') })
-        : action === 'pause'
-          ? await macroRunner.pause(configId)
-          : action === 'resume'
-            ? await macroRunner.resume(configId, optionalStringField(body, 'nextStepId'))
-            : action === 'stop'
-              ? await macroRunner.stop(configId)
-              : await macroRunner.submitInput(configId, stringField(body, 'text'))
+      actionRequest = await parseRunnerActionRequest(req, action)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : runnerRequestError(action, 'invalid', 'body')
+      return json({ ok: false, error: message }, 422)
+    }
+    manager.ensureConfig(configId)
+    try {
+      let runner
+      switch (actionRequest.action) {
+        case 'start':
+          runner = await macroRunner.start(configId, { templateId: actionRequest.templateId })
+          break
+        case 'pause':
+          runner = await macroRunner.pause(configId)
+          break
+        case 'resume':
+          runner = await macroRunner.resume(configId)
+          break
+        case 'stop':
+          runner = await macroRunner.stop(configId)
+          break
+        case 'input':
+          runner = await macroRunner.submitInput(configId, actionRequest.text)
+          break
+        default:
+          return assertNeverRunnerActionRequest(actionRequest)
+      }
       return json({ ok: true, runner })
     } catch (error) {
       const existingRunId = error instanceof Error && 'existingRunId' in error ? String((error as { existingRunId?: string }).existingRunId) : undefined
@@ -504,24 +530,65 @@ function asOptionalRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
-function stringField(value: Record<string, unknown>, key: string): string {
-  const field = value[key]
-  if (typeof field !== 'string' || field.length === 0) throw new Error('missing_string_field:' + key)
-  return field
+async function parseRunnerActionRequest(req: Request, action: RunnerAction): Promise<RunnerActionRequest> {
+  let text: string
+  try {
+    text = await req.text()
+  } catch {
+    throw new Error(runnerRequestError(action, 'invalid', 'body'))
+  }
+  let value: unknown = {}
+  if (text.length > 0) {
+    try {
+      value = JSON.parse(text)
+    } catch {
+      throw new Error(runnerRequestError(action, 'invalid', 'body'))
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(runnerRequestError(action, 'invalid', 'body'))
+  }
+  const body = value as Record<string, unknown>
+  const allowedFields = action === 'start'
+    ? ['templateId']
+    : action === 'input'
+      ? ['text']
+      : []
+  const unknownField = Object.keys(body).find((key) => !allowedFields.includes(key))
+  if (unknownField) throw new Error(runnerRequestError(action, 'unknown', unknownField))
+
+  switch (action) {
+    case 'start':
+      if (!Object.prototype.hasOwnProperty.call(body, 'templateId')) throw new Error(runnerRequestError(action, 'missing', 'templateId'))
+      if (typeof body.templateId !== 'string' || body.templateId.length === 0) throw new Error(runnerRequestError(action, 'invalid', 'templateId'))
+      return { action, templateId: body.templateId }
+    case 'pause':
+      return { action }
+    case 'resume':
+      return { action }
+    case 'stop':
+      return { action }
+    case 'input':
+      if (!Object.prototype.hasOwnProperty.call(body, 'text')) throw new Error(runnerRequestError(action, 'missing', 'text'))
+      if (typeof body.text !== 'string') throw new Error(runnerRequestError(action, 'invalid', 'text'))
+      return { action, text: body.text }
+    default:
+      return assertNeverRunnerAction(action)
+  }
 }
 
-function optionalStringField(value: Record<string, unknown>, key: string): string | undefined {
-  const field = value[key]
-  if (field === undefined) return undefined
-  if (typeof field !== 'string') throw new Error('invalid_string_field:' + key)
-  return field
+type RunnerRequestFailure = 'missing' | 'invalid' | 'unknown'
+
+function runnerRequestError(action: RunnerAction, failure: RunnerRequestFailure, field: string): string {
+  return `runner_request_${failure}_field:${action}:${field}`
 }
 
-function optionalBooleanField(value: Record<string, unknown>, key: string): boolean | undefined {
-  const field = value[key]
-  if (field === undefined) return undefined
-  if (typeof field !== 'boolean') throw new Error('invalid_boolean_field:' + key)
-  return field
+function assertNeverRunnerAction(action: never): never {
+  throw new Error('unreachable_runner_action:' + action)
+}
+
+function assertNeverRunnerActionRequest(value: never): never {
+  throw new Error('unreachable_runner_action_request:' + JSON.stringify(value))
 }
 
 function parsePromptScopeFilter(value: string | null): PromptScopeFilter {

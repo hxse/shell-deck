@@ -74,42 +74,6 @@
   cursor: not-allowed;
 }
 
-.legacy-flow-panel {
-  border-top: 1px solid #d8e0e8;
-  padding-top: 8px;
-}
-
-.legacy-flow-panel summary {
-  cursor: pointer;
-  color: #4d5c69;
-  font-size: 12px;
-
-  font-weight: 800;
-}
-
-.legacy-step-actions {
-  margin-top: 8px;
-}
-
-.legacy-step-actions button {
-  border-color: #d1c2ae;
-  background: #fff8ef;
-  color: #6f4a1f;
-}
-
-.legacy-badge {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  padding: 2px 6px;
-  border: 1px solid #d0bea6;
-  border-radius: 999px;
-  background: #fff5e6;
-  color: #7a4c19;
-  font-size: 9px;
-  font-weight: 800;
-  vertical-align: middle;
-}
 
 .template-list {
   display: grid;
