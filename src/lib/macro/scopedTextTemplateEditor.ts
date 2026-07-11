@@ -1,4 +1,4 @@
-import type { MessagePart, ScopedTemplateText, TemplatableScalarText } from "./templateTypes"
+import type { MessagePart, ScopedTemplateText, TemplatableScalarText, TextListItem } from "./templateTypes"
 
 export type TextTemplateScope = {
   forStepId: string
@@ -26,6 +26,6 @@ export function withMessagePartTemplateMode(
   return enabled ? ({ kind: "template", template: text } satisfies ScopedTemplateText) : { kind: "text", text }
 }
 
-export function hasNonDefaultTextListItems(items: readonly string[]): boolean {
-  return items.length !== 1 || items[0] !== ""
+export function hasNonDefaultTextListItems(items: readonly TextListItem[]): boolean {
+  return items.length !== 1 || items[0]?.key !== "" || items[0]?.value !== ""
 }

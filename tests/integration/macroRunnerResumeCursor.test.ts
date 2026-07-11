@@ -38,6 +38,10 @@ function harness(notificationService?: NotificationDispatcher) {
 
 type Harness = ReturnType<typeof harness>
 
+function textListItem(value: string, key = value) {
+  return { key, value }
+}
+
 function template(id: string, body: MacroTemplate["body"]): MacroTemplate {
   const now = "2026-01-01T00:00:00.000Z"
   return {
@@ -82,9 +86,9 @@ test("agent-event capture pause/resume keeps the current iteration and consumes 
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: ["A", "B"] },
+        range: { kind: "text-list", items: [textListItem("A"), textListItem("B")] },
         body: [
-          { id: "before_agent", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{text}}" }] }, enter: false },
+          { id: "before_agent", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{value}}" }] }, enter: false },
           { id: "capture_agent", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, terminal: reviewer, captureMode: "result_only" } },
           { id: "forward_agent", type: "send", terminal: worker, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_agent", artifact: "captured_text" } }] }, enter: false },
         ],
@@ -178,11 +182,11 @@ test("terminal-quiet pause freezes its timeout budget and resumes observation af
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: ["quiet-item"] },
+        range: { kind: "text-list", items: [textListItem("quiet-item")] },
         body: [
-          { id: "before_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{text}}" }] }, enter: false },
+          { id: "before_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{value}}" }] }, enter: false },
           { id: "quiet_wait", type: "wait", mode: "terminal-quiet", terminal: worker, quietMs: 80, maxMs: 220, onTimeout: "pause" },
-          { id: "after_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{text}}" }] }, enter: false },
+          { id: "after_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{value}}" }] }, enter: false },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -581,7 +585,7 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
       {
         id: "outer_text_loop",
         type: "for",
-        range: { kind: "text-list", items: ["X"] },
+        range: { kind: "text-list", items: [textListItem("X")] },
         body: [
           {
             id: "parallel_in_loop",
@@ -592,7 +596,7 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
                 label: "Worker",
                 terminal: worker,
                 body: [
-                  { id: "worker_lane_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "worker={{text}}" }] }, enter: false },
+                  { id: "worker_lane_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "worker={{value}}" }] }, enter: false },
                   { id: "worker_lane_wait", type: "wait", mode: "duration", durationMs: 250 },
                   { id: "worker_lane_output", type: "output", source: { kind: "none" } },
                 ],
@@ -602,7 +606,7 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
                 label: "Reviewer",
                 terminal: reviewer,
                 body: [
-                  { id: "reviewer_lane_send", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "reviewer={{text}}" }] }, enter: false },
+                  { id: "reviewer_lane_send", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "reviewer={{value}}" }] }, enter: false },
                   { id: "reviewer_lane_wait", type: "wait", mode: "duration", durationMs: 250 },
                   { id: "reviewer_lane_output", type: "output", source: { kind: "none" } },
                 ],
@@ -611,7 +615,7 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
             merge: { kind: "sectioned_text", separator: "===== {laneId} =====", includeEmptyOutputs: true },
             onLaneFail: "fail",
           },
-          { id: "after_parallel", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{text}}" }] }, enter: false },
+          { id: "after_parallel", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{value}}" }] }, enter: false },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -634,21 +638,21 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
   }
 })
 
-test("control-terminal action body inherits the enclosing text binding", async () => {
+test("control-terminal action body inherits the enclosing template binding", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("control_body_binding", [
       {
         id: "control_binding_loop",
         type: "for",
-        range: { kind: "text-list", items: ["control-item"] },
+        range: { kind: "text-list", items: [textListItem("control-item")] },
         body: [
           {
             id: "finish_with_body",
             type: "finish",
             reason: "done",
             body: [
-              { id: "control_body_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "control={{text}}" }] }, enter: false },
+              { id: "control_body_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "control={{value}}" }] }, enter: false },
             ],
           },
         ],
@@ -675,7 +679,7 @@ test("loop descendants inherit an outer artifact occurrence", async () => {
       {
         id: "artifact_loop",
         type: "for",
-        range: { kind: "text-list", items: ["A", "B"] },
+        range: { kind: "text-list", items: [textListItem("A"), textListItem("B")] },
         body: [
           {
             id: "send_outer_artifact",
@@ -683,7 +687,7 @@ test("loop descendants inherit an outer artifact occurrence", async () => {
             terminal: worker,
             message: {
               parts: [
-                { kind: "template", template: "{{text}}:" },
+                { kind: "template", template: "{{value}}:" },
                 { kind: "artifact", source: { kind: "step_artifact", stepId: "capture_outer", artifact: "captured_text" } },
               ],
             },

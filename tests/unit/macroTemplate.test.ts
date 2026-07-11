@@ -72,8 +72,29 @@ test("store fails loudly on invalid template imports and files", () => {
     expect(() => store.import("local", "not a template", indexMap)).toThrow("invalid_macro_template")
     expect(store.list("local").map((item) => item.id)).toContain("valid")
 
+    const oldTextList = {
+      ...template("legacy_text_list"),
+      body: [{
+        id: "legacy_loop",
+        type: "for",
+        range: { kind: "text-list", items: ["legacy item"] },
+        body: [{
+          id: "legacy_send",
+          type: "send",
+          terminal: { kind: "alias", value: "worker" },
+          message: { parts: [{ kind: "template", template: "{{text}}" }] },
+          enter: true,
+        }],
+      }],
+    }
+    expect(() => store.save("local", oldTextList as never, indexMap)).toThrow("invalid_macro_template")
+    expect(() => store.import("local", oldTextList, indexMap)).toThrow("invalid_macro_template")
+
     const templateDir = join(root, ".shell-deck", "configs", "local", "templates")
     mkdirSync(templateDir, { recursive: true })
+    writeFileSync(join(templateDir, "legacy_text_list.json"), JSON.stringify(oldTextList))
+    expect(() => store.read("local", "legacy_text_list")).toThrow("invalid_macro_template")
+
     writeFileSync(join(templateDir, "legacy.json"), JSON.stringify({ schemaVersion: 1, id: "legacy", steps: [] }))
     expect(() => store.list("local")).toThrow("invalid_macro_template")
     expect(() => store.read("local", "legacy")).toThrow("invalid_macro_template")

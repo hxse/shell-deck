@@ -71,6 +71,7 @@ const FOR_KEYS = new Set(["id", "type", "range", "body"])
 const RANGE_COUNT_KEYS = new Set(["kind", "count"])
 const RANGE_FOREVER_KEYS = new Set(["kind"])
 const RANGE_TEXT_LIST_KEYS = new Set(["kind", "items"])
+const TEXT_LIST_ITEM_KEYS = new Set(["key", "value"])
 const CONTROL_TERMINAL_KEYS = new Set(["id", "type", "reason", "body"])
 const SIMPLE_OPS = new Set(["contains", "not_contains", "equals", "not_equals", "starts_with", "ends_with"])
 const LINE_MODES = new Set(["first", "last", "any", "all"])
@@ -599,7 +600,21 @@ function validateForRange(issues: ValidationIssue[], path: string, range: unknow
     rejectUnknownKeys(issues, path, range, RANGE_TEXT_LIST_KEYS)
     if (!Array.isArray(range.items)) { issues.push({ path: path + ".items", message: "text-list items must be an array" }); return }
     if (range.items.length === 0) issues.push({ path: path + ".items", message: "text-list items must not be empty" })
-    range.items.forEach((item, index) => { if (typeof item !== "string") issues.push({ path: path + ".items[" + index + "]", message: "text-list item must be a string" }) })
+    range.items.forEach((item, index) => {
+      const itemPath = path + ".items[" + index + "]"
+      if (!isObject(item)) {
+        issues.push({ path: itemPath, message: "text-list item must be an object" })
+        return
+      }
+      rejectUnknownKeys(issues, itemPath, item, TEXT_LIST_ITEM_KEYS)
+      const key = Object.prototype.hasOwnProperty.call(item, "key") ? item.key : undefined
+      const value = Object.prototype.hasOwnProperty.call(item, "value") ? item.value : undefined
+      validateString(issues, itemPath + ".key", key, 0)
+      if (typeof key === "string" && /[\r\n]/.test(key)) {
+        issues.push({ path: itemPath + ".key", message: "text-list item key must not contain CR or LF" })
+      }
+      validateString(issues, itemPath + ".value", value, 0)
+    })
     return
   }
   issues.push({ path: path + ".kind", message: "for range kind must be count, forever or text-list" })

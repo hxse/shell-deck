@@ -5,9 +5,9 @@
   import ParallelLaneTabs from "./ParallelLaneTabs.svelte"
   import TemplatableScalarField from "./TemplatableScalarField.svelte"
   import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
-  import { FOR_TEXT_TEMPLATE_TOKEN } from "../../macro/scopedTextTemplate"
+  import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from "../../macro/scopedTextTemplate"
   import { hasNonDefaultTextListItems, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
+  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
   import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
@@ -55,6 +55,7 @@
   let collapsedNodeIds = $state<string[]>([])
   let idEditNotice = $state("")
 
+  let textListStructureVersions = $state<Record<string, number>>({})
   const insertionPaletteAnchored = $derived(insertionPaletteMode === "anchored" && insertionPosition !== null)
   const insertionPaletteStyle = $derived(insertionPaletteAnchored && insertionPosition ? "--palette-x: " + insertionPosition.x + "px; --palette-y: " + insertionPosition.y + "px;" + (insertionPosition.maxHeight ? " --palette-max-height: " + insertionPosition.maxHeight + "px;" : "") : "")
   const validationSummary = $derived(validation.ok ? "success" : validation.issues.length + " issues - " + (validation.issues[0] ? validation.issues[0].path + " " + validation.issues[0].message : ""))
@@ -648,40 +649,61 @@
     }
     updateNode(nodeId, (node) => {
       if (node.type !== "for") return
-      if (mode === "text-list") node.range = { kind: "text-list", items: [""] }
+      if (mode === "text-list") node.range = { kind: "text-list", items: [{ key: "", value: "" }] }
       else if (mode === "forever") node.range = { kind: "forever" }
       else node.range = { kind: "count", count: 1 }
     })
     return true
   }
 
-  function addTextListItem(nodeId: string) {
-    updateNode(nodeId, (node) => {
-      if (node.type === "for" && node.range.kind === "text-list") node.range.items.push("")
-    })
+  function bumpTextListStructureVersion(nodeId: string) {
+    textListStructureVersions = {
+      ...textListStructureVersions,
+      [nodeId]: (textListStructureVersions[nodeId] ?? 0) + 1,
+    }
   }
 
-  function updateTextListItem(nodeId: string, itemIndex: number, value: string) {
+  function textListItemEditorKey(nodeId: string, itemIndex: number): string {
+    return nodeId + ":" + (textListStructureVersions[nodeId] ?? 0) + ":" + itemIndex
+  }
+
+  function addTextListItem(nodeId: string) {
+    let changed = false
     updateNode(nodeId, (node) => {
-      if (node.type === "for" && node.range.kind === "text-list") node.range.items[itemIndex] = value
+      if (node.type !== "for" || node.range.kind !== "text-list") return
+      node.range.items.push({ key: "", value: "" })
+      changed = true
+    })
+    if (changed) bumpTextListStructureVersion(nodeId)
+  }
+
+  function updateTextListItem(nodeId: string, itemIndex: number, field: keyof TextListItem, value: string) {
+    updateNode(nodeId, (node) => {
+      if (node.type === "for" && node.range.kind === "text-list" && node.range.items[itemIndex]) node.range.items[itemIndex][field] = value
     })
   }
 
   function removeTextListItem(nodeId: string, itemIndex: number) {
+    let changed = false
     updateNode(nodeId, (node) => {
       if (node.type !== "for" || node.range.kind !== "text-list" || node.range.items.length <= 1) return
       node.range.items.splice(itemIndex, 1)
+      changed = true
     })
+    if (changed) bumpTextListStructureVersion(nodeId)
   }
 
   function moveTextListItem(nodeId: string, itemIndex: number, offset: -1 | 1) {
+    let changed = false
     updateNode(nodeId, (node) => {
       if (node.type !== "for" || node.range.kind !== "text-list") return
       const target = itemIndex + offset
       if (target < 0 || target >= node.range.items.length) return
       const [item] = node.range.items.splice(itemIndex, 1)
       node.range.items.splice(target, 0, item)
+      changed = true
     })
+    if (changed) bumpTextListStructureVersion(nodeId)
   }
 
   function forBodyTemplateScope(node: Extract<FlowV2Node, { type: "for" }>, inherited: TextTemplateScope | null): TextTemplateScope | null {
@@ -750,7 +772,7 @@
 {#snippet NodeEditor(node: FlowV2Node, index: number, bodyPath: BodyPath, allowLoopControls: boolean, actionOnly: boolean, templateScope: TextTemplateScope | null)}
   <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)}>
     <div class="step-title">
-      <strong>{index + 1}. {node.type}{#if node.type === "for" && node.range.kind === "text-list"} <small data-testid="for-text-list-summary">text-list · {FOR_TEXT_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
+      <strong>{index + 1}. {node.type}{#if node.type === "for" && node.range.kind === "text-list"} <small data-testid="for-text-list-summary">text-list · {LOOP_INDEX_TEMPLATE_TOKEN} · {LOOP_KEY_TEMPLATE_TOKEN} · {LOOP_VALUE_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
       <div class="inline-actions node-menu" data-testid="node-menu">
         <button type="button" data-testid="node-add-before" onclick={(event) => openInsertion(beforeAnchor(bodyPath, index, node.id), "Insert before: " + node.id, allowLoopControls, event, actionOnly)}>Add before</button>
         <button type="button" data-testid="node-add-after" onclick={(event) => openInsertion(afterAnchor(bodyPath, index, node.id), "Insert after: " + node.id, allowLoopControls, event, actionOnly)}>Add after</button>
@@ -809,7 +831,7 @@
           {#each terminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}
         </select>
       </label>
-      <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = value })} {templateScope} testId="input-prompt" />
+      <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = value })} {templateScope} testId="input-prompt" multiline maxRows={3} />
       <label class="checkbox-row"><input type="checkbox" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
       <label class="checkbox-row"><input type="checkbox" data-testid="input-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
       <label>Default source
@@ -832,7 +854,7 @@
         <label>Target tab<select data-testid="wait-target-tab" value={quietChoiceFromTarget(node.terminal)} title={terminalChoiceTitle(quietChoiceFromTarget(node.terminal) || choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet" && event.currentTarget.value) item.terminal = targetFromChoice(event.currentTarget.value) })}><option value="" disabled>Choose shell tab</option>{#each quietTerminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
         <div class="macro-row"><label>Quiet ms<input type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
       {:else}
-        <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = value })} {templateScope} testId="wait-user-continue-prompt" />
+        <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = value })} {templateScope} testId="wait-user-continue-prompt" multiline maxRows={3} />
       {/if}
     {:else if node.type === "capture-source"}
       {@render CaptureEditor({ capture: node.capture }, terminalChoices, choiceFromTarget, targetFromChoice, defaultCaptureSource, (capture: CaptureSourceConfig) => updateNode(node.id, (item) => { if (item.type === "capture-source") item.capture = capture }))}
@@ -853,10 +875,11 @@
       {#if node.range.kind === "text-list"}
         <div class="text-list-items" data-testid="for-text-list-items">
           <div class="step-title"><strong>Items</strong><button type="button" data-testid="for-text-list-add" onclick={() => addTextListItem(node.id)}>Add item</button></div>
-          {#each node.range.items as item, itemIndex}
+          {#each node.range.items as item, itemIndex (textListItemEditorKey(node.id, itemIndex))}
             <div class="message-part-row text-list-item-card" data-testid="for-text-list-item-card">
-              <div class="step-title"><strong>Item {itemIndex + 1}</strong><div class="inline-actions"><button type="button" disabled={itemIndex === 0} onclick={() => moveTextListItem(node.id, itemIndex, -1)}>Up</button><button type="button" disabled={itemIndex === node.range.items.length - 1} onclick={() => moveTextListItem(node.id, itemIndex, 1)}>Down</button><button type="button" disabled={node.range.items.length <= 1} onclick={() => removeTextListItem(node.id, itemIndex)}>Remove</button></div></div>
-              <LineNumberedTextarea testId="for-text-list-item" value={item} rows={3} ariaLabel={"Text-list item " + (itemIndex + 1)} onInput={(value: string) => updateTextListItem(node.id, itemIndex, value)} />
+              <div class="step-title"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions"><button type="button" disabled={itemIndex === 0} onclick={() => moveTextListItem(node.id, itemIndex, -1)}>Up</button><button type="button" disabled={itemIndex === node.range.items.length - 1} onclick={() => moveTextListItem(node.id, itemIndex, 1)}>Down</button><button type="button" disabled={node.range.items.length <= 1} onclick={() => removeTextListItem(node.id, itemIndex)}>Remove</button></div></div>
+              <label>Key<input data-testid="for-text-list-key" value={item.key} oninput={(event) => updateTextListItem(node.id, itemIndex, "key", event.currentTarget.value)} /></label>
+              <label>Value<LineNumberedTextarea testId="for-text-list-value" value={item.value} maxRows={3} ariaLabel={"Text-list item " + (itemIndex + 1) + " value"} onInput={(value: string) => updateTextListItem(node.id, itemIndex, "value", value)} /></label>
             </div>
           {/each}
         </div>

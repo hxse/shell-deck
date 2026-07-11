@@ -58,7 +58,7 @@
   {#if runner?.waitingInput}
     <div class="runner-input-line" data-testid="macro-run-input">
       <label>{runner.waitingInput.prompt}
-        <LineNumberedTextarea testId="macro-run-input-text" value={runnerInput} ariaLabel="Runtime input line" onInput={onRunnerInputChange} />
+        <LineNumberedTextarea testId="macro-run-input-text" value={runnerInput} maxRows={4} ariaLabel="Runtime input line" onInput={onRunnerInputChange} />
       </label>
       <button type="button" data-testid="macro-run-input-submit" onclick={onSubmitRunnerInput}>Send</button>
     </div>

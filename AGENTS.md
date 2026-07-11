@@ -12,6 +12,7 @@
 * 当前项目焦点只看 `shell-deck` 自己的源码和文档；`orch-web` 只作为 terminal 底座经验来源，不再作为产品方向真值。
 * 新正式任务必须先写 task 文档，结构遵循 `doc/tasks/` 分层。
 * 查询当前真值时优先看源码和 `doc/tasks/active_specs/**`；若 active spec 尚未冻结，则看当前 task 的 `02_spec/**`。
+* 默认采用 current-schema-only 的破坏性演进：不兼容旧语法、不读取或处理旧语法，优先直接替换旧 contract；不得添加 alias、migration、dual schema、legacy branch 或自动转换。旧输入必须按当前 schema fail loudly。只有用户在具体 task 中明确要求兼容时才可例外，并必须把兼容边界冻结到该 task 的 `02_spec/**`。
 * 审阅报告按 P1/P2/P3 分级，并区分“AI 直接修”和“需要用户拍板”。
 * 不把 `orch-web` 的 role / Codex orchestration 默认迁移过来；只有 terminal/PTY/multi-client sync 等被当前 spec 明确保留的底座能力才进入 `shell-deck`。
 

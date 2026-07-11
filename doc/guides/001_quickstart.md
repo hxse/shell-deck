@@ -97,7 +97,7 @@ The macro workbench supports:
 
 Flow V2 action nodes are `send`, `notify`, `input`, `wait`, `capture-source`, `extract_text`, and `parallel`. Control nodes are `if`, `for`, `break`, `continue`, and `finish`. A parallel lane ends with its mandatory `output` node; it is not a general top-level action.
 
-Use a `text-list` range when the same body should run once for each piece of text. Plain text remains literal, including braces. To use the current item, explicitly enable the default-off `Use {{text}} template` checkbox for that field or message part; the stored value then uses `{ "kind": "template", "template": "...{{text}}..." }`.
+Use a `text-list` range when the same body should run once for each structured item. Each item has a user-editable single-line `key` and multiline `value`; the loop generates a pure one-based numeric `index` from its current position. Plain text remains literal, including braces. To interpolate the current item, explicitly enable the default-off `Use loop template` checkbox and insert exact `{{index}}`, `{{key}}`, or `{{value}}` tokens. Old string items and `{{text}}` template syntax are invalid and are not migrated.
 
 ```json
 {
@@ -105,7 +105,16 @@ Use a `text-list` range when the same body should run once for each piece of tex
   "type": "for",
   "range": {
     "kind": "text-list",
-    "items": ["阶段 1：处理高频策略", "阶段 2：处理中频策略"]
+    "items": [
+      {
+        "key": "高频策略",
+        "value": "处理信号最多的三个策略"
+      },
+      {
+        "key": "边界策略",
+        "value": "处理中高频回踩和边界策略"
+      }
+    ]
   },
   "body": [
     {
@@ -114,7 +123,7 @@ Use a `text-list` range when the same body should run once for each piece of tex
       "terminal": { "kind": "alias", "value": "worker" },
       "message": {
         "parts": [
-          { "kind": "template", "template": "请执行：{{text}}" }
+          { "kind": "template", "template": "阶段 {{index}}：{{key}}\n{{value}}" }
         ]
       },
       "enter": true
@@ -132,7 +141,9 @@ Template mode is limited to six user-visible content surfaces:
 - `input.prompt`
 - `wait.user-continue.prompt`
 
-The checkbox is available only inside a lexical `text-list for` scope. `if` branches, control action bodies, inner count/forever loops, and parallel lanes inherit the current item. An inner text-list shadows the outer item until its body ends. V0 does not provide outer-binding access, named variables, or a general expression language; all other strings remain literal or keep their existing field-specific grammar.
+The checkbox is available only inside a lexical `text-list for` scope. `if` branches, control action bodies, inner count/forever loops, and parallel lanes inherit the complete index/key/value binding. An inner text-list shadows all three values until its body ends. Item Key and Value are binding sources and do not get template checkboxes. V0 does not provide outer-binding access, named variables, or a general expression language; all other strings remain literal or keep their existing field-specific grammar.
+
+Macro multiline content editors keep one spare visual line, grow automatically to their row cap, and then scroll internally. You can drag them taller temporarily (up to 60% of the viewport); that manual height is intentionally not saved and resets when the editor is reopened or the page reloads.
 
 ## Observability
 

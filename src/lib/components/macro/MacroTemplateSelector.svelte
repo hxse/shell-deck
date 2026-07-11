@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LineNumberedTextarea from './LineNumberedTextarea.svelte'
   import type { MacroTemplate, TemplateSummary } from '../../macro/templateTypes'
 
   let {
@@ -106,7 +107,7 @@
               <input data-testid="macro-name" value={draft.name} oninput={(event) => onUpdateDraft((template: MacroTemplate) => { template.name = event.currentTarget.value })} />
             </label>
             <label>Description
-              <textarea value={draft.description} oninput={(event) => onUpdateDraft((template: MacroTemplate) => { template.description = event.currentTarget.value })}></textarea>
+              <LineNumberedTextarea testId="macro-description" value={draft.description} maxRows={3} ariaLabel="Macro template description" showLineNumbers={false} onInput={(value: string) => onUpdateDraft((template: MacroTemplate) => { template.description = value })} />
             </label>
             <code>{draft.id}</code>
           </div>

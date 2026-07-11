@@ -6,6 +6,10 @@ import type { MacroTemplate } from "../../src/lib/macro/templateTypes"
 const worker = { kind: "alias" as const, value: "worker" }
 const indexMap = [{ index: 1, terminalId: "term_worker", terminalAlias: "worker" }]
 
+function textListItem(value: string, key = value) {
+  return { key, value }
+}
+
 function template(body: MacroTemplate["body"]): MacroTemplate {
   const now = "2026-07-11T00:00:00.000Z"
   return { schemaVersion: 2, id: "tmpl_template_contract", name: "Template contract", description: "", configId: "local", body, createdAt: now, updatedAt: now }
@@ -15,33 +19,49 @@ function issueText(value: unknown): string {
   return validateFlowV2Template(value, { indexMap }).issues.map((issue) => issue.path + ":" + issue.message).join("\n")
 }
 
-test("renderer preserves whitespace Unicode empty bindings and frozen inputs", () => {
-  const templateText = "前缀\n{{text}}\n{{text}}后缀"
-  const binding = Object.freeze({ text: "  阶段🚀\n", forStepId: "loop" })
-  expect(renderScopedTemplate(templateText, binding)).toBe("前缀\n  阶段🚀\n\n  阶段🚀\n后缀")
-  expect(renderScopedTemplate("[{{text}}]", Object.freeze({ text: "", forStepId: "loop" }))).toBe("[]")
-  expect(binding).toEqual({ text: "  阶段🚀\n", forStepId: "loop" })
-  expect(templateText).toBe("前缀\n{{text}}\n{{text}}后缀")
+test("renderer preserves index key value whitespace Unicode empty values and frozen inputs", () => {
+  const templateText = "{{index}}|{{key}}|{{value}}|{{value}}"
+  const binding = Object.freeze({ index: 2, key: "  阶段🚀  ", value: "\n正文🚀\n", forStepId: "loop" })
+  expect(renderScopedTemplate(templateText, binding)).toBe("2|  阶段🚀  |\n正文🚀\n|\n正文🚀\n")
+  expect(renderScopedTemplate("[{{key}}][{{value}}]", Object.freeze({ index: 1, key: "", value: "", forStepId: "loop" }))).toBe("[][]")
+  expect(binding).toEqual({ index: 2, key: "  阶段🚀  ", value: "\n正文🚀\n", forStepId: "loop" })
+  expect(templateText).toBe("{{index}}|{{key}}|{{value}}|{{value}}")
 })
 
-test("renderer preserves JavaScript replacement metacharacters in text-list items", () => {
-  const items = ["$&", "$`", "$'", "$$", "$1", "$<text>"]
-  for (const item of items) {
-    expect(renderScopedTemplate("prefix{{text}}suffix", { text: item, forStepId: "loop" })).toBe("prefix" + item + "suffix")
+test("renderer preserves replacement metacharacters and never rescans inserted key or value", () => {
+  const dollar = String.fromCharCode(36)
+  const apostrophe = String.fromCharCode(39)
+  const payloads = [
+    dollar + "&",
+    dollar + "`",
+    dollar + apostrophe,
+    dollar + dollar,
+    dollar + "1",
+    dollar + "<text>",
+    "{{index}}",
+    "{{key}}",
+    "{{value}}",
+    "{{text}}",
+  ]
+  for (const payload of payloads) {
+    const binding = { index: 3, key: payload, value: payload, forStepId: "loop" }
+    expect(renderScopedTemplate("{{index}}:{{key}}:{{value}}", binding)).toBe("3:" + payload + ":" + payload)
   }
 })
 
 test("syntax rejects unknown, unclosed and isolated double-brace forms", () => {
-  expect(scopedTemplateSyntaxIssue("{{text}} + {{other}}")).toContain("only supports")
-  expect(scopedTemplateSyntaxIssue("{{text}} + {{")).toContain("only supports")
-  expect(scopedTemplateSyntaxIssue("{{text}} + }}")).toContain("only supports")
+  expect(scopedTemplateSyntaxIssue("{{index}} + {{key}} + {{value}}")).toBeNull()
+  expect(scopedTemplateSyntaxIssue("{{value}} + {{other}}")).toContain("only supports")
+  expect(scopedTemplateSyntaxIssue("{{text}}")).toContain("must contain")
+  expect(scopedTemplateSyntaxIssue("{{value}} + {{")).toContain("only supports")
+  expect(scopedTemplateSyntaxIssue("{{value}} + }}")).toContain("only supports")
 })
 
 test("if, else and control action bodies inherit the enclosing text-list binding", () => {
   const value = template([{
     id: "loop",
     type: "for",
-    range: { kind: "text-list", items: ["one"] },
+    range: { kind: "text-list", items: [textListItem("one")] },
     body: [
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: worker, mode: "scrollback-tail", maxChars: 100 } },
       {
@@ -50,9 +70,9 @@ test("if, else and control action bodies inherit the enclosing text-list binding
         branches: [{
           kind: "if",
           condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "ready" }, scope: { kind: "whole" } },
-          body: [{ id: "branch_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "branch {{text}}" }] }, enter: true }],
+          body: [{ id: "branch_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "branch {{value}}" }] }, enter: true }],
         }],
-        else: [{ id: "finish", type: "finish", body: [{ id: "finish_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "finish {{text}}" }] }, enter: true }] }],
+        else: [{ id: "finish", type: "finish", body: [{ id: "finish_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "finish {{value}}" }] }, enter: true }] }],
       },
     ],
   }])
@@ -63,16 +83,16 @@ test("nested text-list scopes validate inner shadow and restore the outer scope"
   const value = template([{
     id: "outer",
     type: "for",
-    range: { kind: "text-list", items: ["outer"] },
+    range: { kind: "text-list", items: [textListItem("outer")] },
     body: [
-      { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer {{text}}" }] }, enter: true },
+      { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer {{value}}" }] }, enter: true },
       {
         id: "inner",
         type: "for",
-        range: { kind: "text-list", items: ["inner"] },
-        body: [{ id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner {{text}}" }] }, enter: true }],
+        range: { kind: "text-list", items: [textListItem("inner")] },
+        body: [{ id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner {{value}}" }] }, enter: true }],
       },
-      { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer again {{text}}" }] }, enter: true },
+      { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer again {{value}}" }] }, enter: true },
     ],
   }])
   expect(validateFlowV2Template(value, { indexMap })).toEqual({ ok: true, issues: [] })
@@ -82,8 +102,8 @@ test("text-list range is strict and validation does not normalize items", () => 
   const value = template([{
     id: "loop",
     type: "for",
-    range: { kind: "text-list", items: ["  first\n", "", "first"] },
-    body: [{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{text}}" }] }, enter: true }],
+    range: { kind: "text-list", items: [textListItem("  first\n", "  duplicate  "), textListItem("", ""), textListItem("first", "  duplicate  ")] },
+    body: [{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{value}}" }] }, enter: true }],
   }])
   const before = structuredClone(value)
   expect(validateFlowV2Template(value, { indexMap })).toEqual({ ok: true, issues: [] })
@@ -96,16 +116,44 @@ test("text-list range is strict and validation does not normalize items", () => 
   expect(aliasIssues).toContain("range.as:extra Flow V2 field is not allowed")
   expect(aliasIssues).toContain("text-list items must be an array")
 
-  const wrongItem = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
-  wrongItem.body[0].range.items = ["x", 1]
-  expect(issueText(wrongItem)).toContain("text-list item must be a string")
+  const legacyStrings = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  legacyStrings.body[0].range.items = ["legacy"]
+  expect(issueText(legacyStrings)).toContain("text-list item must be an object")
+
+  const mixedItems = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  mixedItems.body[0].range.items = [{ key: "valid", value: "value" }, "legacy"]
+  expect(issueText(mixedItems)).toContain("items[1]:text-list item must be an object")
+
+  const entryList = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  entryList.body[0].range = { kind: "entry-list", items: [{ key: "key", value: "value" }] }
+  expect(issueText(entryList)).toContain("range.kind:for range kind must be count, forever or text-list")
+
+  const unknownItemField = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  unknownItemField.body[0].range.items = [{ key: "", value: "", index: 1 }]
+  expect(issueText(unknownItemField)).toContain("items[0].index:extra Flow V2 field is not allowed")
+
+  const missingFields = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  missingFields.body[0].range.items = [{ value: "missing key" }, { key: "missing value" }]
+  const missingIssues = issueText(missingFields)
+  expect(missingIssues).toContain("items[0].key:value must be a string")
+  expect(missingIssues).toContain("items[1].value:value must be a string")
+
+  const inheritedFields = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  inheritedFields.body[0].range.items = [Object.create({ key: "inherited key", value: "inherited value" })]
+  const inheritedIssues = issueText(inheritedFields)
+  expect(inheritedIssues).toContain("items[0].key:value must be a string")
+  expect(inheritedIssues).toContain("items[0].value:value must be a string")
+
+  const multilineKey = structuredClone(value) as unknown as { body: Array<{ range: Record<string, unknown> }> }
+  multilineKey.body[0].range.items = [{ key: "bad\nkey", value: "allowed\r\nvalue" }]
+  expect(issueText(multilineKey)).toContain("items[0].key:text-list item key must not contain CR or LF")
 })
 
 test("unsupported text fields stay literal and reject template objects", () => {
   const literal = template([{
     id: "loop",
     type: "for",
-    range: { kind: "text-list", items: ["x"] },
+    range: { kind: "text-list", items: [textListItem("x")] },
     body: [
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: worker, mode: "scrollback-tail", maxChars: 100 } },
       {
@@ -113,8 +161,8 @@ test("unsupported text fields stay literal and reject template objects", () => {
         type: "if",
         branches: [{
           kind: "if",
-          condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "{{text}}" }, scope: { kind: "whole" } },
-          body: [{ id: "break_literal", type: "break", reason: "{{text}}" }],
+          condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "{{value}}" }, scope: { kind: "whole" } },
+          body: [{ id: "break_literal", type: "break", reason: "{{value}}" }],
         }],
       },
     ],
@@ -124,10 +172,10 @@ test("unsupported text fields stay literal and reject template objects", () => {
   const objects = structuredClone(literal)
   const ifNode = objects.body[0]
   if (ifNode.type !== "for" || ifNode.body[1]?.type !== "if") throw new Error("missing if fixture")
-  ifNode.body[1].branches[0].condition.matcher = { kind: "simple", op: "contains", text: { kind: "template", template: "{{text}}" } as never }
+  ifNode.body[1].branches[0].condition.matcher = { kind: "simple", op: "contains", text: { kind: "template", template: "{{value}}" } as never }
   const breakNode = ifNode.body[1].branches[0].body[0]
   if (breakNode.type !== "break") throw new Error("missing break fixture")
-  breakNode.reason = { kind: "template", template: "{{text}}" } as never
+  breakNode.reason = { kind: "template", template: "{{value}}" } as never
   const objectIssues = issueText(objects)
   expect(objectIssues).toContain("matcher.text:value must be a string")
   expect(objectIssues).toContain("reason:value must be a string")
@@ -143,7 +191,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
   return template([{
     id: "matrix_loop",
     type: "for",
-    range: { kind: "text-list", items: ["source {{text}}"] },
+    range: { kind: "text-list", items: [textListItem("source {{value}}")] },
     body: [
       {
         id: "matrix_capture",
@@ -156,7 +204,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
         terminal: worker,
         message: {
           parts: [
-            { kind: "text", text: "literal {{text}}" },
+            { kind: "text", text: "literal {{value}}" },
             { kind: "artifact", source: { kind: "step_artifact", stepId: "matrix_capture", artifact: "captured_text" } },
           ],
         },
@@ -166,7 +214,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
         id: "matrix_input",
         type: "input",
         terminal: worker,
-        prompt: "literal {{text}}",
+        prompt: "literal {{value}}",
         allowEmpty: true,
         enter: false,
         defaultSource: { kind: "step_artifact", stepId: "matrix_capture", artifact: "captured_text" },
@@ -175,8 +223,8 @@ function unsupportedMatrixFixture(): MacroTemplate {
         id: "matrix_notify",
         type: "notify",
         level: "info",
-        title: "literal {{text}}",
-        message: { parts: [{ kind: "text", text: "literal {{text}}" }] },
+        title: "literal {{value}}",
+        message: { parts: [{ kind: "text", text: "literal {{value}}" }] },
         channels: [
           { kind: "app", toast: true, sound: "none" },
           { kind: "telegram", profileId: "default" },
@@ -184,7 +232,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
         onFailure: "continue",
       },
       { id: "matrix_duration", type: "wait", mode: "duration", durationMs: 1 },
-      { id: "matrix_continue", type: "wait", mode: "user-continue", prompt: "literal {{text}}" },
+      { id: "matrix_continue", type: "wait", mode: "user-continue", prompt: "literal {{value}}" },
       {
         id: "matrix_quiet",
         type: "wait",
@@ -202,10 +250,10 @@ function unsupportedMatrixFixture(): MacroTemplate {
           condition: {
             kind: "text_match",
             source: { kind: "step_artifact", stepId: "matrix_capture", artifact: "captured_text" },
-            matcher: { kind: "simple", op: "contains", text: "{{text}}" },
+            matcher: { kind: "simple", op: "contains", text: "{{value}}" },
             scope: { kind: "whole" },
           },
-          body: [{ id: "matrix_branch_finish", type: "finish", reason: "{{text}}", body: [] }],
+          body: [{ id: "matrix_branch_finish", type: "finish", reason: "{{value}}", body: [] }],
         }],
       },
       {
@@ -214,7 +262,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
         source: { kind: "step_artifact", stepId: "matrix_capture", artifact: "captured_text" },
         split: { kind: "regex", pattern: "\\n+", flags: "", keepEmpty: false },
         filters: [
-          { kind: "include", matcher: { kind: "simple", op: "contains", text: "{{text}}" } },
+          { kind: "include", matcher: { kind: "simple", op: "contains", text: "{{value}}" } },
           { kind: "exclude", matcher: { kind: "regex", pattern: "^skip$", flags: "i" } },
         ],
         select: { mode: "all" },
@@ -227,23 +275,23 @@ function unsupportedMatrixFixture(): MacroTemplate {
         type: "parallel",
         lanes: [{
           id: "matrix_lane",
-          label: "literal {{text}}",
+          label: "literal {{value}}",
           terminal: worker,
           body: [
             {
               id: "matrix_lane_send",
               type: "send",
               terminal: worker,
-              message: { parts: [{ kind: "text", text: "literal {{text}}" }] },
+              message: { parts: [{ kind: "text", text: "literal {{value}}" }] },
               enter: false,
             },
             { id: "matrix_lane_output", type: "output", source: { kind: "none" } },
           ],
         }],
-        merge: { kind: "sectioned_text", separator: "{{text}} {laneId}", includeEmptyOutputs: true },
+        merge: { kind: "sectioned_text", separator: "{{value}} {laneId}", includeEmptyOutputs: true },
         onLaneFail: "pause",
       },
-      { id: "matrix_finish", type: "finish", reason: "{{text}}", body: [] },
+      { id: "matrix_finish", type: "finish", reason: "{{value}}", body: [] },
     ],
   }])
 }
@@ -281,7 +329,7 @@ const unsupportedMatrixCases: UnsupportedMatrixCase[] = [
   { group: "node identity", path: ["body", 0, "id"], expectedIssue: "body[0].id:value must be a public id string" },
   { group: "parallel lane identity", path: ["body", 0, "body", 9, "lanes", 0, "id"], expectedIssue: "lanes[0].id:value must be a public id string" },
   { group: "parallel output identity", path: ["body", 0, "body", 9, "lanes", 0, "body", 1, "id"], expectedIssue: "body[1].id:value must be a public id string" },
-  { group: "for source item", path: ["body", 0, "range", "items", 0], expectedIssue: "text-list item must be a string" },
+  { group: "for source item", path: ["body", 0, "range", "items", 0], expectedIssue: "items[0].kind:extra Flow V2 field is not allowed" },
   { group: "message artifact source", path: ["body", 0, "body", 1, "message", "parts", 1, "source"], expectedIssue: "source.kind:artifact source kind must be step_artifact" },
   { group: "input defaultSource", path: ["body", 0, "body", 2, "defaultSource"], expectedIssue: "defaultSource.kind:artifact source kind must be step_artifact" },
   { group: "notify level", path: ["body", 0, "body", 3, "level"], expectedIssue: "level:level must be info, success, warning or error" },
@@ -314,7 +362,7 @@ test("unsupported schema matrix fixture keeps ordinary double-brace strings lite
 for (const matrixCase of unsupportedMatrixCases) {
   test("unsupported schema matrix rejects template object for " + matrixCase.group, () => {
     const candidate = unsupportedMatrixFixture()
-    replaceMatrixPath(candidate, matrixCase.path, { kind: "template", template: "{{text}}" })
+    replaceMatrixPath(candidate, matrixCase.path, { kind: "template", template: "{{value}}" })
     expect(issueText(candidate)).toContain(matrixCase.expectedIssue)
   })
 }

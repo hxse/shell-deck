@@ -1,6 +1,6 @@
 <script lang="ts">
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
-  import { FOR_TEXT_TEMPLATE_TOKEN, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
+  import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_TEMPLATE_TOKENS, LOOP_VALUE_TEMPLATE_TOKEN, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
   import { messageTextPartValue, withMessagePartTemplateMode, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import type { FlowV2ArtifactSource, MessagePart, MessageSpec } from "../../macro/templateTypes"
 
@@ -22,6 +22,8 @@
     textPartTestId?: string
   }>()
 
+  let structureVersion = $state(0)
+
   function cloneMessage(): MessageSpec {
     return JSON.parse(JSON.stringify(message)) as MessageSpec
   }
@@ -42,12 +44,14 @@
 
   function addTextPart() {
     const next = cloneMessage()
+    structureVersion += 1
     next.parts.push({ kind: "text", text: "" })
     onChange(next)
   }
 
   function addArtifactPart() {
     const next = cloneMessage()
+    structureVersion += 1
     next.parts.push({ kind: "artifact" })
     onChange(next)
   }
@@ -80,6 +84,7 @@
   }
 
   function removePart(index: number) {
+    structureVersion += 1
     const next = cloneMessage()
     next.parts.splice(index, 1)
     onChange(next)
@@ -89,6 +94,7 @@
     const target = index + offset
     if (target < 0 || target >= message.parts.length) return
     const next = cloneMessage()
+    structureVersion += 1
     const [part] = next.parts.splice(index, 1)
     next.parts.splice(target, 0, part)
     onChange(next)
@@ -101,6 +107,13 @@
   function templateSyntaxIssue(part: Extract<MessagePart, { kind: "text" | "template" }>): string | null {
     return part.kind === "template" ? scopedTemplateSyntaxIssue(part.template) : null
   }
+
+  const loopTemplateInsertActions = [
+    { text: LOOP_INDEX_TEMPLATE_TOKEN, label: "Insert " + LOOP_INDEX_TEMPLATE_TOKEN, testId: "message-template-insert-index" },
+    { text: LOOP_KEY_TEMPLATE_TOKEN, label: "Insert " + LOOP_KEY_TEMPLATE_TOKEN, testId: "message-template-insert-key" },
+    { text: LOOP_VALUE_TEMPLATE_TOKEN, label: "Insert " + LOOP_VALUE_TEMPLATE_TOKEN, testId: "message-template-insert-value" },
+  ]
+  const availableLoopTokens = LOOP_TEMPLATE_TOKENS.join(" · ")
 </script>
 
 <div class="message-parts-editor" data-testid={testId}>
@@ -108,7 +121,7 @@
     <button type="button" data-testid="message-add-text" onclick={addTextPart}>Add Text</button>
     <button type="button" data-testid="message-add-source" title="Add source artifact" onclick={addArtifactPart}>Add Source</button>
   </div>
-  {#each message.parts as part, partIndex}
+  {#each message.parts as part, partIndex (structureVersion + ":" + partIndex)}
     <div class="message-part-row" data-testid="message-part-row">
       <div class="step-title">
         <strong>{partIndex + 1}. {part.kind}</strong>
@@ -127,12 +140,12 @@
               checked={part.kind === "template"}
               onchange={(event) => setTextPartTemplateEnabled(partIndex, event.currentTarget.checked)}
             />
-            Use {FOR_TEXT_TEMPLATE_TOKEN} template
+            Use loop template
           </label>
         {/if}
         {#if part.kind === "template" && templateScope}
           <small class="template-source" data-testid="message-template-source">
-            Available: {FOR_TEXT_TEMPLATE_TOKEN} · from {templateScope.forStepId}
+            Available: {availableLoopTokens} · from {templateScope.forStepId}
             {#if templateScope.shadowedForStepId} · shadows {templateScope.shadowedForStepId}{/if}
           </small>
         {:else if part.kind === "template"}
@@ -146,11 +159,9 @@
             testId={textPartTestId}
             value={messageTextPartValue(part)}
             ariaLabel="Message text part"
-            rows={3}
+            maxRows={3}
             onInput={(text: string) => updateTextPart(partIndex, text)}
-            insertText={part.kind === "template" && templateScope ? FOR_TEXT_TEMPLATE_TOKEN : undefined}
-            insertLabel={"Insert " + FOR_TEXT_TEMPLATE_TOKEN}
-            insertTestId="message-template-insert"
+            insertActions={part.kind === "template" && templateScope ? loopTemplateInsertActions : []}
           />
         </label>
       {:else}

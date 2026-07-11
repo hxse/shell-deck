@@ -46,7 +46,7 @@ Invalid removed nodes and fields include `send_line`, `input_line`, `sleep`, `pa
 
 `send` writes rendered message text to a target tab. It stores explicit `enter: boolean`; new UI nodes default to `enter: true`.
 
-`send.message.parts` is an ordered list. It may be empty. Each part is literal text, scoped template text, or a source artifact reference. Literal `{ "kind": "text", "text": string }` never interpolates braces. Scoped `{ "kind": "template", "template": string }` is valid only under a lexical text-list binding and replaces exact `{{text}}` tokens once; item text, artifacts, and rendered output are never scanned recursively. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without implicit separators or trimming; newlines and surrounding whitespace are user content.
+`send.message.parts` is an ordered list. It may be empty. Each part is literal text, scoped template text, or a source artifact reference. Literal `{ "kind": "text", "text": string }` never interpolates braces. Scoped `{ "kind": "template", "template": string }` is valid only under a lexical text-list binding and replaces exact `{{index}}`, `{{key}}`, and `{{value}}` tokens in one scan; inserted key/value text, artifacts, and rendered output are never scanned recursively. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without implicit separators or trimming; newlines and surrounding whitespace are user content.
 
 ```json
 {
@@ -69,11 +69,13 @@ Macro submit uses LF. Runtime write payload is `content + (enter ? "\n" : "")` f
 
 ## Scoped Text Templates
 
-A text-list loop binds its current item to the fixed name `text`. The only token grammar is exact `{{text}}`; expressions, whitespace variants, paths, filters, indexes, escaping rules, and outer-binding access are unsupported. A template must contain at least one exact token and may contain it more than once.
+A text-list loop binds a pure one-based decimal `index`, a user-editable single-line `key`, and a multiline `value`. The only token grammar is exact `{{index}}`, `{{key}}`, and `{{value}}`; `{{text}}`, expressions, whitespace variants, paths, filters, escaping rules, and outer-binding access are invalid. A template must contain at least one supported exact token and may repeat or mix them. Plain literal fields never interpolate braces.
 
 Template-capable content is deliberately limited to six UI surfaces: normal send message text parts, parallel-lane send message text parts, notify title, notify message text parts, input prompt, and user-continue wait prompt. Condition/filter/extract text, ids and metadata, text-list items, control reasons, terminal/artifact/profile selectors, parallel labels, and merge separators remain literal/non-template fields.
 
-Text-list scope is lexical. If/elif/else, control-terminal action bodies, inner count/forever loops, and parallel lane bodies inherit the current binding. An inner text-list shadows it and leaving that body restores the outer binding. A template outside any text-list scope is invalid for save/import/start; moving an existing template out of scope preserves its type and text so the editor can show an inline error and let the user explicitly turn template mode off. The editor exposes template mode as a default-off per-field/part checkbox and edits text-list items as independent multiline cards without trimming, splitting, or deduplicating them.
+Text-list scope is lexical. If/elif/else, control-terminal action bodies, inner count/forever loops, and parallel lane bodies inherit the complete current binding. An inner text-list shadows all three values and leaving that body restores the outer binding. A template outside any text-list scope is invalid for save/import/start; moving an existing template out of scope preserves its type and text so the editor can show an inline error and let the user explicitly turn template mode off. The editor exposes default-off `Use loop template` per field/part with three Insert controls. Each item card shows a read-only pure numeric index, a single-line Key, and an independent multiline Value; index is not persisted, while key/value order, duplicates, Unicode, newlines in Value, and surrounding whitespace are preserved.
+
+Macro multiline content editors auto-size to the current visual `scrollHeight` plus one line until their surface-specific row cap, then use internal vertical scrolling. Native vertical resize may temporarily enlarge an editor up to `60vh`; that manual height survives content edits within the mounted component but is never stored in template JSON, run state, server state, or localStorage and resets on remount/reload. Message parts, text-list Value, input/user-continue prompts, template description, and runtime input use this shared behavior; single-line title/key/config fields, Prompt Library body, and terminal TextBoxSlot do not.
 
 ## Wait Modes
 
@@ -134,7 +136,7 @@ A config can have at most one live macro run. Live includes running, paused, wai
 
 - count: `{ "kind": "count", "count": 3 }`; reading `{ "count": 3 }` is allowed, but new UI writes explicit `kind`.
 - forever: `{ "kind": "forever" }`; it runs until `break`, `finish`, stop, or fail, and must not store `count`.
-- text-list: `{ "kind": "text-list", "items": string[] }`; `items` must contain at least one string. Empty strings are valid items, and order, duplicates, Unicode, newlines, and surrounding whitespace are preserved byte-for-byte.
+- text-list: `{ "kind": "text-list", "items": Array<{ "key": string, "value": string }> }`; `items` must be non-empty and every item must contain exactly `key` and `value`. Key may be empty or repeated but cannot contain CR/LF; Value may be empty, repeated, or multiline. Old string items, mixed arrays, `entry-list`, aliases, migration, and conversion are unsupported and fail current-schema validation.
 
 Normal in-process pause/resume uses an occurrence-aware execution cursor rather than a static completed-step set. Sequence position, selected if branch, loop iteration/binding, parallel lane position, wait/input/capture suspension state, and occurrence-aware artifacts resume at the same dynamic invocation. Static step completion remains a UI/log summary only. Cursor snapshots are JSON-serializable, but server restart still leaves an in-flight run interrupted rather than hydrating and resuming it.
 

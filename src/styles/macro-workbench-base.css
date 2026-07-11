@@ -1,6 +1,5 @@
 
 .macro-panel textarea {
-  min-height: 58px;
   resize: vertical;
 }
 

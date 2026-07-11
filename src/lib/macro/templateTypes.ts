@@ -193,10 +193,15 @@ export type FlowV2IfBranch = {
   body: FlowV2Node[]
 }
 
+export type TextListItem = {
+  key: string
+  value: string
+}
+
 export type FlowV2ForRange =
   | { kind?: "count"; count: number }
   | { kind: "forever" }
-  | { kind: "text-list"; items: string[] }
+  | { kind: "text-list"; items: TextListItem[] }
 
 export type FlowV2ControlTerminalNode =
   | { id: string; type: "break"; reason?: string; body?: FlowV2ActionNode[] }

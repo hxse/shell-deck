@@ -486,7 +486,7 @@ export class MacroRunnerService {
     const key = invocationKey(context, node.id)
     let state = runtime.cursor.notificationStates.get(key)
     if (!state) {
-      const title = renderTemplatableScalar(node.title, context.textBinding)
+      const title = renderTemplatableScalar(node.title, context.templateBinding)
       const message = this.renderMessage(runtime, node.message, context)
       const createdAt = new Date().toISOString()
       const notificationId = "notif_" + node.id + "_" + notificationIdTranslator.new()
@@ -612,7 +612,7 @@ export class MacroRunnerService {
   private async executeInput(runtime: RuntimeState, node: InputNode, context: ExecutionContext): Promise<ControlResult> {
     await this.startStep(runtime, node.id, context)
     const resolved = this.resolveTerminal(runtime, node.terminal)
-    const prompt = renderTemplatableScalar(node.prompt, context.textBinding)
+    const prompt = renderTemplatableScalar(node.prompt, context.templateBinding)
     const defaultText = node.defaultSource ? this.readArtifactSource(runtime, node.defaultSource, context) : undefined
     const existing = runtime.cursor.waitingInputExecution
     const alreadyRequested = existing !== null && invocationKey(existing.context, existing.node.id) === invocationKey(context, node.id)
@@ -717,7 +717,7 @@ export class MacroRunnerService {
     if (node.mode === "user-continue") {
       if (state.mode !== "user-continue") throw new Error("wait_cursor_mode_mismatch:" + node.id)
       if (!state.continueRequested) {
-        const prompt = renderTemplatableScalar(node.prompt, context.textBinding)
+        const prompt = renderTemplatableScalar(node.prompt, context.templateBinding)
         runtime.status = "waiting"
         runtime.pauseRequested = false
         runtime.pauseReason = { code: "wait_user_continue", message: prompt, stepId: node.id }
@@ -1072,7 +1072,7 @@ export class MacroRunnerService {
   private renderMessage(runtime: RuntimeState, message: MessageSpec, context: ExecutionContext): string {
     return message.parts.map((part) => {
       if (part.kind === "text") return part.text
-      if (part.kind === "template") return renderScopedTemplate(part.template, context.textBinding)
+      if (part.kind === "template") return renderScopedTemplate(part.template, context.templateBinding)
       if (!part.source) return ""
       const ref = this.getArtifact(runtime, context, part.source.stepId, part.source.artifact)
       if (!ref) throw new Error("missing_artifact_source:" + part.source.stepId + ":" + part.source.artifact)

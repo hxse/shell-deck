@@ -131,11 +131,6 @@
   background: #ffffff;
 }
 
-.runner-input-line textarea {
-  min-height: 92px;
-  resize: vertical;
-}
-
 /* .013 workspace side panels */
 .compact-topbar {
   min-height: 38px;

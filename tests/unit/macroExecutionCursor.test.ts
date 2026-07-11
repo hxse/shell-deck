@@ -15,18 +15,22 @@ import {
   snapshotMacroExecutionCursor,
 } from "../../server/macroExecutionCursor"
 
-test("execution contexts inherit and shadow immutable text bindings lexically", () => {
+function textListItem(value: string, key = value) {
+  return { key, value }
+}
+
+test("execution contexts inherit and shadow immutable template bindings lexically", () => {
   const root = rootExecutionContext()
-  const outer = forIterationContext(root, "outer_loop", 1, " outer\n")
+  const outer = forIterationContext(root, "outer_loop", 1, textListItem(" outer\n", "outer-key"))
   const counted = forIterationContext(outer, "count_loop", 2, undefined)
-  const shadowed = forIterationContext(counted, "inner_loop", 0, "inner")
+  const shadowed = forIterationContext(counted, "inner_loop", 0, textListItem("inner"))
   const lane = parallelLaneContext(shadowed, "parallel_review", "worker_lane")
 
   expect(root).toEqual({ executionPath: [] })
-  expect(outer.textBinding).toEqual({ text: " outer\n", forStepId: "outer_loop" })
-  expect(counted.textBinding).toEqual(outer.textBinding)
-  expect(shadowed.textBinding).toEqual({ text: "inner", forStepId: "inner_loop" })
-  expect(lane.textBinding).toEqual(shadowed.textBinding)
+  expect(outer.templateBinding).toEqual({ index: 2, key: "outer-key", value: " outer\n", forStepId: "outer_loop" })
+  expect(counted.templateBinding).toEqual(outer.templateBinding)
+  expect(shadowed.templateBinding).toEqual({ index: 1, key: "inner", value: "inner", forStepId: "inner_loop" })
+  expect(lane.templateBinding).toEqual(shadowed.templateBinding)
   expect(outer.executionPath).toEqual([{ kind: "for", stepId: "outer_loop", iterationIndex: 1 }])
   expect(counted.executionPath).toHaveLength(2)
   expect(root.executionPath).toEqual([])
@@ -34,8 +38,8 @@ test("execution contexts inherit and shadow immutable text bindings lexically", 
 
 test("invocation and sequence keys distinguish iterations and parallel lanes", () => {
   const root = rootExecutionContext()
-  const first = forIterationContext(root, "loop", 0, "first")
-  const second = forIterationContext(root, "loop", 1, "second")
+  const first = forIterationContext(root, "loop", 0, textListItem("first"))
+  const second = forIterationContext(root, "loop", 1, textListItem("second"))
   const laneA = parallelLaneContext(first, "parallel", "lane_a")
   const laneB = parallelLaneContext(first, "parallel", "lane_b")
 
@@ -48,8 +52,8 @@ test("invocation and sequence keys distinguish iterations and parallel lanes", (
 
 test("artifact lookup candidates inherit lexical predecessors without crossing lane or iteration siblings", () => {
   const root = rootExecutionContext()
-  const outer = forIterationContext(root, "outer_loop", 1, "outer")
-  const previous = forIterationContext(root, "outer_loop", 0, "previous")
+  const outer = forIterationContext(root, "outer_loop", 1, textListItem("outer"))
+  const previous = forIterationContext(root, "outer_loop", 0, textListItem("previous"))
   const lane = parallelLaneContext(outer, "parallel", "lane_b")
   const siblingLane = parallelLaneContext(outer, "parallel", "lane_a")
 
@@ -63,7 +67,7 @@ test("artifact lookup candidates inherit lexical predecessors without crossing l
 })
 
 test("event path data is detached and cursor collections are per run", () => {
-  const context = forIterationContext(rootExecutionContext(), "loop", 0, "item")
+  const context = forIterationContext(rootExecutionContext(), "loop", 0, textListItem("item"))
   const eventPath = executionPathData(context)
   ;(eventPath[0] as { iterationIndex: number }).iterationIndex = 99
   expect(context.executionPath[0]).toEqual({ kind: "for", stepId: "loop", iterationIndex: 0 })
@@ -152,7 +156,7 @@ test("completed iteration scope pruning removes descendant continuation state an
 
 test("cursor snapshot round-trips every continuation payload and restores detached state", () => {
   const cursor = createMacroExecutionCursor()
-  const context = forIterationContext(rootExecutionContext(), "text_loop", 1, "current item")
+  const context = forIterationContext(rootExecutionContext(), "text_loop", 1, textListItem("current item"))
   const capturedEvent: AgentEvent = {
     protocolVersion: 1,
     agentKind: "codex",
@@ -182,7 +186,7 @@ test("cursor snapshot round-trips every continuation payload and restores detach
       id: "input_item",
       type: "input",
       terminal: { kind: "alias", value: "worker" },
-      prompt: { kind: "template", template: "Input {{text}}" },
+      prompt: { kind: "template", template: "Input {{value}}" },
       allowEmpty: false,
       enter: false,
     },
@@ -193,7 +197,7 @@ test("cursor snapshot round-trips every continuation payload and restores detach
       id: "continue_item",
       type: "wait",
       mode: "user-continue",
-      prompt: { kind: "template", template: "Continue {{text}}" },
+      prompt: { kind: "template", template: "Continue {{value}}" },
     },
     context,
   }
@@ -239,10 +243,16 @@ test("cursor snapshot round-trips every continuation payload and restores detach
   if (!restoredInput || typeof restoredInput.node.prompt === "string") throw new Error("input cursor missing")
   restoredInput.node.prompt.template = "changed input"
   ;(restoredInput.context.executionPath[0] as { iterationIndex: number }).iterationIndex = 99
+  const restoredBinding = restoredInput.context.templateBinding as { index: number; key: string; value: string } | undefined
+  if (!restoredBinding) throw new Error("restored template binding missing")
+  restoredBinding.index = 9
+  restoredBinding.key = "changed key"
+  restoredBinding.value = "changed value"
   const originalInput = cursor.waitingInputExecution
   if (!originalInput || typeof originalInput.node.prompt === "string") throw new Error("original input cursor missing")
-  expect(originalInput.node.prompt.template).toBe("Input {{text}}")
+  expect(originalInput.node.prompt.template).toBe("Input {{value}}")
   expect(originalInput.context.executionPath[0]).toEqual({ kind: "for", stepId: "text_loop", iterationIndex: 1 })
+  expect(originalInput.context.templateBinding).toEqual({ index: 2, key: "current item", value: "current item", forStepId: "text_loop" })
 
   restored.artifactRefs.get(invocationKey(context, "capture_item"))?.set("captured_text", "changed-artifact")
   expect(cursor.artifactRefs.get(invocationKey(context, "capture_item"))?.get("captured_text")).toBe("runs/run_cursor/artifacts/captured.txt")

@@ -56,6 +56,10 @@ function successfulNotificationDispatcher(): NotificationDispatcher {
   }
 }
 
+function textListItem(value: string, key = value) {
+  return { key, value }
+}
+
 function template(id: string, body: MacroTemplate["body"]): MacroTemplate {
   const now = "2026-01-01T00:00:00.000Z"
   return {
@@ -88,15 +92,22 @@ function events(h: Harness) {
   return h.service.snapshot("local").run?.replay.events ?? []
 }
 
-test("text-list preserves item order and bytes while template rendering is one-pass and text parts stay literal", async () => {
+test("text-list renders 1-based index key and value once while events stay zero/one-based", async () => {
   const h = harness()
   try {
-    const firstItem = "  阶段 1\n下一行  "
+    const firstValue = "  阶段 1\n下一行  "
+    const secondValue = "{{index}}/{{key}}/{{value}}/{{text}}"
     h.templateStore.save("local", template("text_list_rendering", [
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: [firstItem, "{{text}}"] },
+        range: {
+          kind: "text-list",
+          items: [
+            textListItem(firstValue, "first-key"),
+            textListItem(secondValue, "second-{{value}}"),
+          ],
+        },
         body: [
           {
             id: "send_item",
@@ -104,8 +115,8 @@ test("text-list preserves item order and bytes while template rendering is one-p
             terminal: worker,
             message: {
               parts: [
-                { kind: "template", template: "A{{text}}B/{{text}}" },
-                { kind: "text", text: "/literal={{text}}" },
+                { kind: "template", template: "{{index}}|{{key}}|{{value}}|{{value}}" },
+                { kind: "text", text: "/literal={{index}}/{{key}}/{{value}}/{{text}}" },
               ],
             },
             enter: false,
@@ -118,9 +129,17 @@ test("text-list preserves item order and bytes while template rendering is one-p
     await waitFor(() => h.service.snapshot("local").status === "completed")
 
     expect(sentContents(h, "send_item")).toEqual([
-      `A${firstItem}B/${firstItem}/literal={{text}}`,
-      "A{{text}}B/{{text}}/literal={{text}}",
+      `1|first-key|${firstValue}|${firstValue}/literal={{index}}/{{key}}/{{value}}/{{text}}`,
+      `2|second-{{value}}|${secondValue}|${secondValue}/literal={{index}}/{{key}}/{{value}}/{{text}}`,
     ])
+
+    const iterationEvents = events(h).filter((event) => event.kind === "loop_iteration_started" && event.stepId === "loop")
+    expect(iterationEvents.map((event) => [event.data.iterationIndex, event.data.iteration])).toEqual([[0, 1], [1, 2]])
+    for (const event of iterationEvents) {
+      expect(event.data).not.toHaveProperty("key")
+      expect(event.data).not.toHaveProperty("value")
+    }
+
     const paths = events(h)
       .filter((event) => event.kind === "terminal_text_sent" && event.stepId === "send_item")
       .map((event) => event.data.executionPath)
@@ -140,13 +159,13 @@ test("capture and extract resolve the artifact produced by the same text-list it
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: ["alpha", "beta"] },
+        range: { kind: "text-list", items: [textListItem("alpha"), textListItem("beta")] },
         body: [
           {
             id: "send_item",
             type: "send",
             terminal: worker,
-            message: { parts: [{ kind: "template", template: "{{text}}" }] },
+            message: { parts: [{ kind: "template", template: "{{value}}" }] },
             enter: true,
           },
           {
@@ -187,33 +206,33 @@ test("capture and extract resolve the artifact produced by the same text-list it
   }
 })
 
-test("nested count inherits the outer text binding and nested text-list shadows then restores it", async () => {
+test("nested count inherits the outer template binding and nested text-list shadows then restores it", async () => {
   const h = harness()
   try {
     h.templateStore.save("local", template("nested_text_bindings", [
       {
         id: "outer_loop",
         type: "for",
-        range: { kind: "text-list", items: ["OUT-A", "OUT-B"] },
+        range: { kind: "text-list", items: [textListItem("OUT-A", "outer-a"), textListItem("OUT-B", "outer-b")] },
         body: [
-          { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{text}}" }] }, enter: false },
+          { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, enter: false },
           {
             id: "count_loop",
             type: "for",
             range: { kind: "count", count: 2 },
             body: [
-              { id: "count_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "count={{text}}" }] }, enter: false },
+              { id: "count_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "count={{index}}/{{key}}/{{value}}" }] }, enter: false },
             ],
           },
           {
             id: "inner_loop",
             type: "for",
-            range: { kind: "text-list", items: ["INNER-1", "INNER-2"] },
+            range: { kind: "text-list", items: [textListItem("INNER-1", "inner-a"), textListItem("INNER-2", "inner-b")] },
             body: [
-              { id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner={{text}}" }] }, enter: false },
+              { id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner={{index}}/{{key}}/{{value}}" }] }, enter: false },
             ],
           },
-          { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{text}}" }] }, enter: false },
+          { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, enter: false },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -221,20 +240,20 @@ test("nested count inherits the outer text binding and nested text-list shadows 
     await h.service.start("local", { templateId: "nested_text_bindings" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
 
-    expect(sentContents(h, "outer_before")).toEqual(["before=OUT-A", "before=OUT-B"])
+    expect(sentContents(h, "outer_before")).toEqual(["before=1/outer-a/OUT-A", "before=2/outer-b/OUT-B"])
     expect(sentContents(h, "count_send")).toEqual([
-      "count=OUT-A",
-      "count=OUT-A",
-      "count=OUT-B",
-      "count=OUT-B",
+      "count=1/outer-a/OUT-A",
+      "count=1/outer-a/OUT-A",
+      "count=2/outer-b/OUT-B",
+      "count=2/outer-b/OUT-B",
     ])
     expect(sentContents(h, "inner_send")).toEqual([
-      "inner=INNER-1",
-      "inner=INNER-2",
-      "inner=INNER-1",
-      "inner=INNER-2",
+      "inner=1/inner-a/INNER-1",
+      "inner=2/inner-b/INNER-2",
+      "inner=1/inner-a/INNER-1",
+      "inner=2/inner-b/INNER-2",
     ])
-    expect(sentContents(h, "outer_after")).toEqual(["after=OUT-A", "after=OUT-B"])
+    expect(sentContents(h, "outer_after")).toEqual(["after=1/outer-a/OUT-A", "after=2/outer-b/OUT-B"])
   } finally {
     h.cleanup()
   }
@@ -247,7 +266,7 @@ test("parallel lane sends inherit the enclosing text-list binding", async () => 
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: ["X", "Y"] },
+        range: { kind: "text-list", items: [textListItem("X", "key-x"), textListItem("Y", "key-y")] },
         body: [
           {
             id: "parallel",
@@ -258,7 +277,7 @@ test("parallel lane sends inherit the enclosing text-list binding", async () => 
                 label: "Docs",
                 terminal: worker,
                 body: [
-                  { id: "send_docs", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "docs={{text}}" }] }, enter: false },
+                  { id: "send_docs", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "docs={{index}}/{{key}}/{{value}}" }] }, enter: false },
                   { id: "output_docs", type: "output", source: { kind: "none" } },
                 ],
               },
@@ -267,7 +286,7 @@ test("parallel lane sends inherit the enclosing text-list binding", async () => 
                 label: "Tests",
                 terminal: reviewer,
                 body: [
-                  { id: "send_tests", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "tests={{text}}" }] }, enter: false },
+                  { id: "send_tests", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "tests={{index}}/{{key}}/{{value}}" }] }, enter: false },
                   { id: "output_tests", type: "output", source: { kind: "none" } },
                 ],
               },
@@ -282,8 +301,8 @@ test("parallel lane sends inherit the enclosing text-list binding", async () => 
     await h.service.start("local", { templateId: "parallel_text_binding" })
     await waitFor(() => h.service.snapshot("local").status === "completed")
 
-    expect(sentContents(h, "send_docs")).toEqual(["docs=X", "docs=Y"])
-    expect(sentContents(h, "send_tests")).toEqual(["tests=X", "tests=Y"])
+    expect(sentContents(h, "send_docs")).toEqual(["docs=1/key-x/X", "docs=2/key-y/Y"])
+    expect(sentContents(h, "send_tests")).toEqual(["tests=1/key-x/X", "tests=2/key-y/Y"])
     const docsPaths = events(h)
       .filter((event) => event.kind === "terminal_text_sent" && event.stepId === "send_docs")
       .map((event) => event.data.executionPath)
@@ -309,11 +328,11 @@ test("duration wait resumes the current text-list occurrence without repeating i
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: ["A", "B"] },
+        range: { kind: "text-list", items: [textListItem("A", "key-a"), textListItem("B", "key-b")] },
         body: [
-          { id: "before_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{text}}" }] }, enter: false },
+          { id: "before_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, enter: false },
           { id: "duration_wait", type: "wait", mode: "duration", durationMs: 300 },
-          { id: "after_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{text}}" }] }, enter: false },
+          { id: "after_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, enter: false },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -325,14 +344,14 @@ test("duration wait resumes the current text-list occurrence without repeating i
     await Bun.sleep(80)
 
     expect(h.service.snapshot("local").status).toBe("paused")
-    expect(sentContents(h, "before_wait")).toEqual(["before=A"])
+    expect(sentContents(h, "before_wait")).toEqual(["before=1/key-a/A"])
     expect(sentContents(h, "after_wait")).toEqual([])
 
     await h.service.resume("local")
     await waitFor(() => h.service.snapshot("local").status === "completed", 4000)
 
-    expect(sentContents(h, "before_wait")).toEqual(["before=A", "before=B"])
-    expect(sentContents(h, "after_wait")).toEqual(["after=A", "after=B"])
+    expect(sentContents(h, "before_wait")).toEqual(["before=1/key-a/A", "before=2/key-b/B"])
+    expect(sentContents(h, "after_wait")).toEqual(["after=1/key-a/A", "after=2/key-b/B"])
     expect(events(h).filter((event) => event.kind === "wait_started" && event.stepId === "duration_wait")).toHaveLength(2)
     expect(events(h).filter((event) => event.kind === "step_started" && event.stepId === "before_wait")).toHaveLength(2)
   } finally {
@@ -347,40 +366,40 @@ test("user-continue and input resume each text-list occurrence without replaying
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: ["first", "second"] },
+        range: { kind: "text-list", items: [textListItem("first", "key-first"), textListItem("second", "key-second")] },
         body: [
-          { id: "before_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{text}}" }] }, enter: false },
-          { id: "continue_wait", type: "wait", mode: "user-continue", prompt: { kind: "template", template: "Continue {{text}}" } },
-          { id: "input_item", type: "input", terminal: worker, prompt: { kind: "template", template: "Input {{text}}" }, allowEmpty: false, enter: false },
-          { id: "after_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{text}}" }] }, enter: false },
+          { id: "before_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, enter: false },
+          { id: "continue_wait", type: "wait", mode: "user-continue", prompt: { kind: "template", template: "Continue {{index}}/{{key}}/{{value}}" } },
+          { id: "input_item", type: "input", terminal: worker, prompt: { kind: "template", template: "Input {{index}}/{{key}}/{{value}}" }, allowEmpty: false, enter: false },
+          { id: "after_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, enter: false },
         ],
       },
     ]), h.manager.indexMap("local"))
 
     await h.service.start("local", { templateId: "interactive_resume_cursor" })
     await waitFor(() => h.service.snapshot("local").status === "waiting")
-    expect(h.service.snapshot("local").pauseReason?.message).toBe("Continue first")
+    expect(h.service.snapshot("local").pauseReason?.message).toBe("Continue 1/key-first/first")
 
     await h.service.resume("local")
     await waitFor(() => h.service.snapshot("local").status === "waiting_user_input")
-    expect(h.service.snapshot("local").waitingInput?.prompt).toBe("Input first")
-    expect(sentContents(h, "before_interaction")).toEqual(["before=first"])
+    expect(h.service.snapshot("local").waitingInput?.prompt).toBe("Input 1/key-first/first")
+    expect(sentContents(h, "before_interaction")).toEqual(["before=1/key-first/first"])
 
     await h.service.submitInput("local", "answer-first")
     await waitFor(() => h.service.snapshot("local").status === "waiting")
-    expect(h.service.snapshot("local").pauseReason?.message).toBe("Continue second")
-    expect(sentContents(h, "before_interaction")).toEqual(["before=first", "before=second"])
-    expect(sentContents(h, "after_interaction")).toEqual(["after=first"])
+    expect(h.service.snapshot("local").pauseReason?.message).toBe("Continue 2/key-second/second")
+    expect(sentContents(h, "before_interaction")).toEqual(["before=1/key-first/first", "before=2/key-second/second"])
+    expect(sentContents(h, "after_interaction")).toEqual(["after=1/key-first/first"])
 
     await h.service.resume("local")
     await waitFor(() => h.service.snapshot("local").status === "waiting_user_input")
-    expect(h.service.snapshot("local").waitingInput?.prompt).toBe("Input second")
+    expect(h.service.snapshot("local").waitingInput?.prompt).toBe("Input 2/key-second/second")
     await h.service.submitInput("local", "answer-second")
     await waitFor(() => h.service.snapshot("local").status === "completed")
 
-    expect(sentContents(h, "before_interaction")).toEqual(["before=first", "before=second"])
+    expect(sentContents(h, "before_interaction")).toEqual(["before=1/key-first/first", "before=2/key-second/second"])
     expect(sentContents(h, "input_item")).toEqual(["answer-first", "answer-second"])
-    expect(sentContents(h, "after_interaction")).toEqual(["after=first", "after=second"])
+    expect(sentContents(h, "after_interaction")).toEqual(["after=1/key-first/first", "after=2/key-second/second"])
     expect(events(h).filter((event) => event.kind === "user_input_requested" && event.stepId === "input_item")).toHaveLength(2)
     expect(events(h).filter((event) => event.kind === "wait_manual_continue" && event.stepId === "continue_wait")).toHaveLength(2)
   } finally {
@@ -463,14 +482,14 @@ test("partial notify resume retries only the failed Telegram profile", async () 
       {
         id: "loop",
         type: "for",
-        range: { kind: "text-list", items: ["notice"] },
+        range: { kind: "text-list", items: [textListItem("notice")] },
         body: [
           {
             id: "notify_item",
             type: "notify",
             level: "warning",
-            title: { kind: "template", template: "Title {{text}}" },
-            message: { parts: [{ kind: "template", template: "Message {{text}}" }] },
+            title: { kind: "template", template: "Title {{value}}" },
+            message: { parts: [{ kind: "template", template: "Message {{value}}" }] },
             channels: [
               { kind: "app", toast: true, sound: "bell" },
               { kind: "telegram", profileId: "profile-a" },

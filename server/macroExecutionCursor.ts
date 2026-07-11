@@ -1,6 +1,6 @@
 import type { AgentEvent } from "../src/lib/agentEvents/agentEventTypes"
-import type { TextTemplateBinding } from "../src/lib/macro/scopedTextTemplate"
-import type { InputNode, WaitNode } from "../src/lib/macro/templateTypes"
+import type { TextListTemplateBinding } from "../src/lib/macro/scopedTextTemplate"
+import type { InputNode, TextListItem, WaitNode } from "../src/lib/macro/templateTypes"
 
 export type ExecutionPathSegment =
   | { readonly kind: "for"; readonly stepId: string; readonly iterationIndex: number }
@@ -8,7 +8,7 @@ export type ExecutionPathSegment =
 
 export type ExecutionContext = {
   readonly executionPath: readonly ExecutionPathSegment[]
-  readonly textBinding?: TextTemplateBinding
+  readonly templateBinding?: TextListTemplateBinding
 }
 
 export type DurationWaitCursor = {
@@ -190,17 +190,19 @@ export function rootExecutionContext(): ExecutionContext {
   return { executionPath: [] }
 }
 
-export function forIterationContext(parent: ExecutionContext, stepId: string, iterationIndex: number, text: string | undefined): ExecutionContext {
+export function forIterationContext(parent: ExecutionContext, stepId: string, iterationIndex: number, item: TextListItem | undefined): ExecutionContext {
   return {
     executionPath: [...parent.executionPath, { kind: "for", stepId, iterationIndex }],
-    textBinding: text === undefined ? parent.textBinding : { text, forStepId: stepId },
+    templateBinding: item === undefined
+      ? parent.templateBinding
+      : { index: iterationIndex + 1, key: item.key, value: item.value, forStepId: stepId },
   }
 }
 
 export function parallelLaneContext(parent: ExecutionContext, stepId: string, laneId: string): ExecutionContext {
   return {
     executionPath: [...parent.executionPath, { kind: "parallel-lane", stepId, laneId }],
-    textBinding: parent.textBinding,
+    templateBinding: parent.templateBinding,
   }
 }
 
