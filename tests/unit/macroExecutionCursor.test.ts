@@ -188,6 +188,7 @@ test("cursor snapshot round-trips every continuation payload and restores detach
       terminal: { kind: "alias", value: "worker" },
       prompt: { kind: "template", template: "Input {{value}}" },
       allowEmpty: false,
+      delivery: "direct",
       ending: "none",
     },
     context,

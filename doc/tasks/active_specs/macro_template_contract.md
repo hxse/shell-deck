@@ -42,7 +42,7 @@ Flow V2 controls:
 
 ## Message Flow
 
-`send` writes rendered message text to a target tab. It stores required `ending: "none" | "lf" | "cr" | "crlf"`; new UI nodes explicitly default to `ending: "cr"`.
+`send` writes rendered message text to a target tab. It stores two required, orthogonal fields: `delivery: "auto" | "direct" | "bracketed-paste"` controls how the resolved body is framed, while `ending: "none" | "lf" | "cr" | "crlf"` controls only the raw suffix. New UI nodes explicitly default to `delivery: "auto"` and `ending: "cr"`.
 
 `send.message.parts` is an ordered list. It may be empty. Each part is literal text, scoped template text, or a source artifact reference. Literal `{ "kind": "text", "text": string }` never interpolates braces. Scoped `{ "kind": "template", "template": string }` is valid only under a lexical text-list binding and replaces exact `{{index}}`, `{{key}}`, and `{{value}}` tokens in one scan; inserted key/value text, artifacts, and rendered output are never scanned recursively. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without implicit separators or trimming; newlines and surrounding whitespace are user content.
 
@@ -57,15 +57,27 @@ Flow V2 controls:
       { "kind": "artifact", "source": { "kind": "step_artifact", "stepId": "capture_review", "artifact": "captured_text" } }
     ]
   },
+  "delivery": "auto",
   "ending": "cr"
 }
 ```
 
-`input` pauses for user text. Its `prompt` may be a literal string or scoped template scalar; it also stores `allowEmpty`, the same required `ending`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it. The final textarea content is raw user content, is not trimmed, and is never template-expanded. `allowEmpty = false` rejects only zero-length input.
+`input` pauses for user text. Its `prompt` may be a literal string or scoped template scalar; it also stores `allowEmpty`, the same required `delivery` and `ending`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it. The final textarea content is raw user content, is not trimmed, and is never template-expanded. `allowEmpty = false` rejects only zero-length input.
 
-The editor exposes one `Ending sequence` select on normal `send`, `input`, and parallel-lane `send`: None, Enter / CR (`\r`), LF (`\n`), or CRLF (`\r\n`). The exact runtime suffix mapping is `none -> ""`, `lf -> "\n"`, `cr -> "\r"`, and `crlf -> "\r\n"`. CR matches the byte emitted by xterm for a physical Enter key; CRLF is two independent bytes. Missing, inherited, non-enumerable, unknown, or old `enter` fields are invalid and are never defaulted or migrated.
+The editor exposes the same two selects on normal `send`, `input`, and parallel-lane `send`:
 
-Template JSON must not mutate `message` or user input to include the ending sequence. Current `terminal_text_sent` events record `ending`, the pre-ending `content.artifactRef`, and the exact backend-bound `write.artifactRef`. Text tabs retain their own display normalization of CR/CRLF to LF; the runner write evidence remains exact.
+- `Input delivery`: Auto (recommended), Direct bytes, or Bracketed paste.
+- `Ending sequence`: None, CR (`\r`), LF (`\n`), or CRLF (`\r\n`).
+
+Auto resolves from the target's current tab capability at the actual write: Shell tabs (`fake` or `real`) use Bracketed paste and Text tabs use Direct bytes. Runtime input therefore resolves when submitted, including after the same terminal has been reset to another backend while input was waiting. Auto does not inspect the foreground process, track DEC mode 2004, scan content, or fall back at runtime. Direct bytes and Bracketed paste are manual overrides and remain selected regardless of target changes.
+
+Resolved Direct delivery writes `content + suffix(ending)`. Resolved Bracketed paste writes `ESC[200~ + content + ESC[201~ + suffix(ending)`; the ending is outside the paste end marker, and the runner performs one logical terminal input dispatch. The exact ending mapping remains `none -> ""`, `lf -> "\n"`, `cr -> "\r"`, and `crlf -> "\r\n"`. Ending has no Auto option. Raw CR is a byte, not a universal keyboard Enter event.
+
+When the resolved delivery is Bracketed paste, resolved content containing the exact end marker `ESC[201~` is rejected before any terminal write. This includes Auto targeting Shell. Auto targeting Text resolves Direct and permits the marker unchanged; explicit Bracketed paste targeting Text remains a manual override and performs the same collision check and framing. The marker is not escaped, split, deleted, or silently sent as Direct. Normal send pauses at the incomplete invocation, runtime input pauses and waits for new text after resume without replaying the rejected text, and parallel send follows its parent `onLaneFail` policy. No terminal content/write artifact or `terminal_text_sent` success event is produced for the rejected attempt.
+
+`delivery` and `ending` must both be own enumerable fields with exact current values. Missing delivery is not interpreted as Auto. Missing, inherited, non-enumerable, unknown, alias, or old `enter` shapes are invalid and are never defaulted, migrated, or rewritten.
+
+Template JSON must not mutate `message` or user input to include framing or ending bytes. Current `terminal_text_sent` events record requested `delivery`, actual `resolvedDelivery: "direct" | "bracketed-paste"`, and `ending`, plus the resolved pre-framing `content.artifactRef` and exact backend-bound `write.artifactRef`. Explicit delivery records the same value in both delivery fields. Auto Text writes contain no added Bracketed-paste markers; Text tabs retain their own display normalization of CR/CRLF to LF while the runner write evidence remains exact.
 
 ## Scoped Text Templates
 

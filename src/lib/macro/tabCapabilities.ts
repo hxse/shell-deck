@@ -39,7 +39,15 @@ const TEXT_CAPABILITIES: TabCapabilities = {
 }
 
 export function tabCapabilitiesForBackend(backend: TerminalBackendKind): TabCapabilities {
-  return backend === "text" ? TEXT_CAPABILITIES : SHELL_CAPABILITIES
+  switch (backend) {
+    case "fake":
+    case "real":
+      return SHELL_CAPABILITIES
+    case "text":
+      return TEXT_CAPABILITIES
+  }
+  const unsupportedBackend: never = backend
+  throw new Error("unsupported_terminal_backend_kind:" + String(unsupportedBackend))
 }
 
 export function isCaptureKindAllowed(capabilities: TabCapabilities, kind: CapabilityCaptureKind): boolean {

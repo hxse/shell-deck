@@ -9,7 +9,7 @@ const template = {
   createdAt: "2026-06-30T00:00:00.000Z",
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
-    { id: "ask", type: "input", terminal: { kind: "alias", value: "shell_1" }, prompt: "Direction", allowEmpty: false, ending: "cr" },
+    { id: "ask", type: "input", terminal: { kind: "alias", value: "shell_1" }, prompt: "Direction", allowEmpty: false, delivery: "direct", ending: "cr" },
     { id: "done", type: "finish", reason: "ok" },
   ],
 }
@@ -23,7 +23,7 @@ const otherTemplate = {
   createdAt: "2026-06-30T00:00:00.000Z",
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
-    { id: "send", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "other-run" }] }, ending: "cr" },
+    { id: "send", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "other-run" }] }, delivery: "direct", ending: "cr" },
     { id: "done", type: "finish", reason: "ok" },
   ],
 }
@@ -37,7 +37,7 @@ const delayedTemplate = {
   createdAt: "2026-06-30T00:00:00.000Z",
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
-    { id: "send", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "delayed-run" }] }, ending: "cr" },
+    { id: "send", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "delayed-run" }] }, delivery: "direct", ending: "cr" },
     { id: "wait", type: "wait", mode: "duration", durationMs: 1200 },
     { id: "done", type: "finish", reason: "ok" },
   ],

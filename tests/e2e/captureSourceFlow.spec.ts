@@ -9,7 +9,7 @@ const template = {
   createdAt: "2026-06-30T00:00:00.000Z",
   updatedAt: "2026-06-30T00:00:00.000Z",
   body: [
-    { id: "send_ready", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "capture-ready" }] }, ending: "cr" },
+    { id: "send_ready", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "capture-ready" }] }, delivery: "direct", ending: "cr" },
     { id: "capture_terminal", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "shell_1" }, mode: "scrollback-tail", maxChars: 12000 } },
     { id: "if_ready", type: "if", branches: [{ kind: "if", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_terminal", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "capture-ready" }, scope: { kind: "whole" } }, body: [{ id: "done", type: "finish", reason: "ok" }] }] },
   ],

@@ -11,7 +11,7 @@
 <label>Ending sequence
   <select data-testid={testId} {value} onchange={(event) => onChange(event.currentTarget.value as TerminalEnding)}>
     <option value="none">None</option>
-    <option value="cr">Enter / CR (\r)</option>
+    <option value="cr">CR (\r)</option>
     <option value="lf">LF (\n)</option>
     <option value="crlf">CRLF (\r\n)</option>
   </select>

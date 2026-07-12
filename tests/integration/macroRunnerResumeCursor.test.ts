@@ -88,9 +88,9 @@ test("agent-event capture pause/resume keeps the current iteration and consumes 
         type: "for",
         range: { kind: "text-list", items: [textListItem("A"), textListItem("B")] },
         body: [
-          { id: "before_agent", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{value}}" }] }, ending: "none" },
+          { id: "before_agent", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{value}}" }] }, delivery: "direct", ending: "none" },
           { id: "capture_agent", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, terminal: reviewer, captureMode: "result_only" } },
-          { id: "forward_agent", type: "send", terminal: worker, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_agent", artifact: "captured_text" } }] }, ending: "none" },
+          { id: "forward_agent", type: "send", terminal: worker, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_agent", artifact: "captured_text" } }] }, delivery: "direct", ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -148,7 +148,7 @@ test("prompt-and-result capture preserves an unconsumed out-of-order pair behind
         range: { kind: "count", count: 2 },
         body: [
           { id: "capture_pair", type: "capture-source", capture: { kind: "agent-event", agent: { kind: "codex" }, terminal: reviewer, captureMode: "prompt_and_result" } },
-          { id: "forward_pair", type: "send", terminal: worker, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_pair", artifact: "captured_text" } }] }, ending: "none" },
+          { id: "forward_pair", type: "send", terminal: worker, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_pair", artifact: "captured_text" } }] }, delivery: "direct", ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -184,9 +184,9 @@ test("terminal-quiet pause freezes its timeout budget and resumes observation af
         type: "for",
         range: { kind: "text-list", items: [textListItem("quiet-item")] },
         body: [
-          { id: "before_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{value}}" }] }, ending: "none" },
+          { id: "before_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{value}}" }] }, delivery: "direct", ending: "none" },
           { id: "quiet_wait", type: "wait", mode: "terminal-quiet", terminal: worker, quietMs: 80, maxMs: 220, onTimeout: "pause" },
-          { id: "after_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{value}}" }] }, ending: "none" },
+          { id: "after_quiet", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{value}}" }] }, delivery: "direct", ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -230,9 +230,9 @@ test("nested count loops resume an interrupted dynamic occurrence without repeat
             type: "for",
             range: { kind: "count", count: 2 },
             body: [
-              { id: "nested_before", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "nested-before" }] }, ending: "none" },
+              { id: "nested_before", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "nested-before" }] }, delivery: "direct", ending: "none" },
               { id: "nested_wait", type: "wait", mode: "duration", durationMs: 120 },
-              { id: "nested_after", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "nested-after" }] }, ending: "none" },
+              { id: "nested_after", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "nested-after" }] }, delivery: "direct", ending: "none" },
             ],
           },
         ],
@@ -309,7 +309,7 @@ test("user pause waits for a deferred notification boundary before publishing ru
         channels: [{ kind: "telegram", profileId: "profile-a" }],
         onFailure: "pause",
       },
-      { id: "after_notify", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "after-notify" }] }, ending: "none" },
+      { id: "after_notify", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "after-notify" }] }, delivery: "direct", ending: "none" },
     ]), h.manager.indexMap("local"))
 
     await h.service.start("local", { templateId: "pause_notification_boundary" })
@@ -361,10 +361,10 @@ test("finish control completed at a safe boundary wins over a concurrent pause r
         type: "finish",
         reason: "done",
         body: [
-          { id: "finish_side_effect", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "finish-side-effect" }] }, ending: "none" },
+          { id: "finish_side_effect", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "finish-side-effect" }] }, delivery: "direct", ending: "none" },
         ],
       },
-      { id: "must_not_run", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "must-not-run" }] }, ending: "none" },
+      { id: "must_not_run", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "must-not-run" }] }, delivery: "direct", ending: "none" },
     ]), h.manager.indexMap("local"))
 
     const gate = gateNextTerminalTextSentEvent(h, "finish_side_effect")
@@ -395,7 +395,7 @@ test("stop requested during the last side effect wins after that action reaches 
   const h = harness()
   try {
     h.templateStore.save("local", template("stop_last_action_boundary", [
-      { id: "last_send", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "last-side-effect" }] }, ending: "none" },
+      { id: "last_send", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "last-side-effect" }] }, delivery: "direct", ending: "none" },
     ]), h.manager.indexMap("local"))
 
     const gate = gateNextTerminalTextSentEvent(h, "last_send")
@@ -431,7 +431,7 @@ test("concurrent submitInput claims one occurrence and sends only once", async (
   const h = harness()
   try {
     h.templateStore.save("local", template("concurrent_input_claim", [
-      { id: "input_once", type: "input", terminal: worker, prompt: "Input once", allowEmpty: false, ending: "none" },
+      { id: "input_once", type: "input", terminal: worker, prompt: "Input once", allowEmpty: false, delivery: "direct", ending: "none" },
     ]), h.manager.indexMap("local"))
 
     await h.service.start("local", { templateId: "concurrent_input_claim" })
@@ -459,8 +459,8 @@ test("pause racing with submitInput settles after one send and does not resume t
   const h = harness()
   try {
     h.templateStore.save("local", template("pause_input_race", [
-      { id: "input_race", type: "input", terminal: worker, prompt: "Race", allowEmpty: false, ending: "none" },
-      { id: "after_input_race", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "after-race" }] }, ending: "none" },
+      { id: "input_race", type: "input", terminal: worker, prompt: "Race", allowEmpty: false, delivery: "direct", ending: "none" },
+      { id: "after_input_race", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "after-race" }] }, delivery: "direct", ending: "none" },
     ]), h.manager.indexMap("local"))
 
     await h.service.start("local", { templateId: "pause_input_race" })
@@ -510,8 +510,8 @@ test("stop racing with submitInput remains stopped after the claimed send finish
   const h = harness()
   try {
     h.templateStore.save("local", template("stop_input_race", [
-      { id: "input_stop_race", type: "input", terminal: worker, prompt: "Race", allowEmpty: false, ending: "none" },
-      { id: "must_not_run", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "must-not-run" }] }, ending: "none" },
+      { id: "input_stop_race", type: "input", terminal: worker, prompt: "Race", allowEmpty: false, delivery: "direct", ending: "none" },
+      { id: "must_not_run", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "must-not-run" }] }, delivery: "direct", ending: "none" },
     ]), h.manager.indexMap("local"))
 
     await h.service.start("local", { templateId: "stop_input_race" })
@@ -551,7 +551,7 @@ test("forever loop user-continue resume advances dynamic occurrences without rep
         type: "for",
         range: { kind: "forever" },
         body: [
-          { id: "forever_send", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "forever-once" }] }, ending: "none" },
+          { id: "forever_send", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "forever-once" }] }, delivery: "direct", ending: "none" },
           { id: "forever_continue", type: "wait", mode: "user-continue", prompt: "Continue forever loop" },
         ],
       },
@@ -596,7 +596,7 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
                 label: "Worker",
                 terminal: worker,
                 body: [
-                  { id: "worker_lane_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "worker={{value}}" }] }, ending: "none" },
+                  { id: "worker_lane_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "worker={{value}}" }] }, delivery: "direct", ending: "none" },
                   { id: "worker_lane_wait", type: "wait", mode: "duration", durationMs: 250 },
                   { id: "worker_lane_output", type: "output", source: { kind: "none" } },
                 ],
@@ -606,7 +606,7 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
                 label: "Reviewer",
                 terminal: reviewer,
                 body: [
-                  { id: "reviewer_lane_send", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "reviewer={{value}}" }] }, ending: "none" },
+                  { id: "reviewer_lane_send", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "reviewer={{value}}" }] }, delivery: "direct", ending: "none" },
                   { id: "reviewer_lane_wait", type: "wait", mode: "duration", durationMs: 250 },
                   { id: "reviewer_lane_output", type: "output", source: { kind: "none" } },
                 ],
@@ -615,7 +615,7 @@ test("parallel lanes inside text-list resume only unfinished occurrences", async
             merge: { kind: "sectioned_text", separator: "===== {laneId} =====", includeEmptyOutputs: true },
             onLaneFail: "fail",
           },
-          { id: "after_parallel", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{value}}" }] }, ending: "none" },
+          { id: "after_parallel", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{value}}" }] }, delivery: "direct", ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -652,7 +652,7 @@ test("control-terminal action body inherits the enclosing template binding", asy
             type: "finish",
             reason: "done",
             body: [
-              { id: "control_body_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "control={{value}}" }] }, ending: "none" },
+              { id: "control_body_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "control={{value}}" }] }, delivery: "direct", ending: "none" },
             ],
           },
         ],
@@ -691,6 +691,7 @@ test("loop descendants inherit an outer artifact occurrence", async () => {
                 { kind: "artifact", source: { kind: "step_artifact", stepId: "capture_outer", artifact: "captured_text" } },
               ],
             },
+            delivery: "direct",
             ending: "none",
           },
         ],

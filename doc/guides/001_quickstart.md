@@ -143,19 +143,41 @@ Use a `text-list` range when the same body should run once for each structured i
           { "kind": "template", "template": "阶段 {{index}}：{{key}}\n{{value}}" }
         ]
       },
+      "delivery": "auto",
       "ending": "cr"
     }
   ]
 }
 ```
 
-Every normal `send`, `input`, and parallel-lane `send` has one `Ending sequence` selector. New actions default to `Enter / CR (\r)`, which matches a physical Enter in xterm. Choose `None` to append nothing, `LF (\n)` for one line-feed byte, or `CRLF (\r\n)` for two explicit bytes. CRLF may be consumed as two separate inputs by a raw-mode TUI. The JSON field is always explicit and accepts `none`, `lf`, `cr`, or `crlf`:
+Every normal `send`, `input`, and parallel-lane `send` has two independent selectors:
+
+- `Input delivery`: `Auto (recommended)`, `Direct bytes`, or `Bracketed paste`.
+- `Ending sequence`: `None`, `CR (\r)`, `LF (\n)`, or `CRLF (\r\n)`.
+
+New actions explicitly default to Auto delivery plus CR:
 
 ```json
-"ending": "cr"
+{
+  "delivery": "auto",
+  "ending": "cr"
+}
 ```
 
-Old `enter: true/false` templates are invalid. Shell-deck does not migrate or infer an ending for them; delete the old template or rewrite it using the current field.
+Auto resolves when the runner writes to the current target: Shell tabs use Bracketed paste, while Text tabs use Direct bytes and therefore do not display added `200~` / `201~` marker fragments. The target's tab kind controls this choice; Auto does not detect Codex or another foreground program, track DEC mode 2004, or retry with another mode.
+
+Direct bytes and Bracketed paste are manual overrides. Direct writes the body followed by the selected ending bytes. Bracketed paste wraps the body in `ESC[200~ ... ESC[201~`, then appends the ending outside the closing marker. This makes the body an explicit paste event for raw-mode TUIs while keeping the later CR separate:
+
+```json
+{
+  "delivery": "bracketed-paste",
+  "ending": "cr"
+}
+```
+
+Use the Bracketed paste override only when the target program supports DEC mode 2004; forcing it into a Text tab intentionally exposes the marker bytes. Ending has no Auto option and continues to default to CR. Raw CR is a control byte rather than a universal keyboard event; CRLF is two independent bytes.
+
+Old `enter: true/false` templates and ending-only templates without required `delivery` are invalid; missing delivery is not treated as Auto. Shell-deck does not migrate or infer either field; delete the old template or rewrite it using the current shape. Content containing the actual `ESC[201~` end marker is rejected before anything is written only when the resolved mode is Bracketed paste: Auto Shell rejects, while Auto Text resolves Direct and permits the content unchanged.
 
 Template mode is limited to six user-visible content surfaces:
 

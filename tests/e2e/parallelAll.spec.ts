@@ -14,13 +14,13 @@ const template = {
       type: "parallel",
       lanes: [
         { id: "review", label: "Review", terminal: { kind: "alias", value: "shell_1" }, body: [
-          { id: "send_review", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "review ready" }] }, ending: "cr" },
+          { id: "send_review", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "text", text: "review ready" }] }, delivery: "direct", ending: "cr" },
           { id: "wait_review", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "shell_1" }, quietMs: 20, maxMs: 1000, onTimeout: "pause" },
           { id: "capture_review", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "shell_1" }, mode: "scrollback-tail", maxChars: 12000 } },
           { id: "output_review", type: "output", source: { kind: "step_artifact", stepId: "capture_review", artifact: "captured_text" } },
         ] },
         { id: "tests", label: "Tests", terminal: { kind: "alias", value: "shell_2" }, body: [
-          { id: "send_tests", type: "send", terminal: { kind: "alias", value: "shell_2" }, message: { parts: [{ kind: "text", text: "tests ready" }] }, ending: "cr" },
+          { id: "send_tests", type: "send", terminal: { kind: "alias", value: "shell_2" }, message: { parts: [{ kind: "text", text: "tests ready" }] }, delivery: "direct", ending: "cr" },
           { id: "wait_tests", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "shell_2" }, quietMs: 20, maxMs: 1000, onTimeout: "pause" },
           { id: "capture_tests", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "shell_2" }, mode: "scrollback-tail", maxChars: 12000 } },
           { id: "output_tests", type: "output", source: { kind: "step_artifact", stepId: "capture_tests", artifact: "captured_text" } },
@@ -29,7 +29,7 @@ const template = {
       merge: { kind: "sectioned_text", separator: "===== {laneId} | {terminalAlias} =====", includeEmptyOutputs: true },
       onLaneFail: "pause",
     },
-    { id: "send_merged", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, ending: "cr" },
+    { id: "send_merged", type: "send", terminal: { kind: "alias", value: "shell_1" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, delivery: "direct", ending: "cr" },
     { id: "done", type: "finish", reason: "ok" },
   ],
 }

@@ -1,7 +1,8 @@
 import shortUuid from "short-uuid"
 import { validateMacroTemplate } from "../src/lib/macro/templateSchema"
 import { renderScopedTemplate, renderTemplatableScalar } from "../src/lib/macro/scopedTextTemplate"
-import { terminalEndingSequence } from "../src/lib/macro/terminalEnding"
+import { tabCapabilitiesForBackend } from "../src/lib/macro/tabCapabilities"
+import { buildTerminalInputPayload, resolveTerminalInputDelivery } from "../src/lib/macro/terminalInputDelivery"
 import type {
   CaptureSourceConfig,
   ExtractTextNode,
@@ -18,6 +19,7 @@ import type {
   ParallelNode,
   SendNode,
   TerminalEnding,
+  TerminalInputDelivery,
   TerminalTarget,
   TextFilterMatcher,
   TextListItem,
@@ -490,7 +492,7 @@ export class MacroRunnerService {
     const text = this.renderMessage(runtime, node.message, context)
     const resolved = this.resolveTerminal(runtime, node.terminal)
     await this.appendTerminalRef(runtime, node.id, node.terminal, resolved, context)
-    const result = await this.writeTerminalText(runtime, node.id, resolved.terminalId, "send", text, node.ending, "Text sent to terminal", context)
+    const result = await this.writeTerminalText(runtime, node.id, resolved.terminalId, "send", text, node.delivery, node.ending, "Text sent to terminal", context)
     if (!result.ok) throw new Error("terminal_input_rejected:" + result.reason)
     await this.completeStep(runtime, node.id, context)
     return "completed"
@@ -664,7 +666,7 @@ export class MacroRunnerService {
     })
     const resolved = this.resolveTerminal(runtime, node.terminal)
     await this.appendTerminalRef(runtime, node.id, node.terminal, resolved, context)
-    const result = await this.writeTerminalText(runtime, node.id, resolved.terminalId, "input", userInput, node.ending, "Input text sent to terminal", context)
+    const result = await this.writeTerminalText(runtime, node.id, resolved.terminalId, "input", userInput, node.delivery, node.ending, "Input text sent to terminal", context)
     if (!result.ok) {
       await this.pauseRun(runtime, "terminal_input_rejected", result.reason, node.id, {}, context)
       return false
@@ -673,8 +675,12 @@ export class MacroRunnerService {
     return true
   }
 
-  private async writeTerminalText(runtime: RuntimeState, stepId: string, terminalId: string, prefix: string, content: string, ending: TerminalEnding, summary: string, context: ExecutionContext) {
-    const payload = content + terminalEndingSequence(ending)
+  private async writeTerminalText(runtime: RuntimeState, stepId: string, terminalId: string, prefix: string, content: string, delivery: TerminalInputDelivery, ending: TerminalEnding, summary: string, context: ExecutionContext) {
+    const terminal = this.terminalSnapshot(runtime.configId, terminalId)
+    const resolvedDelivery = resolveTerminalInputDelivery(delivery, tabCapabilitiesForBackend(terminal.backend).kind)
+    const built = buildTerminalInputPayload(content, resolvedDelivery, ending)
+    if (!built.ok) return built
+    const payload = built.payload
     const contentArtifact = await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, prefix + "-content", content, "txt", stepId)
     const writeArtifact = payload === content ? contentArtifact : await this.runEventStore.writeArtifact(runtime.configId, runtime.runId, prefix + "-write", payload, "txt", stepId)
     const result = this.manager.input(runtime.configId, { kind: "id", value: terminalId }, payload)
@@ -685,6 +691,8 @@ export class MacroRunnerService {
       summary,
       data: {
         terminalId,
+        delivery,
+        resolvedDelivery,
         ending,
         content: { artifactRef: contentArtifact.artifact.artifactRef, chars: content.length },
         write: { artifactRef: writeArtifact.artifact.artifactRef, chars: payload.length },

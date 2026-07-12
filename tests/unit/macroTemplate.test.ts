@@ -19,7 +19,7 @@ function template(id = "tmpl_v2"): MacroTemplate {
     createdAt: now,
     updatedAt: now,
     body: [
-      { id: "send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello" }] }, ending: "cr" },
+      { id: "send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "hello" }] }, delivery: "direct", ending: "cr" },
       { id: "capture", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       { id: "finish_done", type: "finish", reason: "done" },
     ],
@@ -31,6 +31,19 @@ function oldEnterTemplate(id: string): unknown {
   const send = { ...value.body[0] } as unknown as Record<string, unknown>
   delete send.ending
   send.enter = true
+  return { ...value, body: [send, ...value.body.slice(1)] }
+}
+
+function missingDeliveryTemplate(id: string): unknown {
+  const value = template(id)
+  const send = { ...value.body[0] } as unknown as Record<string, unknown>
+  delete send.delivery
+  return { ...value, body: [send, ...value.body.slice(1)] }
+}
+
+function invalidDeliveryTemplate(id: string): unknown {
+  const value = template(id)
+  const send = { ...value.body[0], delivery: "paste" }
   return { ...value, body: [send, ...value.body.slice(1)] }
 }
 
@@ -94,6 +107,8 @@ test("store hard cuts noncanonical shapes across save, import, read, list and du
         : node),
     }
     const oldEnter = oldEnterTemplate("old_enter")
+    const missingDelivery = missingDeliveryTemplate("missing_delivery")
+    const invalidDelivery = invalidDeliveryTemplate("invalid_delivery")
     const missingId = { ...template("missing_id"), id: undefined }
     const missingCreatedAt = { ...template("missing_created_at"), createdAt: undefined }
     const inheritedKindRange = Object.assign(Object.create({ kind: "count" }), { count: 2 })
@@ -102,23 +117,32 @@ test("store hard cuts noncanonical shapes across save, import, read, list and du
       body: [{ id: "inherited_loop", type: "for", range: inheritedKindRange, body: [{ id: "inherited_finish", type: "finish", reason: "done" }] }],
     }
 
-    for (const value of [oldCount, extraTerminalField, oldEnter, missingId, missingCreatedAt, inheritedKind]) {
+    for (const value of [oldCount, extraTerminalField, oldEnter, missingDelivery, invalidDelivery, missingId, missingCreatedAt, inheritedKind]) {
       expect(() => store.save("local", value as never, indexMap)).toThrow()
       expect(readdirSync(templateDir).sort()).toEqual(baselineFiles)
     }
-    for (const value of [oldCount, extraTerminalField, oldEnter, missingId, missingCreatedAt, inheritedKind]) {
+    for (const value of [oldCount, extraTerminalField, oldEnter, missingDelivery, invalidDelivery, missingId, missingCreatedAt, inheritedKind]) {
       expect(() => store.import("local", value, indexMap)).toThrow("invalid_macro_template")
       expect(readdirSync(templateDir).sort()).toEqual(baselineFiles)
     }
 
-    const diskPath = join(templateDir, "old_count.json")
-    const original = JSON.stringify(oldCount, null, 2) + "\n"
+    const diskPath = join(templateDir, "missing_delivery.json")
+    const original = JSON.stringify(missingDelivery, null, 2) + "\n"
     writeFileSync(diskPath, original, "utf8")
     const invalidDiskFiles = readdirSync(templateDir).sort()
-    expect(() => store.read("local", "old_count")).toThrow("invalid_macro_template")
-    expect(() => store.duplicate("local", "old_count", indexMap)).toThrow("invalid_macro_template")
+    expect(() => store.read("local", "missing_delivery")).toThrow("invalid_macro_template")
+    expect(() => store.duplicate("local", "missing_delivery", indexMap)).toThrow("invalid_macro_template")
     expect(() => store.list("local")).toThrow("invalid_macro_template")
     expect(readFileSync(diskPath, "utf8")).toBe(original)
+    expect(readdirSync(templateDir).sort()).toEqual(invalidDiskFiles)
+
+    const invalidDeliveryOnDisk = invalidDeliveryTemplate("missing_delivery")
+    const invalidDeliveryOriginal = JSON.stringify(invalidDeliveryOnDisk, null, 2) + "\n"
+    writeFileSync(diskPath, invalidDeliveryOriginal, "utf8")
+    expect(() => store.read("local", "missing_delivery")).toThrow("invalid_macro_template")
+    expect(() => store.duplicate("local", "missing_delivery", indexMap)).toThrow("invalid_macro_template")
+    expect(() => store.list("local")).toThrow("invalid_macro_template")
+    expect(readFileSync(diskPath, "utf8")).toBe(invalidDeliveryOriginal)
     expect(readdirSync(templateDir).sort()).toEqual(invalidDiskFiles)
 
     const oldEnterPath = join(templateDir, "old_enter.json")
@@ -155,6 +179,7 @@ test("store fails loudly on invalid template imports and files", () => {
           type: "send",
           terminal: { kind: "alias", value: "worker" },
           message: { parts: [{ kind: "template", template: "{{text}}" }] },
+          delivery: "direct",
           ending: "cr",
         }],
       }],

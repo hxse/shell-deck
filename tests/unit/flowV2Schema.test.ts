@@ -18,7 +18,7 @@ function validTemplate(): MacroTemplate {
     createdAt: now,
     updatedAt: now,
     body: [
-      { id: "send_worker", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "printf READY" }] }, ending: "cr" },
+      { id: "send_worker", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "printf READY" }] }, delivery: "direct", ending: "cr" },
       { id: "wait_worker", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 10, maxMs: 1000, onTimeout: "pause" },
       { id: "capture_worker", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       {
@@ -178,7 +178,7 @@ test("Macro terminal refs require exact own enumerable kind and value fields", (
 
 test("finish break and continue support action-only bodies", () => {
   const template = validTemplate()
-  template.body.push({ id: "finish_with_action", type: "finish", reason: "done", body: [{ id: "send_before_finish", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before finish" }] }, ending: "cr" }]})
+  template.body.push({ id: "finish_with_action", type: "finish", reason: "done", body: [{ id: "send_before_finish", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before finish" }] }, delivery: "direct", ending: "cr" }]})
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 
   const bad = validTemplate()
@@ -188,81 +188,119 @@ test("finish break and continue support action-only bodies", () => {
 
 test("legacy parser and wait tokens are allowed inside user text fields", () => {
   const template = validTemplate()
-  template.body[0] = { id: "send_text", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "please mention ai-json and capture-ready-or-user literally" }] }, ending: "cr" }
+  template.body[0] = { id: "send_text", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "please mention ai-json and capture-ready-or-user literally" }] }, delivery: "direct", ending: "cr" }
   const ifNode = template.body[3]
   if (ifNode.type !== "if") throw new Error("missing if")
   ifNode.branches[0].condition.matcher = { kind: "simple", op: "contains", text: "ai-json" }
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 })
 
-test("send and input enforce ending and message source rules", () => {
+test("send and input enforce delivery, ending and message source rules", () => {
   const emptyMessage = validTemplate()
-  emptyMessage.body[0] = { id: "send_empty", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending: "cr" }
+  emptyMessage.body[0] = { id: "send_empty", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct", ending: "cr" }
   expect(validateFlowV2Template(emptyMessage, { indexMap }).ok).toBe(true)
 
   const newlineMessage = validTemplate()
-  newlineMessage.body[0] = { id: "send_newline", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "  hello\n\n" }] }, ending: "cr" }
+  newlineMessage.body[0] = { id: "send_newline", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "  hello\n\n" }] }, delivery: "direct", ending: "cr" }
   expect(validateFlowV2Template(newlineMessage, { indexMap }).ok).toBe(true)
 
   const artifactNone = validTemplate()
-  artifactNone.body[0] = { id: "send_none", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact" }] }, ending: "cr" }
+  artifactNone.body[0] = { id: "send_none", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact" }] }, delivery: "direct", ending: "cr" }
   expect(validateFlowV2Template(artifactNone, { indexMap }).ok).toBe(true)
 
   for (const ending of ["none", "lf", "cr", "crlf"] as const) {
     const withEnding = validTemplate()
-    withEnding.body[0] = { id: "send_" + ending, type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending }
+    withEnding.body[0] = { id: "send_" + ending, type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct", ending }
     expect(validateFlowV2Template(withEnding, { indexMap }).ok).toBe(true)
   }
 
+  for (const delivery of ["auto", "direct", "bracketed-paste"] as const) {
+    const sendWithDelivery = validTemplate()
+    sendWithDelivery.body[0] = { id: "send_" + delivery, type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery, ending: "cr" }
+    expect(validateFlowV2Template(sendWithDelivery, { indexMap }).ok).toBe(true)
+
+    const inputWithDelivery = validTemplate()
+    inputWithDelivery.body[0] = { id: "input_" + delivery, type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, delivery, ending: "cr" }
+    expect(validateFlowV2Template(inputWithDelivery, { indexMap }).ok).toBe(true)
+  }
+
+  const sendWithoutDelivery = validTemplate()
+  sendWithoutDelivery.body[0] = { id: "send_no_delivery", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending: "cr" } as never
+  expect(issues(sendWithoutDelivery)).toContain("delivery:delivery must be an own enumerable field")
+
+  const inputWithoutDelivery = validTemplate()
+  inputWithoutDelivery.body[0] = { id: "input_no_delivery", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, ending: "cr" } as never
+  expect(issues(inputWithoutDelivery)).toContain("delivery:delivery must be an own enumerable field")
+
+  for (const delivery of [undefined, false, "Auto", "Direct", "BRACKETED-PASTE", "raw", "paste"]) {
+    const invalidDelivery = validTemplate()
+    invalidDelivery.body[0] = { id: "send_bad_delivery", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery, ending: "cr" } as never
+    expect(issues(invalidDelivery)).toContain("delivery:delivery must be auto, direct or bracketed-paste")
+  }
+
+  const inheritedDelivery = validTemplate()
+  inheritedDelivery.body[0] = Object.assign(Object.create({ delivery: "direct" }), { id: "send_inherited_delivery", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending: "cr" }) as never
+  expect(issues(inheritedDelivery)).toContain("delivery:delivery must be an own enumerable field")
+
+  const hiddenDelivery = validTemplate()
+  const hiddenDeliveryNode: Record<string, unknown> = { id: "send_hidden_delivery", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending: "cr" }
+  Object.defineProperty(hiddenDeliveryNode, "delivery", { value: "direct", enumerable: false })
+  hiddenDelivery.body[0] = hiddenDeliveryNode as never
+  expect(issues(hiddenDelivery)).toContain("delivery:delivery must be an own enumerable field")
+
+  const deliveryAlias = validTemplate()
+  deliveryAlias.body[0] = { id: "send_delivery_alias", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct", ending: "cr", inputMode: "bracketed-paste" } as never
+  expect(issues(deliveryAlias)).toContain("inputMode:extra Flow V2 field is not allowed")
+
   const sendWithoutEnding = validTemplate()
-  sendWithoutEnding.body[0] = { id: "send_no_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } } as never
+  sendWithoutEnding.body[0] = { id: "send_no_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct" } as never
   expect(issues(sendWithoutEnding)).toContain("ending:ending must be an own enumerable field")
 
   const inputWithoutEnding = validTemplate()
-  inputWithoutEnding.body[0] = { id: "input_no_ending", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false } as never
+  inputWithoutEnding.body[0] = { id: "input_no_ending", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, delivery: "direct" } as never
   expect(issues(inputWithoutEnding)).toContain("ending:ending must be an own enumerable field")
 
   const oldEnter = validTemplate()
-  oldEnter.body[0] = { id: "send_old_enter", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, enter: true } as never
+  oldEnter.body[0] = { id: "send_old_enter", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct", enter: true } as never
   expect(issues(oldEnter)).toContain("enter:extra Flow V2 field is not allowed")
   expect(issues(oldEnter)).toContain("ending:ending must be an own enumerable field")
 
   for (const ending of ["newline", "CR", "\r", true]) {
     const invalidEnding = validTemplate()
-    invalidEnding.body[0] = { id: "send_bad_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending } as never
+    invalidEnding.body[0] = { id: "send_bad_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct", ending } as never
     expect(issues(invalidEnding)).toContain("ending:ending must be none, lf, cr or crlf")
   }
 
   const inheritedEnding = validTemplate()
-  inheritedEnding.body[0] = Object.assign(Object.create({ ending: "cr" }), { id: "send_inherited_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } }) as never
+  inheritedEnding.body[0] = Object.assign(Object.create({ ending: "cr" }), { id: "send_inherited_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct" }) as never
   expect(issues(inheritedEnding)).toContain("ending:ending must be an own enumerable field")
 
   const hiddenEnding = validTemplate()
-  const hiddenEndingNode: Record<string, unknown> = { id: "send_hidden_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } }
+  const hiddenEndingNode: Record<string, unknown> = { id: "send_hidden_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct" }
   Object.defineProperty(hiddenEndingNode, "ending", { value: "cr", enumerable: false })
   hiddenEnding.body[0] = hiddenEndingNode as never
   expect(issues(hiddenEnding)).toContain("ending:ending must be an own enumerable field")
 
   const send = validTemplate()
-  send.body[0] = { id: "send_bad", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] }, ending: "cr" } as never
+  send.body[0] = { id: "send_bad", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] }, delivery: "direct", ending: "cr" } as never
   expect(issues(send)).toContain("message part kind must be text, template or artifact")
 
   const joined = validTemplate()
-  joined.body[0] = { id: "send_join", type: "send", terminal: { kind: "alias", value: "worker" }, message: { join: "newline", parts: [{ kind: "text", text: "legacy" }] }, ending: "cr" } as never
+  joined.body[0] = { id: "send_join", type: "send", terminal: { kind: "alias", value: "worker" }, message: { join: "newline", parts: [{ kind: "text", text: "legacy" }] }, delivery: "direct", ending: "cr" } as never
   expect(issues(joined)).toContain("message.join:extra Flow V2 field is not allowed")
 
   const input = validTemplate()
-  input.body[0] = { id: "input_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, message: { parts: [{ kind: "text", text: "legacy" }] }, ending: "cr" } as never
+  input.body[0] = { id: "input_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, message: { parts: [{ kind: "text", text: "legacy" }] }, delivery: "direct", ending: "cr" } as never
   expect(issues(input)).toContain("message:extra Flow V2 field is not allowed")
 
   const defaultBeforeCapture = validTemplate()
-  defaultBeforeCapture.body[0] = { id: "input_default_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }, ending: "cr" } as never
+  defaultBeforeCapture.body[0] = { id: "input_default_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }, delivery: "direct", ending: "cr" } as never
   expect(issues(defaultBeforeCapture)).toContain("artifact source must reference an earlier artifact-producing step")
 })
 
 test("artifact sources must reference visible predecessor outputs", () => {
   const template = validTemplate()
-  template.body[0] = { id: "send_before_capture", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } }] }, ending: "cr" } as never
+  template.body[0] = { id: "send_before_capture", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } }] }, delivery: "direct", ending: "cr" } as never
   expect(issues(template)).toContain("artifact source must reference an earlier artifact-producing step")
 })
 
@@ -370,13 +408,13 @@ test("parallel lane output produces merged_text and must be final", () => {
     merge: { kind: "sectioned_text", separator: "===== {laneId} =====", includeEmptyOutputs: true },
     onLaneFail: "pause",
   })
-  template.body.push({ id: "send_merge", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, ending: "cr" })
+  template.body.push({ id: "send_merge", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, delivery: "direct", ending: "cr" })
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 
   const bad = structuredClone(template)
   const parallel = bad.body[4]
   if (parallel.type !== "parallel") throw new Error("missing parallel")
-  parallel.lanes[0].body.push({ id: "late_send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending: "cr" })
+  parallel.lanes[0].body.push({ id: "late_send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, delivery: "direct", ending: "cr" })
   expect(issues(bad)).toContain("parallel lane output must be the final node")
 })
 

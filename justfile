@@ -136,6 +136,13 @@ test-027:
 
 test-028:
     bun run test:028
+
+test-029:
+    bun run test:029
+
+test-029-codex-tui:
+    bun run test:029:codex-tui
+
 notification-config-init:
     mkdir -p .shell-deck
     cp -n config/notification-profiles.example.json .shell-deck/notification-profiles.json

@@ -1,10 +1,12 @@
 import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } from './terminalBackend'
+import { BRACKETED_PASTE_BEGIN, BRACKETED_PASTE_END } from '../src/lib/macro/terminalInputDelivery'
 
 export class FakeTerminalBackend implements TerminalBackend {
   readonly kind = 'fake' as const
   readonly inputChannel = 'helper-stdin-pipe' as const
   #events: TerminalBackendEvent | null = null
   #buffer = ''
+  #inBracketedPaste = false
   #closed = false
   cols: number
   rows: number
@@ -27,7 +29,24 @@ export class FakeTerminalBackend implements TerminalBackend {
     if (this.#closed) {
       return
     }
-    for (const char of data) {
+    for (let offset = 0; offset < data.length;) {
+      if (!this.#inBracketedPaste && data.startsWith(BRACKETED_PASTE_BEGIN, offset)) {
+        this.#inBracketedPaste = true
+        offset += BRACKETED_PASTE_BEGIN.length
+        continue
+      }
+      if (this.#inBracketedPaste && data.startsWith(BRACKETED_PASTE_END, offset)) {
+        this.#inBracketedPaste = false
+        offset += BRACKETED_PASTE_END.length
+        continue
+      }
+      const char = data[offset]
+      offset += 1
+      if (this.#inBracketedPaste && (char === '\r' || char === '\n')) {
+        this.#buffer += char
+        this.#events?.onData(char)
+        continue
+      }
       if (char === '\u0003') {
         this.#buffer = ''
         this.#events?.onData('^C\n')

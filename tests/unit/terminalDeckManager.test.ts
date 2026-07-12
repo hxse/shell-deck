@@ -43,6 +43,29 @@ test('fake backend fan-out, backend echo and replay', async () => {
   expect(snapshotText(late.messages, terminal.terminalId)).toContain('ECHO:hello')
 })
 
+test('fake shell consumes bracketed paste framing and submits pasted newlines only on the ending', async () => {
+  const manager = new TerminalDeckManager()
+  const terminal = manager.createTerminal('local', { backend: 'fake', terminalId: 'term_bracketed' })
+  const client = collect(manager, 'local')
+  await Bun.sleep(1)
+
+  manager.input('local', terminal.terminalId, '\u001b[200~first\nsecond')
+  const beforeEnding = outputText(client.messages, terminal.terminalId)
+  expect(beforeEnding).not.toContain('ECHO:')
+  expect(beforeEnding).not.toContain('[200~')
+
+  manager.input('local', terminal.terminalId, '\u001b[201~\r')
+  const output = outputText(client.messages, terminal.terminalId)
+  expect(output).toContain('ECHO:first\nsecond')
+  expect(output.match(/ECHO:/g)).toHaveLength(1)
+  expect(output).not.toContain('<ESC>')
+  expect(output).not.toContain('[201~')
+
+  manager.input('local', terminal.terminalId, '\u001b')
+  manager.input('local', terminal.terminalId, '\u0003')
+  expect(outputText(client.messages, terminal.terminalId)).toContain('<ESC>')
+})
+
 test('text backend appends macro input, supports manual content replace and syncs snapshots', async () => {
   const manager = new TerminalDeckManager()
   const textBox = manager.createTerminal('local', { backend: 'text', terminalId: 'term_text_a', terminalAlias: 'collector' })

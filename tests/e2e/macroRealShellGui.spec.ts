@@ -10,10 +10,12 @@ function realShellTemplate(configId: string, terminal: { kind: 'id'; value: stri
     createdAt: '2026-06-30T00:00:00.000Z',
     updatedAt: '2026-06-30T00:00:00.000Z',
     body: [
-      { id: 'send_real', type: 'send', terminal, message: { parts: [{ kind: 'text', text: "printf 'SD_REAL_MACRO_010\\n'" }] }, ending: "cr" },
+      { id: 'send_real_auto', type: 'send', terminal, message: { parts: [{ kind: 'text', text: "printf 'SD_REAL_MACRO_AUTO_029\\n'" }] }, delivery: 'auto', ending: 'cr' },
+      { id: 'send_real_direct', type: 'send', terminal, message: { parts: [{ kind: 'text', text: "printf 'SD_REAL_MACRO_DIRECT_029\\n'" }] }, delivery: 'direct', ending: 'cr' },
+      { id: 'send_real_bracketed', type: 'send', terminal, message: { parts: [{ kind: 'text', text: "printf 'SD_REAL_MACRO_BRACKETED_029\\n'" }] }, delivery: 'bracketed-paste', ending: 'cr' },
       { id: 'wait_real', type: 'wait', mode: 'duration', durationMs: 800 },
       { id: 'capture_real', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal, mode: 'scrollback-tail', maxChars: 12000 } },
-      { id: 'if_real', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture_real', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_REAL_MACRO_010' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'finish', reason: 'real shell ok' }] }] },
+      { id: 'if_real', type: 'if', branches: [{ kind: 'if', condition: { kind: 'text_match', source: { kind: 'step_artifact', stepId: 'capture_real', artifact: 'captured_text' }, matcher: { kind: 'simple', op: 'contains', text: 'SD_REAL_MACRO_BRACKETED_029' }, scope: { kind: 'whole' } }, body: [{ id: 'done', type: 'finish', reason: 'real shell ok' }] }] },
     ],
   }
 }
@@ -34,7 +36,9 @@ test('macro GUI smoke uses a real shell terminal for send capture and text_match
   await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 10000 })
-  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_010/)
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_AUTO_029/)
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_DIRECT_029/)
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_BRACKETED_029/)
 
   const runsResponse = await request.get('/api/configs/' + configId + '/runs')
   const runsBody = await runsResponse.json() as { runs: Array<{ runId: string }> }
@@ -43,6 +47,9 @@ test('macro GUI smoke uses a real shell terminal for send capture and text_match
   const events = runBody.run.replay.events
   expect(events.some((event) => event.kind === 'capture_artifact_created' && event.data.captureKind === 'terminal-buffer')).toBe(true)
   expect(events.some((event) => event.kind === 'branch_decision' && event.data.matched === true)).toBe(true)
+  expect(events.some((event) => event.kind === 'terminal_text_sent' && event.data.delivery === 'auto' && event.data.resolvedDelivery === 'bracketed-paste' && event.data.ending === 'cr')).toBe(true)
+  expect(events.some((event) => event.kind === 'terminal_text_sent' && event.data.delivery === 'direct' && event.data.resolvedDelivery === 'direct' && event.data.ending === 'cr')).toBe(true)
+  expect(events.some((event) => event.kind === 'terminal_text_sent' && event.data.delivery === 'bracketed-paste' && event.data.resolvedDelivery === 'bracketed-paste' && event.data.ending === 'cr')).toBe(true)
 
   await page.getByTestId('macro-tab-trace').click()
   await expect(page.getByTestId('run-derived-status')).toHaveText('completed')

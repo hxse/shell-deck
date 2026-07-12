@@ -1,7 +1,9 @@
 import type { TerminalRef } from "../terminalIdentity"
 import type { TerminalEnding } from "./terminalEnding"
+import type { TerminalInputDelivery } from "./terminalInputDelivery"
 
 export type { TerminalEnding } from "./terminalEnding"
+export type { ResolvedTerminalInputDelivery, TerminalInputDelivery } from "./terminalInputDelivery"
 
 export type TerminalTarget = TerminalRef
 export type TimeoutAction = "pause" | "fail" | "finish" | "continue"
@@ -111,6 +113,7 @@ export type SendNode = {
   type: "send"
   terminal: TerminalTarget
   message: MessageSpec
+  delivery: TerminalInputDelivery
   ending: TerminalEnding
 }
 
@@ -130,6 +133,7 @@ export type InputNode = {
   terminal: TerminalTarget
   prompt: TemplatableScalarText
   allowEmpty: boolean
+  delivery: TerminalInputDelivery
   ending: TerminalEnding
   defaultSource?: FlowV2ArtifactSource
 }

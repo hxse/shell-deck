@@ -38,6 +38,7 @@ test("maps shell and text tab capabilities", () => {
     canWaitQuiet: false,
     captureKinds: ["text-box"],
   })
+  expect(() => tabCapabilitiesForBackend("canvas" as never)).toThrow("unsupported_terminal_backend_kind:canvas")
 })
 
 test("resolves targets to choices and live tab info", () => {

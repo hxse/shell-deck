@@ -380,7 +380,8 @@ select,
   color: #1b6d43;
 }
 
-.macro-panel label {
+.macro-panel label,
+.macro-panel .macro-field-typography {
   display: grid;
   gap: 4px;
   color: #3d4a57;

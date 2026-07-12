@@ -24,7 +24,7 @@ function template(configId: string, id: string, body: FlowV2Node[]): MacroTempla
 function currentTemplate(configId: string, id: string, terminalId: string): MacroTemplate {
   return template(configId, id, [
     { id: "loop", type: "for", range: { kind: "count", count: 2 }, body: [{ id: "loop_wait", type: "wait", mode: "duration", durationMs: 1 }] },
-    { id: "send", type: "send", terminal: { kind: "id", value: terminalId }, message: { parts: [{ kind: "text", text: "current" }] }, ending: "none" },
+    { id: "send", type: "send", terminal: { kind: "id", value: terminalId }, message: { parts: [{ kind: "text", text: "current" }] }, delivery: "direct", ending: "none" },
     { id: "finish", type: "finish", reason: "done" },
   ])
 }
@@ -66,6 +66,18 @@ function missingEndingTemplate(configId: string, id: string, terminalId: string)
 function invalidEndingTemplate(configId: string, id: string, terminalId: string): unknown {
   return replaceSend(configId, id, terminalId, (send) => {
     send.ending = "newline"
+  })
+}
+
+function missingDeliveryTemplate(configId: string, id: string, terminalId: string): unknown {
+  return replaceSend(configId, id, terminalId, (send) => {
+    delete send.delivery
+  })
+}
+
+function invalidDeliveryTemplate(configId: string, id: string, terminalId: string): unknown {
+  return replaceSend(configId, id, terminalId, (send) => {
+    send.delivery = "paste"
   })
 }
 
@@ -112,7 +124,7 @@ async function validationIssuePaths(response: Response): Promise<string[]> {
   return (body.issues ?? []).map((issue) => typeof issue.path === "string" ? issue.path : "")
 }
 
-test("template import and PUT reject old count, extra TerminalRef and noncanonical endings without side effects", async () => {
+test("template import and PUT reject missing delivery and other noncanonical shapes without side effects", async () => {
   const root = mkdtempSync(join(tmpdir(), "shell-deck-template-http-write-"))
   const oldRoot = process.env.SHELL_DECK_DATA_ROOT
   process.env.SHELL_DECK_DATA_ROOT = root
@@ -129,6 +141,8 @@ test("template import and PUT reject old count, extra TerminalRef and noncanonic
       { id: "old_enter_import", value: oldEnterTemplate(configId, "old_enter_import", terminal.terminalId), path: "body[1].enter" },
       { id: "missing_ending_import", value: missingEndingTemplate(configId, "missing_ending_import", terminal.terminalId), path: "body[1].ending" },
       { id: "invalid_ending_import", value: invalidEndingTemplate(configId, "invalid_ending_import", terminal.terminalId), path: "body[1].ending" },
+      { id: "missing_delivery_import", value: missingDeliveryTemplate(configId, "missing_delivery_import", terminal.terminalId), path: "body[1].delivery" },
+      { id: "invalid_delivery_import", value: invalidDeliveryTemplate(configId, "invalid_delivery_import", terminal.terminalId), path: "body[1].delivery" },
     ]
     for (const item of invalidImports) {
       const response = await importTemplate(server, configId, item.value)
@@ -151,6 +165,8 @@ test("template import and PUT reject old count, extra TerminalRef and noncanonic
       { value: oldEnterTemplate(configId, templateId, terminal.terminalId), path: "body[1].enter" },
       { value: missingEndingTemplate(configId, templateId, terminal.terminalId), path: "body[1].ending" },
       { value: invalidEndingTemplate(configId, templateId, terminal.terminalId), path: "body[1].ending" },
+      { value: missingDeliveryTemplate(configId, templateId, terminal.terminalId), path: "body[1].delivery" },
+      { value: invalidDeliveryTemplate(configId, templateId, terminal.terminalId), path: "body[1].delivery" },
     ]
     for (const item of invalidPuts) {
       const response = await putTemplate(server, configId, templateId, item.value)
@@ -176,7 +192,7 @@ test("template import and PUT reject old count, extra TerminalRef and noncanonic
   }
 })
 
-test("invalid template file makes read export list and start fail loudly without rewrite or run creation", async () => {
+test("template file missing or invalid delivery makes read export list and start fail loudly without rewrite or run creation", async () => {
   const root = mkdtempSync(join(tmpdir(), "shell-deck-template-http-read-"))
   const oldRoot = process.env.SHELL_DECK_DATA_ROOT
   process.env.SHELL_DECK_DATA_ROOT = root
@@ -186,10 +202,10 @@ test("invalid template file makes read export list and start fail loudly without
     const configId = "template_http_read"
     server.manager.ensureConfig(configId)
     const terminal = server.manager.createTerminal(configId, { backend: "fake", terminalId: "term_template_read" })
-    const templateId = "old_count_file"
+    const templateId = "missing_delivery_file"
     const filePath = templatePath(root, configId, templateId)
     mkdirSync(join(root, ".shell-deck", "configs", configId, "templates"), { recursive: true })
-    const original = JSON.stringify(oldCountTemplate(configId, templateId, terminal.terminalId), null, 2) + "\n"
+    const original = JSON.stringify(missingDeliveryTemplate(configId, templateId, terminal.terminalId), null, 2) + "\n"
     writeFileSync(filePath, original, "utf8")
 
     const runnerBeforeResponse = await fetch(server.url + "/api/configs/" + configId + "/runner")
@@ -210,6 +226,11 @@ test("invalid template file makes read export list and start fail loudly without
     expect(await responseError(listResponse)).toStartWith("invalid_macro_template:")
     expect(readFileSync(filePath, "utf8")).toBe(original)
 
+    const duplicateResponse = await fetch(server.url + "/api/configs/" + configId + "/templates/" + templateId + "/duplicate", { method: "POST" })
+    expect(duplicateResponse.status).not.toBe(201)
+    expect(await responseError(duplicateResponse)).toStartWith("invalid_macro_template:")
+    expect(readFileSync(filePath, "utf8")).toBe(original)
+
     const startResponse = await fetch(server.url + "/api/configs/" + configId + "/runner/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -218,6 +239,34 @@ test("invalid template file makes read export list and start fail loudly without
     expect(startResponse.status).toBe(409)
     expect(await responseError(startResponse)).toStartWith("invalid_macro_template:")
     expect(readFileSync(filePath, "utf8")).toBe(original)
+
+    const invalidDeliveryOriginal = JSON.stringify(invalidDeliveryTemplate(configId, templateId, terminal.terminalId), null, 2) + "\n"
+    writeFileSync(filePath, invalidDeliveryOriginal, "utf8")
+
+    const invalidDeliveryReadResponse = await fetch(server.url + "/api/configs/" + configId + "/templates/" + templateId)
+    expect(invalidDeliveryReadResponse.status).not.toBe(200)
+    expect(await responseError(invalidDeliveryReadResponse)).toContain("body[1].delivery")
+
+    const invalidDeliveryExportResponse = await fetch(server.url + "/api/configs/" + configId + "/templates/" + templateId + "/export")
+    expect(invalidDeliveryExportResponse.status).not.toBe(200)
+    expect(await responseError(invalidDeliveryExportResponse)).toContain("body[1].delivery")
+
+    const invalidDeliveryListResponse = await fetch(server.url + "/api/configs/" + configId + "/templates")
+    expect(invalidDeliveryListResponse.status).not.toBe(200)
+    expect(await responseError(invalidDeliveryListResponse)).toContain("body[1].delivery")
+
+    const invalidDeliveryDuplicateResponse = await fetch(server.url + "/api/configs/" + configId + "/templates/" + templateId + "/duplicate", { method: "POST" })
+    expect(invalidDeliveryDuplicateResponse.status).not.toBe(201)
+    expect(await responseError(invalidDeliveryDuplicateResponse)).toContain("body[1].delivery")
+
+    const invalidDeliveryStartResponse = await fetch(server.url + "/api/configs/" + configId + "/runner/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ templateId }),
+    })
+    expect(invalidDeliveryStartResponse.status).toBe(409)
+    expect(await responseError(invalidDeliveryStartResponse)).toContain("body[1].delivery")
+    expect(readFileSync(filePath, "utf8")).toBe(invalidDeliveryOriginal)
 
     const extraTerminalOriginal = JSON.stringify(extraTerminalFieldTemplate(configId, templateId, terminal.terminalId), null, 2) + "\n"
     writeFileSync(filePath, extraTerminalOriginal, "utf8")
