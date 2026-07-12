@@ -49,15 +49,15 @@ test("text-list scope enables only explicit message and scalar templates", () =>
     type: "for",
     range: { kind: "text-list", items: [textListItem("phase 1"), textListItem(""), textListItem("phase {{value}}")] },
     body: [
-      { id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "send {{index}}/{{key}}/{{value}}" }, { kind: "text", text: "literal {{value}}" }] }, enter: true },
+      { id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "send {{index}}/{{key}}/{{value}}" }, { kind: "text", text: "literal {{value}}" }] }, ending: "cr" },
       { id: "notify", type: "notify", level: "info", title: { kind: "template", template: "title {{index}}" }, message: { parts: [{ kind: "template", template: "body {{key}}={{value}}" }] }, channels: [{ kind: "app", toast: true, sound: "none" }], onFailure: "continue" },
-      { id: "input", type: "input", terminal: worker, prompt: { kind: "template", template: "input {{key}}" }, allowEmpty: true, enter: false },
+      { id: "input", type: "input", terminal: worker, prompt: { kind: "template", template: "input {{key}}" }, allowEmpty: true, ending: "none" },
       { id: "continue_wait", type: "wait", mode: "user-continue", prompt: { kind: "template", template: "continue {{index}}" } },
       {
         id: "parallel",
         type: "parallel",
         lanes: [
-          { id: "lane_worker", label: "Worker", terminal: worker, body: [{ id: "lane_send_worker", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "lane {{index}}/{{key}}/{{value}}" }] }, enter: true }, { id: "lane_output_worker", type: "output", source: { kind: "none" } }] },
+          { id: "lane_worker", label: "Worker", terminal: worker, body: [{ id: "lane_send_worker", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "lane {{index}}/{{key}}/{{value}}" }] }, ending: "cr" }, { id: "lane_output_worker", type: "output", source: { kind: "none" } }] },
           { id: "lane_reviewer", label: "Reviewer", terminal: reviewer, body: [{ id: "lane_output_reviewer", type: "output", source: { kind: "none" } }] },
         ],
         merge: { kind: "sectioned_text", separator: "{laneId}", includeEmptyOutputs: true },
@@ -77,20 +77,20 @@ test("count and if descendants inherit outer text-list scope", () => {
       id: "inner_count",
       type: "for",
       range: { kind: "count", count: 1 },
-      body: [{ id: "send_inner", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{value}}" }] }, enter: true }],
+      body: [{ id: "send_inner", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{value}}" }] }, ending: "cr" }],
     }],
   }])
   expect(validateFlowV2Template(value, { indexMap }).ok).toBe(true)
 })
 
 test("templates outside text-list scope and malformed list/templates fail loudly", () => {
-  const outside = template([{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{value}}" }] }, enter: true }])
+  const outside = template([{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{value}}" }] }, ending: "cr" }])
   expect(issueText(outside)).toContain("template requires an enclosing text-list for")
 
-  const literal = template([{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "{{value}}" }] }, enter: true }])
+  const literal = template([{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "{{value}}" }] }, ending: "cr" }])
   expect(validateFlowV2Template(literal, { indexMap }).ok).toBe(true)
 
-  const malformed = template([{ id: "loop", type: "for", range: { kind: "text-list", items: [] }, body: [{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{foo}}" }] }, enter: true }] }])
+  const malformed = template([{ id: "loop", type: "for", range: { kind: "text-list", items: [] }, body: [{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{foo}}" }] }, ending: "cr" }] }])
   const malformedIssues = issueText(malformed)
   expect(malformedIssues).toContain("text-list items must not be empty")
   expect(malformedIssues).toContain("template must contain exact {{index}}, {{key}} or {{value}} token")

@@ -3,11 +3,12 @@
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
   import MessagePartsEditor from "./MessagePartsEditor.svelte"
   import ParallelLaneTabs from "./ParallelLaneTabs.svelte"
+  import TerminalEndingField from "./TerminalEndingField.svelte"
   import TemplatableScalarField from "./TemplatableScalarField.svelte"
   import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from "../../macro/scopedTextTemplate"
   import { hasNonDefaultTextListItems, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
+  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalEnding, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
   import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
@@ -585,9 +586,9 @@
   function defaultNode(template: MacroTemplate, type: FlowV2Node["type"]): FlowV2Node {
     const terminal = firstTerminalTarget()
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
-    if (type === "send") return { id, type, terminal, message: { parts: [] }, enter: true }
+    if (type === "send") return { id, type, terminal, message: { parts: [] }, ending: "cr" }
     if (type === "notify") return { id, type, level: "info", title: "Macro notification", message: { parts: [] }, channels: [{ kind: "app", toast: true, sound: "success" }], onFailure: "continue" }
-    if (type === "input") return { id, type, terminal, prompt: "Input", allowEmpty: false, enter: true }
+    if (type === "input") return { id, type, terminal, prompt: "Input", allowEmpty: false, ending: "cr" }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") return { id, type, capture: defaultCaptureForFirstTab() }
     if (type === "extract_text") return { id, type, source: artifactChoices(template)[0]?.source ?? emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "index", index: -1 }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
@@ -784,7 +785,7 @@
         </select>
       </label>
       <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send") item.message = message })} choices={artifactChoicesBefore(node.id)} {templateScope} />
-      <label class="checkbox-row"><input type="checkbox" data-testid="send-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "send") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
+      <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => updateNode(node.id, (item) => { if (item.type === "send") item.ending = ending })} testId="send-ending-sequence" />
     {:else if node.type === "notify"}
       <div class="macro-row">
         <label>Level<select data-testid="notify-level" value={node.level} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "notify") item.level = event.currentTarget.value as NotificationLevel })}><option value="info">info</option><option value="success">success</option><option value="warning">warning</option><option value="error">error</option></select></label>
@@ -824,7 +825,7 @@
       </label>
       <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = value })} {templateScope} testId="input-prompt" multiline maxRows={3} />
       <label class="checkbox-row"><input type="checkbox" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
-      <label class="checkbox-row"><input type="checkbox" data-testid="input-enter-checkbox" checked={node.enter} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.enter = event.currentTarget.checked })} />Submit with Enter</label>
+      <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => updateNode(node.id, (item) => { if (item.type === "input") item.ending = ending })} testId="input-ending-sequence" />
       <label>Default source
         <select data-testid="input-default-source" value={node.defaultSource ? sourceKey(node.defaultSource) : ""} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "input") return; item.defaultSource = event.currentTarget.value ? sourceFromKey(event.currentTarget.value) : undefined })}>
           <option value="">none</option>{#each artifactChoicesBefore(node.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}

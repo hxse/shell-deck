@@ -42,7 +42,7 @@ Flow V2 controls:
 
 ## Message Flow
 
-`send` writes rendered message text to a target tab. It stores explicit `enter: boolean`; new UI nodes default to `enter: true`.
+`send` writes rendered message text to a target tab. It stores required `ending: "none" | "lf" | "cr" | "crlf"`; new UI nodes explicitly default to `ending: "cr"`.
 
 `send.message.parts` is an ordered list. It may be empty. Each part is literal text, scoped template text, or a source artifact reference. Literal `{ "kind": "text", "text": string }` never interpolates braces. Scoped `{ "kind": "template", "template": string }` is valid only under a lexical text-list binding and replaces exact `{{index}}`, `{{key}}`, and `{{value}}` tokens in one scan; inserted key/value text, artifacts, and rendered output are never scanned recursively. An artifact part with no `source` means `none` and contributes an empty string. The runner concatenates parts in order without implicit separators or trimming; newlines and surrounding whitespace are user content.
 
@@ -57,13 +57,15 @@ Flow V2 controls:
       { "kind": "artifact", "source": { "kind": "step_artifact", "stepId": "capture_review", "artifact": "captured_text" } }
     ]
   },
-  "enter": true
+  "ending": "cr"
 }
 ```
 
-`input` pauses for user text. Its `prompt` may be a literal string or scoped template scalar; it also stores `allowEmpty`, explicit `enter: boolean`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it. The final textarea content is raw user content, is not trimmed, and is never template-expanded. `allowEmpty = false` rejects only zero-length input.
+`input` pauses for user text. Its `prompt` may be a literal string or scoped template scalar; it also stores `allowEmpty`, the same required `ending`, and optional single `defaultSource`. If `defaultSource` is present, the runner pre-fills the runtime textarea with that artifact text; the user can edit it. The final textarea content is raw user content, is not trimmed, and is never template-expanded. `allowEmpty = false` rejects only zero-length input.
 
-Macro submit uses LF. Runtime write payload is `content + (enter ? "\n" : "")` for shell/fake/real and text tabs. The macro layer must not append CR. Template JSON must not mutate `message` or user input to include the submit sequence; runtime `terminal_text_sent` events record both `content.artifactRef` and exact `write.artifactRef`, plus `enter` and `enterSequence = lf | none`.
+The editor exposes one `Ending sequence` select on normal `send`, `input`, and parallel-lane `send`: None, Enter / CR (`\r`), LF (`\n`), or CRLF (`\r\n`). The exact runtime suffix mapping is `none -> ""`, `lf -> "\n"`, `cr -> "\r"`, and `crlf -> "\r\n"`. CR matches the byte emitted by xterm for a physical Enter key; CRLF is two independent bytes. Missing, inherited, non-enumerable, unknown, or old `enter` fields are invalid and are never defaulted or migrated.
+
+Template JSON must not mutate `message` or user input to include the ending sequence. Current `terminal_text_sent` events record `ending`, the pre-ending `content.artifactRef`, and the exact backend-bound `write.artifactRef`. Text tabs retain their own display normalization of CR/CRLF to LF; the runner write evidence remains exact.
 
 ## Scoped Text Templates
 

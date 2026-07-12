@@ -70,9 +70,9 @@ test("if, else and control action bodies inherit the enclosing text-list binding
         branches: [{
           kind: "if",
           condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "ready" }, scope: { kind: "whole" } },
-          body: [{ id: "branch_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "branch {{value}}" }] }, enter: true }],
+          body: [{ id: "branch_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "branch {{value}}" }] }, ending: "cr" }],
         }],
-        else: [{ id: "finish", type: "finish", body: [{ id: "finish_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "finish {{value}}" }] }, enter: true }] }],
+        else: [{ id: "finish", type: "finish", body: [{ id: "finish_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "finish {{value}}" }] }, ending: "cr" }] }],
       },
     ],
   }])
@@ -85,14 +85,14 @@ test("nested text-list scopes validate inner shadow and restore the outer scope"
     type: "for",
     range: { kind: "text-list", items: [textListItem("outer")] },
     body: [
-      { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer {{value}}" }] }, enter: true },
+      { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer {{value}}" }] }, ending: "cr" },
       {
         id: "inner",
         type: "for",
         range: { kind: "text-list", items: [textListItem("inner")] },
-        body: [{ id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner {{value}}" }] }, enter: true }],
+        body: [{ id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner {{value}}" }] }, ending: "cr" }],
       },
-      { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer again {{value}}" }] }, enter: true },
+      { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "outer again {{value}}" }] }, ending: "cr" },
     ],
   }])
   expect(validateFlowV2Template(value, { indexMap })).toEqual({ ok: true, issues: [] })
@@ -103,7 +103,7 @@ test("text-list range is strict and validation does not normalize items", () => 
     id: "loop",
     type: "for",
     range: { kind: "text-list", items: [textListItem("  first\n", "  duplicate  "), textListItem("", ""), textListItem("first", "  duplicate  ")] },
-    body: [{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{value}}" }] }, enter: true }],
+    body: [{ id: "send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "{{value}}" }] }, ending: "cr" }],
   }])
   const before = structuredClone(value)
   expect(validateFlowV2Template(value, { indexMap })).toEqual({ ok: true, issues: [] })
@@ -219,7 +219,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
             { kind: "artifact", source: { kind: "step_artifact", stepId: "matrix_capture", artifact: "captured_text" } },
           ],
         },
-        enter: true,
+        ending: "cr",
       },
       {
         id: "matrix_input",
@@ -227,7 +227,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
         terminal: worker,
         prompt: "literal {{value}}",
         allowEmpty: true,
-        enter: false,
+        ending: "none",
         defaultSource: { kind: "step_artifact", stepId: "matrix_capture", artifact: "captured_text" },
       },
       {
@@ -294,7 +294,7 @@ function unsupportedMatrixFixture(): MacroTemplate {
               type: "send",
               terminal: worker,
               message: { parts: [{ kind: "text", text: "literal {{value}}" }] },
-              enter: false,
+              ending: "none",
             },
             { id: "matrix_lane_output", type: "output", source: { kind: "none" } },
           ],

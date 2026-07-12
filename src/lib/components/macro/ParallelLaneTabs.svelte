@@ -1,5 +1,6 @@
 <script lang="ts">
   import MessagePartsEditor from "./MessagePartsEditor.svelte"
+  import TerminalEndingField from "./TerminalEndingField.svelte"
   import type { TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
   import type {
@@ -15,6 +16,7 @@
     ParallelNode,
     ParallelOutputSource,
     TerminalTarget,
+    TerminalEnding,
   } from "../../macro/templateTypes"
 
   type ArtifactChoice = { label: string; source: FlowV2ArtifactSource }
@@ -315,7 +317,7 @@
 
   function defaultAction(template: MacroTemplate, lane: ParallelLane, type: LaneActionType): ParallelLaneActionNode {
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
-    if (type === "send") return { id, type, terminal: lane.terminal, message: { parts: [] }, enter: true }
+    if (type === "send") return { id, type, terminal: lane.terminal, message: { parts: [] }, ending: "cr" }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
     if (type === "capture-source") {
       return { id, type, capture: defaultCaptureForLane(lane) }
@@ -488,7 +490,7 @@
 
     {#if item.type === "send"}
       <MessagePartsEditor message={item.message} onChange={(message: MessageSpec) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.message = message })} choices={messageChoices(lane, item.id)} {templateScope} testId="parallel-message-parts-editor" textPartTestId="parallel-message-text-part" />
-      <label class="checkbox-row"><input type="checkbox" data-testid="parallel-send-enter-checkbox" checked={item.enter} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.enter = event.currentTarget.checked })} />Submit with Enter</label>
+      <TerminalEndingField value={item.ending} onChange={(ending: TerminalEnding) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.ending = ending })} testId="parallel-send-ending-sequence" />
     {:else if item.type === "wait"}
       <label>Mode<select value={item.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => {
         if (action.type !== "wait") return

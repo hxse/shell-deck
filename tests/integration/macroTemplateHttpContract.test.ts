@@ -24,7 +24,7 @@ function template(configId: string, id: string, body: FlowV2Node[]): MacroTempla
 function currentTemplate(configId: string, id: string, terminalId: string): MacroTemplate {
   return template(configId, id, [
     { id: "loop", type: "for", range: { kind: "count", count: 2 }, body: [{ id: "loop_wait", type: "wait", mode: "duration", durationMs: 1 }] },
-    { id: "send", type: "send", terminal: { kind: "id", value: terminalId }, message: { parts: [{ kind: "text", text: "current" }] }, enter: false },
+    { id: "send", type: "send", terminal: { kind: "id", value: terminalId }, message: { parts: [{ kind: "text", text: "current" }] }, ending: "none" },
     { id: "finish", type: "finish", reason: "done" },
   ])
 }
@@ -47,6 +47,38 @@ function extraTerminalFieldTemplate(configId: string, id: string, terminalId: st
     body: value.body.map((node) => node.id === "send"
       ? { ...node, terminal: { kind: "id", value: terminalId, terminalId: "term_old" } }
       : node),
+  }
+}
+
+function oldEnterTemplate(configId: string, id: string, terminalId: string): unknown {
+  return replaceSend(configId, id, terminalId, (send) => {
+    delete send.ending
+    send.enter = true
+  })
+}
+
+function missingEndingTemplate(configId: string, id: string, terminalId: string): unknown {
+  return replaceSend(configId, id, terminalId, (send) => {
+    delete send.ending
+  })
+}
+
+function invalidEndingTemplate(configId: string, id: string, terminalId: string): unknown {
+  return replaceSend(configId, id, terminalId, (send) => {
+    send.ending = "newline"
+  })
+}
+
+function replaceSend(configId: string, id: string, terminalId: string, mutate: (send: Record<string, unknown>) => void): unknown {
+  const value = currentTemplate(configId, id, terminalId)
+  return {
+    ...value,
+    body: value.body.map((node) => {
+      if (node.type !== "send") return node
+      const send = { ...node } as unknown as Record<string, unknown>
+      mutate(send)
+      return send
+    }),
   }
 }
 
@@ -80,7 +112,7 @@ async function validationIssuePaths(response: Response): Promise<string[]> {
   return (body.issues ?? []).map((issue) => typeof issue.path === "string" ? issue.path : "")
 }
 
-test("template import and PUT reject old count and extra TerminalRef without creating or rewriting files", async () => {
+test("template import and PUT reject old count, extra TerminalRef and noncanonical endings without side effects", async () => {
   const root = mkdtempSync(join(tmpdir(), "shell-deck-template-http-write-"))
   const oldRoot = process.env.SHELL_DECK_DATA_ROOT
   process.env.SHELL_DECK_DATA_ROOT = root
@@ -94,6 +126,9 @@ test("template import and PUT reject old count and extra TerminalRef without cre
     const invalidImports = [
       { id: "old_count_import", value: oldCountTemplate(configId, "old_count_import", terminal.terminalId), path: "body[0].range.kind" },
       { id: "extra_ref_import", value: extraTerminalFieldTemplate(configId, "extra_ref_import", terminal.terminalId), path: "body[1].terminal.terminalId" },
+      { id: "old_enter_import", value: oldEnterTemplate(configId, "old_enter_import", terminal.terminalId), path: "body[1].enter" },
+      { id: "missing_ending_import", value: missingEndingTemplate(configId, "missing_ending_import", terminal.terminalId), path: "body[1].ending" },
+      { id: "invalid_ending_import", value: invalidEndingTemplate(configId, "invalid_ending_import", terminal.terminalId), path: "body[1].ending" },
     ]
     for (const item of invalidImports) {
       const response = await importTemplate(server, configId, item.value)
@@ -113,6 +148,9 @@ test("template import and PUT reject old count and extra TerminalRef without cre
     const invalidPuts = [
       { value: oldCountTemplate(configId, templateId, terminal.terminalId), path: "body[0].range.kind" },
       { value: extraTerminalFieldTemplate(configId, templateId, terminal.terminalId), path: "body[1].terminal.terminalId" },
+      { value: oldEnterTemplate(configId, templateId, terminal.terminalId), path: "body[1].enter" },
+      { value: missingEndingTemplate(configId, templateId, terminal.terminalId), path: "body[1].ending" },
+      { value: invalidEndingTemplate(configId, templateId, terminal.terminalId), path: "body[1].ending" },
     ]
     for (const item of invalidPuts) {
       const response = await putTemplate(server, configId, templateId, item.value)
@@ -193,6 +231,26 @@ test("invalid template file makes read export list and start fail loudly without
     expect(extraStartError).toStartWith("invalid_macro_template:")
     expect(extraStartError).toContain("body[1].terminal.terminalId")
     expect(readFileSync(filePath, "utf8")).toBe(extraTerminalOriginal)
+
+    const oldEnterOriginal = JSON.stringify(oldEnterTemplate(configId, templateId, terminal.terminalId), null, 2) + "\n"
+    writeFileSync(filePath, oldEnterOriginal, "utf8")
+    const oldEnterReadResponse = await fetch(server.url + "/api/configs/" + configId + "/templates/" + templateId)
+    expect(oldEnterReadResponse.status).not.toBe(200)
+    expect(await responseError(oldEnterReadResponse)).toContain("body[1].enter")
+    const oldEnterExportResponse = await fetch(server.url + "/api/configs/" + configId + "/templates/" + templateId + "/export")
+    expect(oldEnterExportResponse.status).not.toBe(200)
+    expect(await responseError(oldEnterExportResponse)).toContain("body[1].enter")
+    const oldEnterListResponse = await fetch(server.url + "/api/configs/" + configId + "/templates")
+    expect(oldEnterListResponse.status).not.toBe(200)
+    expect(await responseError(oldEnterListResponse)).toContain("body[1].enter")
+    const oldEnterStartResponse = await fetch(server.url + "/api/configs/" + configId + "/runner/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ templateId }),
+    })
+    expect(oldEnterStartResponse.status).toBe(409)
+    expect(await responseError(oldEnterStartResponse)).toContain("body[1].enter")
+    expect(readFileSync(filePath, "utf8")).toBe(oldEnterOriginal)
 
     const runsResponse = await fetch(server.url + "/api/configs/" + configId + "/runs")
     expect(runsResponse.status).toBe(200)

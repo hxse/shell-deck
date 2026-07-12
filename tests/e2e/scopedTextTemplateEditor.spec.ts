@@ -124,7 +124,7 @@ function editorTemplate(configId: string): MacroTemplate {
         type: 'send',
         terminal,
         message: { parts: [{ kind: 'text', text: 'root keeps {{text}} literal' }] },
-        enter: true,
+        ending: "cr",
       },
       {
         id: 'root_notify_literal',
@@ -135,7 +135,7 @@ function editorTemplate(configId: string): MacroTemplate {
         channels: [{ kind: 'app', toast: true, sound: 'none' }],
         onFailure: 'continue',
       },
-      { id: 'root_input_literal', type: 'input', terminal, prompt: 'root input {{text}}', allowEmpty: true, enter: false },
+      { id: 'root_input_literal', type: 'input', terminal, prompt: 'root input {{text}}', allowEmpty: true, ending: "none" },
       { id: 'root_wait_literal', type: 'wait', mode: 'user-continue', prompt: 'root wait {{text}}' },
       {
         id: 'root_parallel_literal',
@@ -145,7 +145,7 @@ function editorTemplate(configId: string): MacroTemplate {
           label: 'root lane literal',
           terminal,
           body: [
-            { id: 'root_parallel_send_literal', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'root lane {{text}}' }] }, enter: false },
+            { id: 'root_parallel_send_literal', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'root lane {{text}}' }] }, ending: "none" },
             { id: 'root_parallel_output', type: 'output', source: { kind: 'none' } },
           ],
         }],
@@ -157,8 +157,8 @@ function editorTemplate(configId: string): MacroTemplate {
         type: 'for',
         range: { kind: 'text-list', items: [{ key: 'phase-a', value: 'alpha\nsecond line' }, { key: 'phase-b', value: 'beta' }] },
         body: [
-          { id: 'send_s1', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'S1 alpha' }] }, enter: true },
-          { id: 'send_part_reorder', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'part A' }, { kind: 'text', text: 'part B' }] }, enter: false },
+          { id: 'send_s1', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'S1 alpha' }] }, ending: "cr" },
+          { id: 'send_part_reorder', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'part A' }, { kind: 'text', text: 'part B' }] }, ending: "none" },
           {
             id: 'notify_s3_s4',
             type: 'notify',
@@ -168,7 +168,7 @@ function editorTemplate(configId: string): MacroTemplate {
             channels: [{ kind: 'app', toast: true, sound: 'none' }],
             onFailure: 'continue',
           },
-          { id: 'input_s5', type: 'input', terminal, prompt: 'S5 prompt', allowEmpty: false, enter: true },
+          { id: 'input_s5', type: 'input', terminal, prompt: 'S5 prompt', allowEmpty: false, ending: "cr" },
           { id: 'wait_s6', type: 'wait', mode: 'user-continue', prompt: 'S6 prompt' },
           { id: 'capture_scope', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal, mode: 'scrollback-tail', maxChars: 20000 } },
           {
@@ -194,13 +194,13 @@ function editorTemplate(configId: string): MacroTemplate {
             id: 'for_count',
             type: 'for',
             range: { kind: 'count', count: 1 },
-            body: [{ id: 'send_count', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'count literal' }] }, enter: true }],
+            body: [{ id: 'send_count', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'count literal' }] }, ending: "cr" }],
           },
           {
             id: 'for_inner',
             type: 'for',
             range: { kind: 'text-list', items: [{ key: 'inner-key', value: 'inner value' }] },
-            body: [{ id: 'send_inner', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'inner literal' }] }, enter: true }],
+            body: [{ id: 'send_inner', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'inner literal' }] }, ending: "cr" }],
           },
           {
             id: 'parallel_scope',
@@ -210,7 +210,7 @@ function editorTemplate(configId: string): MacroTemplate {
               label: 'static lane label',
               terminal,
               body: [
-                { id: 'parallel_send_s2', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'S2 literal' }] }, enter: true },
+                { id: 'parallel_send_s2', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'S2 literal' }] }, ending: "cr" },
                 { id: 'parallel_output', type: 'output', source: { kind: 'none' } },
               ],
             }],
@@ -235,14 +235,14 @@ function moveOutTemplate(configId: string): MacroTemplate {
     createdAt: timestamp,
     updatedAt: timestamp,
     body: [
-      { id: 'root_anchor', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'anchor' }] }, enter: true },
+      { id: 'root_anchor', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'anchor' }] }, ending: "cr" },
       {
         id: 'for_move',
         type: 'for',
         range: { kind: 'text-list', items: [{ key: 'bound-key', value: 'bound-value' }] },
         body: [
-          { id: 'move_send', type: 'send', terminal, message: { parts: [{ kind: 'template', template: 'keep {{index}} / {{key}} / {{value}} exactly' }] }, enter: true },
-          { id: 'scope_filler', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'keep loop non-empty' }] }, enter: true },
+          { id: 'move_send', type: 'send', terminal, message: { parts: [{ kind: 'template', template: 'keep {{index}} / {{key}} / {{value}} exactly' }] }, ending: "cr" },
+          { id: 'scope_filler', type: 'send', terminal, message: { parts: [{ kind: 'text', text: 'keep loop non-empty' }] }, ending: "cr" },
         ],
       },
     ],

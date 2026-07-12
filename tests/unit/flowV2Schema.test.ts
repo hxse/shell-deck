@@ -18,7 +18,7 @@ function validTemplate(): MacroTemplate {
     createdAt: now,
     updatedAt: now,
     body: [
-      { id: "send_worker", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "printf READY" }] }, enter: true },
+      { id: "send_worker", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "printf READY" }] }, ending: "cr" },
       { id: "wait_worker", type: "wait", mode: "terminal-quiet", terminal: { kind: "alias", value: "worker" }, quietMs: 10, maxMs: 1000, onTimeout: "pause" },
       { id: "capture_worker", type: "capture-source", capture: { kind: "terminal-buffer", terminal: { kind: "alias", value: "worker" }, mode: "scrollback-tail", maxChars: 12000 } },
       {
@@ -60,7 +60,7 @@ test("Flow V2 accepts message parts, capture, text_match and finish", () => {
 test("Flow V2 current allowlist rejects unknown template fields and node types", () => {
   const template = validTemplate() as unknown as Record<string, unknown>
   template.schemaVersion = 1
-  template.steps = [{ id: "old", type: "send", text: "legacy", enter: true }]
+  template.steps = [{ id: "old", type: "send", text: "legacy", ending: "cr" }]
   const text = issues(template)
   expect(text).toContain("schemaVersion:Flow V2 template schemaVersion must be 2")
   expect(text).toContain("template.steps:extra Flow V2 field is not allowed")
@@ -178,7 +178,7 @@ test("Macro terminal refs require exact own enumerable kind and value fields", (
 
 test("finish break and continue support action-only bodies", () => {
   const template = validTemplate()
-  template.body.push({ id: "finish_with_action", type: "finish", reason: "done", body: [{ id: "send_before_finish", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before finish" }] }, enter: true }]})
+  template.body.push({ id: "finish_with_action", type: "finish", reason: "done", body: [{ id: "send_before_finish", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "before finish" }] }, ending: "cr" }]})
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 
   const bad = validTemplate()
@@ -188,54 +188,81 @@ test("finish break and continue support action-only bodies", () => {
 
 test("legacy parser and wait tokens are allowed inside user text fields", () => {
   const template = validTemplate()
-  template.body[0] = { id: "send_text", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "please mention ai-json and capture-ready-or-user literally" }] }, enter: true }
+  template.body[0] = { id: "send_text", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "please mention ai-json and capture-ready-or-user literally" }] }, ending: "cr" }
   const ifNode = template.body[3]
   if (ifNode.type !== "if") throw new Error("missing if")
   ifNode.branches[0].condition.matcher = { kind: "simple", op: "contains", text: "ai-json" }
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 })
 
-test("send and input enforce message source rules", () => {
+test("send and input enforce ending and message source rules", () => {
   const emptyMessage = validTemplate()
-  emptyMessage.body[0] = { id: "send_empty", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, enter: true }
+  emptyMessage.body[0] = { id: "send_empty", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending: "cr" }
   expect(validateFlowV2Template(emptyMessage, { indexMap }).ok).toBe(true)
 
   const newlineMessage = validTemplate()
-  newlineMessage.body[0] = { id: "send_newline", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "  hello\n\n" }] }, enter: true }
+  newlineMessage.body[0] = { id: "send_newline", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "text", text: "  hello\n\n" }] }, ending: "cr" }
   expect(validateFlowV2Template(newlineMessage, { indexMap }).ok).toBe(true)
 
   const artifactNone = validTemplate()
-  artifactNone.body[0] = { id: "send_none", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact" }] }, enter: true }
+  artifactNone.body[0] = { id: "send_none", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact" }] }, ending: "cr" }
   expect(validateFlowV2Template(artifactNone, { indexMap }).ok).toBe(true)
 
-  const sendWithoutEnter = validTemplate()
-  sendWithoutEnter.body[0] = { id: "send_no_enter", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } } as never
-  expect(issues(sendWithoutEnter)).toContain("enter:enter must be boolean")
+  for (const ending of ["none", "lf", "cr", "crlf"] as const) {
+    const withEnding = validTemplate()
+    withEnding.body[0] = { id: "send_" + ending, type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending }
+    expect(validateFlowV2Template(withEnding, { indexMap }).ok).toBe(true)
+  }
 
-  const inputWithoutEnter = validTemplate()
-  inputWithoutEnter.body[0] = { id: "input_no_enter", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false } as never
-  expect(issues(inputWithoutEnter)).toContain("enter:enter must be boolean")
+  const sendWithoutEnding = validTemplate()
+  sendWithoutEnding.body[0] = { id: "send_no_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } } as never
+  expect(issues(sendWithoutEnding)).toContain("ending:ending must be an own enumerable field")
+
+  const inputWithoutEnding = validTemplate()
+  inputWithoutEnding.body[0] = { id: "input_no_ending", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false } as never
+  expect(issues(inputWithoutEnding)).toContain("ending:ending must be an own enumerable field")
+
+  const oldEnter = validTemplate()
+  oldEnter.body[0] = { id: "send_old_enter", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, enter: true } as never
+  expect(issues(oldEnter)).toContain("enter:extra Flow V2 field is not allowed")
+  expect(issues(oldEnter)).toContain("ending:ending must be an own enumerable field")
+
+  for (const ending of ["newline", "CR", "\r", true]) {
+    const invalidEnding = validTemplate()
+    invalidEnding.body[0] = { id: "send_bad_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending } as never
+    expect(issues(invalidEnding)).toContain("ending:ending must be none, lf, cr or crlf")
+  }
+
+  const inheritedEnding = validTemplate()
+  inheritedEnding.body[0] = Object.assign(Object.create({ ending: "cr" }), { id: "send_inherited_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } }) as never
+  expect(issues(inheritedEnding)).toContain("ending:ending must be an own enumerable field")
+
+  const hiddenEnding = validTemplate()
+  const hiddenEndingNode: Record<string, unknown> = { id: "send_hidden_ending", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] } }
+  Object.defineProperty(hiddenEndingNode, "ending", { value: "cr", enumerable: false })
+  hiddenEnding.body[0] = hiddenEndingNode as never
+  expect(issues(hiddenEnding)).toContain("ending:ending must be an own enumerable field")
 
   const send = validTemplate()
-  send.body[0] = { id: "send_bad", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] }, enter: true } as never
+  send.body[0] = { id: "send_bad", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "user_input" }] }, ending: "cr" } as never
   expect(issues(send)).toContain("message part kind must be text, template or artifact")
 
   const joined = validTemplate()
-  joined.body[0] = { id: "send_join", type: "send", terminal: { kind: "alias", value: "worker" }, message: { join: "newline", parts: [{ kind: "text", text: "legacy" }] }, enter: true } as never
+  joined.body[0] = { id: "send_join", type: "send", terminal: { kind: "alias", value: "worker" }, message: { join: "newline", parts: [{ kind: "text", text: "legacy" }] }, ending: "cr" } as never
   expect(issues(joined)).toContain("message.join:extra Flow V2 field is not allowed")
 
   const input = validTemplate()
-  input.body[0] = { id: "input_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, message: { parts: [{ kind: "text", text: "legacy" }] }, enter: true } as never
+  input.body[0] = { id: "input_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, message: { parts: [{ kind: "text", text: "legacy" }] }, ending: "cr" } as never
   expect(issues(input)).toContain("message:extra Flow V2 field is not allowed")
 
   const defaultBeforeCapture = validTemplate()
-  defaultBeforeCapture.body[0] = { id: "input_default_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }, enter: true } as never
+  defaultBeforeCapture.body[0] = { id: "input_default_bad", type: "input", terminal: { kind: "alias", value: "worker" }, prompt: "Prompt", allowEmpty: false, defaultSource: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" }, ending: "cr" } as never
   expect(issues(defaultBeforeCapture)).toContain("artifact source must reference an earlier artifact-producing step")
 })
 
 test("artifact sources must reference visible predecessor outputs", () => {
   const template = validTemplate()
-  template.body[0] = { id: "send_before_capture", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } }] }, enter: true } as never
+  template.body[0] = { id: "send_before_capture", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "capture_worker", artifact: "captured_text" } }] }, ending: "cr" } as never
   expect(issues(template)).toContain("artifact source must reference an earlier artifact-producing step")
 })
 
@@ -343,13 +370,13 @@ test("parallel lane output produces merged_text and must be final", () => {
     merge: { kind: "sectioned_text", separator: "===== {laneId} =====", includeEmptyOutputs: true },
     onLaneFail: "pause",
   })
-  template.body.push({ id: "send_merge", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, enter: true })
+  template.body.push({ id: "send_merge", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "parallel_review", artifact: "merged_text" } }] }, ending: "cr" })
   expect(validateFlowV2Template(template, { indexMap }).ok).toBe(true)
 
   const bad = structuredClone(template)
   const parallel = bad.body[4]
   if (parallel.type !== "parallel") throw new Error("missing parallel")
-  parallel.lanes[0].body.push({ id: "late_send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, enter: true })
+  parallel.lanes[0].body.push({ id: "late_send", type: "send", terminal: { kind: "alias", value: "worker" }, message: { parts: [] }, ending: "cr" })
   expect(issues(bad)).toContain("parallel lane output must be the final node")
 })
 

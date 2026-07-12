@@ -143,11 +143,19 @@ Use a `text-list` range when the same body should run once for each structured i
           { "kind": "template", "template": "阶段 {{index}}：{{key}}\n{{value}}" }
         ]
       },
-      "enter": true
+      "ending": "cr"
     }
   ]
 }
 ```
+
+Every normal `send`, `input`, and parallel-lane `send` has one `Ending sequence` selector. New actions default to `Enter / CR (\r)`, which matches a physical Enter in xterm. Choose `None` to append nothing, `LF (\n)` for one line-feed byte, or `CRLF (\r\n)` for two explicit bytes. CRLF may be consumed as two separate inputs by a raw-mode TUI. The JSON field is always explicit and accepts `none`, `lf`, `cr`, or `crlf`:
+
+```json
+"ending": "cr"
+```
+
+Old `enter: true/false` templates are invalid. Shell-deck does not migrate or infer an ending for them; delete the old template or rewrite it using the current field.
 
 Template mode is limited to six user-visible content surfaces:
 

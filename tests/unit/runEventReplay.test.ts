@@ -62,7 +62,7 @@ test('replay reports missing artifact refs as recoverable error', () => {
   try {
     writeEvents(root, 'local', 'run_missing_artifact', [
       event('run_missing_artifact', 1, 'evt_start', 'run_started'),
-      event('run_missing_artifact', 2, 'evt_artifact', 'terminal_text_sent', { terminalId: 'term_worker', enter: false, enterSequence: 'none', content: { artifactRef: 'artifacts/missing.txt', chars: 5 }, write: { artifactRef: 'artifacts/missing.txt', chars: 5 } }, 'send_review'),
+      event('run_missing_artifact', 2, 'evt_artifact', 'terminal_text_sent', { terminalId: 'term_worker', ending: 'none', content: { artifactRef: 'artifacts/missing.txt', chars: 5 }, write: { artifactRef: 'artifacts/missing.txt', chars: 5 } }, 'send_review'),
     ])
     const replay = new RunEventReplay(root, new ArtifactStore(root)).replay('local', 'run_missing_artifact')
     expect(replay.ok).toBe(false)

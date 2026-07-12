@@ -160,8 +160,8 @@
 
       await api.appendEvent(runId, { kind: 'step_started', stepId: 'send_review', summary: 'Started send_review', data: { terminalRef: { kind: 'alias', value: 'reviewer' } } })
       const sendArtifact = await api.writeArtifact(runId, { prefix: 'send-content', content: 'review docs only', extension: 'txt', stepId: 'send_review' })
-      const sendWriteArtifact = await api.writeArtifact(runId, { prefix: 'send-write', content: 'review docs only\n', extension: 'txt', stepId: 'send_review' })
-      await api.appendEvent(runId, { kind: 'terminal_text_sent', stepId: 'send_review', summary: 'Sent review prompt', data: { terminalRef: { kind: 'alias', value: 'reviewer' }, enter: true, enterSequence: 'lf', content: { artifactRef: sendArtifact.artifact.artifactRef, chars: 16 }, write: { artifactRef: sendWriteArtifact.artifact.artifactRef, chars: 17 } } })
+      const sendWriteArtifact = await api.writeArtifact(runId, { prefix: 'send-write', content: 'review docs only\r', extension: 'txt', stepId: 'send_review' })
+      await api.appendEvent(runId, { kind: 'terminal_text_sent', stepId: 'send_review', summary: 'Sent review prompt', data: { terminalRef: { kind: 'alias', value: 'reviewer' }, ending: 'cr', content: { artifactRef: sendArtifact.artifact.artifactRef, chars: 16 }, write: { artifactRef: sendWriteArtifact.artifact.artifactRef, chars: 17 } } })
       await api.appendEvent(runId, { kind: 'step_completed', stepId: 'send_review', summary: 'Completed send_review', data: {} })
 
       await api.appendEvent(runId, { kind: 'step_started', stepId: 'input_direction', summary: 'Started input_direction', data: {} })

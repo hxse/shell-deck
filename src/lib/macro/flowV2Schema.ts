@@ -3,6 +3,7 @@ import type { TerminalIndexMapItem, TerminalSnapshot } from "../protocol"
 import { isCaptureKindAllowed, tabInfoForTarget } from "./tabCapabilities"
 import { validateTerminalTarget } from "./terminalRef"
 import { isScopedTemplateText, scopedTemplateSyntaxIssue } from "./scopedTextTemplate"
+import { isTerminalEnding } from "./terminalEnding"
 import type {
   CaptureSourceConfig,
   FlowV2ArtifactSource,
@@ -26,13 +27,13 @@ const MESSAGE_KEYS = new Set(["parts"])
 const TEXT_PART_KEYS = new Set(["kind", "text"])
 const TEMPLATE_PART_KEYS = new Set(["kind", "template"])
 const ARTIFACT_PART_KEYS = new Set(["kind", "source"])
-const SEND_KEYS = new Set(["id", "type", "terminal", "message", "enter"])
+const SEND_KEYS = new Set(["id", "type", "terminal", "message", "ending"])
 const NOTIFY_KEYS = new Set(["id", "type", "level", "title", "message", "channels", "onFailure"])
 const NOTIFY_APP_CHANNEL_KEYS = new Set(["kind", "toast", "sound"])
 const NOTIFY_SYSTEM_CHANNEL_KEYS = new Set(["kind"])
 const NOTIFY_TELEGRAM_CHANNEL_KEYS = new Set(["kind", "profileId"])
 const NOTIFICATION_SOUND_VALUES = new Set(["none", "bell", "chime", "ping", "pulse", "success", "warning", "alert"])
-const INPUT_KEYS = new Set(["id", "type", "terminal", "prompt", "allowEmpty", "defaultSource", "enter"])
+const INPUT_KEYS = new Set(["id", "type", "terminal", "prompt", "allowEmpty", "defaultSource", "ending"])
 const WAIT_DURATION_KEYS = new Set(["id", "type", "mode", "durationMs"])
 const WAIT_TERMINAL_QUIET_KEYS = new Set(["id", "type", "mode", "terminal", "quietMs", "maxMs", "onTimeout"])
 const WAIT_USER_CONTINUE_KEYS = new Set(["id", "type", "mode", "prompt"])
@@ -172,7 +173,7 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
     rejectUnknownKeys(issues, path, node, SEND_KEYS)
     issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
     validateMessageSpec(issues, path + ".message", node.message, context)
-    if (typeof node.enter !== "boolean") issues.push({ path: path + ".enter", message: "enter must be boolean" })
+    validateTerminalEnding(issues, path, node)
     return
   }
   if (node.type === "input") {
@@ -180,7 +181,7 @@ function validateActionNode(issues: ValidationIssue[], path: string, node: Recor
     issues.push(...validateTerminalTarget(path + ".terminal", node.terminal, context.indexMap))
     validateTemplatableScalarText(issues, path + ".prompt", node.prompt, context, 1)
     if (typeof node.allowEmpty !== "boolean") issues.push({ path: path + ".allowEmpty", message: "allowEmpty must be boolean" })
-    if (typeof node.enter !== "boolean") issues.push({ path: path + ".enter", message: "enter must be boolean" })
+    validateTerminalEnding(issues, path, node)
     if (node.defaultSource !== undefined) validateArtifactSource(issues, path + ".defaultSource", node.defaultSource, context)
     return
   }
@@ -212,6 +213,16 @@ function validateNotifyNode(issues: ValidationIssue[], path: string, node: Recor
   validateMessageSpec(issues, path + ".message", node.message, context)
   validateNotifyChannels(issues, path + ".channels", node.channels)
   if (node.onFailure !== "continue" && node.onFailure !== "pause" && node.onFailure !== "fail") issues.push({ path: path + ".onFailure", message: "onFailure must be continue, pause or fail" })
+}
+
+function validateTerminalEnding(issues: ValidationIssue[], path: string, node: Record<string, unknown>) {
+  if (!hasOwnEnumerableField(node, "ending")) {
+    issues.push({ path: path + ".ending", message: "ending must be an own enumerable field" })
+    return
+  }
+  if (!isTerminalEnding(node.ending)) {
+    issues.push({ path: path + ".ending", message: "ending must be none, lf, cr or crlf" })
+  }
 }
 
 function validateNotifyChannels(issues: ValidationIssue[], path: string, channels: unknown) {

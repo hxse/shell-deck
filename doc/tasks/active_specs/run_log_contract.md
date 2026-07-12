@@ -12,6 +12,8 @@ Dynamic occurrences are identified by optional structured `data.executionPath` s
 
 Large or structured payloads are written as artifacts before the event that references them. Artifact refs are server-generated and path-checked under the run artifact directory.
 
+Current `terminal_text_sent` events record the required Macro `ending` value (`none | lf | cr | crlf`), a `content` artifact before the ending is appended, and an exact `write` artifact containing the backend-bound payload. This write artifact, rather than fake/text terminal display behavior, is the evidence for CR/LF bytes. Existing append-only events may contain older free-form data fields; replay does not rewrite or synthesize current ending evidence for them.
+
 Runtime artifact resolution is occurrence-aware even though template references keep a static producer `stepId`: it first looks for the producer in the current iteration/lane context and may then inherit a visible outer predecessor. It must not read a sibling lane, future occurrence, previous iteration's local producer, or a later lexical scope.
 
 Missing artifact refs are recoverable replay errors and must be visible in derived node logs.

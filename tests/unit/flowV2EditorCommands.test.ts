@@ -13,7 +13,7 @@ function template(): MacroTemplate {
     createdAt: now,
     updatedAt: now,
     body: [
-      { id: "send_1", type: "send", terminal: { kind: "index", value: 1 }, message: { parts: [{ kind: "text", text: "one" }] }, enter: true },
+      { id: "send_1", type: "send", terminal: { kind: "index", value: 1 }, message: { parts: [{ kind: "text", text: "one" }] }, ending: "cr" },
       {
         id: "if_ready",
         type: "if",
@@ -120,7 +120,7 @@ test("canMoveNodeToAnchor allows action move into missing optional control body 
 test("inside control insertion creates missing optional body only during mutation", () => {
   const t = template()
   t.body.push({ id: "done", type: "finish", reason: "done" })
-  const result = insertNodeAtAnchor(t, { kind: "inside", parentPath: [], index: 3, slot: "control", anchorNodeId: "done" }, { id: "send_before_finish", type: "send", terminal: { kind: "index", value: 1 }, message: { parts: [{ kind: "text", text: "before finish" }] }, enter: true })
+  const result = insertNodeAtAnchor(t, { kind: "inside", parentPath: [], index: 3, slot: "control", anchorNodeId: "done" }, { id: "send_before_finish", type: "send", terminal: { kind: "index", value: 1 }, message: { parts: [{ kind: "text", text: "before finish" }] }, ending: "cr" })
   expect(result.ok).toBe(true)
   const done = t.body[3]
   if (done.type !== "finish") throw new Error("missing finish")
@@ -164,7 +164,7 @@ test("moveNodeToAnchor rejects moving a parent into its own descendant body", ()
 test("control terminal bodies accept actions but reject flow nodes", () => {
   const t = template()
   t.body.push({ id: "done", type: "finish", reason: "done", body: [] })
-  expect(insertNodeAtAnchor(t, { kind: "inside", parentPath: [], index: 3, slot: "control" }, { id: "send_before_finish", type: "send", terminal: { kind: "index", value: 1 }, message: { parts: [{ kind: "text", text: "before finish" }] }, enter: true }).ok).toBe(true)
+  expect(insertNodeAtAnchor(t, { kind: "inside", parentPath: [], index: 3, slot: "control" }, { id: "send_before_finish", type: "send", terminal: { kind: "index", value: 1 }, message: { parts: [{ kind: "text", text: "before finish" }] }, ending: "cr" }).ok).toBe(true)
   expect(insertNodeAtAnchor(t, { kind: "inside", parentPath: [], index: 3, slot: "control" }, finishNode("nested_finish")).ok).toBe(false)
   expect(resolveBodyPath(t, [{ kind: "control", nodeId: "done" }])?.map((node) => node.id)).toEqual(["send_before_finish"])
 })

@@ -64,7 +64,7 @@ async function latestRunnerEvents(request: APIRequestContext) {
 
 function codexPromptTemplate(command: string) {
   return baseTemplate('codex_macro_send_prompt_gui', 'Codex Macro Send Prompt', [
-    { id: 'send_codex_prompt', type: 'send', terminal, message: { parts: [{ kind: 'text', text: command }] }, enter: true },
+    { id: 'send_codex_prompt', type: 'send', terminal, message: { parts: [{ kind: 'text', text: command }] }, ending: "cr" },
     { id: 'done', type: 'finish', reason: 'sent' },
   ])
 }

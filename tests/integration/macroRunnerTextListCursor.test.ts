@@ -119,7 +119,7 @@ test("text-list renders 1-based index key and value once while events stay zero/
                 { kind: "text", text: "/literal={{index}}/{{key}}/{{value}}/{{text}}" },
               ],
             },
-            enter: false,
+            ending: "none",
           },
         ],
       },
@@ -166,7 +166,7 @@ test("capture and extract resolve the artifact produced by the same text-list it
             type: "send",
             terminal: worker,
             message: { parts: [{ kind: "template", template: "{{value}}" }] },
-            enter: true,
+            ending: "cr",
           },
           {
             id: "capture_item",
@@ -189,7 +189,7 @@ test("capture and extract resolve the artifact produced by the same text-list it
             type: "send",
             terminal: reviewer,
             message: { parts: [{ kind: "artifact", source: { kind: "step_artifact", stepId: "extract_item", artifact: "extracted_text" } }] },
-            enter: false,
+            ending: "none",
           },
         ],
       },
@@ -215,13 +215,13 @@ test("nested count inherits the outer template binding and nested text-list shad
         type: "for",
         range: { kind: "text-list", items: [textListItem("OUT-A", "outer-a"), textListItem("OUT-B", "outer-b")] },
         body: [
-          { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, enter: false },
+          { id: "outer_before", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
           {
             id: "count_loop",
             type: "for",
             range: { kind: "count", count: 2 },
             body: [
-              { id: "count_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "count={{index}}/{{key}}/{{value}}" }] }, enter: false },
+              { id: "count_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "count={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
             ],
           },
           {
@@ -229,10 +229,10 @@ test("nested count inherits the outer template binding and nested text-list shad
             type: "for",
             range: { kind: "text-list", items: [textListItem("INNER-1", "inner-a"), textListItem("INNER-2", "inner-b")] },
             body: [
-              { id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner={{index}}/{{key}}/{{value}}" }] }, enter: false },
+              { id: "inner_send", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "inner={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
             ],
           },
-          { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, enter: false },
+          { id: "outer_after", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -277,7 +277,7 @@ test("parallel lane sends inherit the enclosing text-list binding", async () => 
                 label: "Docs",
                 terminal: worker,
                 body: [
-                  { id: "send_docs", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "docs={{index}}/{{key}}/{{value}}" }] }, enter: false },
+                  { id: "send_docs", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "docs={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
                   { id: "output_docs", type: "output", source: { kind: "none" } },
                 ],
               },
@@ -286,7 +286,7 @@ test("parallel lane sends inherit the enclosing text-list binding", async () => 
                 label: "Tests",
                 terminal: reviewer,
                 body: [
-                  { id: "send_tests", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "tests={{index}}/{{key}}/{{value}}" }] }, enter: false },
+                  { id: "send_tests", type: "send", terminal: reviewer, message: { parts: [{ kind: "template", template: "tests={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
                   { id: "output_tests", type: "output", source: { kind: "none" } },
                 ],
               },
@@ -330,9 +330,9 @@ test("duration wait resumes the current text-list occurrence without repeating i
         type: "for",
         range: { kind: "text-list", items: [textListItem("A", "key-a"), textListItem("B", "key-b")] },
         body: [
-          { id: "before_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, enter: false },
+          { id: "before_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
           { id: "duration_wait", type: "wait", mode: "duration", durationMs: 300 },
-          { id: "after_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, enter: false },
+          { id: "after_wait", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -368,10 +368,10 @@ test("user-continue and input resume each text-list occurrence without replaying
         type: "for",
         range: { kind: "text-list", items: [textListItem("first", "key-first"), textListItem("second", "key-second")] },
         body: [
-          { id: "before_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, enter: false },
+          { id: "before_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "before={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
           { id: "continue_wait", type: "wait", mode: "user-continue", prompt: { kind: "template", template: "Continue {{index}}/{{key}}/{{value}}" } },
-          { id: "input_item", type: "input", terminal: worker, prompt: { kind: "template", template: "Input {{index}}/{{key}}/{{value}}" }, allowEmpty: false, enter: false },
-          { id: "after_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, enter: false },
+          { id: "input_item", type: "input", terminal: worker, prompt: { kind: "template", template: "Input {{index}}/{{key}}/{{value}}" }, allowEmpty: false, ending: "none" },
+          { id: "after_interaction", type: "send", terminal: worker, message: { parts: [{ kind: "template", template: "after={{index}}/{{key}}/{{value}}" }] }, ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
@@ -426,14 +426,14 @@ test("a paused if body resumes its selected branch without recapturing, re-decid
               scope: { kind: "whole" },
             },
             body: [
-              { id: "chosen_before", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "chosen-before" }] }, enter: false },
+              { id: "chosen_before", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "chosen-before" }] }, ending: "none" },
               { id: "chosen_wait", type: "wait", mode: "duration", durationMs: 300 },
-              { id: "chosen_after", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "chosen-after" }] }, enter: false },
+              { id: "chosen_after", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "chosen-after" }] }, ending: "none" },
             ],
           },
         ],
         else: [
-          { id: "wrong_branch", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "wrong-branch" }] }, enter: false },
+          { id: "wrong_branch", type: "send", terminal: worker, message: { parts: [{ kind: "text", text: "wrong-branch" }] }, ending: "none" },
         ],
       },
     ]), h.manager.indexMap("local"))
