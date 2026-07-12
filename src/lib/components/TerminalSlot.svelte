@@ -2,25 +2,103 @@
   import { onDestroy, onMount } from 'svelte'
   import { Terminal } from '@xterm/xterm'
   import '@xterm/xterm/css/xterm.css'
-  import type { TerminalSnapshot } from '../protocol'
+  import type { TerminalRenderUpdate, TerminalViewSnapshot } from '../terminalViewState'
+  import { TerminalParserWritePump } from '../terminalParserWritePump'
   import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_WEIGHT, TERMINAL_FONT_WEIGHT_BOLD } from '../terminalFont'
   import type { TerminalDeckClient } from '../terminalDeckClient'
 
+  const RENDERED_TAIL_CODE_UNIT_LIMIT = 8192
+  const DEBUG_COUNTER_LIMIT = 999_999_999
+
   let { terminal, client } = $props<{
-    terminal: TerminalSnapshot
+    terminal: TerminalViewSnapshot
     client: TerminalDeckClient | null
   }>()
 
   let host: HTMLDivElement
   let xterm: Terminal | null = null
   let resizeObserver: ResizeObserver | null = null
-  let renderedTerminalId: string | null = null
-  let renderedReplay: string[] = []
+  let mounted = false
+  let appliedRevision = 0
+  let renderedTail = ''
+  let writeCount = 0
+  let enqueuedCodeUnits = 0
+  let parserConsumedCodeUnits = 0
+  let fitCount = 0
   let sentCols = 0
   let sentRows = 0
 
+  const parserPump = new TerminalParserWritePump({
+    onChunkWrite: (_data, _update, target) => {
+      if (!mounted || target !== xterm) return
+      writeCount = incrementDebugCounter(writeCount)
+      host.dataset.terminalWriteCount = String(writeCount)
+    },
+    onChunkParsed: (data, _update, target) => {
+      if (!mounted || target !== xterm) return
+      parserConsumedCodeUnits = addDebugCount(parserConsumedCodeUnits, data.length)
+      host.dataset.terminalParserConsumedCodeUnits = String(parserConsumedCodeUnits)
+    },
+    onUpdateParsed: (update, target) => {
+      const current = xterm
+      if (!mounted || !current || target !== current) return
+      renderedTail = update.kind === 'replace'
+        ? boundedTail(update.data)
+        : appendBoundedTail(renderedTail, update.data)
+      host.dataset.renderedTail = renderedTail
+      host.dataset.renderedRevision = String(update.revision)
+      current.scrollToBottom()
+    },
+  })
+
   onMount(() => {
-    xterm = new Terminal({
+    mounted = true
+    resizeObserver = new ResizeObserver(() => fitToHost())
+    resizeObserver.observe(host)
+    applyRenderUpdate(terminal.renderUpdate)
+  })
+
+  $effect(() => {
+    const update = terminal.renderUpdate
+    if (!mounted || update.revision === appliedRevision) return
+    applyRenderUpdate(update)
+  })
+
+  onDestroy(() => {
+    mounted = false
+    parserPump.setTarget(null)
+    resizeObserver?.disconnect()
+    xterm?.dispose()
+  })
+
+  function applyRenderUpdate(update: TerminalRenderUpdate) {
+    appliedRevision = update.revision
+    if (!xterm) {
+      recreateXterm({ ...update, kind: 'replace', data: terminal.replay.join('') })
+      return
+    }
+    if (update.kind === 'replace') {
+      recreateXterm(update)
+      return
+    }
+    writeToParser(update)
+  }
+
+  function recreateXterm(update: TerminalRenderUpdate) {
+    parserPump.setTarget(null)
+    xterm?.dispose()
+    host.replaceChildren()
+    renderedTail = ''
+    enqueuedCodeUnits = 0
+    parserConsumedCodeUnits = 0
+    host.dataset.renderedTail = ''
+    host.dataset.renderedRevision = '0'
+    host.dataset.terminalEnqueuedCodeUnits = '0'
+    host.dataset.terminalParserConsumedCodeUnits = '0'
+    sentCols = 0
+    sentRows = 0
+
+    const next = new Terminal({
       cols: terminal.cols,
       rows: terminal.rows,
       convertEol: true,
@@ -32,46 +110,25 @@
       fontSize: 14,
       lineHeight: 1.2,
     })
-    xterm.open(host)
-    xterm.onData((data) => client?.send({ type: 'terminal_input', terminalId: terminal.terminalId, data }))
-    resizeObserver = new ResizeObserver(() => fitToHost())
-    resizeObserver.observe(host)
-    syncReplay()
-    requestAnimationFrame(() => fitToHost())
-  })
-
-  $effect(() => {
-    if (!xterm) return
-    syncReplay()
+    xterm = next
+    next.open(host)
+    const terminalId = terminal.terminalId
+    next.onData((data) => client?.send({ type: 'terminal_input', terminalId, data }))
+    parserPump.setTarget(next)
     fitToHost()
-  })
+    writeToParser(update)
+  }
 
-  onDestroy(() => {
-    resizeObserver?.disconnect()
-    xterm?.dispose()
-  })
-
-  function syncReplay() {
-    if (!xterm) return
-    const needsRebuild = renderedTerminalId !== terminal.terminalId
-      || terminal.replay.length < renderedReplay.length
-      || renderedReplay.some((chunk, index) => terminal.replay[index] !== chunk)
-
-    if (needsRebuild) {
-      xterm.clear()
-      for (const chunk of terminal.replay) xterm.write(chunk)
-    } else {
-      for (const chunk of terminal.replay.slice(renderedReplay.length)) xterm.write(chunk)
-    }
-
-    xterm.scrollToBottom()
-    renderedTerminalId = terminal.terminalId
-    renderedReplay = [...terminal.replay]
-    host.dataset.renderedReplay = renderedReplay.join('')
+  function writeToParser(update: TerminalRenderUpdate) {
+    enqueuedCodeUnits = addDebugCount(enqueuedCodeUnits, update.data.length)
+    host.dataset.terminalEnqueuedCodeUnits = String(enqueuedCodeUnits)
+    parserPump.enqueue(update)
   }
 
   function fitToHost() {
     if (!xterm || !host) return
+    fitCount = incrementDebugCounter(fitCount)
+    host.dataset.terminalFitCount = String(fitCount)
     const terminalElement = host.querySelector('.xterm') as HTMLElement | null
     const fitRect = terminalElement?.getBoundingClientRect() ?? host.getBoundingClientRect()
     if (fitRect.width < 40 || fitRect.height < 40) return
@@ -103,6 +160,27 @@
       height: measuredHeight > 0 ? measuredHeight : 20,
     }
   }
+
+  function boundedTail(value: string): string {
+    return value.length <= RENDERED_TAIL_CODE_UNIT_LIMIT
+      ? value
+      : value.slice(value.length - RENDERED_TAIL_CODE_UNIT_LIMIT)
+  }
+
+  function appendBoundedTail(current: string, data: string): string {
+    if (data.length >= RENDERED_TAIL_CODE_UNIT_LIMIT) {
+      return data.slice(data.length - RENDERED_TAIL_CODE_UNIT_LIMIT)
+    }
+    return boundedTail(current + data)
+  }
+
+  function incrementDebugCounter(value: number): number {
+    return Math.min(DEBUG_COUNTER_LIMIT, value + 1)
+  }
+
+  function addDebugCount(value: number, increment: number): number {
+    return Math.min(DEBUG_COUNTER_LIMIT, value + increment)
+  }
 </script>
 
 <section class="terminal-pane" data-testid="terminal-pane" data-terminal-id={terminal.terminalId}>
@@ -113,5 +191,15 @@
     </div>
     <span>{terminal.backend} · {terminal.status}</span>
   </div>
-  <div class="terminal-host" data-testid="terminal-host" bind:this={host}></div>
+  <div
+    class="terminal-host"
+    data-testid="terminal-host"
+    data-rendered-tail=""
+    data-rendered-revision="0"
+    data-terminal-write-count="0"
+    data-terminal-enqueued-code-units="0"
+    data-terminal-parser-consumed-code-units="0"
+    data-terminal-fit-count="0"
+    bind:this={host}
+  ></div>
 </section>

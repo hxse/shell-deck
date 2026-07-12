@@ -36,9 +36,9 @@ test('macro GUI smoke uses a real shell terminal for send capture and text_match
   await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 10000 })
-  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_AUTO_029/)
-  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_DIRECT_029/)
-  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_REAL_MACRO_BRACKETED_029/)
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-tail', /SD_REAL_MACRO_AUTO_029/)
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-tail', /SD_REAL_MACRO_DIRECT_029/)
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-tail', /SD_REAL_MACRO_BRACKETED_029/)
 
   const runsResponse = await request.get('/api/configs/' + configId + '/runs')
   const runsBody = await runsResponse.json() as { runs: Array<{ runId: string }> }

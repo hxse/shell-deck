@@ -28,7 +28,7 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
 
   await firstHost.click()
   await first.keyboard.type('ui-live')
-  await expect(firstHost).toHaveAttribute('data-rendered-replay', /ui-live/)
+  await expect(firstHost).toHaveAttribute('data-rendered-tail', /ui-live/)
   const terminalSizing = await firstHost.evaluate((host) => {
     const xterm = host.querySelector('.xterm') as HTMLElement | null
     const viewport = host.querySelector('.xterm-viewport') as HTMLElement | null
@@ -42,33 +42,34 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
   expect(terminalSizing.viewportBackground).toBe('rgb(17, 19, 22)')
   await first.keyboard.press('Enter')
 
-  await expect(firstHost).toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)
-  await expect(secondHost).toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)
+  await expect(firstHost).toHaveAttribute('data-rendered-tail', /ECHO:ui-live/)
+  await expect(secondHost).toHaveAttribute('data-rendered-tail', /ECHO:ui-live/)
 
   await first.locator(`[data-testid="terminal-tab"][data-terminal-id="${secondTerminalId}"]`).click()
   const firstPageSecondHost = first.locator(`[data-testid="terminal-pane"][data-terminal-id="${secondTerminalId}"]`).getByTestId('terminal-host')
-  await expect(firstPageSecondHost).not.toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)
+  await expect(firstPageSecondHost).not.toHaveAttribute('data-rendered-tail', /ECHO:ui-live/)
   await firstPageSecondHost.click()
   await first.keyboard.type('second-only')
   await first.keyboard.press('Enter')
-  await expect(firstPageSecondHost).toHaveAttribute('data-rendered-replay', /ECHO:second-only/)
+  await expect(firstPageSecondHost).toHaveAttribute('data-rendered-tail', /ECHO:second-only/)
 
   await first.locator(`[data-testid="terminal-tab"][data-terminal-id="${terminalId}"]`).click()
-  await expect(firstHost).toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)
-  await expect(firstHost).not.toHaveAttribute('data-rendered-replay', /ECHO:second-only/)
+  await expect(firstHost).toHaveAttribute('data-rendered-tail', /READY/)
+  await expect(firstHost).toHaveAttribute('data-rendered-tail', /ECHO:ui-live/)
+  await expect(firstHost).not.toHaveAttribute('data-rendered-tail', /ECHO:second-only/)
 
   await first.getByRole('button', { name: 'New fake' }).click()
   await expect(first.getByTestId('terminal-tab')).toHaveCount(3)
   const createdTerminalId = await first.getByTestId('terminal-tab').nth(2).getAttribute('data-terminal-id')
   expect(createdTerminalId).toBeTruthy()
   const createdHost = first.locator(`[data-testid="terminal-pane"][data-terminal-id="${createdTerminalId}"]`).getByTestId('terminal-host')
-  await expect(createdHost).toHaveAttribute('data-rendered-replay', /READY/)
-  await expect(createdHost).not.toHaveAttribute('data-rendered-replay', /ECHO:ui-live|ECHO:second-only/)
+  await expect(createdHost).toHaveAttribute('data-rendered-tail', /READY/)
+  await expect(createdHost).not.toHaveAttribute('data-rendered-tail', /ECHO:ui-live|ECHO:second-only/)
 
   const late = await context.newPage()
   await late.goto('/?configId=terminal-deck-e2e')
   await expect(late.getByTestId('terminal-tab')).toHaveCount(3)
-  await expect(late.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`).getByTestId('terminal-host')).toHaveAttribute('data-rendered-replay', /ECHO:ui-live/)
+  await expect(late.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`).getByTestId('terminal-host')).toHaveAttribute('data-rendered-tail', /ECHO:ui-live/)
 
   await expect(first.getByTestId('terminal-tab').first()).toHaveAttribute('draggable', 'false')
   await first.getByTestId('settings-button').click()

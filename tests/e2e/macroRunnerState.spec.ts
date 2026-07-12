@@ -79,13 +79,13 @@ test("macro runner starts selected template, pauses, isolates configs, sends inp
   await otherPage.getByTestId("macro-template-summary").click()
   await otherPage.getByTestId("macro-control-start").click()
   await expect(otherPage.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
-  await expect(otherPage.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:other-run/)
+  await expect(otherPage.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-tail", /ECHO:other-run/)
   await otherPage.close()
 
   await page.getByTestId("macro-run-input-text").fill("from-ui")
   await page.getByTestId("macro-run-input-submit").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
-  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:from-ui/)
+  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-tail", /ECHO:from-ui/)
 })
 
 test("macro runner auto-saves draft before start and completes send", async ({ page, request }) => {
@@ -103,7 +103,7 @@ test("macro runner auto-saves draft before start and completes send", async ({ p
   await page.getByTestId("macro-control-start").click()
 
   await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
-  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:draft-send-only/)
+  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-tail", /ECHO:draft-send-only/)
 })
 
 test("macro runner auto-refreshes after delayed live run completes without manual refresh", async ({ page, request }) => {
@@ -119,5 +119,5 @@ test("macro runner auto-refreshes after delayed live run completes without manua
   await page.getByTestId("macro-control-start").click()
   await expect(page.getByTestId("macro-run-status")).toContainText("running")
   await expect(page.getByTestId("macro-run-status")).toContainText("completed", { timeout: 5000 })
-  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-replay", /ECHO:delayed-run/)
+  await expect(page.getByTestId("terminal-host").first()).toHaveAttribute("data-rendered-tail", /ECHO:delayed-run/)
 })

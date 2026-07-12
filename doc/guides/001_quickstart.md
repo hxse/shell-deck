@@ -50,6 +50,8 @@ Flow V2 does not expose `parse` or `ai-json` as macro actions. These parser-mode
 
 Open two browser tabs to the same URL and config. Terminal output, terminal order, aliases, and replay are synchronized by the server. A fresh `just start` opens two real shell terminals by default.
 
+While a shell tab stays open, its active xterm consumes the complete live output stream. Real PTY output is coalesced in exact order with a 4ms / 256KiB server bound. Each browser connection has a 64MiB in-memory pending cap so WebSocket backpressure preserves FIFO delivery instead of silently dropping output; a client that exceeds the cap is closed loudly without pausing other clients. The browser feeds each logical update to xterm through an ordered `32Ki × 4` callback pump so a delayed animation frame cannot turn the remaining transcript into one unbounded parser write. For refresh, late browser tabs, and tab remount, shell/fake history is intentionally a bounded tail: the server retains at most 2MiB of UTF-8 replay content and the browser retains at most 2Mi UTF-16 code units. Very old scrollback may therefore be absent after reopening a tab. Text tabs are user-authored documents and keep their complete content instead of using the shell replay limit.
+
 Macro terminal refs use one of these complete JSON objects:
 
 - `{ "kind": "index", "value": 1 }`: convenient dynamic position

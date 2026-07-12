@@ -7,7 +7,7 @@ import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { RunEventStore } from '../src/lib/runLog/runEventStore'
 import { isRunEventKind } from '../src/lib/runLog/runEventSchema'
 import type { AppendRunEventInput } from '../src/lib/runLog/runEventTypes'
-import type { ClientMessage, TerminalBackendKind } from '../src/lib/protocol'
+import type { ClientMessage, ServerMessage, TerminalBackendKind } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import { TerminalDeckManager } from './terminalDeckManager'
 import { MacroRunnerService } from './macroRunnerService'
@@ -17,6 +17,7 @@ import { UiLayoutStore } from '../src/lib/workspace/uiLayoutStore'
 import { PromptStore } from '../src/lib/prompts/promptStore'
 import { NotificationService } from './notificationService'
 import type { PromptScope, PromptScopeFilter } from '../src/lib/prompts/promptTypes'
+import { WebSocketSendQueue } from './webSocketSendQueue'
 
 export type ShellDeckServer = {
   url: string
@@ -78,14 +79,18 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     }
   }
 
-  const server = Bun.serve<{ clientId: string; configId: string }>({
+  const server = Bun.serve<{
+    clientId: string
+    configId: string
+    sender: WebSocketSendQueue | null
+  }>({
     hostname: host,
     port: options.port ?? 5177,
     async fetch(req, bunServer) {
       const url = new URL(req.url)
       if (url.pathname === '/ws') {
         const configId = parseConfigId(url.searchParams.get('configId'))
-        const upgraded = bunServer.upgrade(req, { data: { clientId: '', configId } })
+        const upgraded = bunServer.upgrade(req, { data: { clientId: '', configId, sender: null } })
         return upgraded ? undefined : new Response('upgrade failed', { status: 400 })
       }
 
@@ -97,19 +102,29 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     },
     websocket: {
       open(ws) {
-        const client = manager.connectClient(ws.data.configId, (message) => ws.send(JSON.stringify(message)))
+        const sender = new WebSocketSendQueue({
+          target: ws,
+          onFatal: (reason) => ws.close(1011, reason),
+        })
+        ws.data.sender = sender
+        const client = manager.connectClient(ws.data.configId, (message) => sender.send(JSON.stringify(message)))
         ws.data.clientId = client.clientId
       },
       message(ws, raw) {
+        const send = (reply: ServerMessage) => ws.data.sender?.send(JSON.stringify(reply))
         try {
           const payload = typeof raw === 'string' ? raw : raw.toString()
           const message = parseClientMessage(payload)
-          handleClientMessage(manager, ws.data.configId, message, (reply) => ws.send(JSON.stringify(reply)))
+          handleClientMessage(manager, ws.data.configId, message, send)
         } catch (error) {
-          ws.send(JSON.stringify({ type: 'terminal_error', configId: ws.data.configId, reason: error instanceof Error ? error.message : String(error) }))
+          send({ type: 'terminal_error', configId: ws.data.configId, reason: error instanceof Error ? error.message : String(error) })
         }
       },
+      drain(ws) {
+        ws.data.sender?.notifyDrain()
+      },
       close(ws) {
+        ws.data.sender?.dispose()
         if (ws.data.clientId) {
           manager.disconnectClient(ws.data.clientId)
         }
@@ -420,7 +435,7 @@ async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, 
   return serveStatic(url)
 }
 
-function handleClientMessage(manager: TerminalDeckManager, configId: string, message: ClientMessage, send: (message: unknown) => void) {
+function handleClientMessage(manager: TerminalDeckManager, configId: string, message: ClientMessage, send: (message: ServerMessage) => void) {
   if (message.type === 'request_snapshot') {
     send(manager.deckSnapshot(configId))
     return

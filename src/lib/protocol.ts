@@ -7,6 +7,7 @@ export type TerminalSnapshot = {
   type: 'terminal_snapshot'
   configId: string
   terminalId: string
+  launchId: string
   terminalAlias: string
   terminalIndex: number
   visualOrder: number

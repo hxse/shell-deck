@@ -47,7 +47,7 @@ test('real shell terminal target refs support index id and alias', async ({ page
   await page.getByTestId('macro-template-summary').click()
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('completed', { timeout: 10000 })
-  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_TARGET_ID_010/)
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-tail', /SD_TARGET_ID_010/)
   const runs = await (await request.get('/api/configs/' + configId + '/runs')).json() as { runs: Array<{ runId: string }> }
   const run = await (await request.get('/api/configs/' + configId + '/runs/' + runs.runs[0].runId)).json() as { run: { replay: { events: Array<{ kind: string; data: Record<string, unknown> }> } } }
   const sentTargets = run.run.replay.events.filter((event) => event.kind === 'terminal_text_sent').map((event) => event.data.terminalId)

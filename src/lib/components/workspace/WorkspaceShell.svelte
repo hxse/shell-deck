@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PromptUpdatedMessage, RunLogUpdatedMessage, TerminalIndexMapItem, TerminalSnapshot } from "../../protocol"
+  import type { TerminalViewSnapshot } from "../../terminalViewState"
   import type { TerminalDeckClient } from "../../terminalDeckClient"
   import type { MacroInsertionPaletteMode, WorkspacePanelKey, WorkspaceUiLayout } from "../../workspace/uiLayoutTypes"
   import TerminalSlot from "../TerminalSlot.svelte"
@@ -41,9 +42,9 @@
   } = $props<{
     configId: string
     client: TerminalDeckClient | null
-    terminals: TerminalSnapshot[]
+    terminals: TerminalViewSnapshot[]
     indexMap: TerminalIndexMapItem[]
-    activeTerminal: TerminalSnapshot | null
+    activeTerminal: TerminalViewSnapshot | null
     activeTerminalId: string | null
     draggingTerminalId: string | null
     tabDragEnabled: boolean

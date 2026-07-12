@@ -129,6 +129,7 @@ function snapshot(terminalId: string, terminalAlias: string, index: number, back
     type: "terminal_snapshot",
     configId: "local",
     terminalId,
+    launchId: "launch_" + terminalId,
     terminalAlias,
     terminalIndex: index,
     visualOrder: index,

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run server/httpServer.ts --ai-json-parser disabled",
+    "dev": "bun run scripts/dev.ts --ai-json-parser disabled",
     "start": "bun run server/httpServer.ts --ai-json-parser disabled",
     "stop": "bun run scripts/stop-server.ts",
     "build": "vite build",
@@ -41,7 +41,8 @@
     "test:027": "bun test tests/unit/flowV2Schema.test.ts tests/unit/macroTemplate.test.ts tests/unit/flowV2EditorCommands.test.ts tests/unit/scopedTextTemplateContract.test.ts tests/unit/macroExecutionCursor.test.ts tests/integration/macroTemplateHttpContract.test.ts tests/integration/macroRunnerHttpContract.test.ts tests/integration/macroRunnerFakeTerminal.test.ts tests/integration/macroRunnerTextListCursor.test.ts tests/integration/macroRunnerResumeCursor.test.ts tests/integration/parserRuntimeRunner.test.ts tests/integration/parallelAllRunner.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroNodeInsertion.spec.ts",
     "test:028": "bun test tests/unit/flowV2Schema.test.ts tests/unit/macroTemplate.test.ts tests/unit/runEventReplay.test.ts tests/integration/macroTemplateHttpContract.test.ts tests/integration/macroTerminalEndingRunner.test.ts tests/integration/macroRunnerFakeTerminal.test.ts tests/integration/macroRunnerResumeCursor.test.ts tests/integration/parallelAllRunner.test.ts tests/integration/realPtyBackend.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/macroRealShellGui.spec.ts tests/e2e/macroRealShellMatrix.spec.ts",
     "test:029": "bun test tests/unit/terminalInputDelivery.test.ts tests/unit/tabCapabilities.test.ts tests/unit/terminalDeckManager.test.ts tests/unit/flowV2Schema.test.ts tests/unit/macroTemplate.test.ts tests/unit/runEventReplay.test.ts tests/integration/macroTemplateHttpContract.test.ts tests/integration/macroTerminalEndingRunner.test.ts tests/integration/macroRunnerFakeTerminal.test.ts tests/integration/macroRunnerResumeCursor.test.ts tests/integration/parallelAllRunner.test.ts tests/integration/realPtyBackend.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroTemplateWorkbench.spec.ts tests/e2e/macroRealShellGui.spec.ts tests/e2e/macroRealShellMatrix.spec.ts",
-    "test:029:codex-tui": "bun test --timeout=60000 tests/integration/macroCodexTuiDelivery.test.ts"
+    "test:029:codex-tui": "bun test --timeout=60000 tests/integration/macroCodexTuiDelivery.test.ts",
+    "test:030": "bun test tests/unit/ptyOutputBatcher.test.ts tests/unit/terminalReplayByteLimit.test.ts tests/unit/terminalCloseFlush.test.ts tests/unit/terminalResetFlush.test.ts tests/unit/terminalLaunchSnapshot.test.ts tests/unit/terminalDeckClient.test.ts tests/unit/terminalViewState.test.ts tests/unit/terminalParserWritePump.test.ts tests/unit/webSocketSendQueue.test.ts tests/unit/terminalDeckManager.test.ts tests/unit/realPtyBackend.test.ts tests/integration/realPtyOutputBatching.test.ts tests/integration/realPtyResizeFlush.test.ts tests/integration/webSocketSendQueueBun.test.ts tests/integration/realPtyBackend.test.ts tests/integration/terminalDeck.ws.test.ts && bun run scripts/runPlaywright.ts --workers=1 tests/e2e/terminalDeck.ui.spec.ts tests/e2e/terminalLargeReplay.spec.ts"
   },
   "dependencies": {
     "@xterm/xterm": "6.0.0",

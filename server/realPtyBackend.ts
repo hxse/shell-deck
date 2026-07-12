@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { chunkInput, encodeControlFrame, HELPER_INPUT_CHANNEL } from './ptyControl'
+import { PtyOutputBatcher, type PtyOutputBatchScheduler } from './ptyOutputBatcher'
 import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } from './terminalBackend'
 
 export const DEFAULT_REAL_SHELL_PROMPT = '\\[\\e[1;92m\\][\\u@\\h:\\w]\\$\\[\\e[0m\\] '
@@ -15,6 +16,10 @@ export const DEFAULT_REAL_SHELL_ALIAS_LINES = [
   "alias diff='diff --color=auto'",
 ] as const
 
+export type RealPtyBackendDependencies = {
+  outputBatchScheduler?: PtyOutputBatchScheduler
+}
+
 export class RealPtyBackend implements TerminalBackend {
   readonly kind = 'real' as const
   readonly inputChannel = HELPER_INPUT_CHANNEL
@@ -23,13 +28,16 @@ export class RealPtyBackend implements TerminalBackend {
   readonly cwd: string
   #events: TerminalBackendEvent | null = null
   #child: ChildProcessWithoutNullStreams | null = null
+  #outputBatcher: PtyOutputBatcher | null = null
+  #outputBatchScheduler: PtyOutputBatchScheduler | undefined
   #closed = false
   cols: number
   rows: number
 
-  constructor(options: TerminalBackendOptions) {
+  constructor(options: TerminalBackendOptions, dependencies: RealPtyBackendDependencies = {}) {
     this.cols = options.cols
     this.rows = options.rows
+    this.#outputBatchScheduler = dependencies.outputBatchScheduler
     this.shell = options.shell ?? process.env.SHELL ?? '/run/current-system/sw/bin/bash'
     this.cwd = defaultRealShellCwd()
     this.shellDeckEnv = {
@@ -54,10 +62,25 @@ export class RealPtyBackend implements TerminalBackend {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.#child = child
-    child.stdout.on('data', (data) => events.onData(data.toString()))
-    child.stderr.on('data', (data) => events.onError(new Error(data.toString().trim())))
-    child.on('error', (error) => events.onError(error))
-    child.on('exit', (code, signal) => {
+    const outputBatcher = new PtyOutputBatcher({
+      onBatch: (data) => events.onData(data),
+      ...(this.#outputBatchScheduler ? { scheduler: this.#outputBatchScheduler } : {}),
+    })
+    this.#outputBatcher = outputBatcher
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (data: string) => outputBatcher.push(data))
+    child.stderr.on('data', (data: string) => {
+      outputBatcher.flush()
+      events.onError(new Error(data.trim()))
+    })
+    child.on('error', (error) => {
+      outputBatcher.flush()
+      events.onError(error)
+    })
+    child.on('close', (code, signal) => {
+      outputBatcher.flush()
+      this.#outputBatcher = null
       this.#closed = true
       events.onExit(code, signal)
     })
@@ -73,6 +96,7 @@ export class RealPtyBackend implements TerminalBackend {
   }
 
   resize(cols: number, rows: number): void {
+    this.#outputBatcher?.flush()
     this.cols = cols
     this.rows = rows
     if (this.#closed || !this.#child?.stdin.writable) {
@@ -85,6 +109,7 @@ export class RealPtyBackend implements TerminalBackend {
     if (this.#closed) {
       return
     }
+    this.#outputBatcher?.flush()
     this.#closed = true
     if (this.#child?.stdin.writable) {
       this.#child.stdin.write(encodeControlFrame({ type: 'close' }))

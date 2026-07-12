@@ -16,15 +16,15 @@ start-codex-ai *args:
 stop *args:
     bun run scripts/stop-server.ts {{args}}
 
-# Development server entry. The server serves Vite-built assets when present and exposes WebSocket APIs.
+# Development entry: Vite serves the Svelte UI with HMR; Bun serves API and application WebSocket traffic.
 dev *args:
-    bun run server/httpServer.ts --ai-json-parser disabled {{args}}
+    bun run scripts/dev.ts --ai-json-parser disabled {{args}}
 
 dev-mock-ai *args:
-    bun run server/httpServer.ts --ai-json-parser mock {{args}}
+    bun run scripts/dev.ts --ai-json-parser mock {{args}}
 
 dev-codex-ai *args:
-    bun run server/httpServer.ts --ai-json-parser codex-exec {{args}}
+    bun run scripts/dev.ts --ai-json-parser codex-exec {{args}}
 
 check:
     bun run check
@@ -142,6 +142,12 @@ test-029:
 
 test-029-codex-tui:
     bun run test:029:codex-tui
+
+debug-030-large-replay *args:
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/terminalLargeReplay.spec.ts --grep "real PTY 37 MB" {{args}}
+
+test-030:
+    bun run test:030
 
 notification-config-init:
     mkdir -p .shell-deck

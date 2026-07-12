@@ -4,6 +4,8 @@
 
 Each terminal has a stable id generated as `term_<shortUuid>`. Terminal indexes are dynamic and follow current visual order. Terminal aliases are tab names and follow the terminal id when tabs are reordered. Default aliases are backend-specific: shell/fake/real tabs use `shell_N`, and text tabs use `text_N`.
 
+Each backend launch also has a required `launchId`. A terminal reset preserves `terminalId` and alias but creates a new `launchId`; snapshots expose both so browser parser state never crosses launch generations.
+
 Terminal refs use structured JSON:
 
 ```json
@@ -28,6 +30,16 @@ The browser/xterm view displays backend PTY output. The frontend does not local-
 ## Synchronization
 
 The server owns terminal replay and broadcasts `pty_output`, terminal snapshots, and index maps to connected browser tabs. Late clients receive replay so existing output is visible after opening or refresh.
+
+Real PTY stdout is UTF-8 stream-decoded and coalesced in exact order with a 4ms window and 256KiB flush threshold before it reaches replay/fan-out. This batching is program-agnostic; shell-deck does not inspect Codex or any other foreground process.
+
+Each browser connection has an independent, connection-local WebSocket pending queue capped at 64MiB of serialized UTF-8 text frames. A Bun send result below zero means the current frame was accepted with backpressure and must not be resent; later frames wait in FIFO order. A zero result, send failure, or queue overflow closes that client loudly instead of dropping output silently. Drain continuation is scheduled with `setImmediate` after Bun's native drain callback returns, because synchronous or microtask continuation may fail to re-arm another drain after it reaches backpressure again. This queue is not durable and does not pause the shared PTY; reconnect, cross-connection replay beyond the normal 2MiB terminal tail, and global PTY flow control are not provided.
+
+Shell/fake replay is a whole-chunk byte-bounded tail. `TerminalDeckManager.replayByteLimit` is the only retention option, defaults to 2MiB, and must be a positive integer; invalid values fail with `invalid_replay_byte_limit`. A single oversized chunk keeps a valid UTF-8 suffix. Logically discarded array entries are also compacted by bytes: discarded physical strings stay below the replay limit, so default post-append shell replay storage stays below 4MiB rather than retaining an entire large burst behind a moved start index. Text tabs retain their complete user-authored content and are not truncated by the shell replay limit.
+
+Each terminal snapshot carries required `launchId` generation identity. Reset keeps `terminalId` but creates a new `launchId`; the browser must replace its parser generation even when old and new replay text happen to match.
+
+The browser coalesces consecutive `pty_output` per terminal at the animation-frame boundary. Its terminal view carries explicit append/replace render revisions, keeps at most 2Mi UTF-16 code units for shell tab remount, and sends only the current delta to a mounted xterm. Each logical update is fed through a generation-aware callback pump as ordered chunks of at most 32Ki UTF-16 code units, without splitting surrogate pairs and with at most four xterm writes outstanding inside that update. The next logical update cannot start until every callback for the current one completes. A replace creates a new xterm parser generation, clears queued old work, and prevents stale callbacks from publishing state afterward. Parsed test/debug state is limited to the latest 8192 code units; current-generation enqueue/consumed counters advance at the pump and xterm callback boundaries, and reset on parser recreation. Complete terminal history is never mirrored into a DOM attribute. Terminal fitting is driven by mount/recreation and `ResizeObserver`, not by output arrival.
 
 ## Reorder And Alias
 

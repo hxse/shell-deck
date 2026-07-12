@@ -23,8 +23,8 @@ test('Codex-in-shell GUI smoke uses macro send then covers terminal-buffer and A
   const sendRunner = await latestRunnerEvents(request)
   expect(sendRunner.some((event) => event.kind === 'terminal_text_sent' && event.stepId === 'send_codex_prompt')).toBe(true)
 
-  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /SD_CODEX_GUI_010/, { timeout: 150_000 })
-  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-replay', /hook: Stop Completed/, { timeout: 150_000 })
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-tail', /SD_CODEX_GUI_010/, { timeout: 150_000 })
+  await expect(page.getByTestId('terminal-host').first()).toHaveAttribute('data-rendered-tail', /hook: Stop Completed/, { timeout: 150_000 })
 
   await importTemplate(request, terminalBufferTemplate())
   await page.reload()

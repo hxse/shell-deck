@@ -7,7 +7,8 @@ import { RealPtyBackend } from './realPtyBackend'
 import { TextBoxBackend } from './textBoxBackend'
 import type { TerminalBackend, TerminalBackendFactory } from './terminalBackend'
 
-const DEFAULT_REPLAY_LIMIT = 500
+export const DEFAULT_REPLAY_BYTE_LIMIT = 2 * 1024 * 1024
+const REPLAY_COMPACT_THRESHOLD = 1024
 
 export type DeckClient = {
   clientId: string
@@ -25,6 +26,9 @@ type TerminalSlot = {
   cols: number
   rows: number
   replay: string[]
+  replayStart: number
+  replayBytes: number
+  replayDiscardedBytes: number
   exitCode: number | null
   signal: string | null
 }
@@ -49,13 +53,17 @@ function defaultAliasPrefix(backend: TerminalBackendKind): string {
 export class TerminalDeckManager {
   readonly configs = new Map<string, ConfigScope>()
   readonly clients = new Map<string, DeckClient>()
-  readonly replayLimit: number
+  readonly replayByteLimit: number
   readonly backendFactory: TerminalBackendFactory
   private terminalEnvProvider: (configId: string, terminalId: string, launchId: string) => Record<string, string | undefined> = () => ({})
   #nextClient = 1
 
-  constructor(options: { replayLimit?: number; backendFactory?: TerminalBackendFactory } = {}) {
-    this.replayLimit = options.replayLimit ?? DEFAULT_REPLAY_LIMIT
+  constructor(options: { replayByteLimit?: number; backendFactory?: TerminalBackendFactory } = {}) {
+    const replayByteLimit = options.replayByteLimit ?? DEFAULT_REPLAY_BYTE_LIMIT
+    if (!Number.isInteger(replayByteLimit) || replayByteLimit <= 0) {
+      throw new Error('invalid_replay_byte_limit')
+    }
+    this.replayByteLimit = replayByteLimit
     this.backendFactory = options.backendFactory ?? defaultBackendFactory
   }
 
@@ -104,6 +112,9 @@ export class TerminalDeckManager {
       cols,
       rows,
       replay: [],
+      replayStart: 0,
+      replayBytes: 0,
+      replayDiscardedBytes: 0,
       exitCode: null,
       signal: null,
     }
@@ -171,6 +182,9 @@ export class TerminalDeckManager {
       throw new Error('terminal_not_text_box:' + terminal.terminalId)
     }
     terminal.replay = [content]
+    terminal.replayStart = 0
+    terminal.replayBytes = Buffer.byteLength(content)
+    terminal.replayDiscardedBytes = 0
     this.broadcast(configId, this.terminalSnapshot(terminal))
     return { ok: true as const }
   }
@@ -207,6 +221,9 @@ export class TerminalDeckManager {
       cols: oldTerminal.cols,
       rows: oldTerminal.rows,
       replay: [],
+      replayStart: 0,
+      replayBytes: 0,
+      replayDiscardedBytes: 0,
       exitCode: null,
       signal: null,
     }
@@ -238,9 +255,9 @@ export class TerminalDeckManager {
     }
 
     nextTerminal.status = 'running'
+    oldTerminal.backend.close()
     config.terminals.set(nextTerminal.terminalId, nextTerminal)
     committed = true
-    oldTerminal.backend.close()
     this.broadcast(configId, this.terminalSnapshot(nextTerminal))
     for (const data of pendingData) {
       this.emitOutput(nextTerminal, data)
@@ -278,9 +295,9 @@ export class TerminalDeckManager {
   closeTerminal(configId: string, ref: TerminalRef | string | number) {
     const config = this.configOrThrow(configId)
     const terminal = this.resolveTerminal(configId, ref)
+    terminal.backend.close()
     config.terminals.delete(terminal.terminalId)
     config.store.removeTerminal(terminal.terminalId)
-    terminal.backend.close()
     this.broadcastIndexMap(configId)
     this.broadcast(configId, this.deckSnapshot(configId))
     return { ok: true as const }
@@ -288,7 +305,7 @@ export class TerminalDeckManager {
 
   requestReplay(configId: string, ref: TerminalRef | string | number): ServerMessage {
     const terminal = this.resolveTerminal(configId, ref)
-    return { type: 'terminal_replay', configId, terminalId: terminal.terminalId, replay: [...terminal.replay] }
+    return { type: 'terminal_replay', configId, terminalId: terminal.terminalId, replay: this.replayChunks(terminal) }
   }
 
   broadcastConfigMessage(configId: string, message: ServerMessage): void {
@@ -329,6 +346,7 @@ export class TerminalDeckManager {
       type: 'terminal_snapshot',
       configId: terminal.configId,
       terminalId: terminal.terminalId,
+      launchId: terminal.launchId,
       terminalAlias: config.store.aliasOf(terminal.terminalId),
       terminalIndex,
       visualOrder: terminalIndex,
@@ -336,7 +354,7 @@ export class TerminalDeckManager {
       cols: terminal.cols,
       rows: terminal.rows,
       backend: terminal.backendKind,
-      replay: [...terminal.replay],
+      replay: this.replayChunks(terminal),
       exitCode: terminal.exitCode,
       signal: terminal.signal,
     }
@@ -344,10 +362,7 @@ export class TerminalDeckManager {
 
   private emitOutput(terminal: TerminalSlot, data: string) {
     if (!this.isCurrentTerminal(terminal)) return
-    terminal.replay.push(data)
-    if (terminal.replay.length > this.replayLimit) {
-      terminal.replay.splice(0, terminal.replay.length - this.replayLimit)
-    }
+    this.appendReplay(terminal, data)
     this.broadcast(terminal.configId, {
       type: 'pty_output',
       configId: terminal.configId,
@@ -355,6 +370,46 @@ export class TerminalDeckManager {
       data,
       source: 'pty',
     })
+  }
+
+  private appendReplay(terminal: TerminalSlot, data: string): void {
+    const dataBytes = Buffer.byteLength(data)
+    if (terminal.backendKind === 'text') {
+      terminal.replay.push(data)
+      terminal.replayBytes += dataBytes
+      return
+    }
+    if (dataBytes > this.replayByteLimit) {
+      const tail = utf8Tail(data, this.replayByteLimit)
+      terminal.replay = tail.length > 0 ? [tail] : []
+      terminal.replayStart = 0
+      terminal.replayBytes = Buffer.byteLength(tail)
+      terminal.replayDiscardedBytes = 0
+      return
+    }
+    terminal.replay.push(data)
+    terminal.replayBytes += dataBytes
+    while (terminal.replayBytes > this.replayByteLimit && terminal.replayStart < terminal.replay.length) {
+      const discardedBytes = Buffer.byteLength(terminal.replay[terminal.replayStart])
+      terminal.replayBytes -= discardedBytes
+      terminal.replayDiscardedBytes += discardedBytes
+      terminal.replayStart += 1
+    }
+    this.compactReplay(terminal)
+  }
+
+  private replayChunks(terminal: TerminalSlot): string[] {
+    return terminal.replay.slice(terminal.replayStart)
+  }
+
+  private compactReplay(terminal: TerminalSlot): void {
+    if (terminal.replayStart === 0) return
+    const discardedBytesAreBounded = terminal.replayDiscardedBytes < this.replayByteLimit
+    const discardedChunksAreSparse = terminal.replayStart < REPLAY_COMPACT_THRESHOLD || terminal.replayStart * 2 < terminal.replay.length
+    if (discardedBytesAreBounded && discardedChunksAreSparse) return
+    terminal.replay = terminal.replay.slice(terminal.replayStart)
+    terminal.replayStart = 0
+    terminal.replayDiscardedBytes = 0
   }
 
   private markClosed(terminal: TerminalSlot, exitCode: number | null, signal: string | null) {
@@ -416,6 +471,13 @@ export class TerminalDeckManager {
     }
     return terminal
   }
+}
+
+function utf8Tail(data: string, maxBytes: number): string {
+  const encoded = Buffer.from(data)
+  let start = Math.max(0, encoded.length - maxBytes)
+  while (start < encoded.length && (encoded[start] & 0xc0) === 0x80) start += 1
+  return encoded.subarray(start).toString('utf8')
 }
 
 

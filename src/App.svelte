@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { MacroNotificationMessage, MacroNotificationSound, PromptUpdatedMessage, RunLogUpdatedMessage, ServerMessage, TerminalSnapshot } from './lib/protocol'
   import { TerminalDeckClient } from './lib/terminalDeckClient'
+  import { TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
   import NoticeStack, { type NoticeItem } from './lib/components/workspace/NoticeStack.svelte'
   import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
   import { UiLayoutClient } from './lib/workspace/uiLayoutClient'
@@ -65,10 +66,11 @@
     }
   }
 
+  const terminalViews = new TerminalViewStateStore()
   let configId = $state(initialConfigId())
   let connected = $state(false)
   let client = $state<TerminalDeckClient | null>(null)
-  let terminals = $state<TerminalSnapshot[]>([])
+  let terminals = $state<TerminalViewSnapshot[]>([])
   let indexMap = $state<Array<{ index: number; terminalId: string; terminalAlias: string }>>([])
   let activeTerminalId = $state<string | null>(null)
   let draggingTerminalId = $state<string | null>(null)
@@ -90,6 +92,9 @@
   let activeTerminal = $derived(terminals.find((terminal) => terminal.terminalId === activeTerminalId) ?? terminals[0] ?? null)
 
   $effect(() => {
+    terminalViews.clear()
+    terminals = []
+    indexMap = []
     const deck = new TerminalDeckClient({
       configId,
       onOpen: () => { connected = true },
@@ -142,7 +147,7 @@
 
   function handleMessage(message: ServerMessage) {
     if (message.type === 'deck_snapshot') {
-      terminals = message.terminals
+      terminals = terminalViews.mergeDeck(message.terminals, terminals)
       indexMap = message.indexMap
     }
     if (message.type === 'terminal_snapshot') {
@@ -382,23 +387,24 @@
 
   function upsertTerminal(snapshot: TerminalSnapshot) {
     const existing = terminals.findIndex((terminal) => terminal.terminalId === snapshot.terminalId)
+    const view = terminalViews.mergeSnapshot(snapshot, existing === -1 ? undefined : terminals[existing])
     if (existing === -1) {
-      terminals = [...terminals, snapshot].sort((a, b) => a.terminalIndex - b.terminalIndex)
+      terminals = [...terminals, view].sort((a, b) => a.terminalIndex - b.terminalIndex)
       activeTerminalId = snapshot.terminalId
       return
     }
-    terminals = terminals.map((terminal) => terminal.terminalId === snapshot.terminalId ? snapshot : terminal).sort((a, b) => a.terminalIndex - b.terminalIndex)
+    terminals = terminals.map((terminal) => terminal.terminalId === snapshot.terminalId ? view : terminal).sort((a, b) => a.terminalIndex - b.terminalIndex)
   }
 
   function appendTerminalReplay(terminalId: string, data: string) {
     terminals = terminals.map((terminal) => terminal.terminalId === terminalId
-      ? { ...terminal, replay: [...terminal.replay, data] }
+      ? terminalViews.append(terminal, data)
       : terminal)
   }
 
   function replaceTerminalReplay(terminalId: string, replay: string[]) {
     terminals = terminals.map((terminal) => terminal.terminalId === terminalId
-      ? { ...terminal, replay: [...replay] }
+      ? terminalViews.replaceReplay(terminal, replay)
       : terminal)
   }
 

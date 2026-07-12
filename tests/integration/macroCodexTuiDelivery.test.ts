@@ -26,7 +26,7 @@ test('real Codex TUI accepts Auto-resolved bracketed /quit plus CR from Macro ru
   mkdirSync(workspace, { recursive: true })
   writeFileSync(join(codexHome, 'config.toml'), codexConfig(workspace))
 
-  const manager = new TerminalDeckManager({ replayLimit: 2000 })
+  const manager = new TerminalDeckManager({ replayByteLimit: 2 * 1024 * 1024 })
   manager.setTerminalEnvProvider(() => ({
     CODEX_HOME: codexHome,
     OPENAI_API_KEY: 'sk-shell-deck-rejected-loopback',
