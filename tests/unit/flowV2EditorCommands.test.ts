@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, insertNodeAtAnchor, isInsertionAnchorValid, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, resolveBodyPath, type BodyPath } from "../../src/lib/macro/flowV2EditorCommands"
+import { canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, insertElifBranchAfter, insertNodeAtAnchor, isInsertionAnchorValid, moveNodeAtPosition, moveNodeToAnchor, removeElseFromIfNode, removeIfBranchAt, removeNodeAtPosition, resolveBodyPath, type BodyPath } from "../../src/lib/macro/flowV2EditorCommands"
 import type { FlowV2Node, MacroTemplate } from "../../src/lib/macro/templateTypes"
 
 function template(): MacroTemplate {
@@ -44,13 +44,28 @@ test("insertNodeAtAnchor inserts before, after and inside explicit body paths", 
 
 test("elif and else branches are explicit and support inside insertion", () => {
   const t = template()
-  expect(addElifToIfNode(t, { bodyPath: [], index: 1 }, { kind: "elif", condition: { kind: "text_match", source: { kind: "step_artifact", stepId: "capture_1", artifact: "captured_text" }, matcher: { kind: "simple", op: "contains", text: "MAYBE" }, scope: { kind: "whole" } }, body: [] }).ok).toBe(true)
+  const maybeBranch = { kind: "elif" as const, condition: { kind: "text_match" as const, source: { kind: "step_artifact" as const, stepId: "capture_1", artifact: "captured_text" as const }, matcher: { kind: "simple" as const, op: "contains" as const, text: "MAYBE" }, scope: { kind: "whole" as const } }, body: [] }
+  const nearBranch = { kind: "elif" as const, condition: { kind: "text_match" as const, source: { kind: "step_artifact" as const, stepId: "capture_1", artifact: "captured_text" as const }, matcher: { kind: "simple" as const, op: "contains" as const, text: "NEAR" }, scope: { kind: "whole" as const } }, body: [] }
+  expect(insertElifBranchAfter(t, { bodyPath: [], index: 1 }, 0, maybeBranch).ok).toBe(true)
+  expect(insertElifBranchAfter(t, { bodyPath: [], index: 1 }, 0, nearBranch).ok).toBe(true)
+  const ifNode = t.body[1]
+  if (ifNode.type !== "if") throw new Error("missing if node")
+  expect(ifNode.branches.map((branch) => branch.condition.matcher.kind === "simple" ? branch.condition.matcher.text : "regex")).toEqual(["READY", "NEAR", "MAYBE"])
+  expect(insertElifBranchAfter(t, { bodyPath: [], index: 1 }, 0, { ...maybeBranch, kind: "if" }).reason).toBe("invalid_target")
+  expect(insertElifBranchAfter(t, { bodyPath: [], index: 1 }, 9, maybeBranch).reason).toBe("out_of_bounds")
   expect(insertNodeAtAnchor(t, { kind: "inside", parentPath: [], index: 1, slot: "elif", branchIndex: 1 }, finishNode("inside_elif")).ok).toBe(true)
   expect(resolveBodyPath(t, [{ kind: "if-branch", nodeId: "if_ready", branchIndex: 1 }])?.map((node) => node.id)).toEqual(["inside_elif"])
+
+  expect(removeIfBranchAt(t, { bodyPath: [], index: 1 }, 0).reason).toBe("invalid_target")
+  expect(removeIfBranchAt(t, { bodyPath: [], index: 1 }, 2).ok).toBe(true)
+  expect(ifNode.branches.map((branch) => branch.condition.matcher.kind === "simple" ? branch.condition.matcher.text : "regex")).toEqual(["READY", "NEAR"])
 
   expect(ensureElseForIfNode(t, { bodyPath: [], index: 1 }).ok).toBe(true)
   expect(insertNodeAtAnchor(t, { kind: "inside", parentPath: [], index: 1, slot: "else" }, finishNode("inside_else")).ok).toBe(true)
   expect(resolveBodyPath(t, [{ kind: "if-else", nodeId: "if_ready" }])?.map((node) => node.id)).toEqual(["inside_else"])
+  expect(removeElseFromIfNode(t, { bodyPath: [], index: 1 }).ok).toBe(true)
+  expect(resolveBodyPath(t, [{ kind: "if-else", nodeId: "if_ready" }])).toBeUndefined()
+  expect(removeElseFromIfNode(t, { bodyPath: [], index: 1 }).reason).toBe("out_of_bounds")
 })
 
 test("move and remove stay in the same body", () => {

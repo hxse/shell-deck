@@ -1,12 +1,14 @@
 <script lang="ts">
   import { tick } from "svelte"
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
+  import MacroIconButton from "./MacroIconButton.svelte"
   import MessagePartsEditor from "./MessagePartsEditor.svelte"
+  import NodeActionControls from "./NodeActionControls.svelte"
   import ParallelLaneTabs from "./ParallelLaneTabs.svelte"
   import TerminalEndingField from "./TerminalEndingField.svelte"
   import TerminalInputDeliveryField from "./TerminalInputDeliveryField.svelte"
   import TemplatableScalarField from "./TemplatableScalarField.svelte"
-  import { addElifToIfNode, canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeNodeAtPosition, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
+  import { canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, insertElifBranchAfter, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeElseFromIfNode, removeIfBranchAt, removeNodeAtPosition, resolveBodyPath, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from "../../macro/scopedTextTemplate"
   import { hasNonDefaultTextListItems, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroTemplate, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalEnding, TerminalInputDelivery, TerminalTarget, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, ValidationResult, WaitNode } from "../../macro/templateTypes"
@@ -55,6 +57,7 @@
   let insertionNotice = $state("")
   let moveNodeId = $state("")
   let collapsedNodeIds = $state<string[]>([])
+  let collapsedIfBranchKeys = $state<string[]>([])
   let idEditNotice = $state("")
 
   let textListStructureVersions = $state<Record<string, number>>({})
@@ -79,6 +82,8 @@
     { type: "break", label: "break", testId: "add-flow-break", loopOnly: true },
     { type: "continue", label: "continue", testId: "add-flow-continue", loopOnly: true },
   ]
+
+  const flowDepthColors = ["#2786d2", "#14977e", "#ff8a00", "#cf4d6f"]
 
   $effect(() => {
     const anchor = insertionAnchor
@@ -173,6 +178,10 @@
   function clamp(value: number, min: number, max: number): number {
     if (max < min) return min
     return Math.max(min, Math.min(max, value))
+  }
+
+  function flowDepthColor(depth: number): string {
+    return flowDepthColors[depth % flowDepthColors.length]
   }
 
   function terminalChoiceTitle(value: string) {
@@ -328,6 +337,32 @@
     collapsedNodeIds = isNodeCollapsed(nodeId) ? collapsedNodeIds.filter((id) => id !== nodeId) : [...collapsedNodeIds, nodeId]
   }
 
+  function ifBranchCollapseKey(nodeId: string, branch: number | "else"): string {
+    return nodeId + ":branch:" + branch
+  }
+
+  function isIfBranchCollapsed(nodeId: string, branch: number | "else"): boolean {
+    return collapsedIfBranchKeys.includes(ifBranchCollapseKey(nodeId, branch))
+  }
+
+  function toggleIfBranchCollapsed(nodeId: string, branch: number | "else") {
+    const key = ifBranchCollapseKey(nodeId, branch)
+    collapsedIfBranchKeys = collapsedIfBranchKeys.includes(key) ? collapsedIfBranchKeys.filter((item) => item !== key) : [...collapsedIfBranchKeys, key]
+  }
+
+  function shiftIfBranchCollapseKeys(nodeId: string, fromIndex: number, offset: -1 | 1, removedIndex?: number) {
+    const prefix = nodeId + ":branch:"
+    collapsedIfBranchKeys = collapsedIfBranchKeys.flatMap((key) => {
+      if (!key.startsWith(prefix)) return [key]
+      const suffix = key.slice(prefix.length)
+      if (suffix === "else") return [key]
+      const branchIndex = Number(suffix)
+      if (!Number.isInteger(branchIndex)) return [key]
+      if (removedIndex === branchIndex) return []
+      return [branchIndex >= fromIndex ? prefix + (branchIndex + offset) : key]
+    })
+  }
+
   function beforeAnchor(bodyPath: BodyPath, index: number, anchorNodeId?: string): InsertionAnchor {
     return { kind: "before", parentPath: cloneBodyPath(bodyPath), index, anchorNodeId }
   }
@@ -365,17 +400,39 @@
 
   function removeNodeAt(bodyPath: BodyPath, index: number, nodeId: string) {
     if (!confirm("Remove macro node " + nodeId + "?")) return
+    const removedNode = resolveBodyPath(draft, bodyPath)?.[index]
+    const removedNodeIds = removedNode ? allNodeIds([removedNode]) : [nodeId]
     updateDraft((template: MacroTemplate) => { removeNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    clearCollapseStateForNodeIds(removedNodeIds)
   }
 
-  function addElifAt(bodyPath: BodyPath, index: number) {
+  function addElifAt(bodyPath: BodyPath, index: number, afterBranchIndex: number, nodeId: string) {
+    shiftIfBranchCollapseKeys(nodeId, afterBranchIndex + 1, 1)
     updateDraft((template: MacroTemplate) => {
-      addElifToIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }, { kind: "elif", condition: defaultCondition(template), body: [] })
+      insertElifBranchAfter(template, { bodyPath: cloneBodyPath(bodyPath), index }, afterBranchIndex, { kind: "elif", condition: defaultCondition(template), body: [] })
     })
   }
 
   function ensureElseAt(bodyPath: BodyPath, index: number) {
     updateDraft((template: MacroTemplate) => { ensureElseForIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+  }
+
+  function removeElifAt(bodyPath: BodyPath, index: number, branchIndex: number, nodeId: string) {
+    if (!confirm("Remove elif branch and its contents?")) return
+    const node = resolveBodyPath(draft, bodyPath)?.[index]
+    const removedNodeIds = node?.type === "if" ? allNodeIds(node.branches[branchIndex]?.body ?? []) : []
+    updateDraft((template: MacroTemplate) => { removeIfBranchAt(template, { bodyPath: cloneBodyPath(bodyPath), index }, branchIndex) })
+    clearCollapseStateForNodeIds(removedNodeIds)
+    shiftIfBranchCollapseKeys(nodeId, branchIndex + 1, -1, branchIndex)
+  }
+
+  function removeElseAt(bodyPath: BodyPath, index: number, nodeId: string) {
+    if (!confirm("Remove else branch and its contents?")) return
+    const node = resolveBodyPath(draft, bodyPath)?.[index]
+    const removedNodeIds = node?.type === "if" ? allNodeIds(node.else ?? []) : []
+    updateDraft((template: MacroTemplate) => { removeElseFromIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    clearCollapseStateForNodeIds(removedNodeIds)
+    collapsedIfBranchKeys = collapsedIfBranchKeys.filter((key) => key !== ifBranchCollapseKey(nodeId, "else"))
   }
 
   function updateNode(nodeId: string, mutator: (node: FlowV2Node) => void) {
@@ -392,7 +449,17 @@
     }
     idEditNotice = ""
     updateNode(oldId, (node) => { node.id = nextId })
+    collapsedNodeIds = collapsedNodeIds.map((id) => id === oldId ? nextId : id)
+    const prefix = oldId + ":branch:"
+    collapsedIfBranchKeys = collapsedIfBranchKeys.map((key) => key.startsWith(prefix) ? nextId + ":branch:" + key.slice(prefix.length) : key)
     return true
+  }
+
+  function clearCollapseStateForNodeIds(nodeIds: string[]) {
+    if (nodeIds.length === 0) return
+    const removed = new Set(nodeIds)
+    collapsedNodeIds = collapsedNodeIds.filter((id) => !removed.has(id))
+    collapsedIfBranchKeys = collapsedIfBranchKeys.filter((key) => !nodeIds.some((nodeId) => key.startsWith(nodeId + ":branch:")))
   }
 
   function findNode(nodes: FlowV2Node[], nodeId: string): FlowV2Node | undefined {
@@ -474,21 +541,6 @@
     if (node.type === "extract_text") return { label: node.id + ".extracted_text", source: { kind: "step_artifact", stepId: node.id, artifact: "extracted_text" } }
     return null
   }
-
-  function addElif(nodeId: string) {
-    updateDraft((template: MacroTemplate) => {
-      const node = findNode(template.body, nodeId)
-      if (node?.type === "if") node.branches.push({ kind: "elif", condition: defaultCondition(template), body: [{ id: uniqueKey("finish_elif", allNodeIds(template.body)), type: "finish", reason: "elif" }] })
-    })
-  }
-
-  function ensureElse(nodeId: string) {
-    updateDraft((template: MacroTemplate) => {
-      const node = findNode(template.body, nodeId)
-      if (node?.type === "if" && !node.else) node.else = [{ id: uniqueKey("finish_else", allNodeIds(template.body)), type: "finish", reason: "else" }]
-    })
-  }
-
 
   function setSimpleMatcherOp(condition: TextMatchCondition, op: SimpleTextMatchOp): TextMatchCondition {
     if (condition.matcher.kind !== "simple") return condition
@@ -741,39 +793,31 @@
 <section class="macro-section">
   <div class="macro-section-title"><h3>Flow V2 Body</h3></div>
   <div class="step-list" data-testid="macro-step-list">
-    {@render NodeListEditor(draft.body, [], false, "Root body", false, null)}
+    {@render NodeListEditor(draft.body, [], false, "Root body", false, null, 0)}
   </div>
 </section>
 
-{#snippet NodeListEditor(nodes: FlowV2Node[], bodyPath: BodyPath, allowLoopControls: boolean, label: string, actionOnly: boolean, templateScope: TextTemplateScope | null)}
-  <details class="flow-block" data-testid="flow-block" open>
-    <summary class="step-title flow-block-title" data-testid="flow-block-summary">
-      <strong>{label}</strong>
-      <small>{nodes.length} nodes</small>
-    </summary>
+{#snippet NodeListEditor(nodes: FlowV2Node[], bodyPath: BodyPath, allowLoopControls: boolean, label: string, actionOnly: boolean, templateScope: TextTemplateScope | null, depth: number)}
+  <div class="flow-block" data-testid="flow-block" data-flow-body-label={label} data-flow-depth={depth} style={"--flow-depth-color: " + flowDepthColor(depth)}>
     {#if nodes.length === 0}
       <div class="empty-flow-body" data-testid="empty-flow-body">
         <button type="button" data-testid="empty-body-add" onclick={(event) => insertIntoEmptyBody(bodyPath, label, allowLoopControls, event, actionOnly)}>Add inside</button>
       </div>
     {/if}
     {#each nodes as node, index (node.id)}
-      {@render NodeEditor(node, index, bodyPath, allowLoopControls, actionOnly, templateScope)}
+      {@render NodeEditor(node, index, nodes.length, bodyPath, allowLoopControls, actionOnly, templateScope, depth)}
     {/each}
-  </details>
+  </div>
 {/snippet}
 
-{#snippet NodeEditor(node: FlowV2Node, index: number, bodyPath: BodyPath, allowLoopControls: boolean, actionOnly: boolean, templateScope: TextTemplateScope | null)}
-  <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)}>
-    <div class="step-title">
-      <strong>{index + 1}. {node.type}{#if node.type === "for" && node.range.kind === "text-list"} <small data-testid="for-text-list-summary">text-list · {LOOP_INDEX_TEMPLATE_TOKEN} · {LOOP_KEY_TEMPLATE_TOKEN} · {LOOP_VALUE_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
-      <div class="inline-actions node-menu" data-testid="node-menu">
-        <button type="button" data-testid="node-add-before" onclick={(event) => openInsertion(beforeAnchor(bodyPath, index, node.id), "Insert before: " + node.id, allowLoopControls, event, actionOnly)}>Add before</button>
-        <button type="button" data-testid="node-add-after" onclick={(event) => openInsertion(afterAnchor(bodyPath, index, node.id), "Insert after: " + node.id, allowLoopControls, event, actionOnly)}>Add after</button>
-        <button type="button" data-testid="node-toggle-collapse" aria-expanded={!isNodeCollapsed(node.id)} onclick={() => toggleNodeCollapsed(node.id)}>{isNodeCollapsed(node.id) ? "Expand" : "Collapse"}</button>
-        <button type="button" data-testid="node-move-up" onclick={() => moveNodeAt(bodyPath, index, -1)}>Move up</button>
-        <button type="button" data-testid="node-move-down" onclick={() => moveNodeAt(bodyPath, index, 1)}>Move down</button>
-        <button type="button" data-testid="node-remove" onclick={() => removeNodeAt(bodyPath, index, node.id)}>Remove</button>
+{#snippet NodeEditor(node: FlowV2Node, index: number, siblingCount: number, bodyPath: BodyPath, allowLoopControls: boolean, actionOnly: boolean, templateScope: TextTemplateScope | null, depth: number)}
+  <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)} data-flow-node-depth={depth} data-flow-sibling={index > 0}>
+    <div class="step-title node-title-row" data-testid="node-menu">
+      <div class="node-title-cluster">
+        <strong>{index + 1}. {node.type}{#if node.type === "for" && node.range.kind === "text-list"} <small data-testid="for-text-list-summary">text-list · {LOOP_INDEX_TEMPLATE_TOKEN} · {LOOP_KEY_TEMPLATE_TOKEN} · {LOOP_VALUE_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
+        {#if isNodeCollapsed(node.id)}<span class="collapse-state-badge" data-testid="node-collapsed-badge">Collapsed</span>{/if}
       </div>
+      <NodeActionControls collapsed={isNodeCollapsed(node.id)} moveUpDisabled={index === 0} moveDownDisabled={index === siblingCount - 1} groupTestId="node-action-controls" toggleTestId="node-toggle-collapse" moveUpTestId="node-move-up" moveDownTestId="node-move-down" addBeforeTestId="node-add-before" addAfterTestId="node-add-after" removeTestId="node-remove" onToggle={() => toggleNodeCollapsed(node.id)} onMoveUp={() => moveNodeAt(bodyPath, index, -1)} onMoveDown={() => moveNodeAt(bodyPath, index, 1)} onAddBefore={(event) => openInsertion(beforeAnchor(bodyPath, index, node.id), "Insert before: " + node.id, allowLoopControls, event, actionOnly)} onAddAfter={(event) => openInsertion(afterAnchor(bodyPath, index, node.id), "Insert after: " + node.id, allowLoopControls, event, actionOnly)} onRemove={() => removeNodeAt(bodyPath, index, node.id)} />
     </div>
     <div class="macro-row">
       <label>Node id<input data-testid="node-id-input" value={node.id} oninput={(event) => { if (!setNodeId(node.id, event.currentTarget.value)) event.currentTarget.value = node.id }} /></label>
@@ -857,14 +901,38 @@
       {@render ExtractTextEditor(node, artifactChoicesBefore(node.id), (mutator: (item: Extract<FlowV2Node, { type: "extract_text" }>) => void) => updateNode(node.id, (item) => { if (item.type === "extract_text") mutator(item) }))}
     {:else if node.type === "if"}
       {#each node.branches as branch, branchIndex}
-        <div class="flow-branch-card">
-          <div class="step-title"><strong>{branch.kind}</strong><button type="button" data-testid={branch.kind === "if" ? "node-add-inside-if" : "node-add-inside-elif"} onclick={(event) => openInsertion(insideAnchor(bodyPath, index, branch.kind === "if" ? "if" : "elif", branchIndex, node.id), "Insert inside " + branch.kind + ": " + node.id, allowLoopControls, event)}>Add inside {branch.kind}</button></div>
+        <div class="flow-branch-card" class:collapsed={isIfBranchCollapsed(node.id, branchIndex)} data-testid="if-branch-section" data-flow-branch-kind={branch.kind} data-flow-branch-index={branchIndex}>
+          <div class="step-title flow-branch-title" data-testid="flow-branch-title">
+            <div class="flow-branch-label">
+              <strong>{branch.kind}</strong>
+              {#if isIfBranchCollapsed(node.id, branchIndex)}<span class="collapse-state-badge" data-testid="if-branch-collapsed-badge">Collapsed</span>{/if}
+            </div>
+            <div class="inline-actions flow-branch-actions" data-testid="flow-branch-actions">
+              <MacroIconButton kind={isIfBranchCollapsed(node.id, branchIndex) ? "expand" : "collapse"} active={isIfBranchCollapsed(node.id, branchIndex)} expanded={!isIfBranchCollapsed(node.id, branchIndex)} testId="if-branch-toggle" onClick={() => toggleIfBranchCollapsed(node.id, branchIndex)} />
+              <button type="button" data-testid="add-flow-elif" onclick={() => addElifAt(bodyPath, index, branchIndex, node.id)}>Add elif</button>
+              {#if !node.else}<button type="button" data-testid="add-flow-else" onclick={() => ensureElseAt(bodyPath, index)}>Add else</button>{/if}
+              {#if branch.kind === "elif"}<MacroIconButton kind="remove" testId="remove-flow-elif" onClick={() => removeElifAt(bodyPath, index, branchIndex, node.id)} />{/if}
+            </div>
+          </div>
           {@render ConditionEditor(branch.condition, artifactChoicesBefore(node.id), (condition: TextMatchCondition) => updateNode(node.id, (item) => { if (item.type === "if") item.branches[branchIndex].condition = condition }))}
-          {@render NodeListEditor(branch.body, [...bodyPath, { kind: "if-branch", nodeId: node.id, branchIndex }], allowLoopControls, branch.kind + " body", false, templateScope)}
+          {@render NodeListEditor(branch.body, [...bodyPath, { kind: "if-branch", nodeId: node.id, branchIndex }], allowLoopControls, branch.kind + " body", false, templateScope, depth + 1)}
         </div>
       {/each}
-      <div class="inline-actions"><button type="button" data-testid="add-flow-elif" onclick={() => addElifAt(bodyPath, index)}>Add elif</button>{#if !node.else}<button type="button" data-testid="add-flow-else" onclick={() => ensureElseAt(bodyPath, index)}>Add else</button>{/if}</div>
-      {#if node.else}<div class="flow-branch-card"><div class="step-title"><strong>else</strong><button type="button" data-testid="node-add-inside-else" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "else", undefined, node.id), "Insert inside else: " + node.id, allowLoopControls, event)}>Add inside else</button></div>{@render NodeListEditor(node.else, [...bodyPath, { kind: "if-else", nodeId: node.id }], allowLoopControls, "else body", false, templateScope)}</div>{/if}
+      {#if node.else}
+        <div class="flow-branch-card" class:collapsed={isIfBranchCollapsed(node.id, "else")} data-testid="if-branch-section" data-flow-branch-kind="else">
+          <div class="step-title flow-branch-title" data-testid="flow-branch-title">
+            <div class="flow-branch-label">
+              <strong>else</strong>
+              {#if isIfBranchCollapsed(node.id, "else")}<span class="collapse-state-badge" data-testid="if-branch-collapsed-badge">Collapsed</span>{/if}
+            </div>
+            <div class="inline-actions flow-branch-actions" data-testid="flow-branch-actions">
+              <MacroIconButton kind={isIfBranchCollapsed(node.id, "else") ? "expand" : "collapse"} active={isIfBranchCollapsed(node.id, "else")} expanded={!isIfBranchCollapsed(node.id, "else")} testId="if-branch-toggle" onClick={() => toggleIfBranchCollapsed(node.id, "else")} />
+              <MacroIconButton kind="remove" testId="remove-flow-else" onClick={() => removeElseAt(bodyPath, index, node.id)} />
+            </div>
+          </div>
+          {@render NodeListEditor(node.else, [...bodyPath, { kind: "if-else", nodeId: node.id }], allowLoopControls, "else body", false, templateScope, depth + 1)}
+        </div>
+      {/if}
     {:else if node.type === "for"}
       <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={node.range.kind} onchange={(event) => { const previous = node.range.kind; const mode = event.currentTarget.value as "count" | "forever" | "text-list"; if (!setForRangeMode(node.id, mode)) event.currentTarget.value = previous }}><option value="count">count</option><option value="forever">forever</option><option value="text-list">text-list</option></select></label>{#if node.range.kind === "count"}<label>Count<input data-testid="for-range-count" type="number" value={node.range.count} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "for") item.range = { kind: "count", count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
       {#if node.range.kind === "text-list"}
@@ -872,21 +940,20 @@
           <div class="step-title"><strong>Items</strong><button type="button" data-testid="for-text-list-add" onclick={() => addTextListItem(node.id)}>Add item</button></div>
           {#each node.range.items as item, itemIndex (textListItemEditorKey(node.id, itemIndex))}
             <div class="message-part-row text-list-item-card" data-testid="for-text-list-item-card">
-              <div class="step-title"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions"><button type="button" disabled={itemIndex === 0} onclick={() => moveTextListItem(node.id, itemIndex, -1)}>Up</button><button type="button" disabled={itemIndex === node.range.items.length - 1} onclick={() => moveTextListItem(node.id, itemIndex, 1)}>Down</button><button type="button" disabled={node.range.items.length <= 1} onclick={() => removeTextListItem(node.id, itemIndex)}>Remove</button></div></div>
+              <div class="step-title"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions"><MacroIconButton kind="up" disabled={itemIndex === 0} testId="for-text-list-item-up" onClick={() => moveTextListItem(node.id, itemIndex, -1)} /><MacroIconButton kind="down" disabled={itemIndex === node.range.items.length - 1} testId="for-text-list-item-down" onClick={() => moveTextListItem(node.id, itemIndex, 1)} /><MacroIconButton kind="remove" disabled={node.range.items.length <= 1} testId="for-text-list-item-remove" onClick={() => removeTextListItem(node.id, itemIndex)} /></div></div>
               <label>Key<input data-testid="for-text-list-key" value={item.key} oninput={(event) => updateTextListItem(node.id, itemIndex, "key", event.currentTarget.value)} /></label>
               <label>Value<LineNumberedTextarea testId="for-text-list-value" value={item.value} maxRows={3} ariaLabel={"Text-list item " + (itemIndex + 1) + " value"} onInput={(value: string) => updateTextListItem(node.id, itemIndex, "value", value)} /></label>
             </div>
           {/each}
         </div>
       {/if}
-      <div class="inline-actions"><button type="button" data-testid="node-add-inside-for" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "for", undefined, node.id), "Insert inside for: " + node.id, true, event)}>Add inside for</button></div>{@render NodeListEditor(node.body, [...bodyPath, { kind: "for", nodeId: node.id }], true, "for body", false, forBodyTemplateScope(node, templateScope))}
+      {@render NodeListEditor(node.body, [...bodyPath, { kind: "for", nodeId: node.id }], true, "for body", false, forBodyTemplateScope(node, templateScope), depth + 1)}
     {:else if node.type === "parallel"}
-      <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {choiceFromTarget} {targetFromChoice} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} {templateScope} />
+      <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {choiceFromTarget} {targetFromChoice} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} {templateScope} {insertionPaletteMode} />
     {:else}
       <label>Reason<input value={node.reason ?? ""} oninput={(event) => updateNode(node.id, (item) => { if ("reason" in item) item.reason = event.currentTarget.value || undefined })} /></label>
       {#if node.type === "finish" || node.type === "break" || node.type === "continue"}
-        <div class="inline-actions"><button type="button" data-testid="node-add-inside-control" onclick={(event) => openInsertion(insideAnchor(bodyPath, index, "control", undefined, node.id), "Insert action before " + node.type + ": " + node.id, false, event, true)}>Add action</button></div>
-        {@render NodeListEditor(node.body ?? [], [...bodyPath, { kind: "control", nodeId: node.id }], false, node.type + " action body", true, templateScope)}
+        {@render NodeListEditor(node.body ?? [], [...bodyPath, { kind: "control", nodeId: node.id }], false, node.type + " action body", true, templateScope, depth + 1)}
       {/if}
     {/if}
   </article>
@@ -958,7 +1025,7 @@
       <div class="macro-row">
         <label>Mode<select value={filter.kind} onchange={(event) => updateExtract((item) => { item.filters[filterIndex].kind = event.currentTarget.value as "include" | "exclude" })}><option value="include">include</option><option value="exclude">exclude</option></select></label>
         <label>Matcher<select value={filter.matcher.kind} onchange={(event) => updateExtract((item) => { item.filters[filterIndex].matcher = event.currentTarget.value === "regex" ? { kind: "regex", pattern: "READY", flags: "" } : { kind: "simple", op: "contains", text: "READY" } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
-        <button type="button" onclick={() => removeTextFilter(node.id, filterIndex)}>Remove</button>
+        <MacroIconButton kind="remove" testId="extract-filter-remove" onClick={() => removeTextFilter(node.id, filterIndex)} />
       </div>
       {#if filter.matcher.kind === "simple"}
         <div class="macro-row"><label>Op<select value={filter.matcher.op} onchange={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "simple") target.matcher.op = event.currentTarget.value as SimpleTextMatchOp })}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label><label>Text<input value={filter.matcher.text} oninput={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "simple") target.matcher.text = event.currentTarget.value })} /></label></div>

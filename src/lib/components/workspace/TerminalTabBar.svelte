@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte"
   import type { TerminalSnapshot } from "../../protocol"
 
   let {
@@ -36,6 +37,20 @@
     onCommitRename: (terminal: TerminalSnapshot) => void
     onTabKeydown: (event: KeyboardEvent, terminal: TerminalSnapshot) => void
   }>()
+
+  let aliasInput = $state<HTMLInputElement | null>(null)
+
+  $effect(() => {
+    const input = aliasInput
+    const terminalId = editingTerminalId
+    if (!input || !terminalId) return
+    void tick().then(() => {
+      if (aliasInput !== input || editingTerminalId !== terminalId) return
+      input.focus()
+      const caret = input.value.length
+      input.setSelectionRange(caret, caret)
+    })
+  })
 </script>
 
 <div class="tab-strip">
@@ -64,6 +79,7 @@
         <span class="tab-index">{terminal.terminalIndex}</span>
         {#if editingTerminalId === terminal.terminalId}
           <input
+            bind:this={aliasInput}
             class="tab-alias-input"
             data-testid="terminal-alias-input"
             value={aliasDraft}

@@ -3,14 +3,14 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 default:
     just --list
 
-# Start the local-only shell-deck server. ai-json is disabled unless an explicit AI mode entry is used.
-start *args:
+# Build the production UI, then start the local-only shell-deck server. ai-json is disabled unless an explicit AI mode entry is used.
+start *args: build
     bun run server/httpServer.ts --ai-json-parser disabled {{args}}
 
-start-mock-ai *args:
+start-mock-ai *args: build
     bun run server/httpServer.ts --ai-json-parser mock {{args}}
 
-start-codex-ai *args:
+start-codex-ai *args: build
     bun run server/httpServer.ts --ai-json-parser codex-exec {{args}}
 
 stop *args:
@@ -148,6 +148,9 @@ debug-030-large-replay *args:
 
 test-030:
     bun run test:030
+
+test-031:
+    bun run test:031
 
 notification-config-init:
     mkdir -p .shell-deck

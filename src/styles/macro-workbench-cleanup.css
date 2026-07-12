@@ -255,3 +255,417 @@
   gap: 10px;
   overflow: auto;
 }
+
+.macro-editor-lock-surface {
+  min-width: 0;
+  min-inline-size: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-sizing: border-box;
+}
+
+.macro-editor-lock-surface:disabled {
+  opacity: 0.72;
+}
+
+/* .031 IDE-like hierarchy and compact Macro chrome */
+.macro-panel {
+  font-size: 13px;
+}
+
+.macro-header {
+  min-height: 32px;
+  gap: 4px 6px;
+  align-items: center;
+  padding: 3px 6px;
+}
+
+.macro-header h2 {
+  margin-top: 0;
+  font-size: 14px;
+}
+
+.macro-header > button {
+  height: 26px;
+  margin-top: 0;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.macro-header .macro-template-drawer {
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.macro-template-summary {
+  min-height: 26px;
+  gap: 4px;
+}
+
+.macro-template-summary > span,
+.macro-template-summary small {
+  font-size: 10px;
+}
+
+.macro-template-summary strong {
+  font-size: 13px;
+}
+
+.macro-sticky-head {
+  box-shadow: 0 1px 4px rgba(28, 42, 56, 0.08);
+}
+
+.macro-top-dock {
+  gap: 0;
+  padding: 3px 6px;
+}
+
+.macro-top-dock .macro-run-status {
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+
+.macro-run-status-dock {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.macro-run-status-dock .macro-run-status-line {
+  min-width: 0;
+  flex-wrap: nowrap;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.macro-run-status-dock .macro-run-status-line strong {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.macro-run-status-dock .macro-run-status-line span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macro-run-status-dock .macro-run-controls {
+  display: flex;
+  grid-template-columns: none;
+  gap: 4px;
+}
+
+.macro-run-status-dock .macro-run-controls button {
+  width: auto;
+  min-width: 50px;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.macro-run-status-dock .macro-debug-refresh {
+  font-size: 11px;
+}
+
+.macro-run-status-dock .macro-debug-refresh summary {
+  white-space: nowrap;
+}
+
+.macro-run-status-dock .macro-debug-refresh[open] > button {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 4;
+  min-height: 24px;
+  padding: 3px 7px;
+  box-shadow: 0 5px 14px rgba(31, 48, 64, 0.16);
+}
+
+.macro-run-status-dock .runner-input-line {
+  grid-column: 1 / -1;
+}
+
+.macro-sticky-head .macro-tabs {
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.macro-sticky-head .macro-tabs button {
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.macro-editor-layout {
+  flex-basis: calc(100% - 8px);
+  margin-bottom: 8px;
+}
+
+.macro-editor-main {
+  gap: 6px;
+}
+
+.macro-editor-main > .macro-section,
+.macro-json-section {
+  gap: 5px;
+  padding: 8px;
+}
+
+.macro-editor-main > .validation-panel-compact {
+  padding: 5px 8px;
+}
+
+.macro-section-title h3 {
+  font-size: 14px;
+}
+
+.macro-panel label,
+.macro-panel .macro-field-typography {
+  gap: 3px;
+  font-size: 12px;
+}
+
+.macro-panel input,
+.macro-panel select {
+  min-height: 25px;
+  padding: 4px 6px;
+}
+
+.macro-panel textarea {
+  font-size: 13px;
+}
+
+.macro-panel .line-numbered-textarea {
+  --line-number-font-size: 13px;
+}
+
+.source-editor,
+.step-editor {
+  gap: 6px;
+  padding: 7px;
+}
+
+.flow-node-editor {
+  padding-left: calc(7px + var(--flow-indent-offset));
+}
+
+.step-list,
+.rule-list,
+.message-parts-editor {
+  gap: 6px;
+}
+
+.message-part-row {
+  gap: 5px;
+  padding: 6px;
+  border-radius: 4px;
+}
+
+.step-title {
+  gap: 6px;
+}
+
+.step-title strong {
+  font-size: 13px;
+}
+
+.inline-actions,
+.step-actions {
+  gap: 4px;
+}
+
+.inline-actions button,
+.step-actions button,
+.macro-row button,
+.condition-row button,
+.rule-list button,
+.step-title button {
+  min-height: 22px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.macro-editor-main .inline-actions button,
+.macro-editor-main .step-actions button,
+.macro-editor-main .macro-row button,
+.macro-editor-main .condition-row button,
+.macro-editor-main .rule-list button,
+.macro-editor-main .step-title button {
+  min-height: 24px;
+  padding: 3px 7px;
+  font-size: 12px;
+}
+
+.macro-editor-main button.macro-icon-button {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.macro-panel .validation-panel-compact,
+.macro-panel .hint,
+.macro-panel .empty-text {
+  font-size: 12px;
+}
+
+.macro-panel .template-toggle-row,
+.macro-panel .template-scope-issue,
+.macro-panel .input-delivery-tooltip {
+  font-size: 13px;
+}
+
+.macro-panel .template-source,
+.macro-panel [data-testid="for-text-list-summary"] {
+  font-size: 12px;
+}
+
+.macro-panel .input-delivery-help {
+  font-size: 12px;
+}
+
+.macro-panel .inline-actions button,
+.macro-panel .step-actions button,
+.macro-panel .macro-row button,
+.macro-panel .condition-row button,
+.macro-panel .rule-list button,
+.macro-panel .step-title button {
+  font-size: 12px;
+}
+
+.macro-json-section pre,
+.macro-json-section .macro-json-editor {
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.macro-json-error {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.macro-json-edit-lock {
+  font-size: 13px;
+}
+
+/* .031 follow-up: coordinated Macro, Prompt and Trace panel scale */
+.prompt-panel,
+.run-log-panel {
+  font-size: 13px;
+}
+
+.prompt-header,
+.run-log-header {
+  min-height: 38px;
+  box-sizing: border-box;
+  gap: 6px;
+  padding: 3px 8px;
+}
+
+.prompt-header h2,
+.run-log-header h2 {
+  font-size: 14px;
+}
+
+.prompt-header p,
+.run-log-header p {
+  margin-top: 1px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.prompt-header > button,
+.run-log-actions > button {
+  min-height: 26px;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.prompt-section,
+.run-log-section {
+  gap: 6px;
+  padding: 8px;
+}
+
+.prompt-panel label {
+  gap: 3px;
+  font-size: 12px;
+}
+
+.prompt-panel input,
+.prompt-panel select {
+  min-height: 26px;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.prompt-panel textarea {
+  padding: 6px 7px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.prompt-editor-actions {
+  gap: 4px;
+}
+
+.prompt-editor-actions button,
+.run-list button,
+.run-log-debug button {
+  min-height: 24px;
+  box-sizing: border-box;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.run-log-actions {
+  gap: 4px;
+}
+
+.run-log-debug {
+  font-size: 11px;
+}
+
+.run-log-tabs {
+  gap: 4px;
+  padding: 4px 6px;
+}
+
+.run-log-tabs button {
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.run-log-section-title h3,
+.prompt-section-title h3 {
+  font-size: 14px;
+}
+
+.run-list button,
+.run-node-log summary {
+  font-size: 13px;
+}
+
+.run-ai-trace pre[data-testid="run-ai-trace"] {
+  font-size: 13px;
+  line-height: 1.5;
+}

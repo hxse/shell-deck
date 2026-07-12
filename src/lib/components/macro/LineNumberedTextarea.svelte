@@ -15,6 +15,7 @@
     ariaLabel = undefined,
     insertActions = [],
     showLineNumbers = true,
+    disabled = false,
   } = $props<{
     value: string
     onInput: (value: string) => void
@@ -23,6 +24,7 @@
     ariaLabel?: string
     insertActions?: TextareaInsertAction[]
     showLineNumbers?: boolean
+    disabled?: boolean
   }>()
 
   const RESIZE_TOLERANCE_PX = 2
@@ -200,7 +202,7 @@
   {#if insertActions.length > 0}
     <div class="textarea-toolbar">
       {#each insertActions as action}
-        <button type="button" data-testid={action.testId} onclick={() => insertAtSelection(action)}>{action.label}</button>
+        <button type="button" data-testid={action.testId} disabled={disabled} onclick={() => insertAtSelection(action)}>{action.label}</button>
       {/each}
     </div>
   {/if}
@@ -218,6 +220,7 @@
     data-testid={testId}
     aria-label={ariaLabel}
     rows="1"
+    {disabled}
     value={value}
     style={textareaStyle}
     oninput={handleInput}
@@ -251,7 +254,7 @@
     background: #f5f7f9;
     color: #7a8793;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
+    font-size: var(--line-number-font-size, 12px);
     line-height: var(--line-number-height);
     user-select: none;
   }

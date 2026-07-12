@@ -19,6 +19,8 @@ Default local storage is under `SHELL_DECK_DATA_ROOT` if set, otherwise `.shell-
 
 ## Entrypoints
 
+All `just start*` production entries depend on `just build`, so the static server never intentionally launches against a stale `dist`. Development entries use Vite HMR and do not run a production build.
+
 - `just start`: local server with ai-json disabled; an empty `local` deck is seeded with `shell_1`, `shell_2`, and `text_1` tabs.
 - `just start-mock-ai`: explicit mock ai-json mode for offline demos/tests.
 - `just start-codex-ai`: real codex-exec parser mode.

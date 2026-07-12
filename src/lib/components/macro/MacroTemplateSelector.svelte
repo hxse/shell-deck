@@ -19,6 +19,7 @@
     onDeleteTemplate,
     onUpdateDraft,
     onResetWidth,
+    locked = false,
   } = $props<{
     templates: TemplateSummary[]
     filteredTemplates: TemplateSummary[]
@@ -36,6 +37,7 @@
     onDeleteTemplate: () => void
     onUpdateDraft: (mutator: (template: MacroTemplate) => void) => void
     onResetWidth?: () => void
+    locked?: boolean
   }>()
 
   let importInput = $state<HTMLInputElement | null>(null)
@@ -84,7 +86,7 @@
             <input data-testid="macro-template-search" value={templateSearch} oninput={(event) => onTemplateSearchChange(event.currentTarget.value)} placeholder="template name" />
           </label>
           <label>Select
-            <select data-testid="macro-template-select" value={selectedTemplateId ?? ''} onchange={(event) => { if (event.currentTarget.value) onSelectTemplate(event.currentTarget.value) }}>
+            <select data-testid="macro-template-select" value={selectedTemplateId ?? ''} disabled={locked} onchange={(event) => { if (event.currentTarget.value) onSelectTemplate(event.currentTarget.value) }}>
               <option value="">{filteredTemplates.length === 0 ? 'No templates' : 'Select template'}</option>
               {#each filteredTemplates as template (template.id)}
                 <option data-testid="macro-template-item" value={template.id}>{template.name} · {template.stepCount} steps</option>
@@ -93,21 +95,21 @@
           </label>
         </div>
         <div class="inline-actions template-toolbar" data-testid="macro-template-actions">
-          <button type="button" data-testid="macro-create" onclick={onCreateTemplate}>New</button>
-          <button type="button" data-testid="macro-save" onclick={onSaveTemplate} disabled={!draft}>Save</button>
-          <button type="button" data-testid="macro-duplicate" onclick={onDuplicateTemplate} disabled={!draft}>Duplicate</button>
-          <button type="button" data-testid="macro-import" onclick={() => importInput?.click()}>Import</button>
-          <button type="button" data-testid="macro-export" onclick={onExportTemplate} disabled={!draft}>Export</button>
-          <button type="button" data-testid="macro-delete" onclick={onDeleteTemplate} disabled={!draft}>Delete</button>
-          <input class="hidden-file" data-testid="macro-import-file" type="file" accept="application/json,.json" bind:this={importInput} onchange={onImportTemplate} />
+          <button type="button" data-testid="macro-create" onclick={onCreateTemplate} disabled={locked}>New</button>
+          <button type="button" data-testid="macro-save" onclick={onSaveTemplate} disabled={!draft || locked}>Save</button>
+          <button type="button" data-testid="macro-duplicate" onclick={onDuplicateTemplate} disabled={!draft || locked}>Duplicate</button>
+          <button type="button" data-testid="macro-import" onclick={() => importInput?.click()} disabled={locked}>Import</button>
+          <button type="button" data-testid="macro-export" onclick={onExportTemplate} disabled={!draft || locked}>Export</button>
+          <button type="button" data-testid="macro-delete" onclick={onDeleteTemplate} disabled={!draft || locked}>Delete</button>
+          <input class="hidden-file" data-testid="macro-import-file" type="file" accept="application/json,.json" bind:this={importInput} onchange={onImportTemplate} disabled={locked} />
         </div>
         {#if draft}
           <div class="template-metadata" data-testid="macro-template-metadata">
             <label>Name
-              <input data-testid="macro-name" value={draft.name} oninput={(event) => onUpdateDraft((template: MacroTemplate) => { template.name = event.currentTarget.value })} />
+              <input data-testid="macro-name" value={draft.name} disabled={locked} oninput={(event) => onUpdateDraft((template: MacroTemplate) => { template.name = event.currentTarget.value })} />
             </label>
             <label>Description
-              <LineNumberedTextarea testId="macro-description" value={draft.description} maxRows={3} ariaLabel="Macro template description" showLineNumbers={false} onInput={(value: string) => onUpdateDraft((template: MacroTemplate) => { template.description = value })} />
+              <LineNumberedTextarea testId="macro-description" value={draft.description} maxRows={3} ariaLabel="Macro template description" showLineNumbers={false} disabled={locked} onInput={(value: string) => onUpdateDraft((template: MacroTemplate) => { template.description = value })} />
             </label>
             <code>{draft.id}</code>
           </div>

@@ -33,6 +33,8 @@
     onRefreshRunner,
     onMacroControl,
     onViewChange,
+    jsonEditing = false,
+    operationPending = false,
   } = $props<{
     templates: TemplateSummary[]
     filteredTemplates: TemplateSummary[]
@@ -60,6 +62,8 @@
     onRefreshRunner: () => void
     onMacroControl: (action: "start" | "pause" | "resume" | "stop") => void
     onViewChange: (view: MacroView) => void
+    jsonEditing?: boolean
+    operationPending?: boolean
   }>()
 </script>
 
@@ -80,6 +84,7 @@
   onDeleteTemplate={onDeleteTemplate}
   onUpdateDraft={onUpdateDraft}
   onResetWidth={onResetWidth}
+  locked={jsonEditing || operationPending}
 />
 
 {#if errorText}
@@ -96,12 +101,14 @@
       onSubmitRunnerInput={onSubmitRunnerInput}
       onRefreshRunner={onRefreshRunner}
       onMacroControl={onMacroControl}
+      startDisabled={jsonEditing || operationPending}
+      startDisabledReason={jsonEditing ? "Save or Cancel JSON editing before starting the runner" : "Wait for the pending template operation to finish"}
     />
   </div>
 
   <div class="macro-tabs" role="tablist" aria-label="Macro views">
-    <button type="button" role="tab" aria-selected={macroView === 'editor'} class:active={macroView === 'editor'} data-testid="macro-tab-editor" onclick={() => onViewChange('editor')}>Editor</button>
+    <button type="button" role="tab" aria-selected={macroView === 'editor'} class:active={macroView === 'editor'} data-testid="macro-tab-editor" disabled={jsonEditing} title={jsonEditing ? 'Save or Cancel JSON editing first' : undefined} onclick={() => onViewChange('editor')}>Editor</button>
     <button type="button" role="tab" aria-selected={macroView === 'json'} class:active={macroView === 'json'} data-testid="macro-tab-json" onclick={() => onViewChange('json')}>JSON</button>
-    <button type="button" role="tab" aria-selected={macroView === 'trace'} class:active={macroView === 'trace'} data-testid="macro-tab-trace" onclick={() => onViewChange('trace')}>Trace</button>
+    <button type="button" role="tab" aria-selected={macroView === 'trace'} class:active={macroView === 'trace'} data-testid="macro-tab-trace" disabled={jsonEditing} title={jsonEditing ? 'Save or Cancel JSON editing first' : undefined} onclick={() => onViewChange('trace')}>Trace</button>
   </div>
 </div>

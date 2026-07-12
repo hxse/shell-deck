@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { tick } from "svelte"
   import MessagePartsEditor from "./MessagePartsEditor.svelte"
+  import NodeActionControls from "./NodeActionControls.svelte"
   import TerminalEndingField from "./TerminalEndingField.svelte"
   import TerminalInputDeliveryField from "./TerminalInputDeliveryField.svelte"
   import type { TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import { isCaptureKindAllowed, terminalChoiceForTarget, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/tabCapabilities"
+  import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
   import type {
     CaptureSourceConfig,
     FlowV2ArtifactSource,
@@ -23,6 +26,7 @@
 
   type ArtifactChoice = { label: string; source: FlowV2ArtifactSource }
   type LaneActionType = ParallelLaneActionNode["type"]
+  type InsertionPalettePosition = { x: number; y: number; placement: "above" | "below"; maxHeight?: number }
 
   let {
     draft,
@@ -34,6 +38,7 @@
     defaultCaptureSource,
     outerArtifactChoices,
     templateScope = null,
+    insertionPaletteMode,
   } = $props<{
     draft: MacroTemplate
     nodeId: string
@@ -44,13 +49,22 @@
     defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig
     outerArtifactChoices: ArtifactChoice[]
     templateScope?: TextTemplateScope | null
+    insertionPaletteMode: MacroInsertionPaletteMode
   }>()
 
   let selectedLaneId = $state("")
   let laneInsertion = $state<{ laneId: string; index: number; summary: string } | null>(null)
+  let laneInsertionPosition = $state<InsertionPalettePosition | null>(null)
+  let laneInsertionTriggerElement = $state<HTMLElement | null>(null)
+  let laneInsertionPaletteElement = $state<HTMLElement | null>(null)
+  let collapsedLaneActionIds = $state<string[]>([])
   let editNotice = $state("")
   const parallelNode = $derived(findParallel(draft.body, nodeId))
   const selectedLane = $derived(parallelNode?.lanes.find((lane) => lane.id === selectedLaneId) ?? parallelNode?.lanes[0])
+  const laneInsertionAnchored = $derived(insertionPaletteMode === "anchored" && laneInsertionPosition !== null)
+  const laneInsertionPaletteStyle = $derived(laneInsertionAnchored && laneInsertionPosition
+    ? "--palette-x: " + laneInsertionPosition.x + "px; --palette-y: " + laneInsertionPosition.y + "px;" + (laneInsertionPosition.maxHeight ? " --palette-max-height: " + laneInsertionPosition.maxHeight + "px;" : "")
+    : "")
   const laneActionPaletteItems: Array<{ type: LaneActionType; label: string; testId: string }> = [
     { type: "send", label: "send", testId: "parallel-add-send" },
     { type: "wait", label: "wait", testId: "parallel-add-wait" },
@@ -62,9 +76,9 @@
     if (!parallelNode) return
     if (!parallelNode.lanes.some((lane) => lane.id === selectedLaneId)) {
       selectedLaneId = parallelNode.lanes[0]?.id ?? ""
-      laneInsertion = null
+      closeLaneInsertion(false)
     } else if (laneInsertion && !parallelNode.lanes.some((lane) => lane.id === laneInsertion?.laneId)) {
-      laneInsertion = null
+      closeLaneInsertion(false)
     }
   })
 
@@ -178,7 +192,20 @@
     }
     editNotice = ""
     updateLaneAction(laneId, actionId, (action) => { action.id = nextId })
+    if (collapsedLaneActionIds.includes(actionId)) {
+      collapsedLaneActionIds = collapsedLaneActionIds.map((id) => id === actionId ? nextId : id)
+    }
     return true
+  }
+
+  function isLaneActionCollapsed(actionId: string): boolean {
+    return collapsedLaneActionIds.includes(actionId)
+  }
+
+  function toggleLaneActionCollapsed(actionId: string) {
+    collapsedLaneActionIds = isLaneActionCollapsed(actionId)
+      ? collapsedLaneActionIds.filter((id) => id !== actionId)
+      : [...collapsedLaneActionIds, actionId]
   }
 
   function setLaneOutputId(laneId: string, outputId: string, nextId: string): boolean {
@@ -202,18 +229,22 @@
       const lane = defaultLane(template, nextLaneId(node.lanes), terminal, node.lanes.map((item) => item.id))
       node.lanes.push(lane)
       selectedLaneId = lane.id
-      laneInsertion = null
+      closeLaneInsertion(false)
     })
   }
 
   function removeLane(laneId: string) {
+    const node = parallelNode
+    const lane = node?.lanes.find((candidate) => candidate.id === laneId)
+    if (!node || !lane || node.lanes.length <= 1) return
+    if (!confirm("Remove parallel lane " + laneId + "?")) return
+    const removedActionIds = new Set(lane.body.filter((item) => item.type !== "output").map((item) => item.id))
     updateParallel((node) => {
-      if (node.lanes.length <= 1) return
-      if (!confirm("Remove parallel lane " + laneId + "?")) return
       node.lanes = node.lanes.filter((lane) => lane.id !== laneId)
       if (selectedLaneId === laneId) selectedLaneId = node.lanes[0]?.id ?? ""
-      if (laneInsertion?.laneId === laneId) laneInsertion = null
+      if (laneInsertion?.laneId === laneId) closeLaneInsertion(false)
     })
+    collapsedLaneActionIds = collapsedLaneActionIds.filter((id) => !removedActionIds.has(id))
   }
 
   function setLaneTerminal(laneId: string, terminal: TerminalTarget): boolean {
@@ -256,19 +287,102 @@
     })
   }
 
-  function openLaneInsertion(laneId: string, index: number, summary: string) {
+  function openLaneInsertion(laneId: string, index: number, summary: string, event?: MouseEvent) {
+    const target = event?.currentTarget
     selectedLaneId = laneId
+    laneInsertionTriggerElement = target instanceof HTMLElement ? target : null
     laneInsertion = { laneId, index, summary }
+    laneInsertionPosition = insertionPaletteMode === "anchored" ? positionLaneInsertionPalette(event) : null
+    void settleLaneInsertionPalette(true)
+  }
+
+  function positionLaneInsertionPalette(event?: MouseEvent): InsertionPalettePosition | null {
+    const target = event?.currentTarget
+    if (!(target instanceof HTMLElement)) return null
+    const rect = target.getBoundingClientRect()
+    const margin = 12
+    const gap = 8
+    const estimatedHalfWidth = 180
+    const estimatedHeight = Math.min(360, Math.max(0, window.innerHeight - margin * 2))
+    const preferred = rect.top > window.innerHeight / 2 ? "above" : "below"
+    const aboveSpace = Math.max(0, rect.top - gap - margin)
+    const belowSpace = Math.max(0, window.innerHeight - rect.bottom - gap - margin)
+    const placement = preferred === "above"
+      ? aboveSpace >= Math.min(estimatedHeight, belowSpace) ? "above" : "below"
+      : belowSpace >= Math.min(estimatedHeight, aboveSpace) ? "below" : "above"
+    const availableHeight = placement === "above" ? aboveSpace : belowSpace
+    const maxHeight = Math.max(0, availableHeight)
+    const x = clamp(rect.left + rect.width / 2, margin + estimatedHalfWidth, window.innerWidth - margin - estimatedHalfWidth)
+    const y = placement === "above" ? rect.top - gap : rect.bottom + gap
+    return { x, y, placement, maxHeight }
+  }
+
+  async function settleLaneInsertionPalette(shouldFocus: boolean) {
+    await tick()
+    clampLaneInsertionPaletteToViewport()
+    if (shouldFocus) focusLaneInsertionPalette()
+  }
+
+  function clampLaneInsertionPaletteToViewport() {
+    if (!laneInsertionAnchored || !laneInsertionPosition || !laneInsertionPaletteElement || !laneInsertionTriggerElement) return
+    const triggerRect = laneInsertionTriggerElement.getBoundingClientRect()
+    const margin = 12
+    const gap = 8
+    const width = laneInsertionPaletteElement.offsetWidth
+    const height = laneInsertionPaletteElement.offsetHeight
+    if (width <= 0 || height <= 0) return
+    const preferred = triggerRect.top > window.innerHeight / 2 ? "above" : "below"
+    const aboveSpace = Math.max(0, triggerRect.top - gap - margin)
+    const belowSpace = Math.max(0, window.innerHeight - triggerRect.bottom - gap - margin)
+    const placement = preferred === "above"
+      ? aboveSpace >= Math.min(height, belowSpace) ? "above" : "below"
+      : belowSpace >= Math.min(height, aboveSpace) ? "below" : "above"
+    const availableHeight = placement === "above" ? aboveSpace : belowSpace
+    const maxHeight = Math.max(0, availableHeight)
+    const effectiveHeight = maxHeight > 0 ? Math.min(height, maxHeight) : height
+    const x = clamp(triggerRect.left + triggerRect.width / 2, margin + width / 2, window.innerWidth - margin - width / 2)
+    const rawY = placement === "above" ? triggerRect.top - gap : triggerRect.bottom + gap
+    const y = placement === "above"
+      ? clamp(rawY, margin + effectiveHeight, window.innerHeight - margin)
+      : clamp(rawY, margin, window.innerHeight - margin)
+    laneInsertionPosition = { x, y, placement, maxHeight }
+  }
+
+  function focusLaneInsertionPalette() {
+    const focusable = laneInsertionPaletteElement?.querySelector<HTMLElement>("button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])")
+    focusable?.focus()
+  }
+
+  function closeLaneInsertion(restoreFocus: boolean) {
+    const trigger = laneInsertionTriggerElement
+    laneInsertion = null
+    laneInsertionPosition = null
+    laneInsertionTriggerElement = null
+    laneInsertionPaletteElement = null
+    if (restoreFocus && trigger) void tick().then(() => trigger.focus())
+  }
+
+  function handleLaneInsertionKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && laneInsertion) cancelLaneInsertion()
+  }
+
+  function handleLaneInsertionResize() {
+    if (laneInsertion) void settleLaneInsertionPalette(false)
+  }
+
+  function clamp(value: number, min: number, max: number): number {
+    if (max < min) return min
+    return Math.max(min, Math.min(max, value))
   }
 
   function insertLaneAction(type: LaneActionType) {
     if (!laneInsertion) return
     addAction(laneInsertion.laneId, type, laneInsertion.index)
-    laneInsertion = null
+    closeLaneInsertion(true)
   }
 
   function cancelLaneInsertion() {
-    laneInsertion = null
+    closeLaneInsertion(true)
   }
 
   function removeAction(laneId: string, actionId: string) {
@@ -277,6 +391,7 @@
       if (index < 0 || lane.body[index]?.type === "output") return
       if (!confirm("Remove parallel lane action " + actionId + "?")) return
       lane.body.splice(index, 1)
+      collapsedLaneActionIds = collapsedLaneActionIds.filter((id) => id !== actionId)
     })
   }
 
@@ -417,6 +532,8 @@
   }
 </script>
 
+<svelte:window onkeydown={handleLaneInsertionKeydown} onresize={handleLaneInsertionResize} />
+
 {#if parallelNode}
   <section class="parallel-tabs-editor" data-testid="parallel-lane-tabs">
     <div class="macro-row">
@@ -427,7 +544,7 @@
 
     <div class="parallel-tab-strip" role="tablist">
       {#each parallelNode.lanes as lane}
-        <button type="button" class:active={selectedLane?.id === lane.id} data-testid="parallel-lane-tab" onclick={() => { selectedLaneId = lane.id; laneInsertion = null }}>{lane.label || lane.id}</button>
+        <button type="button" class:active={selectedLane?.id === lane.id} data-testid="parallel-lane-tab" onclick={() => { selectedLaneId = lane.id; closeLaneInsertion(false) }}>{lane.label || lane.id}</button>
       {/each}
     </div>
 
@@ -450,18 +567,21 @@
         {/if}
 
         {#if laneInsertion?.laneId === selectedLane.id}
-          <section class="floating-insertion-palette parallel-lane-insertion-palette" data-testid="parallel-lane-action-palette" aria-label="Insert parallel lane action">
-            <div class="palette-heading"><span>{laneInsertion.summary}</span><small>lane action</small></div>
-            <div class="step-palette">
-              <div class="palette-heading"><span>Actions</span><small>send wait capture extract</small></div>
-              <div class="step-actions">
-                {#each laneActionPaletteItemsFor(selectedLane) as item}
-                  <button type="button" data-testid={item.testId} onclick={() => insertLaneAction(item.type)}>{item.label}</button>
-                {/each}
+          <div class="macro-insertion-mode" class:anchored={laneInsertionAnchored} class:centered={!laneInsertionAnchored} data-testid="parallel-lane-insertion-mode" data-placement-mode={insertionPaletteMode}>
+            <button type="button" class="macro-insertion-scrim" data-testid="parallel-lane-insertion-cancel-scrim" aria-label="Cancel parallel lane insertion" onclick={cancelLaneInsertion}></button>
+            <section bind:this={laneInsertionPaletteElement} class="floating-insertion-palette" class:anchored={laneInsertionAnchored} class:above={laneInsertionPosition?.placement === "above"} class:below={laneInsertionPosition?.placement === "below"} style={laneInsertionPaletteStyle} data-testid="parallel-lane-action-palette" aria-label="Insert parallel lane action">
+              <div class="palette-heading"><span>{laneInsertion.summary}</span><small>choose action</small></div>
+              <div class="step-palette">
+                <div class="palette-heading"><span>Actions</span><small>do lane work</small></div>
+                <div class="step-actions">
+                  {#each laneActionPaletteItemsFor(selectedLane) as item}
+                    <button type="button" data-testid={item.testId} title={item.type} onclick={() => insertLaneAction(item.type)}><span class="tool-label">{item.label}</span></button>
+                  {/each}
+                </div>
               </div>
-            </div>
-            <button type="button" onclick={cancelLaneInsertion}>Cancel</button>
-          </section>
+              <button type="button" data-testid="parallel-lane-insertion-cancel" onclick={cancelLaneInsertion}>Cancel</button>
+            </section>
+          </div>
         {/if}
 
         {#each selectedLane.body as item, itemIndex}
@@ -477,16 +597,13 @@
 {/if}
 
 {#snippet LaneActionEditor(lane: ParallelLane, item: ParallelLaneActionNode, itemIndex: number)}
-  <article class="step-card parallel-lane-action" data-testid="parallel-lane-action">
-    <div class="step-title">
-      <strong>{item.type}</strong>
-      <div class="inline-actions">
-        <button type="button" data-testid="parallel-lane-add-before" onclick={() => openLaneInsertion(lane.id, itemIndex, "Insert before: " + item.id)}>Add before</button>
-        <button type="button" data-testid="parallel-lane-add-after" onclick={() => openLaneInsertion(lane.id, itemIndex + 1, "Insert after: " + item.id)}>Add after</button>
-        <button type="button" onclick={() => moveAction(lane.id, item.id, -1)}>Up</button>
-        <button type="button" onclick={() => moveAction(lane.id, item.id, 1)}>Down</button>
-        <button type="button" onclick={() => removeAction(lane.id, item.id)}>Remove</button>
+  <article class="step-card parallel-lane-action" class:collapsed={isLaneActionCollapsed(item.id)} data-testid="parallel-lane-action">
+    <div class="step-title node-title-row">
+      <div class="node-title-cluster">
+        <strong>{itemIndex + 1}. {item.type}</strong>
+        {#if isLaneActionCollapsed(item.id)}<span class="collapse-state-badge" data-testid="node-collapsed-badge">Collapsed</span>{/if}
       </div>
+      <NodeActionControls collapsed={isLaneActionCollapsed(item.id)} moveUpDisabled={itemIndex === 0} moveDownDisabled={lane.body[itemIndex + 1]?.type === "output"} groupTestId="parallel-node-action-controls" toggleTestId="parallel-node-toggle-collapse" moveUpTestId="parallel-node-move-up" moveDownTestId="parallel-node-move-down" addBeforeTestId="parallel-lane-add-before" addAfterTestId="parallel-lane-add-after" removeTestId="parallel-node-remove" onToggle={() => toggleLaneActionCollapsed(item.id)} onMoveUp={() => moveAction(lane.id, item.id, -1)} onMoveDown={() => moveAction(lane.id, item.id, 1)} onAddBefore={(event) => openLaneInsertion(lane.id, itemIndex, "Insert before: " + item.id, event)} onAddAfter={(event) => openLaneInsertion(lane.id, itemIndex + 1, "Insert after: " + item.id, event)} onRemove={() => removeAction(lane.id, item.id)} />
     </div>
     <label>Action id<input data-testid="parallel-action-id-input" value={item.id} oninput={(event) => { if (!setLaneActionId(lane.id, item.id, event.currentTarget.value)) event.currentTarget.value = item.id }} /></label>
 
@@ -540,7 +657,7 @@
   <article class="step-card parallel-output-card" data-testid="parallel-lane-output">
     <div class="step-title">
       <span class="parallel-output-title"><strong>Output</strong><small>required final node</small></span>
-      <button type="button" data-testid="parallel-lane-add-before-output" onclick={() => openLaneInsertion(lane.id, itemIndex, "Insert before Output")}>Add before output</button>
+      <button type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, "Insert before Output", event)}>Add before output</button>
     </div>
     <label>Output id<input data-testid="parallel-output-id-input" value={output.id} oninput={(event) => { if (!setLaneOutputId(lane.id, output.id, event.currentTarget.value)) event.currentTarget.value = output.id }} /></label>
     <label>Source<select value={outputSourceKey(output.source)} onchange={(event) => updateLane(lane.id, (item) => { const node = item.body.find((candidate): candidate is ParallelLaneOutputNode => candidate.id === output.id && candidate.type === "output"); if (node) node.source = outputSourceFromKey(event.currentTarget.value) })}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>

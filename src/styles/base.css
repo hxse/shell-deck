@@ -109,10 +109,11 @@ button {
 }
 
 .tab-strip {
-  min-height: 46px;
+  min-height: 40px;
   display: flex;
   align-items: stretch;
-  padding: 7px 12px 0;
+  padding: 5px 10px 0;
+  box-sizing: border-box;
   background: #e7edf2;
   border-bottom: 1px solid #b8c4cf;
 }
@@ -122,20 +123,21 @@ button {
   flex: 1;
   display: flex;
   align-items: stretch;
-  gap: 4px;
+  gap: 3px;
   overflow-x: auto;
 }
 
 .terminal-tab {
-  min-width: 150px;
-  max-width: 250px;
-  height: 39px;
+  min-width: 138px;
+  max-width: 230px;
+  height: 34px;
   position: relative;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 5px;
-  padding: 0 10px;
+  gap: 4px;
+  padding: 0 8px;
   border: 1px solid #c2ccd5;
   border-bottom: 0;
   border-radius: 6px 6px 0 0;
@@ -158,7 +160,7 @@ button {
   background: #ffffff;
   color: #111820;
   border-color: #8aa1b5;
-  box-shadow: inset 0 -3px 0 #1769aa;
+  box-shadow: inset 0 -2px 0 #1769aa;
 }
 
 .terminal-tab.active .tab-index {
@@ -176,8 +178,8 @@ button {
 }
 
 .tab-close {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: inline-grid;
   place-items: center;
   padding: 0;
@@ -185,7 +187,7 @@ button {
   border-radius: 50%;
   background: transparent;
   color: #6a7784;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
 }
@@ -211,15 +213,15 @@ button {
 }
 
 .tab-index {
-  width: 21px;
-  height: 21px;
+  width: 19px;
+  height: 19px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
   background: #cbd6df;
   color: #314151;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -227,13 +229,13 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 
 .tab-kind {
   color: #697887;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .tab-alias-input {

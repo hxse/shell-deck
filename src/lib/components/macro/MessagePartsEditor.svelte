@@ -1,5 +1,6 @@
 <script lang="ts">
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
+  import MacroIconButton from "./MacroIconButton.svelte"
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_TEMPLATE_TOKENS, LOOP_VALUE_TEMPLATE_TOKEN, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
   import { messageTextPartValue, withMessagePartTemplateMode, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import type { FlowV2ArtifactSource, MessagePart, MessageSpec } from "../../macro/templateTypes"
@@ -126,9 +127,9 @@
       <div class="step-title">
         <strong>{partIndex + 1}. {part.kind}</strong>
         <div class="inline-actions">
-          <button type="button" onclick={() => movePart(partIndex, -1)}>Up</button>
-          <button type="button" onclick={() => movePart(partIndex, 1)}>Down</button>
-          <button type="button" onclick={() => removePart(partIndex)}>Remove</button>
+          <MacroIconButton kind="up" disabled={partIndex === 0} testId="message-part-up" onClick={() => movePart(partIndex, -1)} />
+          <MacroIconButton kind="down" disabled={partIndex === message.parts.length - 1} testId="message-part-down" onClick={() => movePart(partIndex, 1)} />
+          <MacroIconButton kind="remove" testId="message-part-remove" onClick={() => removePart(partIndex)} />
         </div>
       </div>
       {#if isTextConsumerPart(part)}

@@ -10,6 +10,8 @@
     onSubmitRunnerInput,
     onRefreshRunner,
     onMacroControl,
+    startDisabled = false,
+    startDisabledReason = '',
   } = $props<{
     runner: MacroRunnerSnapshot | null
     statusText: string
@@ -18,6 +20,8 @@
     onSubmitRunnerInput: () => void
     onRefreshRunner: () => void
     onMacroControl: (action: "start" | "pause" | "resume" | "stop") => void
+    startDisabled?: boolean
+    startDisabledReason?: string
   }>()
 
   function pauseResumeAction(): "pause" | "resume" {
@@ -47,7 +51,7 @@
     {#if runner?.pauseReason}<span>{runner.pauseReason.message}</span>{/if}
   </div>
   <div class="macro-run-controls" data-testid="macro-run-controls">
-    <button type="button" data-testid="macro-control-start" title="Start selected template" onclick={() => onMacroControl("start")}>Start</button>
+    <button type="button" data-testid="macro-control-start" title={startDisabled ? startDisabledReason : "Start selected template"} disabled={startDisabled} onclick={() => onMacroControl("start")}>Start</button>
     <button type="button" data-testid="macro-control-pause-resume" title={pauseResumeTitle()} disabled={pauseResumeDisabled()} onclick={() => onMacroControl(pauseResumeAction())}>{pauseResumeLabel()}</button>
     <button type="button" data-testid="macro-control-stop" title="Stop active run" onclick={() => onMacroControl("stop")}>Stop</button>
   </div>

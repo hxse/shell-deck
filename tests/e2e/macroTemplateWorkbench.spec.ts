@@ -1,4 +1,4 @@
-import { expect, test } from 'playwright/test'
+import { expect, test, type Locator, type Page } from 'playwright/test'
 import { readFileSync } from 'node:fs'
 
 const inputDeliveryHelp = 'Auto uses Bracketed paste for Shell tabs and Direct bytes for Text tabs. Direct bytes and Bracketed paste force the selected mode.'
@@ -19,6 +19,29 @@ async function fieldTypography(control: any) {
     return {
       control: { fontFamily: controlStyle.fontFamily, fontSize: controlStyle.fontSize, fontWeight: controlStyle.fontWeight },
       label: { fontFamily: labelStyle.fontFamily, fontSize: labelStyle.fontSize, fontWeight: labelStyle.fontWeight },
+    }
+  })
+}
+
+function flowBody(page: Page, label: string) {
+  return page.locator('[data-testid="flow-block"][data-flow-body-label="' + label + '"]')
+}
+
+function emptyBodyAdd(body: Locator) {
+  return body.locator(':scope > [data-testid="empty-flow-body"] > [data-testid="empty-body-add"]')
+}
+
+async function insertionPaletteVisual(palette: Locator) {
+  return await palette.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const actions = element.querySelector('.step-actions')
+    return {
+      position: style.position,
+      width: element.getBoundingClientRect().width,
+      padding: style.padding,
+      borderRadius: style.borderRadius,
+      boxShadow: style.boxShadow,
+      actionColumns: actions ? getComputedStyle(actions).gridTemplateColumns : '',
     }
   })
 }
@@ -54,6 +77,7 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByTestId('macro-insertion-palette')).toHaveCount(0)
   await page.getByTestId('empty-body-add').first().click()
   await expect(page.getByTestId('macro-actions-palette')).toBeVisible()
+  const mainPaletteVisual = await insertionPaletteVisual(page.getByTestId('macro-insertion-palette'))
   await expect(page.getByTestId('add-step-send')).toBeVisible()
   await expect(page.getByTestId('add-step-input')).toBeVisible()
   await expect(page.getByTestId('add-step-wait')).toBeVisible()
@@ -67,7 +91,8 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByTestId('add-step-parse')).toHaveCount(0)
   await expect(page.getByTestId('add-step-branch')).toHaveCount(0)
   await page.getByTestId('macro-insertion-cancel').click()
-  await expect(page.getByTestId('macro-step-list')).toContainText('0 nodes')
+  await expect(page.getByTestId('macro-step-list')).not.toContainText('0 nodes')
+  await expect(page.getByTestId('empty-body-add')).toBeVisible()
   await page.getByTestId('empty-body-add').first().click()
   await page.getByTestId('add-step-send').click()
   await expect(page.getByTestId('macro-validation-summary')).toHaveText('success')
@@ -114,7 +139,12 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await page.getByTestId('message-add-source').first().click()
   await expect(page.getByTestId('message-source-part').first()).toHaveValue('')
   await expect(page.getByTestId('message-source-part').first().locator('option')).toHaveText(['none'])
-  await page.getByTestId('message-part-row').filter({ hasText: '2. artifact' }).getByRole('button', { name: 'Remove' }).click()
+  const artifactPart = page.getByTestId('message-part-row').filter({ hasText: '2. artifact' })
+  const artifactPartActions = artifactPart.locator(':scope > .step-title > .inline-actions > button')
+  await expect(artifactPartActions).toHaveText(['', '', ''])
+  expect(await artifactPartActions.evaluateAll((buttons) => buttons.map((button) => button.getAttribute('title')))).toEqual(['Up', 'Down', 'Remove'])
+  await expect(artifactPartActions.locator('svg')).toHaveCount(3)
+  await artifactPart.getByRole('button', { name: 'Remove' }).click()
 
   async function insertAfterLast(testId: string) {
     const buttons = page.getByTestId('node-add-after')
@@ -151,6 +181,11 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByTestId('extract-text-select-mode').last().locator('option')).toHaveText(['all', 'index', 'range'])
   await expect(page.getByTestId('extract-text-source').last().locator('option')).toHaveText(['capture_source.captured_text'])
   await expect(page.getByTestId('extract-text-source').last()).not.toContainText('extract_text.extracted_text')
+  await page.getByTestId('extract-add-filter').last().click()
+  const filterRemove = page.getByTestId('extract-filter-remove').last()
+  await expect(filterRemove).toHaveText('')
+  await expect(filterRemove).toHaveAttribute('title', 'Remove')
+  await expect(filterRemove.locator('svg')).toHaveCount(1)
   await page.getByTestId('node-id-input').first().fill('extract_text')
   await expect(page.getByTestId('macro-id-edit-notice')).toContainText('Duplicate node id blocked: extract_text')
   await insertAfterLast('add-step-parallel')
@@ -159,8 +194,30 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await expect(page.getByTestId("parallel-lane-tab")).toHaveText(["lane_1"])
   await page.getByTestId("parallel-lane-add-before-output").click()
   await expect(page.getByTestId("parallel-lane-action-palette")).toBeVisible()
+  await expect(page.getByTestId("parallel-lane-insertion-mode")).toHaveAttribute("data-placement-mode", "anchored")
+  expect(await insertionPaletteVisual(page.getByTestId("parallel-lane-action-palette"))).toEqual(mainPaletteVisual)
+  await expect(page.getByTestId("parallel-add-send")).toBeFocused()
   await page.getByTestId("parallel-add-send").click()
   await expect(page.getByTestId("parallel-lane-action")).toHaveCount(1)
+  const parallelAction = page.getByTestId("parallel-lane-action").first()
+  const parallelCollapse = parallelAction.getByTestId("parallel-node-toggle-collapse")
+  const parallelActions = parallelAction.getByTestId("parallel-node-action-controls")
+  await expect(parallelActions.locator("button")).toHaveCount(6)
+  expect(await parallelActions.locator("button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("title")))).toEqual(["Collapse", "Move up", "Move down", "Add before", "Add after", "Remove"])
+  await expect(parallelActions.locator("button")).toHaveText(["", "", "", "", "", ""])
+  await expect(parallelAction.getByTestId("parallel-node-structural-actions")).toHaveCount(0)
+  await expect(parallelAction.getByTestId("parallel-node-edit-actions")).toHaveCount(0)
+  await expect(parallelCollapse).toHaveAttribute("title", "Collapse")
+  await expect(parallelAction.getByTestId("parallel-node-move-up")).toHaveAttribute("title", "Move up")
+  await expect(parallelAction.getByTestId("parallel-node-move-down")).toHaveAttribute("title", "Move down")
+  await expect(parallelActions.locator("svg")).toHaveCount(6)
+  await parallelCollapse.click()
+  await expect(parallelAction).toHaveClass(/collapsed/)
+  await expect(parallelAction.getByTestId("node-collapsed-badge")).toHaveText("Collapsed")
+  await expect(parallelCollapse).toHaveAttribute("title", "Expand")
+  await expect(parallelCollapse).toHaveAttribute("aria-expanded", "false")
+  await parallelCollapse.click()
+  await expect(parallelCollapse).toHaveAttribute("title", "Collapse")
   await expect(page.getByTestId("parallel-send-input-delivery")).toHaveValue("auto")
   await expect(page.getByTestId("parallel-send-input-delivery").locator("option")).toHaveText(["Auto (recommended)", "Direct bytes", "Bracketed paste"])
   await expect(page.getByTestId("parallel-send-ending-sequence")).toHaveValue("cr")
@@ -213,18 +270,21 @@ test('macro template workbench edits, saves, exports, imports and deletes Flow V
   await page.getByTestId("parallel-output-id-input").fill("capture_source")
   await expect(page.getByTestId("parallel-id-edit-notice")).toContainText("Duplicate output id blocked: capture_source")
   await insertAfterLast('add-flow-if')
-  await page.getByTestId('node-add-inside-if').click()
+  const workbenchIfBody = flowBody(page, 'if body').last()
+  await emptyBodyAdd(workbenchIfBody).click()
   await page.getByTestId('add-flow-finish').click()
-  await page.getByTestId('add-flow-elif').click()
-  await page.getByTestId('node-add-inside-elif').click()
+  await workbenchIfBody.locator('..').getByTestId('add-flow-elif').click()
+  await emptyBodyAdd(flowBody(page, 'elif body').last()).click()
   await page.getByTestId('add-flow-finish').click()
   await insertAfterLast('add-flow-for')
-  await expect(page.getByTestId('flow-block-summary').filter({ hasText: 'for body' })).toBeVisible()
-  await page.getByTestId('node-add-inside-for').click()
+  const forBody = flowBody(page, 'for body').last()
+  await expect(forBody).toBeVisible()
+  await expect(page.getByTestId('flow-block-summary')).toHaveCount(0)
+  await emptyBodyAdd(forBody).click()
   await expect(page.getByTestId('add-flow-break')).toBeVisible()
   await expect(page.getByTestId('add-flow-continue')).toBeVisible()
   await page.getByTestId('add-flow-break').click()
-  await page.getByTestId('node-add-inside-for').click()
+  await forBody.locator(':scope > .flow-node-editor').last().getByTestId('node-add-after').click()
   await page.getByTestId('add-flow-continue').click()
   await insertAfterLast('add-flow-finish')
   await insertAfterLast('add-step-send')

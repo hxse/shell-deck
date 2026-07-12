@@ -143,13 +143,28 @@ export function moveNodeToAnchor(template: MacroTemplate, nodeId: string, anchor
   return { ok: true }
 }
 
-export function addElifToIfNode(template: MacroTemplate, position: NodePosition, branch: FlowV2IfBranch): CommandResult {
+export function insertElifBranchAfter(template: MacroTemplate, position: NodePosition, afterBranchIndex: number, branch: FlowV2IfBranch): CommandResult {
   const body = resolveBodyPath(template, position.bodyPath)
   if (!body) return { ok: false, reason: "body_not_found" }
   const node = body[position.index]
   if (!node) return { ok: false, reason: "node_not_found" }
   if (node.type !== "if") return { ok: false, reason: "invalid_target" }
-  node.branches.push(branch)
+  if (branch.kind !== "elif") return { ok: false, reason: "invalid_target" }
+  if (afterBranchIndex < 0 || afterBranchIndex >= node.branches.length) return { ok: false, reason: "out_of_bounds" }
+  node.branches.splice(afterBranchIndex + 1, 0, branch)
+  return { ok: true }
+}
+
+export function removeIfBranchAt(template: MacroTemplate, position: NodePosition, branchIndex: number): CommandResult {
+  const body = resolveBodyPath(template, position.bodyPath)
+  if (!body) return { ok: false, reason: "body_not_found" }
+  const node = body[position.index]
+  if (!node) return { ok: false, reason: "node_not_found" }
+  if (node.type !== "if") return { ok: false, reason: "invalid_target" }
+  if (branchIndex === 0) return { ok: false, reason: "invalid_target" }
+  if (branchIndex < 0 || branchIndex >= node.branches.length) return { ok: false, reason: "out_of_bounds" }
+  if (node.branches[branchIndex].kind !== "elif") return { ok: false, reason: "invalid_target" }
+  node.branches.splice(branchIndex, 1)
   return { ok: true }
 }
 
@@ -160,6 +175,17 @@ export function ensureElseForIfNode(template: MacroTemplate, position: NodePosit
   if (!node) return { ok: false, reason: "node_not_found" }
   if (node.type !== "if") return { ok: false, reason: "invalid_target" }
   node.else ??= []
+  return { ok: true }
+}
+
+export function removeElseFromIfNode(template: MacroTemplate, position: NodePosition): CommandResult {
+  const body = resolveBodyPath(template, position.bodyPath)
+  if (!body) return { ok: false, reason: "body_not_found" }
+  const node = body[position.index]
+  if (!node) return { ok: false, reason: "node_not_found" }
+  if (node.type !== "if") return { ok: false, reason: "invalid_target" }
+  if (!node.else) return { ok: false, reason: "out_of_bounds" }
+  delete node.else
   return { ok: true }
 }
 

@@ -12,6 +12,46 @@ test("browser tabs render live output, alias rename, replay and drag reorder", a
   await expect(first.getByTestId('terminal-tab')).toHaveCount(2)
   await expect(second.getByTestId('terminal-tab')).toHaveCount(2)
 
+  const compactChrome = await first.evaluate(() => {
+    const rectHeight = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().height ?? 0
+    const fontSize = (selector: string) => {
+      const element = document.querySelector(selector)
+      return element ? getComputedStyle(element).fontSize : ''
+    }
+    return {
+      topbarHeight: rectHeight('.compact-topbar'),
+      macroToggleHeight: rectHeight('[data-testid="macro-panel-toggle"]'),
+      macroToggleFont: fontSize('[data-testid="macro-panel-toggle"]'),
+      createButtonCount: document.querySelectorAll('.terminal-create-button').length,
+      createButtonHeight: rectHeight('.terminal-create-button'),
+      createButtonFont: fontSize('.terminal-create-button'),
+      settingsHeight: rectHeight('[data-testid="settings-button"]'),
+      settingsFont: fontSize('[data-testid="settings-button"]'),
+      tabStripHeight: rectHeight('.tab-strip'),
+      terminalTabHeight: rectHeight('.terminal-tab'),
+      tabAliasFont: fontSize('.terminal-tab .tab-alias'),
+      terminalMetaHeight: rectHeight('.terminal-meta'),
+      terminalMetaAliasFont: fontSize('.terminal-meta strong'),
+      terminalMetaIdFont: fontSize('.terminal-meta code'),
+    }
+  })
+  expect(compactChrome).toEqual({
+    topbarHeight: 36,
+    macroToggleHeight: 28,
+    macroToggleFont: '12px',
+    createButtonCount: 3,
+    createButtonHeight: 28,
+    createButtonFont: '12px',
+    settingsHeight: 28,
+    settingsFont: '12px',
+    tabStripHeight: 40,
+    terminalTabHeight: 34,
+    tabAliasFont: '12px',
+    terminalMetaHeight: 36,
+    terminalMetaAliasFont: '11px',
+    terminalMetaIdFont: '10px',
+  })
+
   const terminalId = await first.getByTestId('terminal-tab').first().getAttribute('data-terminal-id')
   const secondTerminalId = await first.getByTestId('terminal-tab').nth(1).getAttribute('data-terminal-id')
   expect(terminalId).toBeTruthy()

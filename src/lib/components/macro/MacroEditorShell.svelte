@@ -5,7 +5,7 @@
   import MacroStepList from "./MacroStepList.svelte"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
-  let { draft = $bindable<MacroTemplate | null>(), terminals, indexMap, validation, insertionPaletteMode, telegramProfileIds = [], telegramProfilesError = '' } = $props<{
+  let { draft, terminals, indexMap, validation, insertionPaletteMode, telegramProfileIds = [], telegramProfilesError = '', locked = false, onUpdateDraft } = $props<{
     draft: MacroTemplate | null
     terminals: TerminalSnapshot[]
     indexMap: TerminalIndexMapItem[]
@@ -13,15 +13,9 @@
     insertionPaletteMode: MacroInsertionPaletteMode
     telegramProfileIds?: string[]
     telegramProfilesError?: string
+    locked?: boolean
+    onUpdateDraft: (mutator: (template: MacroTemplate) => void) => void
   }>()
-
-
-  function updateDraft(mutator: (template: MacroTemplate) => void) {
-    if (!draft) return
-    const next = JSON.parse(JSON.stringify(draft)) as MacroTemplate
-    mutator(next)
-    draft = next
-  }
 
   function defaultCondition(template: MacroTemplate) {
     return { kind: "text_match" as const, source: defaultArtifactSource(template), matcher: { kind: "simple" as const, op: "contains" as const, text: "READY" }, scope: { kind: "whole" as const } }
@@ -111,20 +105,24 @@
 {#if draft}
   <div class="macro-editor-layout no-tools">
     <main class="macro-editor-main">
-      <MacroStepList
-        {draft}
-        {validation}
-        {updateDraft}
-        {terminalChoices}
-        {choiceFromTarget}
-        {targetFromChoice}
-        {defaultCaptureSource}
-        {defaultCondition}
-        {artifactChoices}
-        {insertionPaletteMode}
-        {telegramProfileIds}
-        {telegramProfilesError}
-      />
+      <fieldset class="macro-editor-lock-surface" data-testid="macro-editor-lock-surface" disabled={locked} inert={locked} aria-busy={locked} aria-disabled={locked}>
+        {#key draft.id}
+          <MacroStepList
+            {draft}
+            {validation}
+            updateDraft={onUpdateDraft}
+            {terminalChoices}
+            {choiceFromTarget}
+            {targetFromChoice}
+            {defaultCaptureSource}
+            {defaultCondition}
+            {artifactChoices}
+            {insertionPaletteMode}
+            {telegramProfileIds}
+            {telegramProfilesError}
+          />
+        {/key}
+      </fieldset>
     </main>
   </div>
 {:else}

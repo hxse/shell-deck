@@ -11,7 +11,7 @@ cd <shell-deck-root>
 just start
 ```
 
-`just start` seeds the `local` config with two real shell terminals when it starts with an empty deck. Tests and explicit API calls can still create fake terminals.
+`just start`, `just start-mock-ai`, and `just start-codex-ai` rebuild `dist` before launching the static server. `just start` then seeds the `local` config with two real shell terminals when it starts with an empty deck. Tests and explicit API calls can still create fake terminals.
 
 Default URL:
 
@@ -60,7 +60,9 @@ Macro terminal refs use one of these complete JSON objects:
 
 Each ref contains exactly `kind` and `value`. Macro JSON does not accept scalar terminal refs or additional fields.
 
-Double-click a terminal tab to rename it. That alias is the macro-visible alias. Use the tab close button to remove a terminal; shell-deck asks for confirmation before closing. Dragging terminal tabs is behind the drag toggle to avoid accidental reorder.
+Double-click a terminal tab to rename it. The input receives focus with the caret at the end; press Enter or click elsewhere to save, and press Escape to cancel. That alias is the macro-visible alias. Use the tab close button to remove a terminal; shell-deck asks for confirmation before closing. Dragging terminal tabs is behind the drag toggle to avoid accidental reorder.
+
+Text tabs show one-based logical line numbers. Their editor does not soft-wrap: long lines scroll horizontally so the gutter remains aligned. Line numbers are UI-only and are never copied into the synchronized or captured text.
 
 ## Hook-Enabled Codex
 
@@ -95,11 +97,18 @@ The macro workbench supports:
 - searchable template selection
 - template create/save/duplicate/delete with delete confirmation in one toolbar
 - import/export JSON backups
-- visual editing for nested Flow V2 bodies, including `if`, `for`, control action bodies, and bounded parallel lanes
-- JSON preview/import/export for the complete `schemaVersion: 2` document
+- visual editing for nested Flow V2 bodies, including `if`, `for`, control action bodies, and bounded parallel lanes; each depth has one 2px medium-contrast guide shared with the node left border, plus a 2px bottom-only dashed branch that fades right. Two depths therefore show two vertical lines, not separate guide/border pairs
+- one generic `Add inside` placeholder for each empty flow body; after the first child exists, use that child's Add before/Add after. The editor does not show duplicate `Add inside for/if/...` or control `Add action` buttons
+- read-only JSON preview/import/export plus an explicit direct-edit mode for the complete `schemaVersion: 2` document
 - structured branch conditions only; no expression strings and no JS eval
 
 Flow V2 action nodes are `send`, `notify`, `input`, `wait`, `capture-source`, `extract_text`, and `parallel`. Control nodes are `if`, `for`, `break`, `continue`, and `finish`. A parallel lane ends with its mandatory `output` node; it is not a general top-level action.
+
+JSON direct editing uses an isolated buffer. Save parses and validates the complete current schema and refuses changes to the selected template id or config id; failures leave the text untouched for correction. Cancel discards the buffer. Save or Cancel is required before switching back to Editor/Trace, changing templates, or starting the runner.
+
+The Macro header and idle runner use single-row chrome so more of the Flow body remains visible. The template/Reset width header is 39px, view tabs and runner controls are 28px, editor-local actions are at least 24px, Macro textarea text is 13px, and JSON code is 14px. Prompt and Trace use matching 38px headers and the same 12–14px content scale; Trace tabs are 28px. When a run waits for user input, that editor still expands to a full-width second row. The whole workspace topbar is 36px with uniform 28px/12px Macro, Prompt, New terminal, and Settings controls; terminal tabs and metadata remain separately compact without shrinking terminal/Text content.
+
+Parallel lane Add before/Add after opens the same insertion overlay used by the main Flow editor. It follows the Settings choice for near/center placement, stays inside the viewport, focuses the first valid lane action, and closes with Escape, Cancel, or the background scrim.
 
 A count loop always stores an explicit discriminator:
 

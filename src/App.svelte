@@ -528,9 +528,9 @@
         <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
         <span>Prompt</span>
       </button>
-      <button type="button" onclick={() => createTerminal('fake')}>New fake</button>
-      <button type="button" onclick={() => createTerminal('real')}>New shell</button>
-      <button type="button" onclick={() => createTerminal('text')}>New text</button>
+      <button type="button" class="terminal-create-button" onclick={() => createTerminal('fake')}>New fake</button>
+      <button type="button" class="terminal-create-button" onclick={() => createTerminal('real')}>New shell</button>
+      <button type="button" class="terminal-create-button" onclick={() => createTerminal('text')}>New text</button>
       <button
         type="button"
         class="settings-button"
