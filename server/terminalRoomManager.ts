@@ -1,7 +1,7 @@
 import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { assertGeneratedId, assertRoomRouteToken, createGeneratedId } from '../src/lib/generatedId'
-import type { RoomSnapshot, ServerMessage, TerminalBackendKind, TerminalSnapshot } from '../src/lib/protocol'
+import type { RoomSnapshot, ServerMessage, TerminalBackendKind, TerminalRuntimePosition, TerminalSnapshot, TerminalType } from '../src/lib/protocol'
 import {
   assertControlEpoch,
   assertRoomControlBearer,
@@ -65,6 +65,7 @@ export type CreateTerminalOptions = {
   rows?: number
   cwd?: string
   cwdSource?: 'last-shell'
+  insertAtIndex?: number
 }
 
 export type RoomOperationTicket = {
@@ -103,6 +104,9 @@ type RoomRuntime = {
   roomGeneration: string
   lifecycle: RoomLifecycle
   roomRevision: number
+  terminalStructureRevision: number
+  structureLockRunId: string | null
+  structureQueue: Promise<void>
   store: RoomTerminalStore
   terminals: Map<string, TerminalSlot>
   clients: Map<string, RoomClient>
@@ -483,6 +487,18 @@ export class TerminalRoomManager {
     }
   }
 
+  async runControlledClientOperation<T>(clientId: string, operation: (ticket: RoomControlledOperationTicket) => Promise<T> | T): Promise<T> {
+    const ticket = this.admitControlledClient(clientId)
+    try {
+      ticket.assertAuthorized()
+      const result = await operation(ticket)
+      ticket.assertAuthorized()
+      return result
+    } finally {
+      ticket.finish()
+    }
+  }
+
   async runControlledBearerOperation<T>(
     bearer: RoomControlBearer,
     operation: (ticket: RoomControlledOperationTicket) => Promise<T> | T,
@@ -554,6 +570,7 @@ export class TerminalRoomManager {
     let backend: TerminalBackend | undefined
     try {
       room = this.activeRoomOrThrow(roomId)
+      this.assertTerminalStructureMutable(room)
       const backendKind = options.backend ?? 'real'
       if (options.cwd !== undefined && options.cwdSource !== undefined) throw new Error('terminal_cwd_source_conflict')
       if (backendKind === 'text' && (options.cwd !== undefined || options.cwdSource !== undefined)) throw new Error('text_terminal_cwd_not_supported')
@@ -603,9 +620,11 @@ export class TerminalRoomManager {
         onError: (error) => committed ? this.markFailed(terminal, error) : pendingError = error,
       })
       ticket.assertActive()
-      room.store.addTerminal(terminalId)
+      if (pendingError) throw pendingError
+      room.store.addTerminal(terminalId, options.insertAtIndex)
       room.terminals.set(terminalId, terminal)
       room.roomRevision += 1
+      room.terminalStructureRevision += 1
       committed = true
       terminal.status = 'running'
       this.broadcast(room, this.terminalSnapshot(terminal))
@@ -679,6 +698,7 @@ export class TerminalRoomManager {
     let backend: TerminalBackend | undefined
     try {
       room = this.roomOrThrow(roomId)
+      this.assertTerminalStructureMutable(room)
       const oldTerminal = this.resolveTerminal(roomId, ref)
       if (fail) return { ok: false as const, reason: 'backend_unavailable' }
       const nextBackendKind = backendKind ?? oldTerminal.backendKind
@@ -720,13 +740,16 @@ export class TerminalRoomManager {
         onError: (error) => committed ? this.markFailed(nextTerminal, error) : pendingError = error,
       })
       ticket.assertActive()
+      if (pendingError) throw pendingError
       this.cancelCwdRefresh(oldTerminal)
       this.beginBackendClose(room, oldTerminal.backend)
       room.terminals.set(nextTerminal.terminalId, nextTerminal)
       room.roomRevision += 1
+      room.terminalStructureRevision += 1
       committed = true
       nextTerminal.status = 'running'
       this.broadcast(room, this.terminalSnapshot(nextTerminal))
+      this.broadcastIndexMap(room)
       for (const data of pendingData) this.emitOutput(nextTerminal, data)
       if (pendingError) this.markFailed(nextTerminal, pendingError)
       if (pendingExit) this.markClosed(nextTerminal, pendingExit.exitCode, pendingExit.signal)
@@ -743,9 +766,12 @@ export class TerminalRoomManager {
     const ticket = this.admit(roomId)
     try {
       const room = this.roomOrThrow(roomId)
+      this.assertTerminalStructureMutable(room)
       this.terminalOrThrow(room, terminalId)
+      if (room.store.indexOf(terminalId) === newIndex) return
       room.store.moveTerminal(terminalId, newIndex)
       room.roomRevision += 1
+      room.terminalStructureRevision += 1
       this.broadcastIndexMap(room)
       this.broadcast(room, this.roomSnapshot(roomId))
     } finally {
@@ -757,12 +783,14 @@ export class TerminalRoomManager {
     const ticket = this.admit(roomId)
     try {
       const room = this.roomOrThrow(roomId)
+      this.assertTerminalStructureMutable(room)
       const terminal = this.resolveTerminal(roomId, ref)
       this.cancelCwdRefresh(terminal)
       this.beginBackendClose(room, terminal.backend)
       room.terminals.delete(terminal.terminalId)
       room.store.removeTerminal(terminal.terminalId)
       room.roomRevision += 1
+      room.terminalStructureRevision += 1
       this.broadcastIndexMap(room)
       this.broadcast(room, this.roomSnapshot(roomId))
       return { ok: true as const }
@@ -791,7 +819,94 @@ export class TerminalRoomManager {
       this.refreshTerminalCwd(this.terminalOrThrow(room, terminalId), true)
     }
     const terminals = room.store.terminalOrder.map((terminalId) => this.terminalSnapshot(this.terminalOrThrow(room, terminalId)))
-    return { type: 'room_snapshot', roomId: room.roomId, roomGeneration: room.roomGeneration, roomRevision: room.roomRevision, terminals, indexMap: room.store.indexMap() }
+    return {
+      type: 'room_snapshot',
+      roomId: room.roomId,
+      roomGeneration: room.roomGeneration,
+      roomRevision: room.roomRevision,
+      terminalStructureRevision: room.terminalStructureRevision,
+      terminals,
+      indexMap: room.store.indexMap(),
+      terminalPositions: this.terminalPositions(room.roomId),
+      terminalStructureLocked: room.structureLockRunId !== null,
+    }
+  }
+
+  terminalPositions(roomId: string): TerminalRuntimePosition[] {
+    const room = this.activeRoomOrThrow(roomId)
+    return room.store.terminalOrder.map((terminalId, offset) => {
+      const terminal = this.terminalOrThrow(room, terminalId)
+      const type: TerminalType = terminal.backendKind === 'text' ? 'text' : 'shell'
+      const readiness = terminal.status === 'running' ? 'ready' : terminal.status === 'closed' ? 'exited' : terminal.status
+      return {
+        index: offset + 1,
+        type,
+        terminalId: terminal.terminalId,
+        launchId: terminal.launchId,
+        readiness,
+        ...(terminal.cwd ? { cwd: terminal.cwd } : {}),
+      }
+    })
+  }
+
+  terminalStructureRevision(roomId: string): number {
+    return this.activeRoomOrThrow(roomId).terminalStructureRevision
+  }
+
+  async runTerminalStructureOperation<T>(
+    ticket: RoomControlledOperationTicket,
+    expectedRevision: number,
+    operation: () => Promise<T> | T,
+  ): Promise<T> {
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) throw new Error('invalid_terminal_structure_revision')
+    const room = this.activeRoomOrThrow(ticket.roomId)
+    const previous = room.structureQueue
+    let release!: () => void
+    room.structureQueue = new Promise<void>((resolve) => { release = resolve })
+    await previous
+    try {
+      ticket.assertAuthorized()
+      this.assertTerminalStructureMutable(room)
+      if (room.terminalStructureRevision !== expectedRevision) throw new Error('terminal_structure_revision_conflict')
+      const result = await operation()
+      ticket.assertAuthorized()
+      return result
+    } finally {
+      release()
+    }
+  }
+
+  async runTerminalStructureMutation<T>(ticket: RoomControlledOperationTicket, operation: () => Promise<T> | T): Promise<T> {
+    const room = this.activeRoomOrThrow(ticket.roomId)
+    const previous = room.structureQueue
+    let release!: () => void
+    room.structureQueue = new Promise<void>((resolve) => { release = resolve })
+    await previous
+    try {
+      ticket.assertAuthorized()
+      this.assertTerminalStructureMutable(room)
+      const result = await operation()
+      ticket.assertAuthorized()
+      return result
+    } finally {
+      release()
+    }
+  }
+
+  acquireRunStructureLock(roomId: string, runId: string): void {
+    const room = this.activeRoomOrThrow(roomId)
+    if (room.structureLockRunId !== null) throw new Error('room_structure_locked_by_run')
+    room.structureLockRunId = assertGeneratedId(runId, 'run')
+    room.roomRevision += 1
+    this.broadcastIndexMap(room)
+  }
+
+  releaseRunStructureLock(roomId: string, runId: string): void {
+    const room = this.rooms.get(roomId)
+    if (!room || room.structureLockRunId !== runId) return
+    room.structureLockRunId = null
+    room.roomRevision += 1
+    if (room.lifecycle === 'active') this.broadcastIndexMap(room)
   }
 
   indexMap(roomId: string) {
@@ -911,6 +1026,9 @@ export class TerminalRoomManager {
       roomGeneration,
       lifecycle: 'active',
       roomRevision: 0,
+      terminalStructureRevision: 0,
+      structureLockRunId: null,
+      structureQueue: Promise.resolve(),
       store: new RoomTerminalStore(),
       terminals: new Map(),
       clients: new Map(),
@@ -1244,7 +1362,20 @@ export class TerminalRoomManager {
   }
 
   private broadcastIndexMap(room: RoomRuntime): void {
-    this.broadcast(room, { type: 'terminal_index_map', roomId: room.roomId, roomGeneration: room.roomGeneration, roomRevision: room.roomRevision, items: room.store.indexMap() })
+    this.broadcast(room, {
+      type: 'terminal_index_map',
+      roomId: room.roomId,
+      roomGeneration: room.roomGeneration,
+      roomRevision: room.roomRevision,
+      terminalStructureRevision: room.terminalStructureRevision,
+      items: room.store.indexMap(),
+      terminalPositions: this.terminalPositions(room.roomId),
+      terminalStructureLocked: room.structureLockRunId !== null,
+    })
+  }
+
+  private assertTerminalStructureMutable(room: RoomRuntime): void {
+    if (room.structureLockRunId !== null) throw new Error('room_structure_locked_by_run')
   }
 
   private advanceTerminalRevision(

@@ -1,6 +1,6 @@
 # Active Specs
 
-本目录记录已经落地的 current-schema implementation truth。当前底座真值对应`.032`的multi-Room/user-level storage与`.033`的single-controller/content edit lease；完整产品仍需由`.034`接回Macro V3并由`.035`接回Library。
+本目录记录已经落地的 current-schema implementation truth。当前真值对应`.032`的multi-Room/user-level storage、`.033`的single-controller/content edit lease和`.034`的Macro V3 editor/Prepare/runner；Library仍由`.035`接入。
 
 当前文件：
 

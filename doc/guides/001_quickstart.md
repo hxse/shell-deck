@@ -59,7 +59,15 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease；production Macro V3与Library UI分别在`.034`、`.035`接回。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro V3 editor/runner；Library UI由`.035`接入。
+
+## Macro
+
+新Room默认不选择Macro。点击Macro面板的New创建client-local draft；Save只校验并保存portable `MacroDefinitionV3`，不要求当前Room已有匹配terminal。definition只保存连续terminal index/type，不保存terminalId、cwd或Room identity。
+
+需要调整当前Room terminal顺序/类型时，显式点击Start左侧的`Prepare terminals`。它读取当前visual draft或JSON Edit buffer的terminal layout；切换Macro、Save、Start和terminal变化都不会自动Prepare。Prepare只keep/move/create/insert，不删除或修复failed/exited terminal。
+
+Start要求Macro已经Save，并要求当前terminal layout/type/readiness匹配。启动时server把index解析成terminalId/launchId并冻结，运行中terminal结构保持锁定；Pause只暂停live run，server restart或Room Destroy后不能Resume。Trace、manifest、events和artifact仍可只读查看，但不会恢复runner。
 
 ## 验证
 
@@ -68,4 +76,5 @@ just check
 just build
 just test-032
 just test-033
+just test-034
 ```

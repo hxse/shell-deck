@@ -120,6 +120,10 @@ export class TerminalRoomClient {
   get controlGrant(): RoomControlGrant | null { return this.#controlGrant }
   get canMutateShared(): boolean { return this.#controlView?.mode === 'controller' && this.#controlGrant !== null }
 
+  controlHeaders(): Record<string, string> {
+    return this.#ownerHeaders()
+  }
+
   send(message: ClientMessage): boolean {
     if (this.#disposed || this.ws.readyState !== WebSocket.OPEN) return false
     this.ws.send(JSON.stringify(message))
@@ -163,6 +167,16 @@ export class TerminalRoomClient {
       headers: this.#ownerHeaders(),
       body: JSON.stringify({ resourceKey, expectedLeaseEpoch }),
     })
+  }
+
+  async contentEditLeaseView(resourceKey: ContentResourceKey): Promise<ContentEditLeaseView> {
+    const body = await this.#request('/api/content-edit-leases/view', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ resourceKey }),
+    }) as { view?: ContentEditLeaseView }
+    if (!body.view) throw new Error('invalid_content_edit_lease_response')
+    return body.view
   }
 
   async takeOverContentEditLease(resourceKey: ContentResourceKey, expectedLeaseEpoch: number): Promise<{ view: ContentEditLeaseView; grant: ContentEditLeaseGrant }> {

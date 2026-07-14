@@ -22,8 +22,9 @@
 * V0 编排 terminal，不编排 Codex。Codex 只是用户可能在 terminal 中运行的程序之一。
 * 所有 shell-deck 项目命令入口都通过 `justfile` 暴露；V0 不安装全局 `sdcodex`。Codex hook capture命令只支持在shell-deck创建的Shell terminal内启动；普通外部terminal缺少Room runtime context时必须fail loudly，不产生unbound evidence。
 * V0 MacroDefinition 的 terminal reference 只保存连续 index/type；terminalId/launchId 仅属于 live Room runtime，Start 时由 index 解析并冻结，definition 不保存 physical terminal id、alias、cwd 或 Room identity。
-* Macro 与 Library 的 Copy 只表示把当前文本写入 clipboard；产品不提供 Duplicate、clone 或 copy-and-create。创建相似内容必须显式 New、Paste、Save，并走正常 validation 与 fresh record identity。
+* terminal Prepare只允许用户点击Macro面板唯一的`Prepare terminals`按钮显式触发，消费当前visual/JSON draft的合法terminalLayout snapshot；Settings、Macro selection、Library Load、Save、Start与terminal event都不得隐式Prepare。
 * 同一Room的共享mutation必须通过server-side controller guard；Macro/Library saved record编辑必须同时满足content edit lease与expected revision，client disabled state不承担正确性。
+* Macro 与 Library 的 Copy 只表示把当前文本写入 clipboard；产品不提供 Duplicate、clone 或 copy-and-create。创建相似内容必须显式 New、Paste、Save，并走正常 validation 与 fresh record identity。
 * V0持久化MacroRecord、macro run event log、artifact与只读evidence；Room、terminal、runner cursor和run snapshot只存在于live server process，restart后不从日志恢复。
 * 前端使用 Svelte 5 写法；新增组件优先使用 runes。
 * 真实 PTY 等价于本机 shell 能力。默认只绑定 `127.0.0.1`；LAN 暴露必须显式开启，并且后续必须设计访问控制。

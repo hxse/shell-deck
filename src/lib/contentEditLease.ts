@@ -18,6 +18,11 @@ export type ContentEditLeaseGrant = {
   expiresAt: string
 }
 
+export type ContentCommitLeaseOutcome =
+  | { status: 'retained'; grant: ContentEditLeaseGrant }
+  | { status: 'released' }
+  | { status: 'lost'; reason: 'content_edit_lease_state_refresh_failed' }
+
 export function assertContentResourceKey(value: unknown): ContentResourceKey {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid_content_resource_key')
   const record = value as Record<string, unknown>

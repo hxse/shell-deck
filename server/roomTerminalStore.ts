@@ -4,10 +4,14 @@ import type { TerminalIndexMapItem } from '../src/lib/protocol'
 export class RoomTerminalStore {
   readonly terminalOrder: string[] = []
 
-  addTerminal(terminalId: string): number {
+  addTerminal(terminalId: string, atIndex?: number): number {
     const normalizedId = assertGeneratedId(terminalId, 'terminal')
     if (this.terminalOrder.includes(normalizedId)) throw new Error('terminal_id_conflict:' + normalizedId)
-    this.terminalOrder.push(normalizedId)
+    if (atIndex === undefined) this.terminalOrder.push(normalizedId)
+    else {
+      if (!Number.isInteger(atIndex) || atIndex < 1 || atIndex > this.terminalOrder.length + 1) throw new Error('invalid_terminal_index:' + atIndex)
+      this.terminalOrder.splice(atIndex - 1, 0, normalizedId)
+    }
     return this.indexOf(normalizedId)
   }
 

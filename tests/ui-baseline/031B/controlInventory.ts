@@ -17,11 +17,13 @@ export const baseline031ASourceInteractiveControlDigest = '7de9ac2946db94a2134e2
 
 export const sourceInteractiveControlCount032 = 18
 export const sourceInteractiveControlDigest032 = '08cd10d9663687281cecf5f1b2d761cd55570efafabd57bf0de9972aba8a2b2d'
+export const sourceInteractiveControlCount033 = 19
+export const sourceInteractiveControlDigest033 = '4ff921d1d3f120d6cffee8b2b842a9edfefcc545dedf2fec0d8080d6185afb3b'
 
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
-export const sourceInteractiveControlCount = 19
-export const sourceInteractiveControlDigest = '4ff921d1d3f120d6cffee8b2b842a9edfefcc545dedf2fec0d8080d6185afb3b'
+export const sourceInteractiveControlCount = 175
+export const sourceInteractiveControlDigest = 'ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
@@ -282,31 +284,55 @@ export const baseline031ARuntimeControlIds = [
   'parallel-output-source',
 ] as const
 
-const currentRuntimeControls = [
-  ['home-refresh', 'clicked'],
-  ['new-room', 'clicked'],
-  ['new-room-empty', 'clicked'],
-  ['room-open', 'clicked'],
-  ['room-destroy', 'clicked'],
-  ['home-button', 'clicked'],
-  ['take-control', 'clicked'],
-  ['terminal-create-real', 'clicked'],
-  ['terminal-create-text', 'clicked'],
-  ['settings-button', 'clicked'],
-  ['settings-close', 'clicked'],
-  ['settings-dismiss-layer', 'clicked'],
-  ['tab-drag-toggle', 'clicked'],
-  ['notice-dismiss', 'clicked'],
-  ['notice-dismiss-layer', 'clicked'],
-  ['terminal-tab', 'clicked'],
-  ['terminal-tab-close', 'clicked'],
-  ['terminal-host', 'edited'],
-  ['text-box-editor', 'edited'],
-  ['text-box-copy', 'clicked'],
+const workspaceRuntimeControls = [
+  ["home-refresh", "clicked"],
+  ["new-room", "clicked"],
+  ["new-room-empty", "clicked"],
+  ["room-open", "clicked"],
+  ["room-destroy", "clicked"],
+  ["home-button", "clicked"],
+  ["take-control", "clicked"],
+  ["terminal-create-real", "clicked"],
+  ["terminal-create-text", "clicked"],
+  ["settings-button", "clicked"],
+  ["settings-close", "clicked"],
+  ["settings-dismiss-layer", "clicked"],
+  ["tab-drag-toggle", "clicked"],
+  ["notice-dismiss", "clicked"],
+  ["notice-dismiss-layer", "clicked"],
+  ["terminal-tab", "clicked"],
+  ["terminal-tab-close", "clicked"],
+  ["terminal-host", "edited"],
+  ["text-box-editor", "edited"],
+  ["text-box-copy", "clicked"],
 ] as const satisfies ReadonlyArray<readonly [string, UiControlEvidenceKind]>
 
-export const runtimeControlInventory: UiControlInventoryEntry[] = currentRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
+const removedMacroControls034 = new Set([
+  "macro-insertion-placement-toggle",
+  "macro-duplicate",
+  "macro-import",
+  "macro-import-file",
+  "macro-export",
+  "macro-export-json",
+  "capture-agent-kind",
+  "capture-agent-mode",
+])
 
+const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
+  ...baseline031ARuntimeControlIds
+    .filter(isCurrent034MacroControl)
+    .map((key) => [key, macroEvidenceFor(key)] as const),
+  ["macro-edit", "clicked"],
+  ["macro-cancel-edit", "clicked"],
+  ["macro-prepare-terminals", "clicked"],
+  ["macro-insertion-placement", "clicked"],
+]
+
+export const workspaceRuntimeControlInventory: UiControlInventoryEntry[] = workspaceRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
+export const macroRuntimeControlInventory: UiControlInventoryEntry[] = macroRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
+export const runtimeControlInventory: UiControlInventoryEntry[] = [...workspaceRuntimeControlInventory, ...macroRuntimeControlInventory]
+
+const currentRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [...workspaceRuntimeControls, ...macroRuntimeControls]
 const currentRuntimeControlIds = new Set<string>(currentRuntimeControls.map(([key]) => key))
 const baselineRuntimeControlIds = new Set<string>(baseline031ARuntimeControlIds)
 
@@ -326,12 +352,21 @@ export const attributedControlChanges: UiControlInventoryEntry[] = [
     .map(([key, evidence]) => ({
       key,
       evidence,
-      changedBy: key === 'take-control' ? '20260627A.033' : '20260627A.032',
-      oldBehavior: key === 'take-control' ? '.032 had no explicit controller handoff control.' : '.031A had no routed Room/Home control with this identity.',
-      newBehavior: key === 'take-control' ? '.033 adds explicit confirmed takeover for an observer.' : '.032 adds the canonical Room/Home or current-schema terminal interaction.',
-      spec: key === 'take-control' ? '20260627A.033/02_spec/01_contract.md — Take Control与丢失控制' : '20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime',
+      changedBy: addedControlTask(key),
+      oldBehavior: addedControlOldBehavior(key),
+      newBehavior: addedControlNewBehavior(key),
+      spec: addedControlSpec(key),
     })),
 ]
+export const attributedRestorations034: UiControlInventoryEntry[] = macroRuntimeControls.map(([key, evidence]) => ({
+  key,
+  evidence,
+  changedBy: "20260627A.034",
+  oldBehavior: ".033 intentionally had no production Macro surface while the Room/controller foundation was rebuilt.",
+  newBehavior: ".034 restores this control on MacroDefinitionV3 while preserving the .031A presentation and current Room/controller contracts.",
+  spec: "20260627A.034/02_spec/01_contract.md — UI preservation, Macro workbench and explicit Prepare/Start",
+}))
+
 
 export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
   ['terminal-create-real', 'Shell creation becomes controller-only.'],
@@ -348,6 +383,40 @@ export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
   newBehavior,
   spec: '20260627A.033/02_spec/01_contract.md — Server-side mutation guard and UI精准重构边界',
 }))
+
+function isCurrent034MacroControl(key: string): boolean {
+  if (removedMacroControls034.has(key)) return false
+  if (["macro-panel-toggle", "macro-resize-handle", "notification-volume", "notification-success-sound-test"].includes(key)) return true
+  return ["macro-", "node-", "add-", "message-", "send-", "notify-", "input-", "wait-", "capture-", "extract-", "condition-", "if-", "for-", "parallel-", "flow-"].some((prefix) => key.startsWith(prefix)) || key === "empty-body-add"
+}
+
+function macroEvidenceFor(key: string): UiControlEvidenceKind {
+  return /(?:-input|-text|-source|-terminal|-mode|-select|-value|-key|-pattern|-flags|-group|-ms|-title|-description|-name|-reason|-separator|-volume)$/.test(key) ? "edited" : "clicked"
+}
+
+function addedControlTask(key: string): string {
+  if (key === "take-control") return "20260627A.033"
+  if (["macro-edit", "macro-cancel-edit", "macro-prepare-terminals", "macro-insertion-placement"].includes(key)) return "20260627A.034"
+  return "20260627A.032"
+}
+
+function addedControlOldBehavior(key: string): string {
+  if (key === "take-control") return ".032 had no explicit controller handoff control."
+  if (addedControlTask(key) === "20260627A.034") return ".031A did not expose this current-schema V3 control with this identity."
+  return ".031A had no routed Room/Home control with this identity."
+}
+
+function addedControlNewBehavior(key: string): string {
+  if (key === "take-control") return ".033 adds explicit confirmed takeover for an observer."
+  if (addedControlTask(key) === "20260627A.034") return ".034 adds the explicit V3 edit lifecycle or Prepare control."
+  return ".032 adds the canonical Room/Home or current-schema terminal interaction."
+}
+
+function addedControlSpec(key: string): string {
+  if (key === "take-control") return "20260627A.033/02_spec/01_contract.md — Take Control与丢失控制"
+  if (addedControlTask(key) === "20260627A.034") return "20260627A.034/02_spec/01_contract.md — Macro workbench and explicit Prepare"
+  return "20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime"
+}
 
 function removedBy032Behavior(key: string): string {
   if (key === 'terminal-create-fake') return '.032 removes the fake-terminal production control; tests use real Shell and Text only.'

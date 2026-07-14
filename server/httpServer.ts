@@ -4,6 +4,8 @@ import { PROFILE_CATALOG_SUMMARY } from '../src/lib/parser/profileCatalogSummary
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { assertGeneratedId, assertRoomRouteToken, createGeneratedSuffix } from '../src/lib/generatedId'
 import { assertContentResourceKey } from '../src/lib/contentEditLease'
+import type { FlowV2Node, MacroDefinitionV3 } from '../src/lib/macro/macroDefinitionTypes'
+import { validateMacroDefinitionV3, validateMacroTerminalLayout } from '../src/lib/macro/macroDefinitionValidation'
 import type { ClientMessage, ServerMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import {
@@ -14,10 +16,13 @@ import {
 } from '../src/lib/roomControl'
 import type { TerminalRef } from '../src/lib/terminalIdentity'
 import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
-import { ContentEditLeaseService } from './contentEditLeaseService'
+import { ContentEditLeaseService, type ContentEditLeaseServiceOptions } from './contentEditLeaseService'
 import { relocateNotificationConfig } from './notificationConfigRelocation'
 import { NotificationService } from './notificationService'
 import { createServerPidRecord, parseServerPidRecord } from './serverProcessIdentity'
+import { MacroRunStore } from './macroRunStore'
+import { MacroRunnerService } from './macroRunnerService'
+import { MacroRecordStore, type SharedContentStoreOptions } from './sharedContentStore'
 import { ROOM_CONTROL_HEARTBEAT_MS, TerminalRoomManager, type RoomSummary } from './terminalRoomManager'
 import { WebSocketSendQueue } from './webSocketSendQueue'
 import { initializeUserDataRoot, resolveUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
@@ -27,6 +32,8 @@ export type ShellDeckServer = {
   port: number
   manager: TerminalRoomManager
   contentEditLeases: ContentEditLeaseService
+  macroStore: MacroRecordStore<MacroDefinitionV3>
+  macroRunner: MacroRunnerService
   userDataRoot: string
   stop(): Promise<void>
 }
@@ -36,6 +43,8 @@ export type StartOptions = {
   port?: number
   manager?: TerminalRoomManager
   dataRoot?: string
+  contentEditLeaseOptions?: ContentEditLeaseServiceOptions
+  macroStoreOptions?: SharedContentStoreOptions
 }
 
 export type ServerCliOptions = {
@@ -60,6 +69,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   initializeUserDataRoot(userDataRoot, (warning) => console.warn(warning.code + ':' + warning.path))
   const manager = options.manager ?? new TerminalRoomManager()
   const contentEditLeases = new ContentEditLeaseService(userDataRoot, manager, {
+    ...options.contentEditLeaseOptions,
     onChanged: (resourceKey, view) => {
       manager.broadcastAllClients((roomId, roomGeneration) => ({
         type: 'content_edit_lease_changed',
@@ -88,6 +98,11 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     console.warn(notificationError)
   }
   const notificationService = new NotificationService(userDataRoot, fetch, 10_000, notificationError)
+  const macroStore = new MacroRecordStore<MacroDefinitionV3>(userDataRoot, options.macroStoreOptions)
+  const macroRunStore = new MacroRunStore(userDataRoot)
+  const macroRunner = new MacroRunnerService(manager, macroStore, macroRunStore, notificationService, agentEventStore)
+  manager.setActiveRunProvider((roomId, roomGeneration) => macroRunner.hasActiveRun(roomId, roomGeneration))
+  manager.addDestroyHook((roomId, roomGeneration) => macroRunner.destroyRoom(roomId, roomGeneration))
 
   let stopPromise: Promise<void> | null = null
   let server: ReturnType<typeof Bun.serve<SocketData>>
@@ -110,7 +125,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       if (url.pathname.startsWith('/ws')) return json({ ok: false, error: 'route_not_found' }, 404)
 
       try {
-        return await handleHttp(req, url, manager, contentEditLeases, agentEventStore, ingestToken, notificationService)
+        return await handleHttp(req, url, manager, contentEditLeases, agentEventStore, ingestToken, notificationService, macroStore, macroRunner)
       } catch (error) {
         return errorResponse(error, url.pathname.startsWith('/api/'))
       }
@@ -140,11 +155,11 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
           ws.close(4004, 'room_not_found')
         }
       },
-      message(ws, raw) {
+      async message(ws, raw) {
         const send = (reply: ServerMessage) => ws.data.sender?.send(JSON.stringify(reply))
         try {
           const message = parseClientMessage(typeof raw === 'string' ? raw : raw.toString())
-          handleClientMessage(manager, ws.data.clientId, ws.data.roomId, message, send)
+          await handleClientMessage(manager, ws.data.clientId, ws.data.roomId, message, send)
         } catch (error) {
           send({ type: 'terminal_error', roomId: ws.data.roomId, roomGeneration: ws.data.roomGeneration, reason: errorMessage(error) })
         }
@@ -180,6 +195,8 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     port: server.port ?? 0,
     manager,
     contentEditLeases,
+    macroStore,
+    macroRunner,
     userDataRoot,
     stop() {
       stopPromise ??= (async () => {
@@ -201,6 +218,8 @@ async function handleHttp(
   agentEventStore: AgentEventStore,
   ingestToken: string,
   notificationService: NotificationService,
+  macroStore: MacroRecordStore<MacroDefinitionV3>,
+  macroRunner: MacroRunnerService,
 ): Promise<Response> {
   if (url.pathname === '/health') {
     assertNoQuery(url)
@@ -263,6 +282,14 @@ async function handleHttp(
     return json({ ok: true, ...result })
   }
 
+  if (url.pathname === '/api/content-edit-leases/view') {
+    assertNoQuery(url)
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const body = await exactObject(req, ['resourceKey'])
+    const view = await contentEditLeases.view(assertContentResourceKey(body.resourceKey))
+    return json({ ok: true, view })
+  }
+
   if (url.pathname === '/api/content-edit-leases/take-over') {
     assertNoQuery(url)
     if (req.method !== 'POST') return methodNotAllowed(['POST'])
@@ -272,6 +299,157 @@ async function handleHttp(
       await contentEditLeases.takeOver(ticket, resourceKey, body.expectedLeaseEpoch as number, body.confirmed === true)
     ))
     return json({ ok: true, ...result })
+  }
+
+  if (url.pathname === '/api/templates') {
+    assertNoQuery(url)
+    if (req.method === 'GET') {
+      const templates = macroStore.list().map((record) => {
+        const validated = validateMacroDefinitionV3(record.definition)
+        if (!validated.ok) throw new Error('invalid_macro_record_definition')
+        return {
+          id: record.id,
+          revision: record.revision,
+          name: validated.value.name,
+          description: validated.value.description,
+          updatedAt: record.updatedAt,
+          stepCount: countMacroNodes(validated.value.body),
+        }
+      })
+      return json({ ok: true, templates })
+    }
+    if (req.method === 'POST') {
+      const body = await exactObject(req, ['definition'])
+      const validation = validateMacroDefinitionV3(body.definition)
+      if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
+      const template = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => {
+        ticket.assertAuthorized()
+        return await macroStore.create(validation.value, ticket.signal, () => ticket.assertAuthorized())
+      })
+      return json({ ok: true, template }, 201)
+    }
+    return methodNotAllowed(['GET', 'POST'])
+  }
+
+  const templateRoute = /^\/api\/templates\/([^/]+)$/.exec(url.pathname)
+  if (templateRoute) {
+    assertNoQuery(url)
+    const templateId = assertGeneratedId(decodeURIComponent(templateRoute[1]), 'macroTemplate')
+    if (req.method === 'GET') {
+      const template = macroStore.read(templateId)
+      if (!validateMacroDefinitionV3(template.definition).ok) throw new Error('invalid_macro_record_definition')
+      return json({ ok: true, template })
+    }
+    if (req.method === 'PUT') {
+      const body = await exactObject(req, ['expectedRevision', 'editLeaseId', 'definition'])
+      const validation = validateMacroDefinitionV3(body.definition)
+      if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
+      const expectedRevision = assertPositiveRevision(body.expectedRevision)
+      const editLeaseId = assertGeneratedId(body.editLeaseId, 'contentEditLease')
+      const committed = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => (
+        await contentEditLeases.commit(
+          ticket,
+          { kind: 'macro', itemId: templateId },
+          editLeaseId,
+          expectedRevision,
+          (_path, currentRevision) => macroStore.commitUpdate(templateId, currentRevision, validation.value),
+        )
+      ))
+      return json({ ok: true, template: committed.value, leaseOutcome: committed.leaseOutcome })
+    }
+    if (req.method === 'DELETE') {
+      if ((await req.text()).length !== 0) throw new Error('request_body_must_be_empty')
+      const expectedRevision = parseIfMatch(req)
+      const editLeaseId = contentEditLeaseHeader(req)
+      const committed = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => (
+        await contentEditLeases.commit(
+          ticket,
+          { kind: 'macro', itemId: templateId },
+          editLeaseId,
+          expectedRevision,
+          (_path, currentRevision) => macroStore.commitDelete(templateId, currentRevision),
+          { deleteRecord: true },
+        )
+      ))
+      return json({ ok: true, leaseOutcome: committed.leaseOutcome })
+    }
+    return methodNotAllowed(['GET', 'PUT', 'DELETE'])
+  }
+
+  const prepareRoute = /^\/api\/rooms\/([^/]+)\/terminals\/prepare$/.exec(url.pathname)
+  if (prepareRoute) {
+    assertNoQuery(url)
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const roomId = assertRoomRouteToken(decodeURIComponent(prepareRoute[1]))
+    const body = await exactObject(req, ['terminalLayout', 'expectedTerminalStructureRevision'])
+    const layout = validateMacroTerminalLayout(body.terminalLayout)
+    if (!layout.ok) return json({ ok: false, error: 'invalid_terminal_layout', issues: layout.issues }, 400)
+    const expectedRevision = assertTerminalStructureRevision(body.expectedTerminalStructureRevision)
+    const result = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
+      await manager.runTerminalStructureOperation(ticket, expectedRevision, async () => {
+        for (const required of layout.value) {
+          ticket.assertAuthorized()
+          const positions = manager.terminalPositions(roomId)
+          const current = positions[required.index - 1]
+          if (current?.type === required.type) continue
+          const later = positions.slice(required.index).find((position) => position.type === required.type)
+          try {
+            if (later) manager.moveTerminal(roomId, later.terminalId, required.index)
+            else manager.createTerminal(roomId, { backend: required.type === 'text' ? 'text' : 'real', insertAtIndex: required.index })
+          } catch (error) {
+            const code = errorMessage(error)
+            if (code.startsWith('room_') || code.startsWith('terminal_structure_')) throw error
+            const snapshot = manager.roomSnapshot(roomId)
+            return { ok: false as const, error: 'terminal_prepare_backend_failed', failedIndex: required.index, operation: later ? 'move' : 'create', snapshot }
+          }
+          ticket.assertAuthorized()
+        }
+        return { ok: true as const, snapshot: manager.roomSnapshot(roomId) }
+      })
+    ), roomId)
+    return json(result, result.ok ? 200 : 409)
+  }
+
+  const runnerRoute = /^\/api\/rooms\/([^/]+)\/runner(?:\/(start|pause|resume|stop|input))?$/.exec(url.pathname)
+  const runnerTracesRoute = /^\/api\/rooms\/([^/]+)\/runner\/traces$/.exec(url.pathname)
+  if (runnerTracesRoute) {
+    assertNoQuery(url)
+    if (req.method !== 'GET') return methodNotAllowed(['GET'])
+    const roomId = assertRoomRouteToken(decodeURIComponent(runnerTracesRoute[1]))
+    manager.roomSummaryById(roomId)
+    return json({ ok: true, traces: macroRunner.traces(roomId) })
+  }
+  if (runnerRoute) {
+    assertNoQuery(url)
+    const roomId = assertRoomRouteToken(decodeURIComponent(runnerRoute[1]))
+    const action = runnerRoute[2]
+    if (!action) {
+      if (req.method !== 'GET') return methodNotAllowed(['GET'])
+      return json({ ok: true, runner: macroRunner.snapshot(roomId) })
+    }
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    if (action === 'start') {
+      const body = await exactObject(req, ['templateId', 'expectedMacroRevision', 'expectedTerminalStructureRevision'])
+      const templateId = assertGeneratedId(body.templateId, 'macroTemplate')
+      const expectedMacroRevision = assertPositiveRevision(body.expectedMacroRevision)
+      const expectedStructureRevision = assertTerminalStructureRevision(body.expectedTerminalStructureRevision)
+      const runner = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
+        await manager.runTerminalStructureOperation(ticket, expectedStructureRevision, async () => (
+          await macroRunner.start(ticket, templateId, expectedMacroRevision, expectedStructureRevision)
+        ))
+      ), roomId)
+      return json({ ok: true, runner }, 201)
+    }
+    const body = action === 'input' ? await exactObject(req, ['value']) : await exactObject(req, [])
+    const runner = await manager.runControlledBearerOperation(roomControlBearer(req), (ticket) => {
+      ticket.assertAuthorized()
+      if (action === 'pause') return macroRunner.pause(roomId)
+      if (action === 'resume') return macroRunner.resume(roomId)
+      if (action === 'stop') return macroRunner.stop(roomId)
+      if (typeof body.value !== 'string') throw new Error('runner_input_must_be_string')
+      return macroRunner.submitInput(roomId, body.value)
+    }, roomId)
+    return json({ ok: true, runner })
   }
 
   const contentLeaseRelease = /^\/api\/content-edit-leases\/([^/]+)$/.exec(url.pathname)
@@ -348,13 +526,21 @@ async function handleHttp(
   return serveIndex()
 }
 
-function handleClientMessage(manager: TerminalRoomManager, clientId: string, roomId: string, message: ClientMessage, send: (message: ServerMessage) => void): void {
+async function handleClientMessage(manager: TerminalRoomManager, clientId: string, roomId: string, message: ClientMessage, send: (message: ServerMessage) => void): Promise<void> {
   if (message.type !== 'request_replay' && message.type !== 'request_snapshot') {
-    manager.runControlledClientMutation(clientId, () => handleMutatingClientMessage(manager, roomId, message, send))
+    if (isTerminalStructureMessage(message)) {
+      await manager.runControlledClientOperation(clientId, async (ticket) => (
+        await manager.runTerminalStructureMutation(ticket, () => handleMutatingClientMessage(manager, roomId, message, send))
+      ))
+    } else manager.runControlledClientMutation(clientId, () => handleMutatingClientMessage(manager, roomId, message, send))
     return
   }
   if (message.type === 'request_replay') send(manager.requestReplay(roomId, terminalRefFromMessage(message)))
   else send(manager.roomSnapshot(roomId))
+}
+
+function isTerminalStructureMessage(message: ClientMessage): boolean {
+  return message.type === 'create_terminal' || message.type === 'reorder_terminal' || message.type === 'close_terminal' || message.type === 'reset_terminal'
 }
 
 function handleMutatingClientMessage(manager: TerminalRoomManager, roomId: string, message: Exclude<ClientMessage, { type: 'request_replay' | 'request_snapshot' }>, send: (message: ServerMessage) => void): void {
@@ -443,9 +629,54 @@ function errorStatus(message: string): number {
     || message.startsWith('room_control_')
     || message.startsWith('content_edit_')
     || message === 'content_revision_conflict'
+    || message === 'terminal_structure_revision_conflict'
+    || message === 'room_structure_locked_by_run'
+    || message === 'macro_revision_conflict'
+    || message === 'run_already_active'
   ) return 409
+  if (message.startsWith('macro_record_not_found:')) return 404
   if (message.includes('permissions_too_open')) return 503
   return 400
+}
+
+function assertPositiveRevision(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 1) throw new Error('invalid_macro_revision')
+  return value as number
+}
+
+function assertTerminalStructureRevision(value: unknown): number {
+  if (!Number.isInteger(value) || (value as number) < 0) throw new Error('invalid_terminal_structure_revision')
+  return value as number
+}
+
+function parseIfMatch(req: Request): number {
+  const value = req.headers.get('if-match')
+  if (!value || !/^[1-9][0-9]*$/.test(value)) throw new Error('invalid_macro_revision')
+  return Number(value)
+}
+
+function contentEditLeaseHeader(req: Request): string {
+  const value = req.headers.get('x-shell-deck-content-edit-lease')
+  if (!value) throw new Error('content_edit_lease_required')
+  return assertGeneratedId(value, 'contentEditLease')
+}
+
+function countMacroNodes(nodes: FlowV2Node[]): number {
+  let count = 0
+  const visit = (items: FlowV2Node[]) => {
+    for (const node of items) {
+      count += 1
+      if (node.type === 'if') {
+        for (const branch of node.branches) visit(branch.body)
+        if (node.else) visit(node.else)
+      }
+      if (node.type === 'for') visit(node.body)
+      if (node.type === 'parallel') for (const lane of node.lanes) count += lane.body.length
+      if ((node.type === 'break' || node.type === 'continue' || node.type === 'finish') && node.body) visit(node.body)
+    }
+  }
+  visit(nodes)
+  return count
 }
 
 function errorMessage(error: unknown): string {
@@ -464,7 +695,7 @@ async function requestJson(req: Request): Promise<unknown> {
   const text = await req.text()
   if (!text) throw new Error('request_body_required')
   try { return JSON.parse(text) }
-  catch { throw new Error('invalid_json') }
+  catch { throw new Error('invalid_request_json') }
 }
 
 async function exactObject(req: Request, keys: string[]): Promise<Record<string, unknown>> {

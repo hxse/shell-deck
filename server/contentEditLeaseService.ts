@@ -4,6 +4,7 @@ import { basename, join } from 'node:path'
 import {
   assertContentResourceKey,
   contentResourceKeyString,
+  type ContentCommitLeaseOutcome,
   type ContentEditLeaseGrant,
   type ContentEditLeaseView,
   type ContentResourceKey,
@@ -61,11 +62,6 @@ export type ContentEditLeaseServiceOptions = {
   writeLeaseState?: (path: string, content: string) => void
   deleteLeaseState?: (path: string) => void
 }
-
-export type ContentCommitLeaseOutcome =
-  | { status: 'retained'; grant: ContentEditLeaseGrant }
-  | { status: 'released' }
-  | { status: 'lost'; reason: 'content_edit_lease_state_refresh_failed' }
 
 export type PublishedContentCommitResult<T> = {
   value: T

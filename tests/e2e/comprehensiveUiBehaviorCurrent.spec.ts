@@ -1,12 +1,12 @@
 import { expect, test, type BrowserContext, type Locator, type Page } from 'playwright/test'
-import { runtimeControlInventory } from '../ui-baseline/031B/controlInventory'
+import { workspaceRuntimeControlInventory } from '../ui-baseline/031B/controlInventory'
 
 const ROOM_URL = /\/room_[1-9A-HJ-NP-Za-km-z]{22}$/
 const SETTINGS_KEY = 'shell-deck:settings:v2'
 
 test.describe.configure({ mode: 'serial' })
 
-test('current UI journey preserves .032 interactions and exercises .033 single-writer handoff through visible controls', async ({ browser }) => {
+test('current .034 UI journey preserves Room interactions, single-writer handoff and restored Macro chrome through visible controls', async ({ browser }) => {
   test.setTimeout(180_000)
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const covered = new Set<string>()
@@ -19,10 +19,25 @@ test('current UI journey preserves .032 interactions and exercises .033 single-w
   const first = await context.newPage()
   first.setDefaultTimeout(12_000)
   await first.goto('/')
+  if (await first.getByTestId('room-home').isVisible()) {
+    const roomRows = first.getByTestId('room-list').locator('li')
+    while (await roomRows.count() > 0) {
+      const previousCount = await roomRows.count()
+      const destroy = roomRows.first().getByTestId('room-destroy')
+      const dialogPromise = first.waitForEvent('dialog')
+      const clickPromise = destroy.click()
+      const dialog = await dialogPromise
+      await dialog.accept()
+      await clickPromise
+      await expect(roomRows).toHaveCount(previousCount - 1)
+    }
+    await first.getByTestId('new-room-empty').click()
+  }
   await expect(first).toHaveURL(ROOM_URL)
   await expect(first.getByTestId('room-identity')).toContainText('connected')
   await expect(first.getByTestId('empty-terminal-room')).toBeVisible()
-  await expect(first.locator('.macro-panel, .prompt-panel, .run-log-view')).toHaveCount(0)
+  await expect(first.getByTestId('macro-panel')).toBeVisible()
+  await expect(first.locator('.prompt-panel, .run-log-view')).toHaveCount(0)
 
   await test.step('strict browser-setting reset exposes both dismiss controls without changing product state through an API', async () => {
     await invalidateBrowserSettings(first)
@@ -226,7 +241,7 @@ test('current UI journey preserves .032 interactions and exercises .033 single-w
     await expect(management).toHaveURL(ROOM_URL)
   })
 
-  const missing = runtimeControlInventory.filter(({ key }) => !covered.has(key)).map(({ key }) => key)
+  const missing = workspaceRuntimeControlInventory.filter(({ key }) => !covered.has(key)).map(({ key }) => key)
   expect(missing).toEqual([])
   expect(externalRequests).toEqual([])
   await context.close()

@@ -6,14 +6,18 @@ import { parse } from 'svelte/compiler'
 import {
   attributedBehaviorChanges,
   attributedControlChanges,
+  attributedRestorations034,
   baseline031ARuntimeControlIds,
   baseline031ASourceInteractiveControlCount,
   baseline031ASourceInteractiveControlDigest,
+  macroRuntimeControlInventory,
   runtimeControlInventory,
   sourceInteractiveControlCount,
   sourceInteractiveControlCount032,
+  sourceInteractiveControlCount033,
   sourceInteractiveControlDigest,
   sourceInteractiveControlDigest032,
+  sourceInteractiveControlDigest033,
 } from '../ui-baseline/031B/controlInventory'
 
 const projectRoot = resolve(import.meta.dir, '../..')
@@ -33,7 +37,12 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest032).toBe('08cd10d9663687281cecf5f1b2d761cd55570efafabd57bf0de9972aba8a2b2d')
   })
 
-  test('.033 interactive source controls match its attributed current snapshot', () => {
+  test('.033 source snapshot remains available after Macro restoration', () => {
+    expect(sourceInteractiveControlCount033).toBe(19)
+    expect(sourceInteractiveControlDigest033).toBe('4ff921d1d3f120d6cffee8b2b842a9edfefcc545dedf2fec0d8080d6185afb3b')
+  })
+
+  test('.034 interactive source controls match its attributed current snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -59,12 +68,28 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(change?.changedBy === '20260627A.032' || change?.changedBy === '20260627A.033').toBe(true)
+      expect(['20260627A.032', '20260627A.033', '20260627A.034'].includes(change?.changedBy ?? '')).toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
     }
     expect(changes.get('take-control')?.changedBy).toBe('20260627A.033')
+    expect(changes.get('macro-edit')?.changedBy).toBe('20260627A.034')
+    expect(changes.get('macro-cancel-edit')?.changedBy).toBe('20260627A.034')
+    expect(changes.get('macro-prepare-terminals')?.changedBy).toBe('20260627A.034')
+    expect(changes.get('macro-insertion-placement')?.changedBy).toBe('20260627A.034')
+  })
+
+  test('.034 attributes every restored current-schema Macro control without reviving removed product behavior', () => {
+    const runtimeKeys = macroRuntimeControlInventory.map(({ key }) => key)
+    const attributedKeys = attributedRestorations034.map(({ key }) => key)
+    expect(new Set(attributedKeys)).toEqual(new Set(runtimeKeys))
+    expect(new Set(runtimeKeys).size).toBe(runtimeKeys.length)
+    expect(attributedRestorations034.every((entry) => entry.changedBy === '20260627A.034' && entry.oldBehavior && entry.newBehavior && entry.spec)).toBe(true)
+    expect(runtimeKeys).not.toContain('macro-duplicate')
+    expect(runtimeKeys).not.toContain('macro-import')
+    expect(runtimeKeys).not.toContain('macro-export')
+    expect(runtimeKeys).not.toContain('capture-agent-kind')
   })
 
   test('.033 attributes every controller-only behavior change on surviving controls', () => {

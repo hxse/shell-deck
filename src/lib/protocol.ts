@@ -3,6 +3,17 @@ import type { RoomControlGrant, RoomControlView } from './roomControl'
 
 export type TerminalBackendKind = 'fake' | 'real' | 'text'
 export type TerminalStatus = 'starting' | 'running' | 'closed' | 'failed'
+export type TerminalType = 'shell' | 'text'
+export type TerminalReadiness = 'starting' | 'ready' | 'exited' | 'failed'
+
+export type TerminalRuntimePosition = {
+  index: number
+  type: TerminalType
+  terminalId: string
+  launchId: string
+  readiness: TerminalReadiness
+  cwd?: string
+}
 
 export type TerminalRevisionFields = {
   roomRevision: number
@@ -39,8 +50,31 @@ export type RoomSnapshot = {
   roomId: string
   roomGeneration: string
   roomRevision: number
+  terminalStructureRevision: number
   terminals: TerminalSnapshot[]
   indexMap: TerminalIndexMapItem[]
+  terminalPositions: TerminalRuntimePosition[]
+  terminalStructureLocked: boolean
+}
+
+export type MacroNotificationLevel = 'info' | 'success' | 'warning' | 'error'
+export type MacroNotificationSound = 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert'
+export type MacroNotificationChannel =
+  | { kind: 'app'; toast: boolean; sound: MacroNotificationSound }
+  | { kind: 'system' }
+
+export type MacroNotificationMessage = {
+  type: 'macro_notification'
+  roomId: string
+  roomGeneration: string
+  runId: string
+  stepId: string
+  notificationId: string
+  createdAt: string
+  level: MacroNotificationLevel
+  title: string
+  message: string
+  channels: MacroNotificationChannel[]
 }
 
 export type ServerMessage =
@@ -51,13 +85,14 @@ export type ServerMessage =
   | RoomSnapshot
   | TerminalSnapshot
   | { type: 'terminal_created'; roomId: string; roomGeneration: string; terminalId: string }
-  | { type: 'terminal_index_map'; roomId: string; roomGeneration: string; roomRevision: number; items: TerminalIndexMapItem[] }
+  | { type: 'terminal_index_map'; roomId: string; roomGeneration: string; roomRevision: number; terminalStructureRevision: number; items: TerminalIndexMapItem[]; terminalPositions: TerminalRuntimePosition[]; terminalStructureLocked: boolean }
   | (TerminalRevisionFields & { type: 'pty_output'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; data: string; source: 'pty' })
   | (TerminalRevisionFields & { type: 'terminal_state'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; status: TerminalStatus; cols: number; rows: number; exitCode: number | null; signal: string | null })
   | (TerminalRevisionFields & { type: 'terminal_cwd'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; cwd: string })
   | { type: 'terminal_error'; roomId: string; roomGeneration: string; terminalId?: string; reason: string }
   | (TerminalRevisionFields & { type: 'terminal_replay'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; replay: string[] })
   | { type: 'input_rejected'; roomId: string; roomGeneration: string; terminalId: string; reason: string }
+  | MacroNotificationMessage
   | { type: 'room_destroyed'; roomId: string; roomGeneration: string }
 
 export type ClientMessage =

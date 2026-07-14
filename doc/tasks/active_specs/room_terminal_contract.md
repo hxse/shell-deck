@@ -6,6 +6,8 @@
 
 Terminal 没有 alias 或 rename identity。`terminalId`、kind、cwd 与 terminal object 一起存活；`launchId` 在 reset 时更新。连续一基 index 精确反映当前 UI 顺序，拖拽/插入/删除后实时重算，而 terminalId 不变。Room protocol 只接受 terminalId 或当前 index；旧 `terminalAlias`、`rename_terminal` 和 alias selector fail loudly。
 
+server还维护authoritative `terminalStructureRevision`。它只在create/delete/order/type/terminalId/launchId binding变化时递增；starting/ready/exited/failed等readiness变化继续广播并重新运行UI validation，但不递增structure revision。runtime position统一导出index、type、terminalId、launchId和readiness，Macro不得自行从browser tab顺序推导第二份binding truth。
+
 ## Backends 与 cwd
 
 * `real`：本机 PTY Shell。create可传存在且可访问的absolute cwd；省略时精确使用`$HOME`。其runtime cwd初值为launch cwd，随后由server读取实际Shell process cwd并同步。Room UI的New shell不弹路径框、不发送cached path，只请求server继承当前最高index Shell的live cwd并跳过Text；没有Shell或probe不可用时使用`~`/`$HOME`。
@@ -23,7 +25,7 @@ terminal tab与pane header使用同一个canonical单行label：`index · termin
 
 server 维护每个 Shell 的 2 MiB byte-bounded replay tail，Text 不截断。PTY output 在 server batching 后广播；每个 WebSocket 有独立 64 MiB backpressure queue。browser 再按 animation frame 合并连续 output，并以 generation-aware write pump 驱动 xterm，避免大历史一次性加载时逐 chunk 重渲染。完整 replay/replace 写入 xterm 时属于历史 hydration，必须在 parser callback 确认全部消费前关闭 stdin，使历史中的DA、cursor、OSC color等terminal query不能产生新的PTY input；hydration完成后的live append恢复正常query response。不得通过删除escape sequence或全局丢弃xterm response实现该边界。
 
-Room与每个terminal分别维护单调roomRevision/terminalRevision；Text另有textRevision，每次PTY output或Text正文变化另推进outputActivityRevision。quiet判断使用activity revision，不能比较已截断replay的长度。Room snapshot/index map只在不旧于browser已观察roomRevision时安装；terminal-specific event按launchId + terminalRevision合并，跨HTTP/WebSocket的延迟snapshot不得回滚新真值。
+Room与每个terminal分别维护单调roomRevision/terminalRevision；Text另有textRevision，每次PTY output或Text正文变化另推进outputActivityRevision。quiet判断使用activity revision，不能比较已截断replay的长度。terminal structure lock acquire/release都推进roomRevision。browser完整Room snapshot/index map只有在首次初始化或revision严格更新时才能覆盖Room级字段；equal/older revision不得重写structure lock。terminal-specific event按launchId + terminalRevision合并，只有accepted terminal snapshot才能派生readiness/position，跨HTTP/WebSocket的延迟snapshot不得回滚新真值。
 
 Text browser每个terminal串行一个full-state write，后续输入coalesce为latest value并带local edit generation。只有前进的textRevision和匹配正文才能确认在途echo；确认时若generation已变化，即使最终文字与旧值相同也要重发latest。旧own-echo不能覆盖较新输入，observer只消费server revision。
 
@@ -32,6 +34,12 @@ Text browser每个terminal串行一个full-state write，后续输入coalesce为
 selected terminal严格属于browser-local state。Room snapshot、terminal snapshot与其他client创建terminal的广播只能更新terminal集合，不能改写已有且仍有效的active terminal。发起New Shell/Text的client在create成功后单独收到不含client identity的`terminal_created`消息，并只在该client选择新terminal；observer不收到该消息。当前没有有效selection时，client本地选择排序后的第一个terminal。
 
 最后一个 client 断开不会销毁 Room。晚到 client 收到当前 snapshot/replay；Destroy 或 server shutdown 才关闭目标 Room 的 terminal/process。
+
+## Macro binding 与 structure lock
+
+MacroDefinition只保存连续index/type。显式Prepare与Start均携带调用者看到的`expectedTerminalStructureRevision`，并通过同一Room lifecycle ticket、controller guard与structure queue串行执行；revision不匹配必须在任何mutation前返回conflict。Prepare只调结构，Start还要求所有binding ready。
+
+Start把index/type解析为terminalId/launchId后冻结routing。active run期间create/delete/reorder/reset/Prepare等terminal structure mutation由UI和server共同拒绝；Pause不解锁，Stop或run终态后才释放。Home Destroy不是普通structure mutation，它先关闭Room admission并abort/drain在途操作，再清理runtime。
 
 ## Single-controller
 

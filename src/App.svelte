@@ -3,7 +3,7 @@
   import { loadBrowserSettings, saveBrowserSettings, type BrowserSettings } from './lib/browserSettings'
   import NoticeStack, { type NoticeItem } from './lib/components/workspace/NoticeStack.svelte'
   import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
-  import type { ServerMessage, TerminalSnapshot } from './lib/protocol'
+  import type { MacroNotificationMessage, MacroNotificationSound, RoomSnapshot, ServerMessage, TerminalRuntimePosition, TerminalSnapshot } from './lib/protocol'
   import type { RoomControlView } from './lib/roomControl'
   import { TerminalRoomClient } from './lib/terminalRoomClient'
   import { TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
@@ -28,6 +28,7 @@
   let noticeSeq = 0
   let notice = $state<NoticeItem | null>(null)
   let settingsOpen = $state(false)
+  let macroDirty = $state(false)
 
   let homeLoading = $state(false)
   let rooms = $state<RoomSummary[]>([])
@@ -44,10 +45,20 @@
   let controlPending = $state(false)
   let client = $state<TerminalRoomClient | null>(null)
   let terminals = $state<TerminalViewSnapshot[]>([])
+  let terminalStructureRevision = $state(0)
+  let terminalPositions = $state<TerminalRuntimePosition[] | null>(null)
+  let terminalStructureLocked = $state(false)
   let activeTerminalId = $state<string | null>(null)
   let draggingTerminalId = $state<string | null>(null)
   let activeTerminal = $derived(terminals.find((terminal) => terminal.terminalId === activeTerminalId) ?? terminals[0] ?? null)
   let canMutateShared = $derived(connected && controlView?.mode === 'controller' && client?.canMutateShared === true)
+  const NOTIFICATION_MAX_GAIN = 0.12
+
+  function handleBeforeUnload(event: BeforeUnloadEvent) {
+    if (!macroDirty) return
+    event.preventDefault()
+    event.returnValue = ''
+  }
 
   onMount(() => {
     if (loadedSettings.reset) pushNotice('Browser settings were reset because the stored schema is invalid.')
@@ -68,6 +79,9 @@
     terminalViews.clear()
     terminals = []
     latestRoomRevision = 0
+    terminalStructureRevision = 0
+    terminalPositions = null
+    terminalStructureLocked = false
     connected = false
     controlView = null
     controlPending = false
@@ -115,10 +129,7 @@
       controlView = { mode: 'observer', controlEpoch: message.controlEpoch, expiresAt: new Date().toISOString() }
       pushNotice('Control moved to another device. This page is now read-only.')
     }
-    if (message.type === 'room_snapshot') {
-      if (!acceptRoomRevision(message.roomRevision)) return
-      terminals = terminalViews.mergeRoom(message.terminals, terminals)
-    }
+    if (message.type === 'room_snapshot') applyRoomSnapshot(message)
     if (message.type === 'terminal_snapshot') {
       observeRoomRevision(message.roomRevision)
       upsertTerminal(message)
@@ -134,6 +145,9 @@
     }
     if (message.type === 'terminal_index_map') {
       if (!acceptRoomRevision(message.roomRevision)) return
+      terminalStructureRevision = message.terminalStructureRevision
+      terminalPositions = message.terminalPositions
+      terminalStructureLocked = message.terminalStructureLocked
       terminals = terminals.map((terminal) => {
         const mapped = message.items.find((item) => item.terminalId === terminal.terminalId)
         return mapped ? { ...terminal, terminalIndex: mapped.index, visualOrder: mapped.index } : terminal
@@ -141,11 +155,15 @@
     }
     if (message.type === 'terminal_error') pushNotice((message.terminalId ? message.terminalId + ': ' : '') + message.reason)
     if (message.type === 'input_rejected') pushNotice(message.terminalId + ': input rejected: ' + message.reason)
+    if (message.type === 'macro_notification') void handleMacroNotification(message)
     if (message.type === 'terminal_state') {
       observeRoomRevision(message.roomRevision)
       terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
         ? terminalViews.patch(terminal, message, { status: message.status, cols: message.cols, rows: message.rows, exitCode: message.exitCode, signal: message.signal })
         : terminal)
+      terminalPositions = terminalPositions?.map((position) => position.terminalId === message.terminalId
+        ? { ...position, readiness: message.status === 'running' ? 'ready' : message.status === 'closed' ? 'exited' : message.status }
+        : position) ?? null
     }
     if (message.type === 'terminal_cwd') {
       observeRoomRevision(message.roomRevision)
@@ -183,6 +201,9 @@
     latestRoomRevision = 0
     terminalViews.clear()
     terminals = []
+    terminalStructureRevision = 0
+    terminalPositions = null
+    terminalStructureLocked = false
     activeTerminalId = null
     void loadRooms()
   }
@@ -244,12 +265,12 @@
   }
 
   function createShell() {
-    if (!canMutateShared) return
+    if (!canMutateShared || terminalStructureLocked) return
     client?.send({ type: 'create_terminal', backend: 'real', cwdSource: 'last-shell' })
   }
 
   function createText() {
-    if (!canMutateShared) return
+    if (!canMutateShared || terminalStructureLocked) return
     client?.send({ type: 'create_terminal', backend: 'text' })
   }
 
@@ -312,6 +333,28 @@
     settings = { ...settings, ...next }
   }
 
+  function updateMacroPanel(widthPx?: number, visible?: boolean) {
+    settings = {
+      ...settings,
+      panels: {
+        ...settings.panels,
+        macro: {
+          visible: visible ?? settings.panels.macro.visible,
+          widthPx: widthPx ?? settings.panels.macro.widthPx,
+        },
+      },
+    }
+  }
+
+  function applyRoomSnapshot(snapshot: RoomSnapshot) {
+    if (roomGeneration && snapshot.roomGeneration !== roomGeneration) return
+    if (!acceptRoomRevision(snapshot.roomRevision)) return
+    terminalStructureRevision = snapshot.terminalStructureRevision
+    terminalPositions = snapshot.terminalPositions
+    terminalStructureLocked = snapshot.terminalStructureLocked
+    terminals = terminalViews.mergeRoom(snapshot.terminals, terminals)
+  }
+
   function upsertTerminal(snapshot: TerminalSnapshot) {
     const index = terminals.findIndex((terminal) => terminal.terminalId === snapshot.terminalId)
     const view = terminalViews.mergeSnapshot(snapshot, index === -1 ? undefined : terminals[index])
@@ -346,12 +389,12 @@
 
   function closeTerminalTab(event: MouseEvent, terminal: TerminalSnapshot) {
     event.stopPropagation()
-    if (!canMutateShared) return
+    if (!canMutateShared || terminalStructureLocked) return
     if (window.confirm('Close terminal ' + terminal.terminalIndex + ' · ' + terminal.terminalId + '?')) client?.send({ type: 'close_terminal', terminalId: terminal.terminalId })
   }
 
   function startDrag(event: DragEvent, terminalId: string) {
-    if (!settings.terminalDragEnabled || !canMutateShared) { event.preventDefault(); return }
+    if (!settings.terminalDragEnabled || !canMutateShared || terminalStructureLocked) { event.preventDefault(); return }
     draggingTerminalId = terminalId
     event.dataTransfer?.setData('text/plain', terminalId)
   }
@@ -360,7 +403,7 @@
     event.preventDefault()
     const source = event.dataTransfer?.getData('text/plain') || draggingTerminalId
     draggingTerminalId = null
-    if (settings.terminalDragEnabled && canMutateShared && source && source !== target.terminalId) {
+    if (settings.terminalDragEnabled && canMutateShared && !terminalStructureLocked && source && source !== target.terminalId) {
       client?.send({ type: 'reorder_terminal', terminalId: source, newIndex: target.terminalIndex })
       activeTerminalId = source
     }
@@ -372,6 +415,68 @@
 
   function pushNotice(text: string) {
     notice = { id: ++noticeSeq, text: text.length > 500 ? text.slice(0, 500) + '...' : text }
+  }
+
+  async function handleMacroNotification(message: MacroNotificationMessage) {
+    const app = message.channels.find((channel) => channel.kind === 'app')
+    const toast = app?.kind === 'app' && app.toast
+    const options = { title: message.title, level: message.level, createdAt: message.createdAt, notificationId: message.notificationId, runId: message.runId, stepId: message.stepId }
+    if (toast) pushDetailedNotice(message.message || message.title, options)
+    if (app?.kind === 'app' && app.sound !== 'none') void playNotificationSound(app.sound, message.level)
+    if (message.channels.some((channel) => channel.kind === 'system')) {
+      const status = await showSystemNotification(message)
+      if (status !== 'delivered' && !toast) pushDetailedNotice('System notification was not delivered.', { ...options, systemStatus: status })
+    }
+  }
+
+  function pushDetailedNotice(text: string, options: Omit<NoticeItem, 'id' | 'text'>) {
+    notice = { id: ++noticeSeq, text: text.length > 500 ? text.slice(0, 500) + '...' : text, ...options }
+  }
+
+  async function showSystemNotification(message: MacroNotificationMessage): Promise<string> {
+    if (!('Notification' in window)) return 'unavailable'
+    let permission = Notification.permission
+    if (permission === 'default') {
+      try { permission = await Notification.requestPermission() }
+      catch { return 'permission-request-failed' }
+    }
+    if (permission !== 'granted') return 'permission-' + permission
+    try { new Notification(message.title, { body: message.message, tag: message.notificationId }); return 'delivered' }
+    catch { return 'failed' }
+  }
+
+  async function playNotificationSound(sound: Exclude<MacroNotificationSound, 'none'>, level: MacroNotificationMessage['level']) {
+    try {
+      const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      if (!AudioContextCtor) return
+      const context = new AudioContextCtor()
+      let cursor = context.currentTime
+      for (const tone of notificationTones(sound, level)) {
+        const oscillator = context.createOscillator()
+        const gain = context.createGain()
+        oscillator.type = tone.type
+        oscillator.frequency.value = tone.frequency
+        gain.gain.value = Math.min(NOTIFICATION_MAX_GAIN, tone.gain * settings.notificationVolume)
+        oscillator.connect(gain)
+        gain.connect(context.destination)
+        oscillator.start(cursor)
+        oscillator.stop(cursor + tone.duration)
+        cursor += tone.duration + tone.gap
+      }
+      window.setTimeout(() => void context.close(), Math.ceil((cursor - context.currentTime + 0.05) * 1000))
+    } catch { /* Browser audio is best effort. */ }
+  }
+
+  function notificationTones(sound: Exclude<MacroNotificationSound, 'none'>, level: MacroNotificationMessage['level']) {
+    const base = level === 'error' ? 220 : level === 'warning' ? 330 : 660
+    const tone = (frequency: number, duration = 0.09, gap = 0.02, gain = 0.04, type: OscillatorType = 'sine') => ({ frequency, duration, gap, gain, type })
+    if (sound === 'success') return [tone(523, 0.07, 0.018, 0.036, 'triangle'), tone(659, 0.07, 0.018, 0.036, 'triangle'), tone(784, 0.12, 0.02, 0.034, 'triangle')]
+    if (sound === 'warning') return [tone(440, 0.12, 0.04, 0.045, 'square'), tone(330, 0.15, 0.02, 0.04, 'square')]
+    if (sound === 'alert') return [tone(880, 0.08, 0.025, 0.05, 'sawtooth'), tone(440, 0.1, 0.025, 0.045, 'sawtooth'), tone(880, 0.12, 0.02, 0.045, 'sawtooth')]
+    if (sound === 'chime') return [tone(523), tone(784, 0.13)]
+    if (sound === 'ping') return [tone(1175, 0.07), tone(1568, 0.08)]
+    if (sound === 'pulse') return [tone(base, 0.1, 0.035), tone(base, 0.1)]
+    return [tone(880, 0.08, 0.02, 0.045, 'triangle'), tone(660, 0.11, 0.02, 0.035, 'triangle')]
   }
 
   function messageOf(error: unknown) { return error instanceof Error ? error.message : String(error) }
@@ -392,6 +497,8 @@
     return (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload'
   }
 </script>
+
+<svelte:window onbeforeunload={handleBeforeUnload} />
 
 {#if isHome}
   <main class="room-home" data-testid="room-home">
@@ -437,8 +544,11 @@
           >{controlPending ? 'Taking control…' : 'Read-only · Take control'}</button>
         {/if}
         <button type="button" data-testid="home-button" onclick={() => window.open('/', '_blank', 'noopener')}>Home</button>
-        <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} disabled={!canMutateShared}>New shell</button>
-        <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} disabled={!canMutateShared}>New text</button>
+        <button type="button" class="panel-toggle" aria-pressed={settings.panels.macro.visible} data-testid="macro-panel-toggle" onclick={() => updateMacroPanel(undefined, !settings.panels.macro.visible)}>
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span>Macro</span>
+        </button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} disabled={!canMutateShared || terminalStructureLocked}>New shell</button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} disabled={!canMutateShared || terminalStructureLocked}>New text</button>
         <button type="button" class="settings-button" data-testid="settings-button" onclick={() => { settingsOpen = !settingsOpen }}>Settings</button>
       </div>
     </header>
@@ -453,6 +563,18 @@
           aria-pressed={settings.terminalDragEnabled}
           onclick={() => updateSettings({ terminalDragEnabled: !settings.terminalDragEnabled })}
         ><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span>Drag terminals</span></button>
+        <button
+          type="button"
+          class="settings-control-button"
+          data-testid="macro-insertion-placement"
+          aria-pressed={settings.macroInsertionPlacement === 'anchored'}
+          onclick={() => updateSettings({ macroInsertionPlacement: settings.macroInsertionPlacement === 'anchored' ? 'center' : 'anchored' })}
+        >Action picker: {settings.macroInsertionPlacement === 'anchored' ? 'near trigger' : 'centered'}</button>
+        <label class="settings-volume-control">
+          <span><span>Notification volume</span><output data-testid="notification-volume-output">{Math.round(settings.notificationVolume * 100)}%</output></span>
+          <input type="range" min="0" max="1000" step="10" value={Math.round(settings.notificationVolume * 100)} data-testid="notification-volume" oninput={(event) => updateSettings({ notificationVolume: Number(event.currentTarget.value) / 100 })} />
+        </label>
+        <button type="button" class="settings-control-button" data-testid="notification-success-sound-test" onclick={() => { void playNotificationSound('success', 'success') }}>Play success sound</button>
       </section>
     {/if}
     <NoticeStack {notice} onDismiss={(id) => { if (notice?.id === id) notice = null }} />
@@ -462,8 +584,18 @@
       {activeTerminal}
       {activeTerminalId}
       {draggingTerminalId}
-      tabDragEnabled={settings.terminalDragEnabled && canMutateShared}
+      tabDragEnabled={settings.terminalDragEnabled && canMutateShared && !terminalStructureLocked}
       sharedReadOnly={!canMutateShared}
+      macroVisible={settings.panels.macro.visible}
+      macroWidthPx={settings.panels.macro.widthPx}
+      {canMutateShared}
+      {terminalStructureRevision}
+      {terminalPositions}
+      {terminalStructureLocked}
+      insertionPaletteMode={settings.macroInsertionPlacement}
+      onMacroWidthChange={(widthPx) => updateMacroPanel(widthPx)}
+      onMacroDirtyChange={(dirty) => { macroDirty = dirty }}
+      onRoomSnapshot={applyRoomSnapshot}
       onSelectTerminal={(id) => { activeTerminalId = id }}
       onCloseTerminal={closeTerminalTab}
       onStartTabDrag={startDrag}

@@ -24,6 +24,14 @@ Room runtime message只广播到同一Room。Room controller是process-local mem
 
 长期user content不属于Room。saved Macro/Library record另由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
 
+## Macro 与 runner
+
+production Macro采用`MacroDefinitionV3`与`MacroRecord` envelope分层。definition只表达portable Flow和连续terminal index/type；record metadata由user-global store生成。Macro selection是单个browser的editor状态，新Room默认null selection，不改变Room terminal。
+
+terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Library Load、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
+
+runner把manifest、append-only events和artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、run snapshot和structure lock只在live process内。日志从不恢复runner。
+
 ## 启动与安全
 
 所有入口通过 `justfile`。`just start` 先构建 production assets；`just dev` 使用 Vite HMR 并把 API/Room WebSocket 交给 Bun server。`.032` 不暴露尚未接入 runner 的 mock/real parser server mode。默认只绑定 `127.0.0.1`；非本地 bind 必须显式设置 `SHELL_DECK_ALLOW_LAN=1`，当前没有认证。

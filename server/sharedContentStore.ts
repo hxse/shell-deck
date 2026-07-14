@@ -128,6 +128,28 @@ export class MacroRecordStore<TDefinition> {
     }, signal)
   }
 
+  commitUpdate(id: string, currentRevision: number, definition: TDefinition): MacroRecord<TDefinition> {
+    const path = this.recordPath(id)
+    const existing = this.read(id)
+    if (existing.revision !== currentRevision) throw new Error('content_revision_conflict')
+    const record: MacroRecord<TDefinition> = {
+      ...existing,
+      revision: currentRevision + 1,
+      updatedAt: this.now(),
+      definition,
+    }
+    this.publishRecord(path, record)
+    return record
+  }
+
+  commitDelete(id: string, currentRevision: number): void {
+    const existing = this.read(id)
+    if (existing.revision !== currentRevision) throw new Error('content_revision_conflict')
+    const path = this.recordPath(id)
+    const receipt = this.deleteRecordFile(path)
+    if (receipt.durability === 'uncertain' && existsSync(path)) throw new Error('content_record_publish_state_unknown')
+  }
+
   recordPath(id: string): string {
     const normalized = assertGeneratedId(id, 'macroTemplate')
     const path = join(this.transactions.paths.macros, normalized + '.json')

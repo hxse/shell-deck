@@ -1,4 +1,8 @@
 @import './styles/base.css';
 @import './styles/terminal.css';
+@import './styles/macro-workbench-base.css';
+@import './styles/macro-step-editor.css';
+@import './styles/run-log.css';
 @import './styles/workspace-panels.css';
+@import './styles/macro-workbench-cleanup.css';
 @import './styles/room.css';

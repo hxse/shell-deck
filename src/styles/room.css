@@ -47,6 +47,10 @@
   overflow: hidden;
 }
 
+.room-workspace > .terminal-room {
+  flex: 1 1 auto;
+}
+
 .empty-terminal-room {
   height: 100%;
   display: grid;
