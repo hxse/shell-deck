@@ -32,7 +32,7 @@ async function clickWithDialog(
   await clickPromise
 }
 
-test('current .035 UI journey preserves the complex V3 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
+test('current .036 UI journey preserves the complex V3 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
   test.setTimeout(600_000)
   page.setDefaultTimeout(10_000)
   page.setDefaultNavigationTimeout(15_000)

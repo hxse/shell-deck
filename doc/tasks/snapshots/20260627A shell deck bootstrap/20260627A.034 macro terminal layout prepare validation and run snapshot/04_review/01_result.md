@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-实现与Implementation Gate通过。.034已原子接回production MacroDefinitionV3/MacroRecord CRUD、`.031`视觉工作台、显式draft-layout Prepare、version-bound Start、frozen terminal routing、live Pause/Resume及durable Trace evidence；没有提前实现`.035` Library。
+实现与Implementation Gate通过。.034已原子接回production MacroDefinitionV3/MacroRecord CRUD、`.031`视觉工作台、显式draft-layout Prepare、version-bound Start、frozen terminal routing、live Pause/Resume及durable Trace evidence；没有提前实现`.036` Library。
 
 2026-07-18 presentation follow-up：Macro顶栏入口接回已有switch/`aria-pressed`视觉；共享side-panel resize handle从被button padding撑宽的实色10px条收窄为6px透明hit area与2px状态线。
 
@@ -79,5 +79,5 @@
 
 * Vite production bundle现为571.12 kB，超过默认500 kB warning阈值；功能与性能Gate通过，code splitting留作独立优化，不在本task重画或拆散Macro UI。
 * Playwright必须通过项目已有`scripts/runPlaywright.ts`补齐Nix Chromium runtime；直接调用`bun x playwright`会因缺少`libnspr4.so`在browser launch前失败，不是产品断言失败。
-* `.035`必须直接复用本task的MacroDefinitionV3 text gateway与Copy-only/no-Duplicate语义；Library Load只创建MacroRecord，不能隐式Prepare。
+* `.036`必须直接复用本task的MacroDefinitionV3 text gateway与Copy-only/no-Duplicate语义；Library Load只创建MacroRecord，不能隐式Prepare。
 * 产品仍是localhost默认、显式LAN且可信单用户模型；本task不新增账号认证或多人协作。

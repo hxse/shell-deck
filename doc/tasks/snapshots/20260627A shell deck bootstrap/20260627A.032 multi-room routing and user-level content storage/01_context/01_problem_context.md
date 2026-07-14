@@ -63,6 +63,6 @@ Macro是跨task的阶段性交接。.032只建立MacroRecord envelope、固定pa
 
 本任务采用current-schema-only hard cut。旧r_<21-char> Room ID、宽松/截断/计数型system ID、模块私有shortUuid translator、/r/:roomId、/ws/r/:roomId、固定main、/p/:projectId/r/:roomId、/api/projects/**、configId routes/files、Directory/Global Library scope、ProjectRecord/ProjectRegistry和project-local data都直接成为非法输入。唯一明确例外是notification config的byte-preserving path relocation；它不转换schema、不保留dual read，也不构成通用legacy migration。除此之外没有alias、migration、dual read、自动导入或兼容字段。
 
-.032只冻结Room routing、user storage和状态ownership；.033冻结同一Room单写控制与跨Room/process内容编辑租约；.034冻结Macro对terminal的引用与运行安全；.035冻结通用Library。后继任务不得重新引入Project、Directory scope或target cwd abstraction。
+.032只冻结Room routing、user storage和状态ownership；.033冻结同一Room单写控制与跨Room/process内容编辑租约；.034冻结Macro对terminal的引用与运行安全；.036冻结通用Library。后继任务不得重新引入Project、Directory scope或target cwd abstraction。
 
 AgentEvent live capture 只能来自 shell-deck 创建的 Shell terminal。runtime 注入 Room/terminal/launch 与 ingest context，server 验证后才允许当前 Room 的 Macro 消费；普通外部 terminal 缺少该 context，just codex 必须在启动 Codex 前 fail loudly，不生成 manual identity、unbound evidence或可导入 spool。

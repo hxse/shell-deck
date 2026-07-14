@@ -10,7 +10,7 @@
 * MacroRecord拥有tmpl_ record id、revision、createdAt、updatedAt；definition不拥有这些字段；.034把production CRUD接到.032 primitive并逐字消费.033 edit lease。
 * Macro 与 Library 的 terminal reference 只保存 terminalIndex/type，不保存 Room、terminalId、launchId、alias、cwd 或 server identity。
 * terminalId 跟随 terminal 对象，index 跟随 server-authoritative UI order；Start 只解析一次 index -> terminalId。
-* 新Room不选择任何Macro。Settings面板不存在terminal Prepare toggle；Macro selection与.035 Library Load都不修改Room。
+* 新Room不选择任何Macro。Settings面板不存在terminal Prepare toggle；Macro selection与.036 Library Load都不修改Room。
 * Macro运行控制区在Start左侧提供唯一文字按钮`Prepare terminals`。只有用户点击才触发；它消费当前visual/JSON draft的validated terminalLayout snapshot，不要求clean、已保存或record identity，也不隐式Save。
 * selection、New、首次Save、普通Save、reload、remote refresh、Library Load、terminal变化和Start都不触发Prepare；Prepare期间当前draft/JSON buffer/selector/button串行锁定。
 * 不存在 Use/Activate、Start-and-prepare、selection/load/event-triggered Prepare或 reactive repair。
@@ -255,7 +255,7 @@ Macro selector删除Duplicate按钮；client API/store删除duplicate方法。JS
 * 创建相似Macro的唯一显式路径是New → JSON Edit → browser Paste → Save；Save走正常create validation和fresh MacroRecord identity。
 * 删除Macro JSON Import/Export按钮、file picker、download与对应client helper；JSON Edit中的browser clipboard Paste不是产品Import API。
 
-Library由.035遵守同一语义：Copy只复制content，禁止Duplicate/Import/Export。
+Library由.036遵守同一语义：Copy只复制content，禁止Duplicate/Import/Export。
 
 ### Terminal runtime 与动态 binding
 
@@ -339,7 +339,7 @@ Visual editor创建If/Elif或Extract时必须始终完成结构插入。只能�
 
 ### Macro面板显式 Prepare terminals
 
-Settings面板不得显示或保存`Auto-prepare terminals`、`autoPrepareTerminals`或等价开关。Macro selection始终client-local；New、selection、首次Save、普通Save、Edit、JSON Copy/Paste、reload、remote refresh、JSON commit/cancel、.035 Library Load、terminal mutation、lifecycle event和Start全部零Prepare。visual selector显式选择live terminal只是browser-local authoring mutation，不是Prepare/resolver，也不改变这一规则。不存在selection/load/event-triggered resolver。
+Settings面板不得显示或保存`Auto-prepare terminals`、`autoPrepareTerminals`或等价开关。Macro selection始终client-local；New、selection、首次Save、普通Save、Edit、JSON Copy/Paste、reload、remote refresh、JSON commit/cancel、.036 Library Load、terminal mutation、lifecycle event和Start全部零Prepare。visual selector显式选择live terminal只是browser-local authoring mutation，不是Prepare/resolver，也不改变这一规则。不存在selection/load/event-triggered resolver。
 
 Macro运行控制区把文字按钮`Prepare terminals`放在`Start`左侧，与layout readiness状态相邻；它是具体语义操作，不图标化。button busy文案为`Preparing…`。只有用户点击该按钮才调用resolver；终端已匹配时仍可点击并得到幂等ready response。
 
@@ -655,7 +655,7 @@ Start把exact record revision的完整definition与index 1/2到term_B/term_A的m
 
 * Settings与browser storage不存在Prepare toggle/field；Macro运行区在Start左侧显示唯一`Prepare terminals`文字按钮及`Preparing…`busy state。
 * 新Room无selected Macro；New/dirty/saved read-only/JSON buffer的合法layout都可显式Prepare；invalid JSON/invalid layout、observer、pending和active run正确disabled/fail loudly。
-* selection、.035 clean/dirty Load、Save、reload、terminal event与Start均零Prepare；UI不存在Use/Activate/Start-and-prepare或第二Prepare入口，也不存在Duplicate、Import或Export；JSON Copy resolve才显示短暂Copied，reject显示clipboard_write_failed且不改state。
+* selection、.036 clean/dirty Load、Save、reload、terminal event与Start均零Prepare；UI不存在Use/Activate/Start-and-prepare或第二Prepare入口，也不存在Duplicate、Import或Export；JSON Copy resolve才显示短暂Copied，reject显示clipboard_write_failed且不改state。
 * New → JSON Edit → browser Paste → Save创建fresh MacroRecord；空Room也可Save，Copy本身不改变Macro count、selection、dirty或revision。
 * saved Macro显式Edit取得lease；另一Room/process只读，takeover或lease loss后pending Save不能commit。
 * create/delete/drag/restart/starting/ready/exited/failed/controller mutation后正确标红或恢复。

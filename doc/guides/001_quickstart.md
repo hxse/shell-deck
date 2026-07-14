@@ -55,7 +55,7 @@ shell_deck_room_context_required
 
 ## 长期数据
 
-User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord foundation、run/artifact evidence、AgentEvent evidence、notification config 和后继 Library 都在这里；它们不属于 Room 或 terminal cwd。
+User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord、Library、run/artifact evidence、AgentEvent evidence和notification config都在这里；它们不属于 Room 或 terminal cwd。
 
 notification 配置可用以下命令初始化：
 
@@ -63,7 +63,7 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro V3 editor/runner，`.035`交付server-authoritative runtime sync；Library UI由`.036`接入。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro V3 editor/runner，`.035`交付server-authoritative runtime sync，`.036`接入Library UI。
 
 ## Macro
 
@@ -77,6 +77,14 @@ Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Sav
 
 Notify Action在server只执行一次：Telegram只发送一次；当时在线的同Room browser各自收到App/System通知，后进入的browser不补弹历史通知，但仍可在Trace查看event。
 
+## Library
+
+顶栏Library按钮打开独立side panel。Library是user-global长期素材，不跟随Room、terminal cwd或当前选中的Macro切换；内部固定为Macro JSON、Prompt、Note三个tab，tab与search filter保存在browser localStorage。
+
+saved item默认只读。New建立browser-local draft；Edit取得该`(kind,itemId)`的content edit lease；Save/Delete同时验证Room controller、lease与expected revision。另一Room或server process编辑同一item时，本页面仍可Search、Read、Copy，但必须显式take over lease后才能写；不同item互不阻塞。
+
+Copy只把当前content写入clipboard，不创建item，也没有Duplicate/Import/Export。Prompt与Note接受任意文本。Macro JSON只接受纯`MacroDefinitionV3`，Validate、Save和Load into Macro共用唯一text validator；Load每次创建fresh MacroRecord。当前Macro editor clean时创建后自动选中，存在未保存编辑时只创建、不切换；两种情况都不会Prepare terminals。
+
 ## 验证
 
 ```bash
@@ -86,4 +94,5 @@ just test-032
 just test-033
 just test-034
 just test-035
+just test-036
 ```

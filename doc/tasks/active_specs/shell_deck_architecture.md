@@ -4,7 +4,7 @@
 
 shell-deck 是一个 local-first、terminal-first workspace。一个 server process 可以承载多个由 `/<roomId>` URL 选择的 live Room；同一用户可通过多个标签页或设备连接同一 Room并同步terminal state，但server强制一个Room同时只有一个controller，其他连接只读观察。产品不建立多人协作或Project/target-directory模型。
 
-Room、terminal、Text content、replay、client、runner cursor 与 run snapshot 都只存在于当前 server process。长期 MacroRecord、Trace/artifact、AgentEvent evidence、Library（后继任务）和 notification config 位于同一 OS 用户的 User Data Root，不与 Room URL、server cwd 或 Shell cwd 绑定。
+Room、terminal、Text content、replay、client、runner cursor 与 run snapshot 都只存在于当前 server process。长期 MacroRecord、Trace/artifact、AgentEvent evidence、Library和 notification config 位于同一 OS 用户的 User Data Root，不与 Room URL、server cwd 或 Shell cwd 绑定。
 
 ## 路由
 

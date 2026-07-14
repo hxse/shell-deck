@@ -16,7 +16,7 @@
 * controller/edit lease均不从日志恢复；controller不写长期文件，edit lease协调文件只属于crash-expiring lock state，不是产品内容。
 * just check、just build、just test-unit、just test-032、just test-033、browser multi-tab Gate、two-process Gate与git diff --check为阻断项。
 
-Macro/Library具体CRUD、draft、validation与运行规则不在本任务重复定义；.034/.035必须逐字消费这里的identity、lease与错误contract。
+Macro/Library具体CRUD、draft、validation与运行规则不在本任务重复定义；.034/.036必须逐字消费这里的identity、lease与错误contract。
 
 ## UI精准重构边界
 
@@ -24,7 +24,7 @@ Macro/Library具体CRUD、draft、validation与运行规则不在本任务重复
 
 * 在既有Room topbar可容纳的位置显示`Control: This device`、`Read-only · Take control`或`Reconnecting · Read-only`，并提供Take Control确认。
 * 从server truth统一派生shared mutation control的disabled/inert/aria状态和明确错误；observer仍保留查看、scroll、selection、collapse、Copy及browser-local preference。
-* 为.034/.035提供无业务布局假设的controller/content-lease state primitive、notice与确认能力；具体Macro/Library按钮位置由对应task接入。
+* 为.034/.036提供无业务布局假设的controller/content-lease state primitive、notice与确认能力；具体Macro/Library按钮位置由对应task接入。
 
 允许为上述状态做最小spacing或responsive调整，并复用现有button、popover、notice、disabled样式。默认保护范围包括terminal label/排列、工作台panel比例、Macro editor层级、toolbar密度、icon语言、配色、字号和与single-writer无关的交互；不得通过隐藏整个panel、清空draft或重建另一套chrome来实现readonly。没有截图/像素对照Gate，但实现前必须在execution记录实际触及的UI文件及每个文件的controller/lease理由；review逐项说明有意偏离。无contract理由的UI diff必须移除。
 
@@ -175,8 +175,8 @@ controller acquire exact body为{ expectedControlEpoch }，take-over exact body�
 ## 后继接入边界
 
 * .034的saved Macro默认read-only；显式Edit取得macro lease，Save保留当前Edit session，Done/Cancel/Delete按本contract；New draft直到Create前不占已有record lease，Create后继续编辑必须取得fresh record lease。
-* .035的Library item使用(itemKind,itemId)租约，默认read-only；Save同样保留Edit session，Copy、search与Load source不要求lease。
-* .034/.035不得创建各自的process mutex、client lock、兼容fallback或不同TTL/error vocabulary；update/delete route必须消费`value + leaseOutcome`，先广播authoritative saved/deleted record，再按`retained/released/lost`维护editor lease。
+* .036的Library item使用(itemKind,itemId)租约，默认read-only；Save同样保留Edit session，Copy、search与Load source不要求lease。
+* .034/.036不得创建各自的process mutex、client lock、兼容fallback或不同TTL/error vocabulary；update/delete route必须消费`value + leaseOutcome`，先广播authoritative saved/deleted record，再按`retained/released/lost`维护editor lease。
 * .034显式Prepare消费request内当前draft的validated terminalLayout snapshot，并绑定terminal structure revision；Start另外绑定saved Macro revision与terminal structure revision。content lease不能代替任一版本/快照边界。
 
 ## Legacy Kill List

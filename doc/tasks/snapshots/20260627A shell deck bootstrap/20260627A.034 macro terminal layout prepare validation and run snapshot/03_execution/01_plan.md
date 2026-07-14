@@ -3,7 +3,7 @@
 ## 阶段零：.031 UI reference提取与touch manifest
 
 1. 从`.031`列出Macro panel、editor/JSON/Trace、run dock、selector、step/branch/parallel editor、message/scalar fields、line-number textarea及相关CSS/behavior tests，逐项标记“直接移植presentation”“替换V3 wiring”“contract明确删除/改变”。
-2. 冻结实际UI touch manifest：每个拟修改/恢复/新增的Svelte/CSS文件必须写明V3、lease、Prepare、Start或validation理由；terminal chrome与.035 Library consumer排除在无理由修改外。
+2. 冻结实际UI touch manifest：每个拟修改/恢复/新增的Svelte/CSS文件必须写明V3、lease、Prepare、Start或validation理由；terminal chrome与.036 Library consumer排除在无理由修改外。
 3. 优先恢复既有component structure与visual language，再在边界处替换types/client/store；强耦合处可拆presenter，但禁止把旧schema留作adapter或为了方便整面重写。
 4. 迁移仍有效的interaction tests，覆盖DOM/control顺序、focus/keyboard、collapse/insertion、textarea/line number/resize、JSON edit lifecycle和readonly draft preservation；不建立截图像素Gate。
 
@@ -21,11 +21,11 @@
 * `src/styles/{macro-workbench-base,macro-workbench-cleanup,macro-step-editor,run-log,workspace-panels}.css`与`src/styles.css`：恢复`.031`Macro专用视觉规则并仅做V3控件所需的局部增量；现有Room/terminal CSS不重排。
 * `tests/{unit,integration,e2e}`与`package.json`、`justfile`：新增`.034`contract Gate并迁移`.031`仍有效的interaction断言；保留`.031B`历史truth，新增`.034` current source inventory、workspace journey与全UI complex Macro dogfood；历史`.032/.033`Gate继续执行。
 
-明确排除：`.035` Library UI/存储、Prompt旧面板、configId/alias/title、Duplicate/Import/Export、V2 parser/store/API、Settings内Prepare开关。上述排除项不得以临时adapter形式恢复。
+明确排除：`.036` Library UI/存储、Prompt旧面板、configId/alias/title、Duplicate/Import/Export、V2 parser/store/API、Settings内Prepare开关。上述排除项不得以临时adapter形式恢复。
 
 ## 阶段一：current Macro schema、validator与CRUD
 
-1. 建立MacroDefinitionV3和唯一`src/lib/macro/macroDefinitionValidation.ts` object/text gateway，冻结parseAndValidateMacroDefinitionJson的UTF-16 position、exact discriminated result、closed issue-code registry及stable path/message、排序、去重规则，把visual/JSON/CRUD/runner与.035 caller全部收敛到同一portable validator。
+1. 建立MacroDefinitionV3和唯一`src/lib/macro/macroDefinitionValidation.ts` object/text gateway，冻结parseAndValidateMacroDefinitionJson的UTF-16 position、exact discriminated result、closed issue-code registry及stable path/message、排序、去重规则，把visual/JSON/CRUD/runner与.036 caller全部收敛到同一portable validator。
 2. 将portable definition validity与Room runtime compatibility/readiness建模为两层独立状态：invalid definition保持可编辑但Save/JSON commit/Start均拒绝；合法definition即使Room mismatch/not-ready仍可Save，Start显示stable runtime诊断；Prepare只消费合法layout子集。
 3. 把production Macro CRUD/editor/runner原子接到.032 MacroRecord primitive与.033 controller/content edit lease；saved record默认read-only。
 4. 建立selected/base/draftRevision/dirty/editLeaseId/operationGeneration editor lifecycle，pending时整个editor inert且await后复核；Save保留Edit session lease，clean Done/Cancel/selection等才release；selector的`Select macro`空值option显式清回null selection，dirty accept/reject分别清空或回滚native selection；把dirty Start中的Save/Create response、fresh identity/revision和New record lease acquire建模为明确phase transition。

@@ -4,7 +4,7 @@
 
 唯一可运行格式是 `MacroDefinitionV3`：`schemaVersion` 必须精确为 `3`，并包含 `name`、`description`、`terminalLayout` 与 `body`。`terminalLayout` 只保存从 1 开始连续的 terminal `index/type`；definition 不保存 record metadata、Room/server identity、cwd、terminalId、launchId、alias 或旧 configId。
 
-持久化 envelope 是 `MacroRecord`：server 生成 `tmpl_` id、revision、createdAt、updatedAt，并把 definition 放在 `definition` 字段中。JSON editor、clipboard Copy 与后继 Library macro template 只处理 definition，不处理 record envelope。
+持久化 envelope 是 `MacroRecord`：server 生成 `tmpl_` id、revision、createdAt、updatedAt，并把 definition 放在 `definition` 字段中。JSON editor、clipboard Copy 与 Library Macro JSON只处理 definition，不处理 record envelope。
 
 这是 current-schema-only hard cut。旧 Macro V2、config-scoped route/store、physical terminal target、alias、migration、adapter、dual validator 与自动转换均不存在；旧输入必须 fail loudly。
 
@@ -40,7 +40,7 @@ Update/Delete的record atomic publish是point-of-no-return。publish后lease-sta
 
 Macro panel visibility只是browser-local UI布局：组件保持常驻，隐藏/显示不得清空selection、draft、JSON buffer、dirty、published-Create preservation或lease。selection/draft/JSON buffer只存在于页面内存，不写入`localStorage`、`sessionStorage`或server；browser storage只保存visibility/width等UI偏好。dirty Macro、打开的JSON Edit或published-Create preserved buffer必须触发native `beforeunload`确认，取消离开保持原内存状态，确认离开才丢弃；显式resolution后的真正clean状态解除guard。V0不恢复刷新前draft。
 
-Copy 只把 canonical pretty-printed definition 写入 browser clipboard。没有 Duplicate、clone、copy-and-create、Import 或 Export；创建相似 Macro 的路径是 New → JSON Edit → Paste → Save，由 server 生成 fresh record identity。
+Copy 只把 canonical pretty-printed definition 写入 browser clipboard。没有 Duplicate、clone、copy-and-create、Import 或 Export；创建相似 Macro 的路径是 New → JSON Edit → Paste → Save，由 server 生成 fresh record identity。Macro toolbar另有明确的`Save to Library`跨domain action：它把当前portable-valid visual draft创建为fresh Macro JSON Library item，不修改Macro record/selection/dirty，也不Prepare/Start；这不改变Copy的clipboard-only语义。
 
 JSON Edit期间以及 Save/Create/Start等 lock-sensitive operation pending期间，visual/JSON editor、selector和相关入口必须 inert；统一 draft mutation入口仍做 defensive guard。异步 response 只有在 operation generation、record/revision、draft revision、controller和lease identity仍匹配时才能 commit。dirty Start严格串行执行 Save/Create → 必要时取得fresh record lease → 使用 response 中的 fresh record revision Start，不能让旧 response覆盖后续编辑，也不能因内部Save把原Edit session切成永久read-only。run终态释放terminal structure lock；Macro editability仍由Edit session决定。
 

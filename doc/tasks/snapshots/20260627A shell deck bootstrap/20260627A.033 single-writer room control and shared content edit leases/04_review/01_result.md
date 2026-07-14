@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-实现与Close Gate通过。.033已落地Room single-controller、owner-only HTTP bearer、server heartbeat、跨Room/process content edit lease及observer readonly consumer primitive；未提前实现`.034/.035`的Macro/Library业务UI。
+实现与Close Gate通过。.033已落地Room single-controller、owner-only HTTP bearer、server heartbeat、跨Room/process content edit lease及observer readonly consumer primitive；未提前实现`.034/.036`的Macro/Library业务UI。
 
 ## 实际代码映射
 
@@ -37,7 +37,7 @@
 
 ## Warning与残余边界
 
-* `.034/.035`尚未存在Macro/Library mutation surface；它们必须直接消费本task的controller ticket与content lease commit primitive，不得复制第二套lock或TTL语义。
+* `.034/.036`尚未存在Macro/Library mutation surface；它们必须直接消费本task的controller ticket与content lease commit primitive，不得复制第二套lock或TTL语义。
 * 产品仍是默认localhost、显式LAN且同一可信用户模型；single-writer不是账号认证或多人权限系统。
 * 按已拍板语义不设terminal产品级数量上限；backend/OS资源失败明确报错，不做partial自动修复。
 * Bun force-stop在transport promise未及时settle时采用250 ms bounded drain后`unref`；Room admission、content lease和PTY cleanup已在返回前由manager完成，不从日志恢复runtime。

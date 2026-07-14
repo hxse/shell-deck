@@ -20,7 +20,7 @@ check-ts:
     bun x tsc --noEmit
 
 check-svelte:
-    bun x svelte-check --tsconfig ./tsconfig.json
+    bun x svelte-check --config ./svelte.config.js --tsconfig ./tsconfig.json
 
 build:
     bun run build
@@ -45,6 +45,9 @@ test-034:
 
 test-035:
     bun run test:035
+
+test-036:
+    bun run test:036
 
 debug-large-replay *args:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "real Room PTY" {{args}}

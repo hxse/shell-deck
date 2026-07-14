@@ -50,7 +50,7 @@ terminalStructureRevision只表示index到terminalId/type/launchId binding变化
 
 ## Prepare只属于显式Macro操作
 
-新Room不选择Macro。选择/切换Macro、.035 clean Load后的自动选择、New、Save、reload、remote refresh、terminal变化与Start都只更新client/editor或validation，绝不Prepare。Settings不保存开关。
+新Room不选择Macro。选择/切换Macro、.036 clean Load后的自动选择、New、Save、reload、remote refresh、terminal变化与Start都只更新client/editor或validation，绝不Prepare。Settings不保存开关。
 
 Macro运行控制区在Start左侧提供`Prepare terminals`文字按钮。它读取当前正在显示的draft terminalLayout：New、dirty、saved/read-only都可使用；JSON Edit使用当前buffer，不能回退到last-valid value。只要JSON可解析且terminalLayout自身合法即可Prepare，Flow body其他错误仍可阻止Save/Start但不阻止这个layout-only operation。Prepare期间当前draft、JSON buffer、selector和相关operation全程inert，避免请求快照漂移或多个Prepare重叠。用户手动删除、拖拽或restart terminal后，系统只重新校验、标红和禁用Start，直到用户再次点击按钮或手工修复。
 
@@ -78,4 +78,4 @@ Starting、Running、Paused、Stopping期间terminal create/delete/reorder/reset
 
 ## 任务交接
 
-.032提供Room/Home lifecycle、User Data Root、MacroRecord与shared resource transaction primitive；.033提供Room controller和macro content edit lease；本任务拥有MacroDefinitionV3、唯一validation result/issue gateway、production CRUD/editor、显式draft-layout Prepare、readiness、version-bound Start、immutable run snapshot与structure lock。.035只能消费这里冻结的definition/validator/selection/Copy-only contract，不能调用resolver、改变terminal reference或重新引入Duplicate。
+.032提供Room/Home lifecycle、User Data Root、MacroRecord与shared resource transaction primitive；.033提供Room controller和macro content edit lease；本任务拥有MacroDefinitionV3、唯一validation result/issue gateway、production CRUD/editor、显式draft-layout Prepare、readiness、version-bound Start、immutable run snapshot与structure lock。.036只能消费这里冻结的definition/validator/selection/Copy-only contract，不能调用resolver、改变terminal reference或重新引入Duplicate。

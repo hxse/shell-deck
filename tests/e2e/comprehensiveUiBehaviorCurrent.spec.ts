@@ -6,7 +6,7 @@ const SETTINGS_KEY = 'shell-deck:settings:v2'
 
 test.describe.configure({ mode: 'serial' })
 
-test('current .035 UI journey preserves Room interactions and exercises automatic Home refresh plus single-writer feedback', async ({ browser }) => {
+test('current .036 UI journey preserves Room interactions and exercises automatic Home refresh plus single-writer feedback', async ({ browser }) => {
   test.setTimeout(180_000)
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const covered = new Set<string>()
@@ -37,7 +37,8 @@ test('current .035 UI journey preserves Room interactions and exercises automati
   await expect(first.getByTestId('room-identity')).toContainText('connected')
   await expect(first.getByTestId('empty-terminal-room')).toBeVisible()
   await expect(first.getByTestId('macro-panel')).toBeVisible()
-  await expect(first.locator('.prompt-panel, .run-log-view')).toHaveCount(0)
+  await expect(first.getByTestId('prompt-panel')).toHaveCount(0)
+  await expect(first.locator('.run-log-view')).toHaveCount(0)
 
   await test.step('strict browser-setting reset exposes both dismiss controls without changing product state through an API', async () => {
     await invalidateBrowserSettings(first)

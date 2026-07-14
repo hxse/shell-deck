@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-.032 Foundation Gate 已通过，代码已落地。本结论只覆盖Room/User Data Root/storage foundation；该revision不是standalone release candidate，也不宣称Macro Integration完成。.033、.034、.035仍需依次完成各自Gate。
+.032 Foundation Gate 已通过，代码已落地。本结论只覆盖Room/User Data Root/storage foundation；该revision不是standalone release candidate，也不宣称Macro Integration完成。.033、.034、.036仍需依次完成各自Gate。
 
 ## 实际代码映射
 
@@ -19,7 +19,7 @@
 * `src/lib/terminalDisplay.ts`集中canonical `index · terminalId · [cwd ·] kind · status` label；terminal tab与Shell/Text pane header复用同一字符串、单行ellipsis/title，header可选择复制且terminalId不重复。
 * `server/agentEventIngest.ts`与AgentEvent store实现Room/generation/terminal/launch membership校验；`scripts/shell-deck-codex.ts`在缺少Room runtime context时fail loudly，不产生unbound evidence。
 * 旧config/Project/Deck/Directory scope、terminal alias/rename、Prompt/layout server persistence、Macro V2 API/editor/runner和对应legacy recipes/tests已按current-schema-only hard cut删除；Macro V3由.034一次性恢复。
-* 上述旧production panel删除仅是schema cutover中间态，不是UI redesign决定；`.031`仍作为.033-.035的presentation/interaction reference。后继不得恢复旧schema，也不得以本task删除文件为理由重画无关UI。
+* 上述旧production panel删除仅是schema cutover中间态，不是UI redesign决定；`.031`仍作为.033-.036的presentation/interaction reference。后继不得恢复旧schema，也不得以本task删除文件为理由重画无关UI。
 
 ## Gate证据
 
@@ -44,5 +44,5 @@
 * executable/current tests静态扫描未发现可达旧config/project/Deck route、旧ID生成器、external hook fallback、spool/import、notification dual-read或Macro duplicate/clone route。明确的negative fixtures与notification唯一迁移源不算兼容路径。
 * .033必须实现Room controller、HTTP owner bearer grant和跨Room/process content edit lease，并补lease transition/record commit forced-interleaving；.032未提前声称这些能力。
 * .034必须原子接回MacroDefinitionV3、CRUD/editor/Prepare/Start/run snapshot，并补Destroy与Prepare/Start durable bootstrap forced-interleaving；.032未保留临时Macro schema或旧runner。
-* .035必须在同一User Data Root与content transaction primitive上实现单一user-level Library，不得重新引入Directory/Project scope。
-* stack/release Review必须检查.033-.035各自记录的UI文件修改理由与有意偏离；不做截图像素Gate，但无新contract理由的布局/视觉/交互变化属于scope violation。
+* .036必须在同一User Data Root与content transaction primitive上实现单一user-level Library，不得重新引入Directory/Project scope。
+* stack/release Review必须检查.033-.036各自记录的UI文件修改理由与有意偏离；不做截图像素Gate，但无新contract理由的布局/视觉/交互变化属于scope violation。

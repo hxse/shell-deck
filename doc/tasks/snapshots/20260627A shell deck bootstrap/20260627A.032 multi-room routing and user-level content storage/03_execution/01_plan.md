@@ -38,7 +38,7 @@
 
 ## 阶段四：client ownership、清理与文档
 
-1. Room runtime只向同Room clients广播；shared content底座不拥有client selection/editor state。Macro/Library mutation invalidation分别由.034/.035随正式API接入。
+1. Room runtime只向同Room clients广播；shared content底座不拥有client selection/editor state。Macro/Library mutation invalidation分别由.034/.036随正式API接入。
 2. 删除terminal alias/rename runtime、protocol和UI；terminal tab/pane header使用已冻结的canonical动态index、runtime terminalId、可选live cwd、kind与status label，terminal selector只接受id/index。
 3. UI preference迁入strict versioned localStorage，删除Prompt/layout server persistence与autoPrepareTerminals；terminal Prepare归属.034 Macro面板显式Room mutation。
 4. 文案统一为同一用户多设备同步、单一操作者顺序控制；本任务只建立Room/client底座，.033接管active-controller与内容编辑租约enforcement。
@@ -49,7 +49,7 @@
 ## 实施约束
 
 * current-schema-only hard cut；除已冻结的notification raw-byte relocation外，不添加migration、alias、dual schema或fallback route。
-* 先完成Room/user-store contract，再依次实现.033的single-writer/lease、.034的terminal mapping与.035的Library UI。
+* 先完成Room/user-store contract，再依次实现.033的single-writer/lease、.034的terminal mapping与.036的Library UI。
 * 不从 Trace 恢复 runner，不持久化 Room registry，不让 shared User Data Root 变成 shared live runtime。
 * notification config不是Server Profile；只迁移路径，schema/raw bytes/secret边界/Macro notify语义不变，成功后禁止legacy fallback。
 * .032只验证Macro foundation，不造temporary production schema/API，也不作为standalone release candidate；.034负责完整Integration与stack/release Gate。

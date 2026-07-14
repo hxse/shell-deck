@@ -36,4 +36,4 @@ observer并不是整个页面失效。scroll、terminal/Macro selection、collap
 
 ## 任务交接
 
-.032提供Room/client identity、User Data Root、canonical resource transaction guard与revision primitive；本任务在其上建立generic control/lease enforcement。.034负责MacroDefinitionV3、Macro editor与runner，并消费macro record lease；.035负责Library record/editor并消费library item lease。后继任务不得复制另一套互斥、以UI disabled替代server检查，或让lease承担schema/runtime validation职责。
+.032提供Room/client identity、User Data Root、canonical resource transaction guard与revision primitive；本任务在其上建立generic control/lease enforcement。.034负责MacroDefinitionV3、Macro editor与runner，并消费macro record lease；.036负责Library record/editor并消费library item lease。后继任务不得复制另一套互斥、以UI disabled替代server检查，或让lease承担schema/runtime validation职责。

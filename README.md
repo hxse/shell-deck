@@ -2,7 +2,7 @@
 
 `shell-deck` is a local browser terminal workspace with live, URL-addressed Rooms and a visual macro system. Codex and other programs remain ordinary processes inside PTYs; a macro addresses terminals by their current index/type and resolves that logical layout to runtime terminal IDs at Start.
 
-Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro V3 editor/runner cutover in `.034`, and server-authoritative Room runtime sync in `.035`.
+Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro V3 editor/runner cutover in `.034`, server-authoritative Room runtime sync in `.035`, and the user-global Library in `.036`.
 
 Core V0 behavior:
 
@@ -39,6 +39,7 @@ just test-032              # Room/user-storage foundation gate
 just test-033              # Room controller/content edit lease gate
 just test-034              # Macro V3 editor/Prepare/runner gate
 just test-035              # server-authoritative Room runtime sync gate
+just test-036              # user-global Macro JSON / Prompt / Note Library gate
 ```
 
 V0 phase tasks:
@@ -63,3 +64,4 @@ Documentation entry points:
 - `doc/tasks/index/003_20260627A.033.md`
 - `doc/tasks/index/004_20260627A.034.md`
 - `doc/tasks/index/005_20260627A.035.md`
+- `doc/tasks/index/006_20260627A.036.md`

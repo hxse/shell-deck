@@ -22,11 +22,13 @@ export const sourceInteractiveControlDigest033 = '4ff921d1d3f120d6cffee8b2b842a9
 
 export const sourceInteractiveControlCount034 = 175
 export const sourceInteractiveControlDigest034 = 'ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834'
+export const sourceInteractiveControlCount035 = 174
+export const sourceInteractiveControlDigest035 = 'c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584'
 
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
-export const sourceInteractiveControlCount = 174
-export const sourceInteractiveControlDigest = 'c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584'
+export const sourceInteractiveControlCount = 195
+export const sourceInteractiveControlDigest = '8002c90a04aa50f4f7a092451b2a3b4c803a64d02c99cc410498f21be148c976'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
@@ -333,12 +335,38 @@ const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
   ["macro-insertion-placement", "clicked"],
 ]
 
+const libraryRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
+  ['macro-save-to-library', 'clicked'],
+  ['library-panel-toggle', 'clicked'],
+  ['library-resize-handle', 'clicked'],
+  ['library-reset-width', 'clicked'],
+  ['library-tab-macro-template', 'clicked'],
+  ['library-tab-prompt', 'clicked'],
+  ['library-tab-note', 'clicked'],
+  ['library-search', 'edited'],
+  ['library-selector', 'edited'],
+  ['library-new', 'clicked'],
+  ['library-edit', 'clicked'],
+  ['library-save', 'clicked'],
+  ['library-cancel', 'clicked'],
+  ['library-copy', 'clicked'],
+  ['library-remove', 'clicked'],
+  ['library-refresh', 'clicked'],
+  ['library-title', 'edited'],
+  ['library-description', 'edited'],
+  ['library-tags', 'edited'],
+  ['library-content', 'edited'],
+  ['library-validate', 'clicked'],
+  ['library-load-into-macro', 'clicked'],
+]
+
 export const workspaceRuntimeControlInventory034: UiControlInventoryEntry[] = workspaceRuntimeControls034.map(([key, evidence]) => ({ key, evidence }))
 export const workspaceRuntimeControlInventory: UiControlInventoryEntry[] = workspaceRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
 export const macroRuntimeControlInventory: UiControlInventoryEntry[] = macroRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
-export const runtimeControlInventory: UiControlInventoryEntry[] = [...workspaceRuntimeControlInventory, ...macroRuntimeControlInventory]
+export const libraryRuntimeControlInventory: UiControlInventoryEntry[] = libraryRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
+export const runtimeControlInventory: UiControlInventoryEntry[] = [...workspaceRuntimeControlInventory, ...macroRuntimeControlInventory, ...libraryRuntimeControlInventory]
 
-const currentRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [...workspaceRuntimeControls, ...macroRuntimeControls]
+const currentRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [...workspaceRuntimeControls, ...macroRuntimeControls, ...libraryRuntimeControls]
 const currentRuntimeControlIds = new Set<string>(currentRuntimeControls.map(([key]) => key))
 const baselineRuntimeControlIds = new Set<string>(baseline031ARuntimeControlIds)
 
@@ -409,24 +437,32 @@ function macroEvidenceFor(key: string): UiControlEvidenceKind {
 }
 
 function addedControlTask(key: string): string {
+  if (key === 'macro-save-to-library') return '20260627A.036'
+  if (key.startsWith('library-')) return '20260627A.036'
   if (key === "take-control") return "20260627A.033"
   if (["macro-edit", "macro-cancel-edit", "macro-prepare-terminals", "macro-insertion-placement"].includes(key)) return "20260627A.034"
   return "20260627A.032"
 }
 
 function addedControlOldBehavior(key: string): string {
+  if (key === 'macro-save-to-library') return '.035 allowed clipboard Copy of Macro JSON but had no explicit Macro-to-Library create action.'
+  if (key.startsWith('library-')) return '.035 had no production Library surface; .032 had removed the legacy Prompt schema during the current-schema cutover.'
   if (key === "take-control") return ".032 had no explicit controller handoff control."
   if (addedControlTask(key) === "20260627A.034") return ".031A did not expose this current-schema V3 control with this identity."
   return ".031A had no routed Room/Home control with this identity."
 }
 
 function addedControlNewBehavior(key: string): string {
+  if (key === 'macro-save-to-library') return '.036 saves the current valid Macro draft as a fresh independent Macro JSON Library item without saving or switching the Macro.'
+  if (key.startsWith('library-')) return '.036 restores the side-panel presentation with the current user-global Macro JSON, Prompt and Note Library contract.'
   if (key === "take-control") return ".033 adds explicit confirmed takeover for an observer."
   if (addedControlTask(key) === "20260627A.034") return ".034 adds the explicit V3 edit lifecycle or Prepare control."
   return ".032 adds the canonical Room/Home or current-schema terminal interaction."
 }
 
 function addedControlSpec(key: string): string {
+  if (key === 'macro-save-to-library') return '20260627A.036/02_spec/01_contract.md — Save current Macro draft to Library'
+  if (key.startsWith('library-')) return '20260627A.036/02_spec/01_contract.md — Library UI精准重构边界与Library panel'
   if (key === "take-control") return "20260627A.033/02_spec/01_contract.md — Take Control与丢失控制"
   if (addedControlTask(key) === "20260627A.034") return "20260627A.034/02_spec/01_contract.md — Macro workbench and explicit Prepare"
   return "20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime"

@@ -85,11 +85,19 @@ export type ContentRecordChangedMessage = {
   revision: number | null
 }
 
+export type ContentEditLeaseChangedMessage = {
+  type: 'content_edit_lease_changed'
+  roomId: string
+  roomGeneration: string
+  resourceKey: ContentResourceKey
+  view: ContentEditLeaseView
+}
+
 export type ServerMessage =
   | { type: 'client_registered'; clientId: string; roomId: string; roomGeneration: string; serverInstanceId: string }
   | { type: 'room_control'; roomId: string; roomGeneration: string; view: RoomControlView; grant?: RoomControlGrant }
   | { type: 'room_control_lost'; roomId: string; roomGeneration: string; controlEpoch: number }
-  | { type: 'content_edit_lease_changed'; roomId: string; roomGeneration: string; resourceKey: ContentResourceKey; view: ContentEditLeaseView }
+  | ContentEditLeaseChangedMessage
   | RoomSnapshot
   | TerminalSnapshot
   | { type: 'terminal_created'; roomId: string; roomGeneration: string; terminalId: string }

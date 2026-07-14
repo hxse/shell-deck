@@ -3,7 +3,7 @@
   import { loadBrowserSettings, saveBrowserSettings, type BrowserSettings } from './lib/browserSettings'
   import NoticeStack, { type NoticeItem } from './lib/components/workspace/NoticeStack.svelte'
   import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
-  import type { ContentRecordChangedMessage, MacroNotificationMessage, MacroNotificationSound, RoomSnapshot, ServerMessage, TerminalRuntimePosition, TerminalSnapshot } from './lib/protocol'
+  import type { ContentEditLeaseChangedMessage, ContentRecordChangedMessage, MacroNotificationMessage, MacroNotificationSound, RoomSnapshot, ServerMessage, TerminalRuntimePosition, TerminalSnapshot } from './lib/protocol'
   import type { MacroRunnerSnapshot } from './lib/macro/runnerTypes'
   import { mergeMacroRunnerDelta } from './lib/macro/runnerSnapshotMerge'
   import type { RoomControlView } from './lib/roomControl'
@@ -11,8 +11,6 @@
   import { TerminalRoomClient } from './lib/terminalRoomClient'
   import { applyTerminalStateProjection, TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
   import { isRoomControlFeedback, sharedMutationFeedback } from './lib/sharedMutationFeedback'
-
-  type ContentEditLeaseChangedMessage = Extract<ServerMessage, { type: 'content_edit_lease_changed' }>
 
   type RoomSummary = {
     roomId: string
@@ -71,6 +69,7 @@
   let contentRecordChanges = $state<Array<ContentRecordChangedMessage & { sequence: number }>>([])
   let contentLeaseChangeSequence = 0
   let contentEditLeaseChanges = $state<Array<ContentEditLeaseChangedMessage & { sequence: number }>>([])
+  let libraryDirty = $state(false)
   let activeTerminalId = $state<string | null>(null)
   let draggingTerminalId = $state<string | null>(null)
   let activeTerminal = $derived(terminals.find((terminal) => terminal.terminalId === activeTerminalId) ?? terminals[0] ?? null)
@@ -82,7 +81,7 @@
   let homeRequestInFlight = false
 
   function handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (!macroDirty) return
+    if (!macroDirty && !libraryDirty) return
     event.preventDefault()
     event.returnValue = ''
   }
@@ -284,6 +283,8 @@
     runnerSnapshot = null
     clearRunnerRepair()
     contentRecordChanges = []
+    contentEditLeaseChanges = []
+    libraryDirty = false
     activeTerminalId = null
     macroDirty = false
   }
@@ -427,6 +428,23 @@
         },
       },
     }
+  }
+
+  function updateLibraryPanel(widthPx?: number, visible?: boolean) {
+    settings = {
+      ...settings,
+      panels: {
+        ...settings.panels,
+        library: {
+          visible: visible ?? settings.panels.library.visible,
+          widthPx: widthPx ?? settings.panels.library.widthPx,
+        },
+      },
+    }
+  }
+
+  function updateLibraryPreference(selectedTab: 'json-template' | 'prompt' | 'note', filter: string) {
+    settings = { ...settings, library: { selectedTab, filter } }
   }
 
   function applyRoomSnapshot(snapshot: RoomSnapshot) {
@@ -762,6 +780,9 @@
         <button type="button" class="panel-toggle" aria-pressed={settings.panels.macro.visible} data-testid="macro-panel-toggle" onclick={() => updateMacroPanel(undefined, !settings.panels.macro.visible)}>
           <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span>Macro</span>
         </button>
+        <button type="button" class="panel-toggle" aria-pressed={settings.panels.library.visible} data-testid="library-panel-toggle" onclick={() => updateLibraryPanel(undefined, !settings.panels.library.visible)}>
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span>Library</span>
+        </button>
         <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} aria-disabled={!canMutateShared || terminalStructureLocked}>New shell</button>
         <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} aria-disabled={!canMutateShared || terminalStructureLocked}>New text</button>
         <button type="button" class="settings-button" data-testid="settings-button" onclick={() => { settingsOpen = !settingsOpen }}>Settings</button>
@@ -803,6 +824,10 @@
       sharedReadOnly={!canMutateShared}
       macroVisible={settings.panels.macro.visible}
       macroWidthPx={settings.panels.macro.widthPx}
+      libraryVisible={settings.panels.library.visible}
+      libraryWidthPx={settings.panels.library.widthPx}
+      librarySelectedTab={settings.library.selectedTab}
+      libraryFilter={settings.library.filter}
       {canMutateShared}
       {terminalStructureRevision}
       {terminalPositions}
@@ -814,6 +839,9 @@
       insertionPaletteMode={settings.macroInsertionPlacement}
       onMacroWidthChange={(widthPx) => updateMacroPanel(widthPx)}
       onMacroDirtyChange={(dirty) => { macroDirty = dirty }}
+      onLibraryWidthChange={(widthPx) => updateLibraryPanel(widthPx)}
+      onLibraryPreferenceChange={updateLibraryPreference}
+      onLibraryDirtyChange={(dirty) => { libraryDirty = dirty }}
       onRoomSnapshot={applyRoomSnapshot}
       onSelectTerminal={(id) => { activeTerminalId = id }}
       onCloseTerminal={closeTerminalTab}

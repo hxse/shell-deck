@@ -16,6 +16,7 @@
     insertActions = [],
     showLineNumbers = true,
     disabled = false,
+    readOnly = false,
   } = $props<{
     value: string
     onInput: (value: string) => void
@@ -25,6 +26,7 @@
     insertActions?: TextareaInsertAction[]
     showLineNumbers?: boolean
     disabled?: boolean
+    readOnly?: boolean
   }>()
 
   const RESIZE_TOLERANCE_PX = 2
@@ -221,6 +223,7 @@
     aria-label={ariaLabel}
     rows="1"
     {disabled}
+    readonly={readOnly}
     value={value}
     style={textareaStyle}
     oninput={handleInput}

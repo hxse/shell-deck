@@ -46,7 +46,7 @@ Prepare只补齐index/type结构，不等待、重启、替换或治疗starting/
 
 * 不修改.032的User Data Root、Room URL/lifecycle、generated ID、notification config、AgentEvent ingest、per-terminal cwd或browser localStorage ownership。
 * 不重新设计.033的controller/edit lease协议、TTL或takeover；只消费其primitive。
-* 不实现.035的Library CRUD/editor；只冻结macro-template validation/clean-dirty Load交接与Copy-only/no-Duplicate边界。
+* 不实现.036的Library CRUD/editor；只冻结macro-template validation/clean-dirty Load交接与Copy-only/no-Duplicate边界。
 * 不增加Use in this Room、Activate、Start-and-prepare或任何隐式/第二套Prepare入口；`Prepare terminals`是唯一入口。
 * 不自动处理starting/exited/failed terminal；用户自行等待、restart、delete或新建。
 * 不持久化active runner、Pause cursor或resumable snapshot；run manifest/Trace只保存只读证据。

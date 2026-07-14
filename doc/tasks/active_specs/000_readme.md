@@ -1,6 +1,6 @@
 # Active Specs
 
-本目录记录已经落地的 current-schema implementation truth。当前真值对应`.032`的multi-Room/user-level storage、`.033`的single-controller/content edit lease、`.034`的Macro V3 editor/Prepare/runner，以及`.035`的server-authoritative Room runtime sync与统一mutation feedback；Library由`.036`接入。
+本目录记录已经落地的 current-schema implementation truth。当前真值对应`.032`的multi-Room/user-level storage、`.033`的single-controller/content edit lease、`.034`的Macro V3 editor/Prepare/runner、`.035`的server-authoritative Room runtime sync与统一mutation feedback，以及`.036`的Library。
 
 当前文件：
 
@@ -8,6 +8,7 @@
 * `room_terminal_contract.md`
 * `user_data_storage_contract.md`
 * `macro_template_contract.md`
+* `library_contract.md`
 * `run_log_contract.md`
 * `capture_agent_event_contract.md`
 * `parser_profile_contract.md`

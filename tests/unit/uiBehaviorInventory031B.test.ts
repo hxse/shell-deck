@@ -11,16 +11,19 @@ import {
   baseline031ARuntimeControlIds,
   baseline031ASourceInteractiveControlCount,
   baseline031ASourceInteractiveControlDigest,
+  libraryRuntimeControlInventory,
   macroRuntimeControlInventory,
   runtimeControlInventory,
   sourceInteractiveControlCount,
   sourceInteractiveControlCount032,
   sourceInteractiveControlCount033,
   sourceInteractiveControlCount034,
+  sourceInteractiveControlCount035,
   sourceInteractiveControlDigest,
   sourceInteractiveControlDigest032,
   sourceInteractiveControlDigest033,
   sourceInteractiveControlDigest034,
+  sourceInteractiveControlDigest035,
   workspaceRuntimeControlInventory034,
 } from '../ui-baseline/031B/controlInventory'
 
@@ -51,7 +54,12 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest034).toBe('ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834')
   })
 
-  test('.035 interactive source controls match its attributed current snapshot', () => {
+  test('.035 source snapshot remains available after Library restoration', () => {
+    expect(sourceInteractiveControlCount035).toBe(174)
+    expect(sourceInteractiveControlDigest035).toBe('c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584')
+  })
+
+  test('.036 interactive source controls match its attributed current snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -77,7 +85,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(['20260627A.032', '20260627A.033', '20260627A.034'].includes(change?.changedBy ?? '')).toBe(true)
+      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.036'].includes(change?.changedBy ?? '')).toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
@@ -111,6 +119,16 @@ describe('.031B evolving UI source inventory', () => {
       newBehavior: expect.any(String),
       spec: expect.any(String),
     })])
+  })
+
+  test('.036 attributes the current Library controls without reviving legacy Prompt scope or Duplicate behavior', () => {
+    const keys = libraryRuntimeControlInventory.map(({ key }) => key)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(keys).toContain('library-panel-toggle')
+    expect(keys).toContain('library-load-into-macro')
+    expect(keys).toContain('macro-save-to-library')
+    expect(keys.some((key) => key.includes('scope') || key.includes('duplicate') || key.includes('import') || key.includes('export'))).toBe(false)
+    for (const key of keys) expect(attributedControlChanges.find((entry) => entry.key === key)?.changedBy).toBe('20260627A.036')
   })
 
   test('.033 attributes every controller-only behavior change on surviving controls', () => {

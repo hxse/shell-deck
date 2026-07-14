@@ -6,7 +6,7 @@
 
 ### Destructive cutover 与 UI preservation 边界
 
-`.032`的schema/API hard cut与中间态UI删除是两件事。为了不保留Macro V2临时adapter，本revision允许production Macro/Prompt/Run panel在代码层暂时不可用；它不是standalone release candidate，也不把“只剩Shell/Text”定义为最终产品形态。`.031` revision中的Svelte component、CSS、toolbar密度、panel编排与已精调交互是.033-.035的reference implementation；它们不是旧schema真值，后继只能移植仍符合新contract的presentation/interaction代码，不能恢复旧store、route、type、validator或兼容路径。
+`.032`的schema/API hard cut与中间态UI删除是两件事。为了不保留Macro V2临时adapter，本revision允许production Macro/Prompt/Run panel在代码层暂时不可用；它不是standalone release candidate，也不把“只剩Shell/Text”定义为最终产品形态。`.031` revision中的Svelte component、CSS、toolbar密度、panel编排与已精调交互是.033-.036的reference implementation；它们不是旧schema真值，后继只能移植仍符合新contract的presentation/interaction代码，不能恢复旧store、route、type、validator或兼容路径。
 
 后继重构遵循最小必要变化：新contract明确要求的control、state和field可以增加、删除或局部调整；与任务无关的布局、配色、字号、spacing、icon语言、editor手感、collapse/insertion流程和panel比例默认保护。这里不建立截图或像素冻结Gate，也不禁止合理UI改进；但任何有意偏离必须在所属task的`02_spec`写清“为什么新contract需要”，在`03_execution`列出受影响UI文件和最小修改面，在`04_review`逐项回填。仅以“重写更方便”“旧文件曾在.032删除”为理由不成立。
 
@@ -30,7 +30,7 @@
 * .032不得注册临时Macro schema/API或duplicate/clone入口；Foundation Gate由just test-032阻断，但.032不是standalone release candidate，stack/release Gate必须继续通过.034完整Macro Integration。
 * just check、just build、just test-unit、just test-032、current browser E2E与git diff --check为阻断Gate。历史测试中仍属于Room/PTY/replay/backpressure/notification/parser底座的断言必须迁到current-schema测试；依赖已删除Macro V2/config/Deck contract的测试与命令直接删除，不保留不可运行的legacy Gate，Macro integration由.034重新建立。
 
-Room controller与跨Room/process共享内容编辑租约由.033负责；MacroDefinitionV3、production Macro CRUD/editor、Prepare/Start算法与run snapshot由.034负责；Library record、CRUD、editor与Load into Macro由.035负责。
+Room controller与跨Room/process共享内容编辑租约由.033负责；MacroDefinitionV3、production Macro CRUD/editor、Prepare/Start算法与run snapshot由.034负责；Library record、CRUD、editor与Load into Macro由.036负责。
 
 Room-scoped AgentEvent ingest与外部 just codex拒绝语义为本任务阻断项；不允许 manual identity、unbound evidence或spool import fallback。
 
@@ -56,7 +56,7 @@ Room-scoped AgentEvent ingest与外部 just codex拒绝语义为本任务阻断�
       agent-events/...
       .locks/...
 
-.032实现root resolution、Macro path/envelope ownership primitive、run/evidence relocation与shared-store primitive。.035实现Library record/API/UI，但必须逐字使用library/<kind>/<itemId>.json，不能再增加Directory/Global层级。任何terminal cwd下都不得自动创建.shell-deck或内容文件。
+.032实现root resolution、Macro path/envelope ownership primitive、run/evidence relocation与shared-store primitive。.036实现Library record/API/UI，但必须逐字使用library/<kind>/<itemId>.json，不能再增加Directory/Global层级。任何terminal cwd下都不得自动创建.shell-deck或内容文件。
 
 V0 POSIX filesystem permission contract如下。server创建的User Data Root、macros、library、runs、agent-events和.locks目录一律以0700创建；notification、Macro、Library、Trace/artifact/evidence与lock state普通文件一律以0600创建。atomic replace使用的same-filesystem temporary file必须在写入secret/content前以0600创建，并在rename前复核mode；不能依赖process umask，也不能先用宽权限创建后再收紧。server不得跟随由自己管理的content/lock path中的symlink。
 
@@ -200,9 +200,9 @@ Room工作区顶栏删除Rooms (N)菜单、菜单内New/Open/Destroy以及产品
 
 Macro的最终user-global CRUD与request/response schema由.034冻结并实现；.032只保留<user-root>/macros/<macroId>.json路径、MacroRecord envelope和shared-store primitive。旧config-scoped Macro routes随configId删除，但.032不注册半成品replacement API。
 
-最终Macro surface只允许list/create/read/update/delete，不存在duplicate、clone或copy-and-create route。Copy属于client clipboard operation，不是server mutation。.034负责删除现有Macro Duplicate UI/client/store/route，并接通完整CRUD；.035不得重新引入Library duplicate。
+最终Macro surface只允许list/create/read/update/delete，不存在duplicate、clone或copy-and-create route。Copy属于client clipboard operation，不是server mutation。.034负责删除现有Macro Duplicate UI/client/store/route，并接通完整CRUD；.036不得重新引入Library duplicate。
 
-Library的user-global API由.035实现，但不得包含roomId、projectId或scope。最终Macro definition与Library item都不得保存configId、projectId、Room identity、server URL、cwd、terminalId或launchId。
+Library的user-global API由.036实现，但不得包含roomId、projectId或scope。最终Macro definition与Library item都不得保存configId、projectId、Room identity、server URL、cwd、terminalId或launchId。
 
 ### Room-scoped AgentEvent ingest
 
@@ -270,7 +270,7 @@ Room 由 URL 选择。selected terminal、selected Macro、unsaved draft 和 edi
 * migration、legacy parser、path scan、alias、dual read、Convert或automatic import；仅允许本task精确定义的notification raw-byte relocation。
 * config-scoped或user-global Macro duplicate/clone route；.032不创建replacement，.034删除现有Duplicate surface。
 
-.033只拥有Room controller、single-writer enforcement与跨Room/process共享内容编辑租约primitive；不得定义Macro terminal schema、Prepare或Library内容模型。.034拥有MacroDefinitionV3、production Macro CRUD/editor、terminal schema、Macro面板显式Prepare terminals、Start validation、terminal snapshot、run structure lock与Macro租约接入；不得修改root/routes/content sharing/cwd ownership，也不得让structure lock阻止Destroy。.035只拥有single user-level Library record/store/API/UI/Load与Library租约接入；不得恢复scope或Room semantics。
+.033只拥有Room controller、single-writer enforcement与跨Room/process共享内容编辑租约primitive；不得定义Macro terminal schema、Prepare或Library内容模型。.034拥有MacroDefinitionV3、production Macro CRUD/editor、terminal schema、Macro面板显式Prepare terminals、Start validation、terminal snapshot、run structure lock与Macro租约接入；不得修改root/routes/content sharing/cwd ownership，也不得让structure lock阻止Destroy。.036只拥有single user-level Library record/store/API/UI/Load与Library租约接入；不得恢复scope或Room semantics。
 
 ## 示例
 

@@ -2,8 +2,9 @@
   import { onMount } from 'svelte'
   import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEditLease'
   import { cloneJsonValue } from '../jsonClone'
-  import type { ContentRecordChangedMessage, RoomSnapshot, ServerMessage, TerminalRuntimePosition } from '../protocol'
+  import type { ContentEditLeaseChangedMessage, ContentRecordChangedMessage, RoomSnapshot, TerminalRuntimePosition } from '../protocol'
   import type { TerminalRoomClient } from '../terminalRoomClient'
+  import { LibraryClient } from '../library/libraryClient'
   import type { MacroInsertionPaletteMode } from '../workspace/uiLayoutTypes'
   import type { MacroDefinitionV3, MacroRecord, MacroRecordSummary } from '../macro/macroDefinitionTypes'
   import { parseAndValidateMacroDefinitionJson, parseAndValidateMacroTerminalLayoutFromDefinitionJson, validateMacroDefinitionV3, validateMacroTerminalLayout } from '../macro/macroDefinitionValidation'
@@ -26,7 +27,7 @@
   type RefreshOutcome = 'applied' | 'stale' | 'retry'
   type TemplateRefreshResult = { outcome: RefreshOutcome; records?: MacroRecordSummary[] }
   type SequencedContentRecordChange = ContentRecordChangedMessage & { sequence: number }
-  type SequencedContentEditLeaseChange = Extract<ServerMessage, { type: 'content_edit_lease_changed' }> & { sequence: number }
+  type ContentEditLeaseChange = ContentEditLeaseChangedMessage & { sequence: number }
 
   let {
     roomClient,
@@ -51,7 +52,7 @@
     terminalStructureLocked: boolean
     runnerSnapshot: MacroRunnerSnapshot | null
     contentRecordChanges: Array<ContentRecordChangedMessage & { sequence: number }>
-    contentEditLeaseChanges: SequencedContentEditLeaseChange[]
+    contentEditLeaseChanges: ContentEditLeaseChange[]
     connectionGeneration: number
     insertionPaletteMode: MacroInsertionPaletteMode
     onRoomSnapshot: (snapshot: RoomSnapshot) => void
@@ -61,6 +62,7 @@
   }>()
 
   const recordClient = new MacroRecordClient(() => roomClient?.controlGrant ?? null)
+  const libraryClient = new LibraryClient(() => roomClient?.controlGrant ?? null)
   const runnerClient = new MacroRunnerClient(() => roomClient)
 
   let templates = $state<MacroRecordSummary[]>([])
@@ -82,6 +84,7 @@
   let operationPending = $state(false)
   let preparing = $state(false)
   let errorText = $state<string | null>(null)
+  let saveToLibraryLabel = $state('Save to Library')
   let runner = $state<MacroRunnerSnapshot | null>(null)
   let traces = $state<MacroRunTrace[]>([])
   let runnerInput = $state('')
@@ -106,6 +109,7 @@
   let reconciledConnectionGeneration = 0
   let contentRetryAttempt = 0
   let contentRetryTimer: ReturnType<typeof setTimeout> | null = null
+  let saveToLibraryResetTimer: ReturnType<typeof setTimeout> | null = null
 
   const filteredTemplates = $derived(templates.filter((template) => `${template.name}\n${template.description}`.toLowerCase().includes(templateSearch.trim().toLowerCase())))
   const portableValidation = $derived(validateMacroDefinitionV3(draft))
@@ -121,13 +125,13 @@
   })
 
   $effect(() => {
-    const changes = contentEditLeaseChanges.filter((change: SequencedContentEditLeaseChange) => change.sequence > handledContentLeaseChangeSequence)
+    const changes = contentEditLeaseChanges.filter((change: ContentEditLeaseChange) => change.sequence > handledContentLeaseChangeSequence)
     if (changes.length === 0) return
     handledContentLeaseChangeSequence = changes.at(-1)!.sequence
     const recordId = selectedRecord?.id
     const lease = editLease
     if (!recordId || !lease || !contentEditing) return
-    const latest = changes.filter((change: SequencedContentEditLeaseChange) => change.resourceKey.kind === 'macro' && change.resourceKey.itemId === recordId).at(-1)
+    const latest = changes.filter((change: ContentEditLeaseChange) => change.resourceKey.kind === 'macro' && change.resourceKey.itemId === recordId).at(-1)
     if (!latest) return
     if (latest.view.mode === 'held' && latest.view.leaseEpoch === lease.leaseEpoch) {
       leaseView = latest.view
@@ -149,6 +153,7 @@
     return () => {
       window.removeEventListener('focus', focus)
       if (contentRetryTimer) clearTimeout(contentRetryTimer)
+      if (saveToLibraryResetTimer) clearTimeout(saveToLibraryResetTimer)
       void releaseEditLease()
     }
   })
@@ -205,6 +210,38 @@
       if (report) errorText = messageOf(error)
       return { outcome: 'retry' }
     }
+  }
+
+  export async function loadFromLibrary(itemId: string, expectedRevision: number): Promise<{ selected: boolean; recordId: string }> {
+    const guard = {
+      selectedRecordId: selectedRecord?.id ?? null,
+      baseRecordRevision: selectedRecord?.revision ?? null,
+      draftRevision,
+      dirty,
+      jsonEditing,
+      editLeaseId: editLease?.editLeaseId ?? null,
+      operationGeneration,
+      operationPending,
+      controlEpoch: roomClient?.controlGrant?.controlEpoch ?? null,
+    }
+    const record = await recordClient.createFromLibrary(itemId, expectedRevision)
+    await refreshTemplates(false)
+    const unchanged = !guard.dirty
+      && !guard.jsonEditing
+      && guard.editLeaseId === null
+      && !guard.operationPending
+      && !dirty
+      && !jsonEditing
+      && editLease === null
+      && !operationPending
+      && (selectedRecord?.id ?? null) === guard.selectedRecordId
+      && (selectedRecord?.revision ?? null) === guard.baseRecordRevision
+      && draftRevision === guard.draftRevision
+      && operationGeneration === guard.operationGeneration
+      && roomClient?.controlGrant?.controlEpoch === guard.controlEpoch
+    if (unchanged) installRecord(record)
+    else errorText = `Created ${record.id}; current Macro draft was not switched.`
+    return { selected: unchanged, recordId: record.id }
   }
 
   async function loadNotificationProfiles() {
@@ -335,6 +372,43 @@
       await refreshTemplates(false)
     } catch (error) { if (canCommit(token)) reportMutationError(error, true) }
     finally { endOperation(token) }
+  }
+
+  async function saveCurrentDraftToLibrary() {
+    if (!roomClient || !canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
+    if (jsonEditing) { rejectMutation('finish_json_edit_before_library_save'); return }
+    if (!draft) { rejectMutation('no_current_macro'); return }
+    const validation = validateMacroDefinitionV3(draft)
+    if (!validation.ok) {
+      errorText = formatIssues(validation.issues)
+      onMutationDenied('invalid_macro_definition')
+      return
+    }
+    const token = beginOperation()
+    const revision = draftRevision
+    const definition = cloneJsonValue(validation.value)
+    saveToLibraryLabel = 'Saving…'
+    try {
+      await libraryClient.create('macro-template', {
+        title: definition.name,
+        content: JSON.stringify(definition, null, 2),
+        description: definition.description,
+        tags: [],
+      })
+      if (!canCommit(token, revision)) return
+      saveToLibraryLabel = 'Saved'
+      if (saveToLibraryResetTimer) clearTimeout(saveToLibraryResetTimer)
+      saveToLibraryResetTimer = setTimeout(() => {
+        saveToLibraryResetTimer = null
+        if (saveToLibraryLabel === 'Saved') saveToLibraryLabel = 'Save to Library'
+      }, 900)
+    } catch (error) {
+      if (canCommit(token)) reportMutationError(error, true)
+    } finally {
+      if (saveToLibraryLabel === 'Saving…') saveToLibraryLabel = 'Save to Library'
+      endOperation(token)
+    }
   }
 
   async function deleteTemplate() {
@@ -995,13 +1069,13 @@
 <section class="macro-panel" data-testid="macro-panel">
   <MacroWorkbenchChrome
     {templates} {filteredTemplates} {draft} {selectedRecord} {templateSearch} {dirty} {contentEditing} mutationAllowed={canMutateShared}
-    {errorText} {macroView} {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing}
+    {errorText} {macroView} {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing} {saveToLibraryLabel}
     prepareDisabled={prepareState.disabled} prepareDisabledReason={prepareState.reason}
     startDisabled={startState.disabled} startDisabledReason={startState.reason}
     {jsonEditing} {operationPending}
     onTemplateSearchChange={(value) => { templateSearch = value }} onSelectTemplate={selectTemplate}
     onCreateTemplate={() => void createTemplate()} onBeginEdit={() => void beginEdit()} onSaveTemplate={() => void saveTemplate()}
-    onCancelEdit={() => void cancelEdit()} onDeleteTemplate={() => void deleteTemplate()} onUpdateDraft={updateDraft}
+    onSaveToLibrary={() => void saveCurrentDraftToLibrary()} onCancelEdit={() => void cancelEdit()} onDeleteTemplate={() => void deleteTemplate()} onUpdateDraft={updateDraft}
     onResetWidth={onResetWidth} onPrepare={() => void prepareTerminals()} onRunnerInputChange={updateRunnerInput}
     onSubmitRunnerInput={() => void submitRunnerInput()} onRefreshRunner={() => void refreshRunner()}
     onMacroControl={(action) => void controlRunner(action)} onViewChange={(view) => { if (!jsonEditing) { macroView = view; if (view === 'trace') void refreshTraces() } }}

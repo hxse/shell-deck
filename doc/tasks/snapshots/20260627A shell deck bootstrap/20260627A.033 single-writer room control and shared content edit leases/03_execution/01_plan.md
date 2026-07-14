@@ -23,7 +23,7 @@
 1. 先记录实际UI touch manifest：只允许Room topbar/controller indicator、Take Control确认、shared readonly/notice primitive及必要consumer wiring；每个文件写明single-writer理由，禁止顺带修改terminal chrome或Macro/Library视觉结构。
 2. 顶栏沿用现有button/popover/notice语言增加Control: This device / Read-only · Take control状态；所有共享controls从server truth派生readonly，不隐藏整个surface、不清空draft。
 3. 接入.032 Room页Home按钮和Home generation-bound Destroy invalidation；确认Home不取得controller、不出现跨RoomTake control & destroy，active run仍可被lifecycle Destroy。
-4. 提供.034/.035复用的client lease API、状态store和错误呈现，不加入Macro/Library业务schema或布局决定。
+4. 提供.034/.036复用的client lease API、状态store和错误呈现，不加入Macro/Library业务schema或布局决定。
 5. 更新AGENTS、active specs、guide与测试入口，扫描client-only guard、并发旧路径及无理由UI diff。
 
 ## 实施约束
@@ -46,7 +46,7 @@
 * `src/lib/components/TextBoxSlot.svelte`：observer使用原textarea的`readonly`，仍允许滚动、选取与Copy，不清空正文。
 * `src/styles/room.css`：只为三种controller状态和shared readonly增加沿用既有视觉语言的最小样式；唯一有意视觉新增是topbar状态控件与轻微readonly内描边。
 
-未触及Macro/Library/editor chrome；`.032`的中间态未提供这些surface，本task不借机恢复、隐藏或重新发明它们，后继`.034/.035`只消费这里交付的controller/content lease primitive。
+未触及Macro/Library/editor chrome；`.032`的中间态未提供这些surface，本task不借机恢复、隐藏或重新发明它们，后继`.034/.036`只消费这里交付的controller/content lease primitive。
 
 ## 验证矩阵
 

@@ -159,6 +159,86 @@
   line-height: 1.45;
 }
 
+.library-side-panel {
+  min-width: 280px;
+  max-width: 85vw;
+}
+
+.library-kind-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid #d8e0e8;
+  background: #f7f9fb;
+}
+
+.library-kind-tabs button {
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 6px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-kind-tabs button.active {
+  border-color: #7f9fbc;
+  background: #eaf4fc;
+  color: #173d66;
+  font-weight: 700;
+}
+
+.library-actions,
+.library-macro-actions {
+  gap: 4px;
+}
+
+.library-actions button,
+.library-macro-actions button {
+  min-height: 24px;
+  box-sizing: border-box;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.library-actions button[aria-disabled="true"],
+.library-macro-actions button[aria-disabled="true"] {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.library-editor .line-numbered-textarea {
+  --line-number-font-size: 12px;
+  --line-number-height: 1.5em;
+}
+
+.library-editor .line-numbered-textarea textarea {
+  padding: 7px;
+  font-size: 13px;
+}
+
+.library-editor .line-numbered-textarea textarea:read-only {
+  background: #f8fafb;
+  color: #344250;
+}
+
+.library-validation {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid #c8d3dd;
+  border-radius: 5px;
+  background: #f7fafc;
+  color: #344250;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 @media (min-width: 981px) and (max-width: 1100px) {
   .terminal-room {
     min-width: 240px;

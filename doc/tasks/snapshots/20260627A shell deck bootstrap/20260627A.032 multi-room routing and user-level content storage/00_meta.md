@@ -2,7 +2,7 @@
 
 ## 实施状态
 
-.032 Foundation Gate 已通过。Room/User Data Root/storage foundation 已落地并通过静态检查、生产构建、unit、integration 与 browser Gate；本 revision 按冻结边界仍不是 standalone release candidate。Room single-writer/content lease、MacroDefinitionV3 完整切换与 Library 产品功能分别由 .033、.034、.035 承接。
+.032 Foundation Gate 已通过。Room/User Data Root/storage foundation 已落地并通过静态检查、生产构建、unit、integration 与 browser Gate；本 revision 按冻结边界仍不是 standalone release candidate。Room single-writer/content lease、MacroDefinitionV3 完整切换与 Library 产品功能分别由 .033、.034、.036 承接。
 
 ## 任务概括
 
@@ -28,8 +28,8 @@ server根地址 / 是Room Home入口：没有live Room时，server原子创建�
 * 同一 User Data Root 可被多个 server process 并发使用；只共享无状态长期内容，不共享 Room、PTY 或 runner runtime。
 * 建立user-global MacroRecord path、envelope、canonical per-resource transaction guard与shared-store primitive；production Macro API/editor/runner不在.032单独切换，由.034连同MacroDefinitionV3一次性cutover。
 * .032不引入临时Macro schema、半成品validator或兼容adapter；.032 Foundation Gate独立验证底座，但该revision不是standalone release candidate，stack/release Gate必须运行到完成Macro Integration的.034。
-* `.031`是后继UI/交互的reference implementation而不是旧schema真值；本task为切断旧Macro V2而移除production panel代码，只构成允许的中间态，不表示否定其仍有效的布局、视觉语言或精调交互，也不授权.033-.035凭空重画工作台。
-* 冻结 .035 必须使用的单一 user-level Library path；不再存在 Directory/Global scope。
+* `.031`是后继UI/交互的reference implementation而不是旧schema真值；本task为切断旧Macro V2而移除production panel代码，只构成允许的中间态，不表示否定其仍有效的布局、视觉语言或精调交互，也不授权.033-.036凭空重画工作台。
+* 冻结 .036 必须使用的单一 user-level Library path；不再存在 Directory/Global scope。
 * Shell cwd 是单个 terminal 的memory-only live runtime property：初值为launch cwd，server观察实际Shell process cwd并同步变化。Room UI的New shell不弹路径框，只发送`cwdSource: "last-shell"`意图；server按authoritative顺序选择最高index Shell并在创建前读取其current cwd，没有Shell或无法读取时使用`~`/`$HOME`。Prepare创建仍使用`$HOME`。
 * terminal tab与pane header复用唯一单行display label，顺序固定为index、terminalId、可选current cwd、kind、status；两处内容一致，溢出省略，header可选择复制完整文本。
 * UI settings、panel width/visibility、drag toggle等纯browser preference统一使用versioned localStorage；terminal Prepare不是setting。
@@ -40,7 +40,7 @@ server根地址 / 是Room Home入口：没有live Room时，server原子创建�
 
 * 不实现同一Room单写控制权或跨Room/process的内容编辑租约；由紧随其后的.033负责。
 * 不设计MacroDefinitionV3、production Macro CRUD、terminal index/type schema、Prepare、Start validation或run snapshot；完整Macro cutover由.034负责。
-* 不实现 Library record、CRUD、editor 或 Load into Macro；由 .035 负责。
+* 不实现 Library record、CRUD、editor 或 Load into Macro；由 .036 负责。
 * 不在foundation中制作临时Macro/Library占位UI，也不把暂时缺失的panel包装成最终简化版；后继必须按各自精准重构边界恢复正式surface。
 * 不恢复 server restart 前的 PTY、Text content、terminal process、active runner、Pause cursor 或 Room runtime。
 * 不让多个 server process 共享 live Room，也不实现跨 process WebSocket federation。

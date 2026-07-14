@@ -4,7 +4,7 @@
 
 在.032的multi-Room与User Data Root底座上，为同一用户的多标签页/多设备同步建立真正的single-writer约束：每个live Room任一时刻只有一个controller可以修改共享Room状态，其他连接只观察；user-global Macro与Library record则通过跨Room、跨server process的per-record edit lease避免同时编辑。controller与edit lease都由server强制，client disabled state只负责呈现，不承担正确性。
 
-本任务只建立通用控制权、租约、协议与UI状态，不定义Macro terminal schema、Prepare/Start算法或Library内容模型。.034把Macro editor/runner接入该机制，.035把Library editor接入该机制。
+本任务只建立通用控制权、租约、协议与UI状态，不定义Macro terminal schema、Prepare/Start算法或Library内容模型。.034把Macro editor/runner接入该机制，.036把Library editor接入该机制。
 
 ## 正式 task 级别及定级原因
 
@@ -26,7 +26,7 @@
 * 冻结HTTP grant为owner-only bearer capability，并逐请求校验live owner WebSocket、epoch、Room generation与lifecycle；不虚构普通HTTP的tab channel binding。
 * controller与content takeover分别绑定expectedControlEpoch/expectedLeaseEpoch；release/expiry后只进入available，不自动提升普通observer或等待者；前述同tab bounded reconnect acquire是唯一UI连续性例外。
 * 增加same-Room multi-tab、different-Room、two-process、takeover、expiry与server-side bypass测试。
-* UI只增加controller状态、Take Control确认、server-truth readonly/busy/error呈现，以及供.034/.035复用的lease状态primitive；沿用.032当前Room chrome和.031既有工作台视觉语言，不借single-writer重排terminal、Macro或Library surface。
+* UI只增加controller状态、Take Control确认、server-truth readonly/busy/error呈现，以及供.034/.036复用的lease状态primitive；沿用.032当前Room chrome和.031既有工作台视觉语言，不借single-writer重排terminal、Macro或Library surface。
 
 ## 范围外
 
@@ -34,12 +34,12 @@
 * 不让多个clients并发编辑或合并同一draft，不实现CRDT/OT。
 * 不持久化Room controller，不从Trace恢复controller；server restart创建新Room generation并清空控制权。
 * 不定义MacroDefinitionV3、terminal index/type mapping、Prepare、Start、run snapshot或Macro draft lifecycle；由.034负责。
-* 不定义Library kind/content/search/Load语义；由.035负责。
+* 不定义Library kind/content/search/Load语义；由.036负责。
 * 不把browser localStorage preference纳入Room controller；它不修改共享状态。
 * 不建立cross-process live Room federation；跨process只协调user-global record edit lease。
 * 不引入旧并发行为兼容开关、client-only fallback或全局单一内容锁。
 * 不重新定义.032 Room Home、capacity或generation-bound lifecycle Destroy；Home New/Destroy是process management operation，不属于Room controller guard。
-* 不建立新design system，不调整与controller/lease无关的panel比例、配色、字号、toolbar、terminal label或editor交互；Macro/Library具体UI分别留在.034/.035精准接入。
+* 不建立新design system，不调整与controller/lease无关的panel比例、配色、字号、toolbar、terminal label或editor交互；Macro/Library具体UI分别留在.034/.036精准接入。
 
 ## 决策归属
 
@@ -58,6 +58,6 @@ AI可直接实现：
 * controller自动首次取得、显式available acquire、owner-server heartbeat、TTL、epoch-bound Take Control、owner-only bearer、observer-safe view与server-side mutation/lifecycle guard。
 * per-record edit lease复用.032 canonical resource transaction guard的leaseEpoch-bound takeover、expiry、revision组合和错误码。
 * Home Destroy、断线、server shutdown与内容租约释放的顺序。
-* .034/.035可消费的protocol/client primitive与自动化Gate。
+* .034/.036可消费的protocol/client primitive与自动化Gate。
 
 需要人工拍板：无。
