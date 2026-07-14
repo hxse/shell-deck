@@ -1,41 +1,7 @@
-# Run Log Contract
+# Run Evidence Foundation Contract
 
-## Truth Model
+`.032` 将 run event log 与 artifact 放入 User Data Root 的 `runs/<runId>/`。每个 event 保存 immutable `serverInstanceId + roomId + roomGeneration` provenance、monotonic `eventSeq`、generated eventId、kind、timestamp 和 data；artifact 先以 private atomic file 写入，再追加 `artifact_created` evidence。
 
-Macro run state is reconstructed from one append-only event log plus artifacts. UI node logs and AI-readable traces derive from the same event log; there is no second truth source.
+Trace/artifact 是只读 evidence，不是 runtime checkpoint。Room、runner cursor 和 run snapshot 不持久化；server restart、Room generation 改变或 Destroy 后绝不从 event log 恢复 runner。`.034` 接入 production runner 后继续使用这一 provenance 边界并派生 interrupted/room-destroyed 状态。
 
-Each event has a monotonic `eventSeq` within a run and a server-generated event id. Run-scoped events omit `stepId`; step-scoped operational events include `stepId`.
-
-Dynamic occurrences are identified by optional structured `data.executionPath` segments: `{ kind: "for", stepId, iterationIndex }` and `{ kind: "parallel-lane", stepId, laneId }`. New `loop_iteration_started` / `loop_iteration_completed` events record zero-based `iterationIndex`, one-based `iteration`, `rangeKind`, and a finite `total` or `null` for forever. Text-list execution does not add independent `index` / `key` / `value` binding snapshot fields to JSONL; existing action events may still record their user-visible rendered title, prompt, or summary under the action's normal evidence contract. When `data.nextStepId` or `data.nextExecutionPath` is present, schema validation strictly checks the public step id or every structured path segment; `nextStepId: null` denotes no next invocation. Old events without occurrence or next-pointer fields remain valid legacy static occurrences; replay must not fabricate a resumable cursor from them.
-
-## Artifacts
-
-Large or structured payloads are written as artifacts before the event that references them. Artifact refs are server-generated and path-checked under the run artifact directory.
-
-Current `terminal_text_sent` events record required requested Macro `delivery` (`auto | direct | bracketed-paste`), actual `resolvedDelivery` (`direct | bracketed-paste`), and `ending` (`none | lf | cr | crlf`). Auto resolves at the actual write from the current target capability: Shell to Bracketed paste, Text to Direct bytes. Explicit delivery records the same value as `resolvedDelivery`. The `content` artifact contains resolved text before framing or ending, while the exact `write` artifact contains the backend-bound payload. For resolved Direct delivery that payload is `content + suffix(ending)`; for resolved Bracketed paste it includes `ESC[200~`, content, `ESC[201~`, and then `suffix(ending)` outside the marker. This write artifact, rather than fake/text terminal display behavior, is the byte-level evidence.
-
-A Bracketed-paste end-marker collision is checked after resolution and rejected before terminal content/write artifacts or `terminal_text_sent` are emitted. Thus Auto Shell rejects while Auto Text permits the marker under Direct semantics. Earlier step, terminal-ref, or submitted-input lifecycle evidence may remain, but it is not terminal-write success evidence. Existing append-only events may omit current delivery fields or contain older free-form data fields; replay does not rewrite or synthesize current evidence for them.
-
-Runtime artifact resolution is occurrence-aware even though template references keep a static producer `stepId`: it first looks for the producer in the current iteration/lane context and may then inherit a visible outer predecessor. It must not read a sibling lane, future occurrence, previous iteration's local producer, or a later lexical scope.
-
-Missing artifact refs are recoverable replay errors and must be visible in derived node logs.
-
-## Recovery
-
-Replay validates event ordering, duplicate event ids, malformed JSON, trailing half-lines, and missing artifacts. Recoverable replay errors preserve the parsed prefix and report the problem.
-
-Within one live `MacroRunnerService` runtime, normal pause/resume continues from the saved dynamic occurrence. Duration and terminal-quiet waits preserve active-time budgets; user-continue and input complete their original invocation; if branches are not re-evaluated; loops and parallel lanes continue their own sequence cursor; AgentEvent capture and partial notification delivery preserve their sub-state. Static completed `stepId` data is only a derived UI summary and never controls dynamic continuation.
-
-A user-requested pause or stop is published only after the active operation reaches a safe boundary. A terminal, notification, or claimed input side effect that already started finishes and appends its outcome and `step_completed` first. Claimed input uses a checkpoint drain to finish only its already-started invocation bookkeeping and advance the next pointer before a pending transition is published. `run_paused` records `nextStepId` and `nextExecutionPath`; `run_resumed` records `nextStepId` and the resumed `executionPath`.
-
-At the boundary, stop has priority: even when the active side effect was the last action, its outcome is recorded first and `run_stopped` then wins over natural `run_completed`. Pause does not have that priority; when a finish control or last action has completed and there is no next invocation, natural completion may win and no synthetic `run_paused` is emitted.
-
-This is in-process continuation, not durable restart hydration. After server/runtime loss, an in-flight run remains `interrupted`; event replay does not reconstruct the interpreter. V0 also does not fully resolve the crash window where terminal input or another external effect succeeded before its event/checkpoint was appended, so it does not promise crash-safe exactly-once delivery.
-
-## Node Logs
-
-Node logs group events by static macro step for navigation. Repeated dynamic occurrences of the same step are distinguished by their event `executionPath`. `parallel` lane events include `laneId` metadata and remain grouped under the parent `parallel` step. The merged output is represented by a `merged_text` artifact ref on the parent step.
-
-## Real-Time UI Updates
-
-RunEventStore append is the single notification source. After any event append succeeds, the server broadcasts `run_log_updated` with `configId`, `runId`, `eventSeq`, and `kind`. UI views use this signal to refresh the selected run and run list. Manual refresh is a debug/recovery path, not the normal way to observe run progress.
+旧 config-scoped run path 和 `run_log_updated.configId` 不属于 current runtime；完整 Macro Trace UI 与 event registry 由 `.034` 原子接回。

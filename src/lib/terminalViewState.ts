@@ -1,4 +1,4 @@
-import type { TerminalBackendKind, TerminalSnapshot } from './protocol'
+import type { TerminalBackendKind, TerminalRevisionFields, TerminalSnapshot } from './protocol'
 
 export const BROWSER_TERMINAL_REPLAY_CODE_UNIT_LIMIT = 2 * 1024 * 1024
 
@@ -17,9 +17,12 @@ export type TerminalViewSnapshot = TerminalSnapshot & {
 type TerminalViewEntry = {
   backend: TerminalBackendKind
   launchId: string
-  revision: number
+  renderRevision: number
+  serverRevision: number
   tail: ReplayTail
 }
+
+export type TerminalRevisionStamp = TerminalRevisionFields & { launchId: string }
 
 export class TerminalViewStateStore {
   readonly #entries = new Map<string, TerminalViewEntry>()
@@ -28,7 +31,7 @@ export class TerminalViewStateStore {
     this.#entries.clear()
   }
 
-  mergeDeck(snapshots: TerminalSnapshot[], current: TerminalViewSnapshot[]): TerminalViewSnapshot[] {
+  mergeRoom(snapshots: TerminalSnapshot[], current: TerminalViewSnapshot[]): TerminalViewSnapshot[] {
     const terminalIds = new Set(snapshots.map((snapshot) => snapshot.terminalId))
     for (const terminalId of this.#entries.keys()) {
       if (!terminalIds.has(terminalId)) this.#entries.delete(terminalId)
@@ -39,44 +42,69 @@ export class TerminalViewStateStore {
 
   mergeSnapshot(snapshot: TerminalSnapshot, current?: TerminalViewSnapshot): TerminalViewSnapshot {
     const entry = this.#entries.get(snapshot.terminalId)
+    if (current && entry && entry.launchId === snapshot.launchId && snapshot.terminalRevision < entry.serverRevision) return current
+    if (current && entry && entry.launchId !== snapshot.launchId && snapshot.roomRevision <= current.roomRevision) return current
     if (current && entry && entry.backend === snapshot.backend && entry.launchId === snapshot.launchId && entry.tail.matches(snapshot.replay)) {
+      entry.serverRevision = snapshot.terminalRevision
       return {
         ...snapshot,
         replay: entry.tail.snapshot(),
         renderUpdate: current.renderUpdate,
       }
     }
-    return this.#replaceSnapshot(snapshot, entry?.revision ?? 0)
+    return this.#replaceSnapshot(snapshot, entry?.renderRevision ?? 0)
   }
 
-  append(current: TerminalViewSnapshot, data: string): TerminalViewSnapshot {
+  append(current: TerminalViewSnapshot, data: string, stamp: TerminalRevisionStamp): TerminalViewSnapshot {
+    if (stamp.launchId !== current.launchId || stamp.terminalRevision <= current.terminalRevision) return current
     let entry = this.#entries.get(current.terminalId)
     if (!entry || entry.backend !== current.backend || entry.launchId !== current.launchId) {
       entry = {
         backend: current.backend,
         launchId: current.launchId,
-        revision: current.renderUpdate.revision,
+        renderRevision: current.renderUpdate.revision,
+        serverRevision: current.terminalRevision,
         tail: ReplayTail.from(current.replay, browserReplayCodeUnitLimit(current.backend)),
       }
       this.#entries.set(current.terminalId, entry)
     }
     entry.tail.append(data)
-    entry.revision += 1
+    entry.renderRevision += 1
+    entry.serverRevision = stamp.terminalRevision
     return {
       ...current,
+      ...stamp,
       replay: entry.tail.snapshot(),
-      renderUpdate: { revision: entry.revision, kind: 'append', data },
+      renderUpdate: { revision: entry.renderRevision, kind: 'append', data },
     }
   }
 
-  replaceReplay(current: TerminalViewSnapshot, replay: string[]): TerminalViewSnapshot {
-    return this.#replaceSnapshot({ ...current, replay }, current.renderUpdate.revision)
+  replaceReplay(current: TerminalViewSnapshot, replay: string[], stamp: TerminalRevisionStamp): TerminalViewSnapshot {
+    if (stamp.launchId !== current.launchId || stamp.terminalRevision < current.terminalRevision) return current
+    return this.#replaceSnapshot({ ...current, ...stamp, replay }, current.renderUpdate.revision)
+  }
+
+  patch(
+    current: TerminalViewSnapshot,
+    stamp: TerminalRevisionStamp,
+    values: Partial<Pick<TerminalSnapshot, 'status' | 'cols' | 'rows' | 'exitCode' | 'signal' | 'cwd'>>,
+  ): TerminalViewSnapshot {
+    if (stamp.launchId !== current.launchId || stamp.terminalRevision <= current.terminalRevision) return current
+    const entry = this.#entries.get(current.terminalId)
+    if (entry && entry.launchId === current.launchId) entry.serverRevision = stamp.terminalRevision
+    return { ...current, ...stamp, ...values }
   }
 
   #replaceSnapshot(snapshot: TerminalSnapshot, previousRevision: number): TerminalViewSnapshot {
     const tail = ReplayTail.from(snapshot.replay, browserReplayCodeUnitLimit(snapshot.backend))
     const revision = previousRevision + 1
-    this.#entries.set(snapshot.terminalId, { backend: snapshot.backend, launchId: snapshot.launchId, revision, tail })
+    this.#entries.set(snapshot.terminalId, {
+      backend: snapshot.backend,
+      launchId: snapshot.launchId,
+      renderRevision: revision,
+      serverRevision: snapshot.terminalRevision,
+      tail,
+    })
     return {
       ...snapshot,
       replay: tail.snapshot(),

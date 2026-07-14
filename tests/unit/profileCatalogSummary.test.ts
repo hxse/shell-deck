@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PROFILE_CATALOG_SUMMARY } from '../../src/lib/macro/profileCatalogSummary'
-import { validateProfileCatalogSummary } from '../../src/lib/macro/templateSchema'
+import { PROFILE_CATALOG_SUMMARY, validateProfileCatalogSummary } from '../../src/lib/parser/profileCatalogSummary'
 
 test('built-in profile catalog summary is the .003 thin stub', () => {
   const result = validateProfileCatalogSummary(PROFILE_CATALOG_SUMMARY)
@@ -32,4 +31,17 @@ test('profile catalog summary reports malformed catalog instead of throwing', ()
   const result = validateProfileCatalogSummary({ schemaVersion: 1 } as never)
   expect(result.ok).toBe(false)
   expect(result.issues).toContainEqual({ path: 'profiles', message: 'profiles must be an array' })
+})
+
+test('profile catalog summary rejects unknown current-schema fields', () => {
+  const catalog = structuredClone(PROFILE_CATALOG_SUMMARY) as unknown as { schemaVersion: number; profiles: Array<Record<string, unknown>>; old?: boolean }
+  catalog.old = true
+  catalog.profiles[0].legacy = 'x'
+  ;(catalog.profiles[0].signals as Array<Record<string, unknown>>)[0].alias = 'x'
+  const result = validateProfileCatalogSummary(catalog)
+  expect(result.issues.filter((issue) => issue.message === 'unknown field').map((issue) => issue.path)).toEqual([
+    'catalog.old',
+    'profiles[0].legacy',
+    'profiles[0].signals[0].alias',
+  ])
 })

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { runRegexParser, validateRegexRules } from '../../src/lib/parser/regexParserAdapter'
 import type { ParserInvocationContext } from '../../src/lib/parser/parserProfileTypes'
+import { createGeneratedId } from '../../src/lib/generatedId'
 
 test('regex parser validates flags and output type', () => {
   const result = validateRegexRules([{ signal: 'ready', type: 'boolean-null', pattern: 'ready', flags: 'gi', onMatch: true, onNoMatch: false }])
@@ -11,8 +12,7 @@ test('regex parser validates flags and output type', () => {
 test('regex parser writes raw match and normalized output artifacts', async () => {
   const artifacts = new Map<string, string>()
   const context: ParserInvocationContext = {
-    configId: 'local',
-    runId: 'run_regex',
+    runId: createGeneratedId('run'),
     stepId: 'parse',
     captureArtifactRef: 'artifacts/capture.txt',
     writeArtifact: async (prefix, content, extension = 'txt') => {

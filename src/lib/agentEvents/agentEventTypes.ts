@@ -4,11 +4,11 @@ export const AGENT_EVENT_ADAPTERS = ['codex-session-start-hook', 'codex-user-pro
 export type AgentEventKind = typeof AGENT_EVENT_KINDS[number]
 export type AgentEventAdapter = typeof AGENT_EVENT_ADAPTERS[number]
 
-export type AgentEvent = {
+export type AgentEventInput = {
   protocolVersion: 1
   agentKind: 'codex'
   eventKind: AgentEventKind
-  configId: string
+  roomGeneration: string
   terminalId: string
   launchId: string
   agentSessionId: string
@@ -20,22 +20,30 @@ export type AgentEvent = {
   capturedText?: string
   raw: {
     source: string
-    payloadRef?: string
     payload?: Record<string, unknown>
   }
-  receivedAt: string
   error?: string
 }
 
+export type AgentEvent = AgentEventInput & {
+  eventId: string
+  serverInstanceId: string
+  roomId: string
+  receivedAt: string
+}
+
 export type HookEnv = {
-  configId: string
+  roomGeneration: string
   terminalId: string
   launchId: string
 }
 
 export type AgentEventMatch = {
-  configId: string
+  serverInstanceId: string
+  roomId: string
+  roomGeneration: string
   terminalId: string
+  launchId: string
   agentKind?: 'codex'
   eventKind?: AgentEventKind
   adapter?: AgentEventAdapter

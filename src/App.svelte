@@ -1,637 +1,335 @@
 <script lang="ts">
-  import type { MacroNotificationMessage, MacroNotificationSound, PromptUpdatedMessage, RunLogUpdatedMessage, ServerMessage, TerminalSnapshot } from './lib/protocol'
-  import { TerminalDeckClient } from './lib/terminalDeckClient'
-  import { TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
+  import { onMount } from 'svelte'
+  import { loadBrowserSettings, saveBrowserSettings, type BrowserSettings } from './lib/browserSettings'
   import NoticeStack, { type NoticeItem } from './lib/components/workspace/NoticeStack.svelte'
   import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
-  import { UiLayoutClient } from './lib/workspace/uiLayoutClient'
-  import {
-    DEFAULT_WORKSPACE_LAYOUT,
-    PANEL_DEFAULT_WIDTH,
-    PANEL_MIN_WIDTH_PX,
-    normalizePanelWidth,
-    normalizeWorkspaceUiLayout,
-    type MacroInsertionPaletteMode,
-    type WorkspacePanelKey,
-    type WorkspaceUiLayout,
-  } from './lib/workspace/uiLayoutTypes'
+  import type { ServerMessage, TerminalSnapshot } from './lib/protocol'
+  import { TerminalRoomClient } from './lib/terminalRoomClient'
+  import { TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
 
-  const ALIAS_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
-  const CONFIG_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/
-  const NOTIFICATION_VOLUME_STORAGE_KEY = 'shell-deck:notification-volume'
-  const MACRO_INSERTION_MODE_STORAGE_KEY = 'shell-deck:macro-insertion-palette-mode'
-  const TAB_DRAG_ENABLED_STORAGE_KEY = 'shell-deck:tab-drag-enabled'
-  const DEFAULT_NOTIFICATION_VOLUME = 2.4
-  const NOTIFICATION_MAX_VOLUME = 10
-  const NOTIFICATION_MAX_GAIN = 0.3
-  type AudibleNotificationSound = Exclude<MacroNotificationSound, 'none'>
-
-  function initialConfigId() {
-    const value = new URL(window.location.href).searchParams.get('configId')
-    return value && CONFIG_ID_RE.test(value) ? value : 'local'
+  type RoomSummary = {
+    roomId: string
+    roomGeneration: string
+    terminalCount: number
+    connectedClientCount: number
+    hasActiveRun: boolean
   }
 
-  function normalizeNotificationVolume(value: unknown) {
-    if (value === null || value === undefined || value === '') return DEFAULT_NOTIFICATION_VOLUME
-    const next = Number(value)
-    if (!Number.isFinite(next)) return DEFAULT_NOTIFICATION_VOLUME
-    return Math.max(0, Math.min(NOTIFICATION_MAX_VOLUME, next))
-  }
-
-  function initialNotificationVolume() {
-    try {
-      return normalizeNotificationVolume(window.localStorage.getItem(NOTIFICATION_VOLUME_STORAGE_KEY))
-    } catch {
-      return DEFAULT_NOTIFICATION_VOLUME
-    }
-  }
-
-  function normalizeMacroInsertionPaletteMode(value: unknown): MacroInsertionPaletteMode {
-    return value === 'center' ? 'center' : 'anchored'
-  }
-
-  function initialMacroInsertionPaletteMode(): MacroInsertionPaletteMode {
-    try {
-      return normalizeMacroInsertionPaletteMode(window.localStorage.getItem(MACRO_INSERTION_MODE_STORAGE_KEY))
-    } catch {
-      return 'anchored'
-    }
-  }
-
-  function initialTabDragEnabled() {
-    try {
-      return window.localStorage.getItem(TAB_DRAG_ENABLED_STORAGE_KEY) === 'true'
-    } catch {
-      return false
-    }
-  }
-
+  const initialPath = window.location.pathname
+  let isHome = $state(initialPath === '/')
+  let roomId = $state(initialPath === '/' ? '' : decodeURIComponent(initialPath.slice(1)))
+  const loadedSettings = loadBrowserSettings()
   const terminalViews = new TerminalViewStateStore()
-  let configId = $state(initialConfigId())
-  let connected = $state(false)
-  let client = $state<TerminalDeckClient | null>(null)
-  let terminals = $state<TerminalViewSnapshot[]>([])
-  let indexMap = $state<Array<{ index: number; terminalId: string; terminalAlias: string }>>([])
-  let activeTerminalId = $state<string | null>(null)
-  let draggingTerminalId = $state<string | null>(null)
-  let tabDragEnabled = $state(initialTabDragEnabled())
-  let macroInsertionPaletteMode = $state<MacroInsertionPaletteMode>(initialMacroInsertionPaletteMode())
-  let settingsOpen = $state(false)
-  let notificationVolume = $state(initialNotificationVolume())
-  let editingTerminalId = $state<string | null>(null)
-  let aliasDraft = $state('')
-  let aliasError = $state<string | null>(null)
-  let layoutLoadedConfigId = $state('')
-  let layout = $state<WorkspaceUiLayout>(normalizeWorkspaceUiLayout(DEFAULT_WORKSPACE_LAYOUT))
-  let promptRefreshToken = $state(0)
-  let promptRefreshEvent = $state<PromptUpdatedMessage | null>(null)
-  let runLogRefreshToken = $state(0)
-  let runLogRefreshEvent = $state<RunLogUpdatedMessage | null>(null)
+
+  let settings = $state<BrowserSettings>(loadedSettings.settings)
   let noticeSeq = 0
   let notice = $state<NoticeItem | null>(null)
+  let settingsOpen = $state(false)
+
+  let homeLoading = $state(false)
+  let rooms = $state<RoomSummary[]>([])
+  let maxLiveRooms = $state(32)
+
+  let connected = $state(false)
+  let roomGeneration = $state('')
+  let latestRoomRevision = $state(0)
+  let client = $state<TerminalRoomClient | null>(null)
+  let terminals = $state<TerminalViewSnapshot[]>([])
+  let activeTerminalId = $state<string | null>(null)
+  let draggingTerminalId = $state<string | null>(null)
   let activeTerminal = $derived(terminals.find((terminal) => terminal.terminalId === activeTerminalId) ?? terminals[0] ?? null)
 
+  onMount(() => {
+    if (loadedSettings.reset) pushNotice('Browser settings were reset because the stored schema is invalid.')
+    if (isHome) void loadRooms()
+    const refresh = () => { if (isHome) void loadRooms() }
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  })
+
   $effect(() => {
+    if (isHome) return
     terminalViews.clear()
     terminals = []
-    indexMap = []
-    const deck = new TerminalDeckClient({
-      configId,
+    latestRoomRevision = 0
+    const connection = new TerminalRoomClient({
+      roomId,
       onOpen: () => { connected = true },
-      onClose: () => { connected = false },
+      onClose: (event) => { void handleConnectionClose(event) },
       onMessage: handleMessage,
     })
-    client = deck
-    return () => deck.close()
+    client = connection
+    return () => connection.close()
   })
 
   $effect(() => {
-    if (layoutLoadedConfigId !== configId) {
-      layoutLoadedConfigId = configId
-      layout = normalizeWorkspaceUiLayout(DEFAULT_WORKSPACE_LAYOUT)
-      promptRefreshToken = 0
-      void loadLayout()
-    }
+    if (terminals.length === 0) activeTerminalId = null
+    else if (!activeTerminalId || !terminals.some((terminal) => terminal.terminalId === activeTerminalId)) activeTerminalId = terminals[0].terminalId
   })
 
   $effect(() => {
-    if (terminals.length === 0) {
-      activeTerminalId = null
-      return
-    }
-    if (!activeTerminalId || !terminals.some((terminal) => terminal.terminalId === activeTerminalId)) {
-      activeTerminalId = terminals[0].terminalId
-    }
-  })
-
-  $effect(() => {
-    try {
-      window.localStorage.setItem(NOTIFICATION_VOLUME_STORAGE_KEY, String(notificationVolume))
-      window.localStorage.setItem(MACRO_INSERTION_MODE_STORAGE_KEY, macroInsertionPaletteMode)
-      window.localStorage.setItem(TAB_DRAG_ENABLED_STORAGE_KEY, String(tabDragEnabled))
-    } catch {
-      // Settings are browser-local preferences.
-    }
-  })
-
-  $effect(() => {
-    if (!settingsOpen) return
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') settingsOpen = false
-    }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      window.removeEventListener('keydown', closeOnEscape)
-    }
+    try { saveBrowserSettings(settings) } catch {}
   })
 
   function handleMessage(message: ServerMessage) {
-    if (message.type === 'deck_snapshot') {
-      terminals = terminalViews.mergeDeck(message.terminals, terminals)
-      indexMap = message.indexMap
+    if (message.type === 'client_registered') {
+      roomGeneration = message.roomGeneration
+      latestRoomRevision = 0
+    }
+    if ('roomGeneration' in message && roomGeneration && message.roomGeneration !== roomGeneration) return
+    if (message.type === 'room_snapshot') {
+      if (!acceptRoomRevision(message.roomRevision)) return
+      terminals = terminalViews.mergeRoom(message.terminals, terminals)
     }
     if (message.type === 'terminal_snapshot') {
+      observeRoomRevision(message.roomRevision)
       upsertTerminal(message)
     }
+    if (message.type === 'terminal_created') activeTerminalId = message.terminalId
     if (message.type === 'pty_output') {
-      appendTerminalReplay(message.terminalId, message.data)
+      observeRoomRevision(message.roomRevision)
+      appendTerminalReplay(message)
     }
     if (message.type === 'terminal_replay') {
-      replaceTerminalReplay(message.terminalId, message.replay)
+      observeRoomRevision(message.roomRevision)
+      replaceTerminalReplay(message)
     }
     if (message.type === 'terminal_index_map') {
-      indexMap = message.items
+      if (!acceptRoomRevision(message.roomRevision)) return
       terminals = terminals.map((terminal) => {
         const mapped = message.items.find((item) => item.terminalId === terminal.terminalId)
-        return mapped ? { ...terminal, terminalAlias: mapped.terminalAlias, terminalIndex: mapped.index, visualOrder: mapped.index } : terminal
-      }).sort((a, b) => a.terminalIndex - b.terminalIndex)
+        return mapped ? { ...terminal, terminalIndex: mapped.index, visualOrder: mapped.index } : terminal
+      }).sort((left, right) => left.terminalIndex - right.terminalIndex)
     }
-    if (message.type === 'terminal_error') {
-      pushNotice((message.terminalId ? message.terminalId + ': ' : '') + message.reason)
-    }
-    if (message.type === 'input_rejected') {
-      pushNotice(message.terminalId + ': input rejected: ' + message.reason)
-    }
+    if (message.type === 'terminal_error') pushNotice((message.terminalId ? message.terminalId + ': ' : '') + message.reason)
+    if (message.type === 'input_rejected') pushNotice(message.terminalId + ': input rejected: ' + message.reason)
     if (message.type === 'terminal_state') {
+      observeRoomRevision(message.roomRevision)
       terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
-        ? { ...terminal, status: message.status, cols: message.cols, rows: message.rows, exitCode: message.exitCode, signal: message.signal }
+        ? terminalViews.patch(terminal, message, { status: message.status, cols: message.cols, rows: message.rows, exitCode: message.exitCode, signal: message.signal })
         : terminal)
     }
-    if (message.type === 'ui_layout_updated' && message.configId === configId) {
-      layout = normalizeWorkspaceUiLayout(message.layout)
+    if (message.type === 'terminal_cwd') {
+      observeRoomRevision(message.roomRevision)
+      terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
+        ? terminalViews.patch(terminal, message, { cwd: message.cwd })
+        : terminal)
     }
-    if (message.type === 'prompts_updated' && message.configId === configId) {
-      promptRefreshEvent = message
-      promptRefreshToken += 1
-    }
-    if (message.type === 'run_log_updated' && message.configId === configId) {
-      runLogRefreshEvent = message
-      runLogRefreshToken += 1
-    }
-    if (message.type === 'macro_notification' && message.configId === configId) {
-      void handleMacroNotification(message)
+    if (message.type === 'room_destroyed') enterHomeWithoutRootRequest()
+  }
+
+  async function loadRooms() {
+    homeLoading = true
+    try {
+      const response = await fetch('/api/rooms')
+      const body = await response.json() as { ok: boolean; rooms?: RoomSummary[]; maxLiveRooms?: number; error?: string }
+      if (!response.ok || !body.ok) throw new Error(body.error ?? 'room_list_failed')
+      rooms = body.rooms ?? []
+      maxLiveRooms = body.maxLiveRooms ?? 32
+    } catch (error) {
+      pushNotice(messageOf(error))
+    } finally {
+      homeLoading = false
     }
   }
 
-  async function handleMacroNotification(message: MacroNotificationMessage) {
-    const appChannel = message.channels.find((channel) => channel.kind === 'app')
-    const hasAppToast = appChannel?.kind === 'app' && appChannel.toast
-    const systemRequested = message.channels.some((channel) => channel.kind === 'system')
-    if (hasAppToast) {
-      pushNotice(message.message || message.title, notificationOptionsFromMessage(message))
+  function enterHomeWithoutRootRequest() {
+    if (isHome) return
+    window.history.replaceState(null, '', '/')
+    isHome = true
+    roomId = ''
+    connected = false
+    roomGeneration = ''
+    latestRoomRevision = 0
+    terminalViews.clear()
+    terminals = []
+    activeTerminalId = null
+    void loadRooms()
+  }
+
+  async function handleConnectionClose(event?: CloseEvent) {
+    connected = false
+    if (isHome) return
+    const closedRoomId = roomId
+    const closedGeneration = roomGeneration
+    if (event?.code === 4001 || event?.reason === 'room_destroyed') {
+      enterHomeWithoutRootRequest()
+      return
     }
-    if (appChannel?.kind === 'app' && appChannel.sound !== 'none') {
-      void playNotificationSound(appChannel.sound, message.level)
-    }
-    if (systemRequested) {
-      void showBrowserSystemNotification(message).then((systemStatus) => {
-        if (systemStatus === 'delivered') return
-        if (hasAppToast) {
-          if (notice?.notificationId !== message.notificationId) return
-          pushNotice(message.message || message.title, notificationOptionsFromMessage(message, systemStatus))
-          return
-        }
-        pushNotice('System notification was not delivered.', notificationOptionsFromMessage(message, systemStatus))
+    try {
+      const response = await fetch('/api/rooms')
+      const body = await response.json() as { ok: boolean; rooms?: RoomSummary[] }
+      if (!response.ok || !body.ok || isHome || roomId !== closedRoomId) return
+      const stillLive = (body.rooms ?? []).some((room) => room.roomId === closedRoomId && (!closedGeneration || room.roomGeneration === closedGeneration))
+      if (!stillLive) enterHomeWithoutRootRequest()
+    } catch {}
+  }
+
+  async function newRoom() {
+    try {
+      const response = await fetch('/api/rooms', { method: 'POST' })
+      const body = await response.json() as { ok: boolean; url?: string; error?: string }
+      if (!response.ok || !body.ok || !body.url) throw new Error(body.error ?? 'room_create_failed')
+      window.location.assign(body.url)
+    } catch (error) { pushNotice(messageOf(error)) }
+  }
+
+  async function destroyRoom(room: RoomSummary) {
+    const detail = `${room.terminalCount} terminals, ${room.connectedClientCount} connections${room.hasActiveRun ? ', active run' : ''}`
+    if (!window.confirm('Destroy ' + room.roomId + '?\n' + detail)) return
+    try {
+      const response = await fetch('/api/rooms/' + encodeURIComponent(room.roomId), {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expectedRoomGeneration: room.roomGeneration }),
       })
-    }
+      const body = await response.json() as { ok: boolean; error?: string }
+      if (!response.ok || !body.ok) throw new Error(body.error ?? 'room_destroy_failed')
+      await loadRooms()
+    } catch (error) { pushNotice(messageOf(error)) }
   }
 
-  async function requestBrowserNotificationPermission(): Promise<NotificationPermission | 'unavailable' | 'failed'> {
-    if (!('Notification' in window)) return 'unavailable'
-    if (Notification.permission === 'granted' || Notification.permission === 'denied') return Notification.permission
-    try {
-      return await Notification.requestPermission()
-    } catch {
-      return 'failed'
-    }
+  function createShell() {
+    client?.send({ type: 'create_terminal', backend: 'real', cwdSource: 'last-shell' })
   }
 
-  async function showBrowserSystemNotification(message: MacroNotificationMessage): Promise<string> {
-    const permission = await requestBrowserNotificationPermission()
-    if (permission === 'unavailable') return 'unavailable'
-    if (permission === 'failed') return 'permission-request-failed'
-    if (permission !== 'granted') return 'permission-' + permission
-    try {
-      new Notification(message.title, { body: message.message, tag: message.notificationId })
-      return 'delivered'
-    } catch {
-      return 'failed'
-    }
+  function createText() {
+    client?.send({ type: 'create_terminal', backend: 'text' })
   }
 
-  async function playNotificationSound(sound: AudibleNotificationSound, level: MacroNotificationMessage['level']) {
-    try {
-      const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      if (!AudioContextCtor) return
-      const context = new AudioContextCtor()
-      const sequence = soundSequence(sound, level)
-      let cursor = context.currentTime
-      for (const tone of sequence) {
-        const oscillator = context.createOscillator()
-        const gain = context.createGain()
-        oscillator.type = tone.type
-        oscillator.frequency.value = tone.frequency
-        gain.gain.value = Math.min(NOTIFICATION_MAX_GAIN, tone.gain * notificationVolume)
-        oscillator.connect(gain)
-        gain.connect(context.destination)
-        oscillator.start(cursor)
-        oscillator.stop(cursor + tone.duration)
-        cursor += tone.duration + tone.gap
-      }
-      window.setTimeout(() => void context.close(), Math.ceil((cursor - context.currentTime + 0.05) * 1000))
-    } catch {
-      // Audio notification is best effort.
-    }
-  }
-
-  function soundSequence(sound: AudibleNotificationSound, level: MacroNotificationMessage['level']) {
-    const base = level === 'error' ? 220 : level === 'warning' ? 330 : 660
-    if (sound === 'bell') return [
-      { frequency: 880, duration: 0.08, gap: 0.02, gain: 0.045, type: 'triangle' as OscillatorType },
-      { frequency: 660, duration: 0.11, gap: 0.02, gain: 0.035, type: 'triangle' as OscillatorType },
-    ]
-    if (sound === 'chime') return [
-      { frequency: 523, duration: 0.09, gap: 0.025, gain: 0.04, type: 'sine' as OscillatorType },
-      { frequency: 784, duration: 0.13, gap: 0.02, gain: 0.035, type: 'sine' as OscillatorType },
-    ]
-    if (sound === 'ping') return [
-      { frequency: 1175, duration: 0.07, gap: 0.015, gain: 0.04, type: 'sine' as OscillatorType },
-      { frequency: 1568, duration: 0.08, gap: 0.02, gain: 0.032, type: 'sine' as OscillatorType },
-    ]
-    if (sound === 'pulse') return [
-      { frequency: base, duration: 0.1, gap: 0.035, gain: 0.04, type: 'sine' as OscillatorType },
-      { frequency: base, duration: 0.1, gap: 0.02, gain: 0.035, type: 'sine' as OscillatorType },
-    ]
-    if (sound === 'success') return [
-      { frequency: 523, duration: 0.07, gap: 0.018, gain: 0.036, type: 'triangle' as OscillatorType },
-      { frequency: 659, duration: 0.07, gap: 0.018, gain: 0.036, type: 'triangle' as OscillatorType },
-      { frequency: 784, duration: 0.12, gap: 0.02, gain: 0.034, type: 'triangle' as OscillatorType },
-    ]
-    if (sound === 'warning') return [
-      { frequency: 330, duration: 0.11, gap: 0.04, gain: 0.045, type: 'sawtooth' as OscillatorType },
-      { frequency: 330, duration: 0.11, gap: 0.02, gain: 0.04, type: 'sawtooth' as OscillatorType },
-    ]
-    if (sound === 'alert') return [
-      { frequency: 440, duration: 0.08, gap: 0.025, gain: 0.05, type: 'square' as OscillatorType },
-      { frequency: 440, duration: 0.08, gap: 0.025, gain: 0.05, type: 'square' as OscillatorType },
-      { frequency: 440, duration: 0.1, gap: 0.02, gain: 0.045, type: 'square' as OscillatorType },
-    ]
-    return [{ frequency: base, duration: 0.16, gap: 0.02, gain: 0.045, type: 'sine' as OscillatorType }]
-  }
-
-  async function loadLayout() {
-    try {
-      layout = await new UiLayoutClient(configId).read()
-    } catch (error) {
-      pushNotice('layout: ' + messageOf(error))
-    }
-  }
-
-  async function saveLayout(nextLayout: WorkspaceUiLayout) {
-    layout = normalizeWorkspaceUiLayout(nextLayout)
-    try {
-      layout = await new UiLayoutClient(configId).save(layout)
-    } catch (error) {
-      pushNotice('layout save failed: ' + messageOf(error))
-    }
-  }
-
-  function setPanelVisible(panel: WorkspacePanelKey, visible: boolean) {
-    void saveLayout({
-      ...layout,
-      panels: {
-        ...layout.panels,
-        [panel]: { ...layout.panels[panel], visible },
-      },
-    })
-  }
-
-  function resetPanelWidth(panel: WorkspacePanelKey) {
-    void saveLayout({
-      ...layout,
-      panels: {
-        ...layout.panels,
-        [panel]: { ...layout.panels[panel], widthPx: PANEL_DEFAULT_WIDTH[panel] },
-      },
-    })
-  }
-
-  function setMacroInsertionPaletteMode(mode: MacroInsertionPaletteMode) {
-    macroInsertionPaletteMode = normalizeMacroInsertionPaletteMode(mode)
-  }
-
-  function toggleMacroInsertionPaletteMode() {
-    setMacroInsertionPaletteMode(macroInsertionPaletteMode === 'anchored' ? 'center' : 'anchored')
-  }
-
-  function setNotificationVolume(value: number) {
-    notificationVolume = normalizeNotificationVolume(value)
-  }
-
-  function beginPanelResize(panel: WorkspacePanelKey, event: PointerEvent) {
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = layout.panels[panel].widthPx
-    const onMove = (moveEvent: PointerEvent) => {
-      const maxWidth = Math.max(PANEL_MIN_WIDTH_PX, Math.min(1200, Math.floor(window.innerWidth * 0.85)))
-      const widthPx = Math.max(PANEL_MIN_WIDTH_PX, Math.min(maxWidth, startWidth + startX - moveEvent.clientX))
-      layout = {
-        ...layout,
-        panels: {
-          ...layout.panels,
-          [panel]: { ...layout.panels[panel], widthPx: normalizePanelWidth(widthPx, startWidth) },
-        },
-      }
-    }
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      void saveLayout(layout)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-  }
-
-  function notificationOptionsFromMessage(message: MacroNotificationMessage, systemStatus?: string): Omit<NoticeItem, 'id' | 'text'> {
-    return { title: message.title, level: message.level, createdAt: message.createdAt, notificationId: message.notificationId, runId: message.runId, stepId: message.stepId, systemStatus }
-  }
-
-  function pushNotice(text: string, options: Omit<NoticeItem, 'id' | 'text'> = {}) {
-    const displayText = text.length > 500 ? text.slice(0, 500) + '...' : text
-    notice = { id: ++noticeSeq, text: displayText, ...options }
-  }
-
-  function dismissNotice(id: number) {
-    if (notice?.id === id) notice = null
+  function updateSettings(next: Partial<BrowserSettings>) {
+    settings = { ...settings, ...next }
   }
 
   function upsertTerminal(snapshot: TerminalSnapshot) {
-    const existing = terminals.findIndex((terminal) => terminal.terminalId === snapshot.terminalId)
-    const view = terminalViews.mergeSnapshot(snapshot, existing === -1 ? undefined : terminals[existing])
-    if (existing === -1) {
-      terminals = [...terminals, view].sort((a, b) => a.terminalIndex - b.terminalIndex)
-      activeTerminalId = snapshot.terminalId
-      return
+    const index = terminals.findIndex((terminal) => terminal.terminalId === snapshot.terminalId)
+    const view = terminalViews.mergeSnapshot(snapshot, index === -1 ? undefined : terminals[index])
+    if (index === -1) {
+      terminals = [...terminals, view].sort((left, right) => left.terminalIndex - right.terminalIndex)
+    } else {
+      terminals = terminals.map((terminal) => terminal.terminalId === snapshot.terminalId ? view : terminal).sort((left, right) => left.terminalIndex - right.terminalIndex)
     }
-    terminals = terminals.map((terminal) => terminal.terminalId === snapshot.terminalId ? view : terminal).sort((a, b) => a.terminalIndex - b.terminalIndex)
   }
 
-  function appendTerminalReplay(terminalId: string, data: string) {
-    terminals = terminals.map((terminal) => terminal.terminalId === terminalId
-      ? terminalViews.append(terminal, data)
+  function appendTerminalReplay(message: Extract<ServerMessage, { type: 'pty_output' }>) {
+    terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
+      ? terminalViews.append(terminal, message.data, message)
       : terminal)
   }
 
-  function replaceTerminalReplay(terminalId: string, replay: string[]) {
-    terminals = terminals.map((terminal) => terminal.terminalId === terminalId
-      ? terminalViews.replaceReplay(terminal, replay)
+  function replaceTerminalReplay(message: Extract<ServerMessage, { type: 'terminal_replay' }>) {
+    terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
+      ? terminalViews.replaceReplay(terminal, message.replay, message)
       : terminal)
   }
 
-  function createTerminal(backend: 'fake' | 'real' | 'text') {
-    client?.send({ type: 'create_terminal', backend })
+  function acceptRoomRevision(revision: number): boolean {
+    if (revision < latestRoomRevision) return false
+    latestRoomRevision = revision
+    return true
   }
 
-  function selectTerminal(terminalId: string) {
-    activeTerminalId = terminalId
+  function observeRoomRevision(revision: number): void {
+    latestRoomRevision = Math.max(latestRoomRevision, revision)
   }
 
   function closeTerminalTab(event: MouseEvent, terminal: TerminalSnapshot) {
     event.stopPropagation()
-    const label = terminal.terminalAlias || terminal.terminalId
-    if (!window.confirm('Close tab ' + label + '?')) return
-    client?.send({ type: 'close_terminal', terminalId: terminal.terminalId })
+    if (window.confirm('Close terminal ' + terminal.terminalIndex + ' · ' + terminal.terminalId + '?')) client?.send({ type: 'close_terminal', terminalId: terminal.terminalId })
   }
 
   function startDrag(event: DragEvent, terminalId: string) {
-    if (!tabDragEnabled) {
-      event.preventDefault()
-      return
-    }
+    if (!settings.terminalDragEnabled) { event.preventDefault(); return }
     draggingTerminalId = terminalId
     event.dataTransfer?.setData('text/plain', terminalId)
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move'
-    }
   }
 
-  function dropOnTab(event: DragEvent, targetTerminal: TerminalSnapshot) {
+  function dropOnTab(event: DragEvent, target: TerminalSnapshot) {
     event.preventDefault()
-    if (!tabDragEnabled) return
-    const sourceTerminalId = event.dataTransfer?.getData('text/plain') || draggingTerminalId
+    const source = event.dataTransfer?.getData('text/plain') || draggingTerminalId
     draggingTerminalId = null
-    if (!sourceTerminalId || sourceTerminalId === targetTerminal.terminalId) return
-    client?.send({ type: 'reorder_terminal', terminalId: sourceTerminalId, newIndex: targetTerminal.terminalIndex })
-    activeTerminalId = sourceTerminalId
-  }
-
-  function startRename(terminal: TerminalSnapshot) {
-    activeTerminalId = terminal.terminalId
-    editingTerminalId = terminal.terminalId
-    aliasDraft = terminal.terminalAlias
-    aliasError = null
-  }
-
-  function commitRename(terminal: TerminalSnapshot) {
-    const nextAlias = aliasDraft.trim()
-    if (nextAlias === terminal.terminalAlias) {
-      editingTerminalId = null
-      aliasError = null
-      return
-    }
-    if (!ALIAS_RE.test(nextAlias)) {
-      aliasError = 'Alias must use A-Z, a-z, 0-9, _ or -, and start with a letter or number.'
-      return
-    }
-    if (terminals.some((item) => item.terminalId !== terminal.terminalId && item.terminalAlias === nextAlias)) {
-      aliasError = 'Alias already exists in this config.'
-      return
-    }
-    client?.send({ type: 'rename_terminal', terminalId: terminal.terminalId, terminalAlias: nextAlias })
-    editingTerminalId = null
-    aliasError = null
-  }
-
-  function cancelRename() {
-    editingTerminalId = null
-    aliasError = null
-  }
-
-  function aliasKeydown(event: KeyboardEvent, terminal: TerminalSnapshot) {
-    event.stopPropagation()
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      commitRename(terminal)
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      cancelRename()
+    if (settings.terminalDragEnabled && source && source !== target.terminalId) {
+      client?.send({ type: 'reorder_terminal', terminalId: source, newIndex: target.terminalIndex })
+      activeTerminalId = source
     }
   }
 
   function tabKeydown(event: KeyboardEvent, terminal: TerminalSnapshot) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      selectTerminal(terminal.terminalId)
-    }
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activeTerminalId = terminal.terminalId }
   }
 
-  function messageOf(error: unknown) {
-    return error instanceof Error ? error.message : String(error)
+  function pushNotice(text: string) {
+    notice = { id: ++noticeSeq, text: text.length > 500 ? text.slice(0, 500) + '...' : text }
   }
+
+  function messageOf(error: unknown) { return error instanceof Error ? error.message : String(error) }
 </script>
 
-<main class="deck-shell">
-  <header class="topbar compact-topbar">
-    <div class="brand-line">
-      <h1>shell-deck</h1>
-      <p>{configId} · {connected ? 'connected' : 'disconnected'}</p>
-    </div>
-    <div class="actions">
-      <button
-        type="button"
-        class="panel-toggle"
-        data-testid="macro-panel-toggle"
-        aria-pressed={layout.panels.macro.visible}
-        onclick={() => setPanelVisible('macro', !layout.panels.macro.visible)}
-      >
-        <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
-        <span>Macro</span>
-      </button>
-      <button
-        type="button"
-        class="panel-toggle"
-        data-testid="prompt-panel-toggle"
-        aria-pressed={layout.panels.prompt.visible}
-        onclick={() => setPanelVisible('prompt', !layout.panels.prompt.visible)}
-      >
-        <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
-        <span>Prompt</span>
-      </button>
-      <button type="button" class="terminal-create-button" data-testid="terminal-create-fake" onclick={() => createTerminal('fake')}>New fake</button>
-      <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={() => createTerminal('real')}>New shell</button>
-      <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={() => createTerminal('text')}>New text</button>
-      <button
-        type="button"
-        class="settings-button"
-        data-testid="settings-button"
-        aria-expanded={settingsOpen}
-        aria-controls="settings-popover"
-        onclick={() => { settingsOpen = !settingsOpen }}
-      >
-        Settings
-      </button>
-    </div>
-  </header>
-
-  {#if settingsOpen}
-    <button class="popover-dismiss-layer settings-dismiss-layer" type="button" data-testid="settings-dismiss-layer" aria-label="Close settings" onclick={() => { settingsOpen = false }}></button>
-    <section id="settings-popover" class="settings-popover" data-testid="settings-popover" aria-label="Workspace settings">
-      <div class="settings-popover-head">
-        <strong>Settings</strong>
-        <button type="button" data-testid="settings-close" aria-label="Close settings" onclick={() => { settingsOpen = false }}>Close</button>
+{#if isHome}
+  <main class="room-home" data-testid="room-home">
+    <header class="room-home-header">
+      <div><h1>shell-deck</h1><p>Live Rooms in this server process</p></div>
+      <div class="actions">
+        <span data-testid="room-capacity">{rooms.length} / {maxLiveRooms}</span>
+        <button type="button" data-testid="home-refresh" onclick={() => void loadRooms()} disabled={homeLoading}>Refresh</button>
+        <button type="button" data-testid="new-room" onclick={() => void newRoom()} disabled={rooms.length >= maxLiveRooms}>New Room</button>
       </div>
+    </header>
+    {#if rooms.length === 0}
+      <section class="room-home-empty" data-testid="room-home-empty"><p>No live Rooms.</p><button type="button" data-testid="new-room-empty" onclick={() => void newRoom()}>New Room</button></section>
+    {:else}
+      <ul class="room-list" data-testid="room-list">
+        {#each rooms as room (room.roomId)}
+          <li>
+            <button class="room-open" type="button" data-testid="room-open" onclick={() => window.location.assign('/' + room.roomId)}>
+              <code>{room.roomId}</code><span>{room.terminalCount} terminals · {room.connectedClientCount} connections{room.hasActiveRun ? ' · running' : ''}</span>
+            </button>
+            <button class="room-destroy" type="button" data-testid="room-destroy" onclick={() => void destroyRoom(room)}>Destroy</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </main>
+{:else}
+  <main class="room-shell">
+    <header class="topbar compact-topbar">
+      <div class="brand-line"><h1>shell-deck</h1><p data-testid="room-identity">{roomId} · {connected ? 'connected' : 'disconnected'}</p></div>
+      <div class="actions">
+        <button type="button" data-testid="home-button" onclick={() => window.open('/', '_blank', 'noopener')}>Home</button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} disabled={!connected}>New shell</button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} disabled={!connected}>New text</button>
+        <button type="button" class="settings-button" data-testid="settings-button" onclick={() => { settingsOpen = !settingsOpen }}>Settings</button>
+      </div>
+    </header>
+    {#if settingsOpen}
+      <button class="popover-dismiss-layer settings-dismiss-layer" type="button" data-testid="settings-dismiss-layer" aria-label="Close settings" onclick={() => { settingsOpen = false }}></button>
+      <section class="settings-popover" data-testid="settings-popover">
+        <div class="settings-popover-head"><strong>Settings</strong><button type="button" data-testid="settings-close" onclick={() => { settingsOpen = false }}>Close</button></div>
+        <button
+          type="button"
+          class="drag-toggle settings-drag-toggle"
+          data-testid="tab-drag-toggle"
+          aria-pressed={settings.terminalDragEnabled}
+          onclick={() => updateSettings({ terminalDragEnabled: !settings.terminalDragEnabled })}
+        ><span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span>Drag terminals</span></button>
+      </section>
+    {/if}
+    <NoticeStack {notice} onDismiss={(id) => { if (notice?.id === id) notice = null }} />
+    <WorkspaceShell
+      {client}
+      {terminals}
+      {activeTerminal}
+      {activeTerminalId}
+      {draggingTerminalId}
+      tabDragEnabled={settings.terminalDragEnabled}
+      onSelectTerminal={(id) => { activeTerminalId = id }}
+      onCloseTerminal={closeTerminalTab}
+      onStartTabDrag={startDrag}
+      onDropOnTab={dropOnTab}
+      onTabDragEnd={() => { draggingTerminalId = null }}
+      onTabKeydown={tabKeydown}
+    />
+  </main>
+{/if}
 
-      <button
-        type="button"
-        class="settings-control-button"
-        data-testid="macro-insertion-placement-toggle"
-        aria-pressed={macroInsertionPaletteMode === 'center'}
-        title={macroInsertionPaletteMode === 'anchored' ? 'Insertion palette opens near the clicked button' : 'Insertion palette opens in the center'}
-        onclick={toggleMacroInsertionPaletteMode}
-      >
-        Insert: {macroInsertionPaletteMode === 'anchored' ? 'near' : 'center'}
-      </button>
-
-      <label class="settings-volume-control">
-        <span>
-          <span>Notification volume</span>
-          <output data-testid="notification-volume-output">{Math.round(notificationVolume * 100)}%</output>
-        </span>
-        <input
-          type="range"
-          min="0"
-          max="1000"
-          step="10"
-          value={Math.round(notificationVolume * 100)}
-          data-testid="notification-volume"
-          oninput={(event) => setNotificationVolume(Number(event.currentTarget.value) / 100)}
-        />
-      </label>
-
-      <button
-        type="button"
-        class="settings-control-button"
-        data-testid="notification-success-sound-test"
-        onclick={() => { void playNotificationSound('success', 'success') }}
-      >
-        Play success sound
-      </button>
-
-      <button
-        type="button"
-        class="drag-toggle settings-drag-toggle"
-        data-testid="tab-drag-toggle"
-        aria-pressed={tabDragEnabled}
-        onclick={() => { tabDragEnabled = !tabDragEnabled }}
-      >
-        <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
-        <span>Drag</span>
-      </button>
-    </section>
-  {/if}
-
-  <NoticeStack {notice} onDismiss={dismissNotice} />
-
-  <WorkspaceShell
-    {configId}
-    {client}
-    {terminals}
-    {indexMap}
-    {activeTerminal}
-    {activeTerminalId}
-    {draggingTerminalId}
-    {tabDragEnabled}
-    {editingTerminalId}
-    {aliasDraft}
-    {aliasError}
-    {layout}
-    {macroInsertionPaletteMode}
-    {promptRefreshToken}
-    {promptRefreshEvent}
-    {runLogRefreshToken}
-    {runLogRefreshEvent}
-    onAliasDraftChange={(value: string) => { aliasDraft = value }}
-    onSelectTerminal={selectTerminal}
-    onCloseTerminal={closeTerminalTab}
-    onStartTabDrag={startDrag}
-    onDropOnTab={dropOnTab}
-    onTabDragEnd={() => { draggingTerminalId = null }}
-    onStartRename={startRename}
-    onAliasKeydown={aliasKeydown}
-    onCommitRename={commitRename}
-    onTabKeydown={tabKeydown}
-    onBeginPanelResize={beginPanelResize}
-    onResetPanelWidth={resetPanelWidth}
-  />
-</main>
+{#if isHome}<NoticeStack {notice} onDismiss={(id) => { if (notice?.id === id) notice = null }} />{/if}

@@ -1,58 +1,9 @@
-# Capture And AgentEvent Contract
+# AgentEvent Foundation Contract
 
-## Capture Sources
+Live ingest 的唯一入口为 `POST /api/rooms/:roomId/agent-events`。server 每次启动生成 memory-only ingest token，并只向自己创建的 Shell 注入 ingest URL/token、server/Room generation、terminalId 与 launchId。
 
-V0 capture source steps are explicit template steps:
+request body 不能覆盖 path roomId。server 验证 token、当前 Room generation 以及 terminalId/launchId membership，再补 generated eventId、serverInstanceId 与 receivedAt，并追加到 User Data Root 的 Room-scoped evidence。不同 Room、generation、terminal 或 launch 的事件不能被消费。
 
-```json
-{ "type": "capture-source", "capture": { "kind": "terminal-buffer", "terminal": { "kind": "alias", "value": "reviewer" }, "mode": "scrollback-tail", "maxChars": 12000 } }
-```
+`just codex` 只允许在具有完整注入 context 的 shell-deck Shell 内启动。普通外部 terminal 在启动 Codex 前以 `shell_deck_room_context_required` fail loudly；不存在 manual id、global ingest、disk spool/import、unbound evidence 或旧 config fallback。
 
-Supported capture kinds:
-
-- `terminal-buffer`: tails terminal replay, writes raw and normalized artifacts. `scrollback-tail` sets `captured_text` to normalized visible screen text; `raw-stream-tail` sets `captured_text` to the raw stream tail.
-- `text-box`: reads a `backend = text` tab as plain text and writes a captured text artifact.
-- `agent-event`: selects matching Codex hook AgentEvents after the macro run-start baseline, writes raw event and captured text artifacts. It only consumes fields provided directly by Codex hooks; V0 does not read transcripts, TUI output, `codex exec --json`, reasoning, tool calls, or intermediate steps. It must not consume historical matching events from before the current run. If no new matching event has arrived yet, the capture step waits for one instead of fabricating or reusing stale text.
-
-AgentEvent capture requires `captureMode`:
-
-- `result_only`: captures the next `Stop.last_assistant_message` as `captured_text`.
-- `prompt_only`: captures the next `UserPromptSubmit.prompt` as `captured_text`.
-- `prompt_and_result`: waits for `UserPromptSubmit.prompt` and `Stop.last_assistant_message` with the same `agentSessionId` and the same `agentTurnId`, then writes sectioned text containing both.
-
-Inside loops or parallel lanes, AgentEvent baseline, consumed event identity, waiting state, and active timeout budget belong to the dynamic capture occurrence identified by `executionPath`. Pausing and resuming in the same runner runtime continues that occurrence; later loop iterations cannot reuse already consumed events. `capture_wait_started` and `capture_artifact_created` include the occurrence path for tracing. Server restart does not restore this in-memory waiting/consumption cursor and leaves the run interrupted.
-
-At run start, spool import completes before each static capture target records its per-event-kind baseline. Consumption is keyed by `agentEventKey`: consumed identities beyond an unconsumed hole remain sparse cursor entries, and the high-water mark advances only across the contiguous consumed prefix. It must not skip an unconsumed event merely because a later event was consumed. `prompt_and_result` scans the eligible prompt and output streams independently and pairs matching `agentSessionId` / `agentTurnId`, so an out-of-order arrival is retained once the complete pair exists.
-
-## Terminal Buffer
-
-Terminal-buffer `scrollback-tail` renders visible terminal text instead of treating every carriage return as a newline. Raw and normalized artifacts are both traceable; `raw-stream-tail` is available when the user explicitly wants the raw PTY stream.
-
-## AgentEvent Protocol
-
-Codex hooks and future agent adapters normalize callbacks into AgentEvent records. AgentEvents are config scoped and terminal scoped.
-
-AgentEvent fields include:
-
-- `agentKind`
-- `eventKind`
-- `configId`
-- `terminalId`
-- `launchId`
-- `agentSessionId`
-- `agentTurnId` for `agent.prompt_submitted` and `agent.output`
-- adapter metadata such as `codexSessionId`
-- `capturedText`
-- raw source payload
-
-Example:
-
-```json
-{ "type": "capture-source", "capture": { "kind": "agent-event", "agent": { "kind": "codex" }, "terminal": { "kind": "alias", "value": "reviewer" }, "captureMode": "prompt_and_result" } }
-```
-
-Codex `SessionStart`, `UserPromptSubmit`, and `Stop` hooks are the supported adapter path. `SessionStart` records session metadata for tracing. `UserPromptSubmit.prompt` records the submitted prompt. `Stop.last_assistant_message` records the final assistant result. Codex session ids are recorded for debugging and future work, not used as V0 macro identity.
-
-## Ingest And Spool
-
-When local HTTP ingest is available, hooks can POST to `/api/agent-events`. Offline hook fallback writes atomically published JSONL spool files; server import folds spool into the append-only AgentEvent store. Direct append and spool import both deduplicate by `agentEventKey`: receiving the same identity again is an idempotent no-op, creates no second store entry, and does not increment the spool import count.
+`.034` 接回 Macro capture-source 后，只能消费与 run snapshot 的 serverInstanceId、roomId、roomGeneration、terminalId 和 launchId 全部匹配的 live evidence。成功 evidence 永不用于恢复 Room 或 runner。

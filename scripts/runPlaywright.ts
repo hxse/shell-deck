@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
 import { dirname } from 'node:path'
@@ -31,6 +31,16 @@ async function main() {
 
 function resolveWrapper(baseEnv: NodeJS.ProcessEnv) {
   const playwrightArgs = ['node_modules/playwright/cli.js', 'test', ...args]
+  const steamRuntimeLibraryPath = resolveSteamRuntimeLibraryPath()
+  if (steamRuntimeLibraryPath) {
+    return {
+      command: 'bun',
+      args: playwrightArgs,
+      env: playwrightEnv(baseEnv, {
+        SHELL_DECK_PLAYWRIGHT_LD_LIBRARY_PATH: [steamRuntimeLibraryPath, baseEnv.LD_LIBRARY_PATH].filter(Boolean).join(':'),
+      }),
+    }
+  }
   if (!shouldUseSteamRun()) {
     return {
       command: 'bun',
@@ -49,8 +59,27 @@ function resolveWrapper(baseEnv: NodeJS.ProcessEnv) {
   }
 }
 
+function resolveSteamRuntimeLibraryPath() {
+  const root = join(homedir(), '.local', 'share', 'Steam', 'steamapps', 'common', 'SteamLinuxRuntime_sniper', 'var')
+  if (!existsSync(root)) return ''
+  const candidates = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith('tmp-'))
+    .map((entry) => join(root, entry.name, 'usr', 'lib'))
+    .sort()
+    .reverse()
+  for (const base of candidates) {
+    const libraries = join(base, 'x86_64-linux-gnu')
+    const overrides = join(base, 'pressure-vessel', 'overrides', 'lib', 'x86_64-linux-gnu')
+    if (existsSync(join(libraries, 'libatk-1.0.so.0')) && existsSync(join(overrides, 'libX11.so.6'))) {
+      return [overrides, libraries].join(':')
+    }
+  }
+  return ''
+}
+
 async function playwrightEnvWithPort() {
   const env = playwrightEnv(process.env)
+  env.HISTFILE = '/dev/null'
   env.SHELL_DECK_E2E_HOST = env.SHELL_DECK_E2E_HOST ?? '127.0.0.1'
   env.SHELL_DECK_E2E_PORT = env.SHELL_DECK_E2E_PORT ?? String(await findFreePort(env.SHELL_DECK_E2E_HOST))
   env.SHELL_DECK_DATA_ROOT = env.SHELL_DECK_DATA_ROOT ?? mkdtempSync(join(tmpdir(), 'shell-deck-e2e-'))
@@ -88,20 +117,13 @@ function shouldUseSteamRun() {
 }
 
 function resolvePlaywrightLibraryPath() {
-  const systemLibraries = '/run/current-system/sw/lib'
   const nspr = findLibraryDir('libnspr4.so')
   const nss = findLibraryDir('libnss3.so')
-  const xcomposite = findLibraryDir('libXcomposite.so.1')
-  return [...new Set([
-    existsSync(systemLibraries) ? systemLibraries : '',
-    nspr,
-    nss,
-    xcomposite,
-  ].filter(Boolean))].join(':')
+  return [nspr, nss].filter(Boolean).join(':')
 }
 
 function findLibraryDir(libraryName: string) {
-  const result = spawnSync('find', ['/nix/store', '-maxdepth', '4', '-name', libraryName], {
+  const result = spawnSync('find', ['/nix/store', '-maxdepth', '4', '-name', libraryName, '-type', 'f'], {
     encoding: 'utf8',
   })
 

@@ -1,18 +1,21 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'bun:test'
 import { NotificationService, notificationProfilesPath, telegramText } from '../../server/notificationService'
+import { createGeneratedId } from '../../src/lib/generatedId'
 
-test('notification profile path lives under ignored .shell-deck runtime config', () => {
-  expect(notificationProfilesPath('/tmp/shell-deck-root')).toBe('/tmp/shell-deck-root/.shell-deck/notification-profiles.json')
+test('notification profile path is a fixed User Data Root file', () => {
+  expect(notificationProfilesPath('/tmp/shell-deck-root')).toBe('/tmp/shell-deck-root/notification-profiles.json')
 })
 
 test('telegram text includes notification metadata when provided', () => {
-  const text = telegramText('Done', 'body', { createdAt: '2026-07-09T01:02:03.000Z', notificationId: 'notif_notify_done_123', runId: 'run_abc', stepId: 'notify_done' })
+  const notificationId = createGeneratedId('notification')
+  const runId = createGeneratedId('run')
+  const text = telegramText('Done', 'body', { createdAt: '2026-07-09T01:02:03.000Z', notificationId, runId, stepId: 'notify_done' })
   expect(text).toContain('time: 2026-07-09T01:02:03.000Z')
-  expect(text).toContain('notification_id: notif_notify_done_123')
-  expect(text).toContain('run_id: run_abc')
+  expect(text).toContain('notification_id: ' + notificationId)
+  expect(text).toContain('run_id: ' + runId)
   expect(text).toContain('step_id: notify_done')
 })
 
@@ -24,8 +27,7 @@ test('telegram text keeps multiline content inside one message field', () => {
 test('telegram send uses local profile token and channel without exposing them in result', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-notify-'))
   try {
-    mkdirSync(join(root, '.shell-deck'), { recursive: true })
-    writeFileSync(join(root, '.shell-deck', 'notification-profiles.json'), JSON.stringify({ telegram: { profiles: { default: { botToken: 'token-secret', channelId: '-10042', disableWebPagePreview: true } } } }), 'utf8')
+    writeConfig(root, { telegram: { profiles: { default: { botToken: 'token-secret', channelId: '-10042', disableWebPagePreview: true } } } })
     const calls: Array<{ input: string; init: RequestInit }> = []
     const service = new NotificationService(root, async (input, init) => {
       calls.push({ input, init })
@@ -67,8 +69,7 @@ test('telegram text truncates oversized messages', () => {
 test('lists telegram profile ids from local config without exposing secrets', () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-notify-list-'))
   try {
-    mkdirSync(join(root, '.shell-deck'), { recursive: true })
-    writeFileSync(join(root, '.shell-deck', 'notification-profiles.json'), JSON.stringify({ telegram: { profiles: { beta: { botToken: 'b', channelId: '-1002' }, default: { botToken: 'd', channelId: '-1001' } } } }), 'utf8')
+    writeConfig(root, { telegram: { profiles: { beta: { botToken: 'b', channelId: '-1002' }, default: { botToken: 'd', channelId: '-1001' } } } })
     const service = new NotificationService(root)
     expect(service.listTelegramProfileIds()).toEqual(['beta', 'default'])
   } finally {
@@ -80,8 +81,7 @@ test('lists telegram profile ids from local config without exposing secrets', ()
 test('telegram fetch failures return sanitized transport errors', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-notify-sanitize-'))
   try {
-    mkdirSync(join(root, '.shell-deck'), { recursive: true })
-    writeFileSync(join(root, '.shell-deck', 'notification-profiles.json'), JSON.stringify({ telegram: { profiles: { default: { botToken: 'token-secret', channelId: '-10042' } } } }), 'utf8')
+    writeConfig(root, { telegram: { profiles: { default: { botToken: 'token-secret', channelId: '-10042' } } } })
     const service = new NotificationService(root, async () => {
       throw new Error('connect failed https://api.telegram.org/bottoken-secret/sendMessage chat -10042')
     })
@@ -98,3 +98,7 @@ test('telegram fetch failures return sanitized transport errors', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+function writeConfig(root: string, value: unknown): void {
+  writeFileSync(join(root, 'notification-profiles.json'), JSON.stringify(value), { encoding: 'utf8', mode: 0o600 })
+}

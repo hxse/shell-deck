@@ -4,7 +4,7 @@ import {
   BRACKETED_PASTE_END,
   buildTerminalInputPayload,
   resolveTerminalInputDelivery,
-} from "../../src/lib/macro/terminalInputDelivery"
+} from "../../src/lib/terminal/terminalInputDelivery"
 
 test("auto resolves from the target tab capability while explicit delivery is preserved", () => {
   expect(resolveTerminalInputDelivery("auto", "shell")).toBe("bracketed-paste")

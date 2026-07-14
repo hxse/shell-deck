@@ -10,13 +10,17 @@ export type UiControlInventoryEntry = {
   reason?: string
 }
 
-// Frozen digest of the sorted .031A source-control signatures. The unit test prints
-// the full discovered list on mismatch; later product changes must update this
-// digest together with attributed runtime inventory changes.
-export const sourceInteractiveControlCount = 202
-export const sourceInteractiveControlDigest = '7de9ac2946db94a2134e22539477094c04cc95caef6f44afce0738ff388fec19'
+// Historical .031A truth remains immutable. Every later workspace compares its
+// current source surface separately and attributes any runtime-control delta.
+export const baseline031ASourceInteractiveControlCount = 202
+export const baseline031ASourceInteractiveControlDigest = '7de9ac2946db94a2134e22539477094c04cc95caef6f44afce0738ff388fec19'
 
-const requiredRuntimeControlIds = [
+// A later task updates only these current-workspace values, never the historical
+// constants above. A mismatch must be paired with attributed behavior changes.
+export const sourceInteractiveControlCount = 18
+export const sourceInteractiveControlDigest = '08cd10d9663687281cecf5f1b2d761cd55570efafabd57bf0de9972aba8a2b2d'
+
+export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
   'macro-panel-toggle',
   'prompt-panel-toggle',
@@ -275,10 +279,68 @@ const requiredRuntimeControlIds = [
   'parallel-output-source',
 ] as const
 
-export const runtimeControlInventory: UiControlInventoryEntry[] = requiredRuntimeControlIds.map((key) => ({
-  key,
-  evidence: key.includes('resize-handle') ? 'edited' : 'clicked',
-}))
+const currentRuntimeControls = [
+  ['home-refresh', 'clicked'],
+  ['new-room', 'clicked'],
+  ['new-room-empty', 'clicked'],
+  ['room-open', 'clicked'],
+  ['room-destroy', 'clicked'],
+  ['home-button', 'clicked'],
+  ['terminal-create-real', 'clicked'],
+  ['terminal-create-text', 'clicked'],
+  ['settings-button', 'clicked'],
+  ['settings-close', 'clicked'],
+  ['settings-dismiss-layer', 'clicked'],
+  ['tab-drag-toggle', 'clicked'],
+  ['notice-dismiss', 'clicked'],
+  ['notice-dismiss-layer', 'clicked'],
+  ['terminal-tab', 'clicked'],
+  ['terminal-tab-close', 'clicked'],
+  ['terminal-host', 'edited'],
+  ['text-box-editor', 'edited'],
+  ['text-box-copy', 'clicked'],
+] as const satisfies ReadonlyArray<readonly [string, UiControlEvidenceKind]>
+
+export const runtimeControlInventory: UiControlInventoryEntry[] = currentRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
+
+const currentRuntimeControlIds = new Set<string>(currentRuntimeControls.map(([key]) => key))
+const baselineRuntimeControlIds = new Set<string>(baseline031ARuntimeControlIds)
+
+export const attributedControlChanges: UiControlInventoryEntry[] = [
+  ...baseline031ARuntimeControlIds
+    .filter((key) => !currentRuntimeControlIds.has(key))
+    .map((key) => ({
+      key,
+      evidence: 'boundary' as const,
+      changedBy: '20260627A.032',
+      oldBehavior: '.031A exposed this control in the production workspace.',
+      newBehavior: removedBy032Behavior(key),
+      spec: '20260627A.032/02_spec/01_contract.md — Destructive cutover 与 UI preservation 边界',
+    })),
+  ...currentRuntimeControls
+    .filter(([key]) => !baselineRuntimeControlIds.has(key))
+    .map(([key, evidence]) => ({
+      key,
+      evidence,
+      changedBy: '20260627A.032',
+      oldBehavior: '.031A had no routed Room/Home control with this identity.',
+      newBehavior: '.032 adds the canonical Room/Home or current-schema terminal interaction.',
+      spec: '20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime',
+    })),
+]
+
+function removedBy032Behavior(key: string): string {
+  if (key === 'terminal-create-fake') return '.032 removes the fake-terminal production control; tests use real Shell and Text only.'
+  if (key === 'terminal-alias-input') return '.032 removes terminal alias/rename from the current schema and UI.'
+  if (key.startsWith('prompt-')) return '.032 intentionally removes the legacy Prompt panel; the user-content Library is restored by the later Library task.'
+  if (
+    key.startsWith('macro-') || key.startsWith('node-') || key.startsWith('add-') || key.startsWith('message-')
+    || key.startsWith('send-') || key.startsWith('notify-') || key.startsWith('input-') || key.startsWith('wait-')
+    || key.startsWith('capture-') || key.startsWith('extract-') || key.startsWith('condition-') || key.startsWith('if-')
+    || key.startsWith('for-') || key.startsWith('parallel-') || key.startsWith('flow-') || key.startsWith('run-')
+  ) return '.032 intentionally has no production Macro V2 editor/runner surface; .034 must restore the current-schema Macro UI from the .031A presentation reference.'
+  return '.032 temporarily omits this dependent workspace control while preserving the surviving Room/terminal interaction surface.'
+}
 
 export const codexControlExclusions = [
   {

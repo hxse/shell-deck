@@ -1,5 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { assertValidPublicId } from '../src/lib/identifier'
+import { assertPrivateNotificationFile, resolveUserDataRoot } from './userDataRoot'
 
 export type NotificationLevel = 'info' | 'success' | 'warning' | 'error'
 
@@ -45,9 +47,10 @@ const TELEGRAM_SAFE_MESSAGE_CHARS = 3900
 
 export class NotificationService {
   constructor(
-    readonly rootDir = process.env.SHELL_DECK_DATA_ROOT ?? process.cwd(),
+    readonly rootDir = resolveUserDataRoot(),
     private readonly fetcher: FetchLike = fetch,
-    private readonly timeoutMs = 10000
+    private readonly timeoutMs = 10000,
+    readonly unavailableReason: string | null = null,
   ) {}
 
   profilesPath(): string {
@@ -55,7 +58,9 @@ export class NotificationService {
   }
 
   listTelegramProfileIds(): string[] {
+    this.assertAvailable()
     const configPath = this.profilesPath()
+    assertPrivateNotificationFile(configPath)
     if (!existsSync(configPath)) return []
     const parsed = this.readProfilesFile()
     const profiles = parsed.telegram?.profiles
@@ -64,14 +69,19 @@ export class NotificationService {
   }
 
   readTelegramProfile(profileId: string): TelegramProfile | null {
+    this.assertAvailable()
+    const normalizedProfileId = assertValidPublicId(profileId)
     const configPath = this.profilesPath()
+    assertPrivateNotificationFile(configPath)
     if (!existsSync(configPath)) return null
     const parsed = this.readProfilesFile()
-    const profile = parsed.telegram?.profiles?.[profileId]
+    const profiles = parsed.telegram?.profiles
+    if (!profiles || !Object.prototype.hasOwnProperty.call(profiles, normalizedProfileId)) return null
+    const profile = profiles[normalizedProfileId]
     if (!profile) return null
-    if (typeof profile.botToken !== 'string' || profile.botToken.length === 0) throw new Error('notification_telegram_bot_token_missing:' + profileId)
-    if (typeof profile.channelId !== 'string' || profile.channelId.length === 0) throw new Error('notification_telegram_channel_id_missing:' + profileId)
-    if (profile.disableWebPagePreview !== undefined && typeof profile.disableWebPagePreview !== 'boolean') throw new Error('notification_telegram_disable_preview_invalid:' + profileId)
+    if (typeof profile.botToken !== 'string' || profile.botToken.length === 0) throw new Error('notification_telegram_bot_token_missing:' + normalizedProfileId)
+    if (typeof profile.channelId !== 'string' || profile.channelId.length === 0) throw new Error('notification_telegram_channel_id_missing:' + normalizedProfileId)
+    if (profile.disableWebPagePreview !== undefined && typeof profile.disableWebPagePreview !== 'boolean') throw new Error('notification_telegram_disable_preview_invalid:' + normalizedProfileId)
     return profile
   }
 
@@ -81,6 +91,10 @@ export class NotificationService {
     } catch {
       throw new Error('notification_profiles_invalid_json')
     }
+  }
+
+  private assertAvailable(): void {
+    if (this.unavailableReason) throw new Error(this.unavailableReason)
   }
 
   async sendTelegram(request: TelegramNotificationRequest): Promise<TelegramNotificationResult> {
@@ -119,8 +133,8 @@ export class NotificationService {
 
 }
 
-export function notificationProfilesPath(rootDir = process.env.SHELL_DECK_DATA_ROOT ?? process.cwd()): string {
-  return join(rootDir, '.shell-deck', 'notification-profiles.json')
+export function notificationProfilesPath(rootDir = resolveUserDataRoot()): string {
+  return join(rootDir, 'notification-profiles.json')
 }
 
 export function telegramText(title: string, message: string, metadata: NotificationMetadata & { level?: NotificationLevel } = {}): string {

@@ -1,6 +1,14 @@
-import type { BooleanNullRegexRule } from '../macro/templateTypes'
 import { normalizeParserOutput, serializeNormalizedSignals } from './parserResultSchema'
 import type { ParserInvocationContext, ParserInvocationOutput, ParserValidationIssue } from './parserProfileTypes'
+
+export type BooleanNullRegexRule = {
+  signal: string
+  type: 'boolean-null'
+  pattern: string
+  flags?: string
+  onMatch: boolean | null
+  onNoMatch: boolean | null
+}
 
 const REGEX_FLAGS_RE = /^[imsu]*$/
 

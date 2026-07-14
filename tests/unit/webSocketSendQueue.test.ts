@@ -43,7 +43,7 @@ test('websocket send queue validates its byte limit', () => {
   })).toThrow('invalid_websocket_send_queue_byte_limit')
 })
 
-test('websocket send queue spools later messages after Bun accepts a backpressured frame', () => {
+test('websocket send queue holds later messages after Bun accepts a backpressured frame', () => {
   const target = new ScriptedSendTarget([-1, 1, 1])
   const scheduler = new ManualDrainScheduler()
   const fatal: string[] = []

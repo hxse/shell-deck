@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PROFILE_CATALOG_SUMMARY } from '../../src/lib/macro/profileCatalogSummary'
+import { PROFILE_CATALOG_SUMMARY } from '../../src/lib/parser/profileCatalogSummary'
 import { validateProfileCatalogCompatibility } from '../../src/lib/parser/profileCatalogSummaryCompat'
 import { loadParserProfile, loadParserProfiles, validateParserProfile } from '../../src/lib/parser/parserProfileLoader'
 

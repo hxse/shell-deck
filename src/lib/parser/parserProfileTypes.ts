@@ -1,5 +1,6 @@
-import type { BranchOperator } from '../macro/templateTypes'
-import type { SignalSummary, SignalType } from '../macro/profileCatalogSummary'
+import type { SignalSummary, SignalType } from './profileCatalogSummary'
+
+export type BranchOperator = '==' | '!=' | 'is_null'
 
 export const PARSER_KINDS = ['ai-json', 'regex'] as const
 export type ParserKind = typeof PARSER_KINDS[number]
@@ -59,7 +60,6 @@ export type ParserArtifactWriter = {
 }
 
 export type ParserInvocationContext = ParserArtifactWriter & {
-  configId: string
   runId: string
   stepId: string
   captureArtifactRef: string

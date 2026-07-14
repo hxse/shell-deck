@@ -1,5 +1,5 @@
 import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } from './terminalBackend'
-import { BRACKETED_PASTE_BEGIN, BRACKETED_PASTE_END } from '../src/lib/macro/terminalInputDelivery'
+import { BRACKETED_PASTE_BEGIN, BRACKETED_PASTE_END } from '../src/lib/terminal/terminalInputDelivery'
 
 export class FakeTerminalBackend implements TerminalBackend {
   readonly kind = 'fake' as const
@@ -8,12 +8,14 @@ export class FakeTerminalBackend implements TerminalBackend {
   #buffer = ''
   #inBracketedPaste = false
   #closed = false
+  readonly cwd: string | null
   cols: number
   rows: number
 
   constructor(options: TerminalBackendOptions = { cols: 80, rows: 24 }) {
     this.cols = options.cols
     this.rows = options.rows
+    this.cwd = options.cwd ?? null
   }
 
   start(events: TerminalBackendEvent): void {
@@ -77,6 +79,10 @@ export class FakeTerminalBackend implements TerminalBackend {
   resize(cols: number, rows: number): void {
     this.cols = cols
     this.rows = rows
+  }
+
+  currentCwd(): string | null {
+    return this.#closed ? null : this.cwd
   }
 
   close(): void {

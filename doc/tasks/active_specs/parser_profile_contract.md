@@ -15,7 +15,7 @@ If used in a probe, the old parser kinds are:
 - `regex`: template-local rules that emit typed boolean/null signals.
 - `ai-json`: built-in parser profiles that call either explicit mock mode or real `codex exec` mode.
 
-`ai-json` remains disabled by default. Any mock or real model path must be selected by explicit just entry points; no product path may silently fall back to mock AI.
+`.032` 的 Room foundation 不提供 server-side parser execution mode。profile catalog、validator、fixture evaluation与adapter代码继续独立存在；`.034` runner接回时，mock或real model path必须由明确入口选择，任何产品路径都不得静默fallback到mock AI。
 
 ## Legacy Signal Rules
 

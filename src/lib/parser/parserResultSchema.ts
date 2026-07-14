@@ -1,4 +1,4 @@
-import type { SignalSummary } from '../macro/profileCatalogSummary'
+import type { SignalSummary } from './profileCatalogSummary'
 import type { ParserSignals, ParserValidationIssue, ParserValidationResult } from './parserProfileTypes'
 
 export type NormalizeOptions = {

@@ -5,7 +5,7 @@ const backendOrigin = process.env.SHELL_DECK_DEV_BACKEND_ORIGIN ?? 'http://127.0
 const devHost = process.env.SHELL_DECK_DEV_HOST ?? '127.0.0.1'
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [roomRouteBridge(), svelte()],
   server: {
     host: devHost,
     port: 5173,
@@ -23,3 +23,30 @@ export default defineConfig({
     port: 5173,
   },
 })
+
+function roomRouteBridge() {
+  return {
+    name: 'shell-deck-room-route-bridge',
+    configureServer(server: { middlewares: { use(handler: (req: { method?: string; url?: string; headers: Record<string, string | string[] | undefined> }, res: { statusCode: number; setHeader(name: string, value: string): void; end(body?: string): void }, next: () => void) => void): void } }) {
+      server.middlewares.use((req, res, next) => {
+        if (req.method !== 'GET' || !req.url) { next(); return }
+        const pathname = new URL(req.url, 'http://vite.local').pathname
+        const directRoute = /^\/[^/]+$/.test(pathname) && pathname !== '/favicon.ico'
+        if (pathname !== '/' && !directRoute) { next(); return }
+        void fetch(backendOrigin + pathname, { redirect: 'manual', headers: { accept: 'text/html' } }).then(async (response) => {
+          if (response.status === 200) { next(); return }
+          res.statusCode = response.status
+          const location = response.headers.get('location')
+          const contentType = response.headers.get('content-type')
+          if (location) res.setHeader('location', location)
+          if (contentType) res.setHeader('content-type', contentType)
+          res.setHeader('cache-control', 'no-store')
+          res.end(await response.text())
+        }).catch(() => {
+          res.statusCode = 502
+          res.end('shell_deck_backend_unavailable')
+        })
+      })
+    },
+  }
+}

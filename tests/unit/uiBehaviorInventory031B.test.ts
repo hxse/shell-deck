@@ -3,7 +3,15 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { parse } from 'svelte/compiler'
-import { sourceInteractiveControlCount, sourceInteractiveControlDigest } from '../ui-baseline/031B/controlInventory'
+import {
+  attributedControlChanges,
+  baseline031ARuntimeControlIds,
+  baseline031ASourceInteractiveControlCount,
+  baseline031ASourceInteractiveControlDigest,
+  runtimeControlInventory,
+  sourceInteractiveControlCount,
+  sourceInteractiveControlDigest,
+} from '../ui-baseline/031B/controlInventory'
 
 const projectRoot = resolve(import.meta.dir, '../..')
 const sourceRoots = [
@@ -11,8 +19,13 @@ const sourceRoots = [
   resolve(projectRoot, 'src/lib/components'),
 ]
 
-describe('.031B UI source inventory', () => {
-  test('all .031A interactive source controls match the frozen snapshot', () => {
+describe('.031B evolving UI source inventory', () => {
+  test('.031A historical source truth remains immutable', () => {
+    expect(baseline031ASourceInteractiveControlCount).toBe(202)
+    expect(baseline031ASourceInteractiveControlDigest).toBe('7de9ac2946db94a2134e22539477094c04cc95caef6f44afce0738ff388fec19')
+  })
+
+  test('.032 interactive source controls match its attributed current snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -24,6 +37,25 @@ describe('.031B UI source inventory', () => {
       digest: sourceInteractiveControlDigest,
       unidentified: [],
     })
+  })
+
+  test('every runtime control delta from .031A is attributed to the later task', () => {
+    const baseline = new Set<string>(baseline031ARuntimeControlIds)
+    const current = new Set(runtimeControlInventory.map(({ key }) => key))
+    const changes = new Map(attributedControlChanges.map((entry) => [entry.key, entry]))
+    const delta = new Set([
+      ...[...baseline].filter((key) => !current.has(key)),
+      ...[...current].filter((key) => !baseline.has(key)),
+    ])
+
+    expect(new Set(changes.keys())).toEqual(delta)
+    for (const key of delta) {
+      const change = changes.get(key)
+      expect(change?.changedBy).toBe('20260627A.032')
+      expect(change?.oldBehavior).toBeTruthy()
+      expect(change?.newBehavior).toBeTruthy()
+      expect(change?.spec).toBeTruthy()
+    }
   })
 })
 

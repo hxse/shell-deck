@@ -1,262 +1,68 @@
-# Quickstart
+# shell-deck Quickstart
 
-This guide exercises the V0 local path. It does not require network access unless you explicitly run online Codex probes or start the real `codex-exec` parser mode.
+## 启动
 
-## Start And Stop
-
-From the shell-deck repo:
+在仓库根目录运行：
 
 ```bash
-cd <shell-deck-root>
 just start
 ```
 
-`just start`, `just start-mock-ai`, and `just start-codex-ai` rebuild `dist` before launching the static server. `just start` then seeds the `local` config with two real shell terminals when it starts with an empty deck. Tests and explicit API calls can still create fake terminals.
+production entry 会先执行 Vite build，再由 Bun server 提供静态资源、HTTP API 与 WebSocket。开发时使用：
 
-Default URL:
+```bash
+just dev
+```
+
+`just dev` 使用 Vite HMR，Bun 继续承载 API/WebSocket。默认监听 `127.0.0.1:5177`；只有明确设置 `SHELL_DECK_ALLOW_LAN=1` 才允许非本地 bind。
+
+## Room URL
+
+第一次访问 `http://127.0.0.1:5177/` 且当前没有 live Room 时，server 会创建随机 Room 并跳转到：
 
 ```text
-http://127.0.0.1:5177
+http://127.0.0.1:5177/room_<22-char-short-uuid-v4>
 ```
 
-Stop the default local server from another shell:
+再次打开根 URL 会进入 Room Home。Home 可查看当前 process 的 Room 清单，并执行 New、Open、Destroy；最多同时存在 32 个 Room。关闭 browser tab 不会销毁 Room。Room 页面上的 Home 按钮在新标签页打开根 URL，不影响当前 Room。
+
+把同一个完整 Room URL 放到另一个标签页或设备，会连接同一 live Room并同步 terminal order、Text content、PTY output 与 replay。Room 和 terminal 都只在当前 server process 内存在；server restart 后，即使重新访问相同 token，也会得到新的 generation 和空 runtime。
+
+## Terminal
+
+Room 内可创建：
+
+* `New shell`：不弹路径输入框。server继承当前最高index Shell的实时cwd；没有Shell或无法读取时使用`$HOME`。
+* `New text`：创建同步纯文本 terminal；Text 没有 cwd。
+
+Terminal tab与正文header显示同一条单行label：连续index、runtime terminalId、Shell实时cwd、kind、status；Text省略cwd。没有alias/rename。开启Settings中的drag toggle后可拖拽；index随UI顺序变化，terminalId、launch和kind跟随terminal object，cwd随Shell执行`cd`实时更新。
+
+## Codex hook
+
+`just codex` 只支持从 shell-deck 创建的 Shell 内运行，因为该 Shell 已注入完整 Room/terminal/launch ingest context。普通外部 terminal 调用会在启动 Codex 前返回：
+
+```text
+shell_deck_room_context_required
+```
+
+不存在 global ingest、manual identity、disk spool/import 或 unbound evidence fallback。
+
+## 长期数据
+
+User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord foundation、run/artifact evidence、AgentEvent evidence、notification config 和后继 Library 都在这里；它们不属于 Room 或 terminal cwd。
+
+notification 配置可用以下命令初始化：
 
 ```bash
-just stop
+just notification-config-init
 ```
 
-For a non-default port, pass the same port to both commands:
+当前 `.032` revision 只交付 Room/user-storage foundation，不是 standalone release。Room controller/content lease、production Macro V3 与 Library UI 分别在 `.033`、`.034`、`.035` 接回。
 
-```bash
-just start --port 5188
-just stop --port 5188
-```
-
-The server refuses non-local binds unless `SHELL_DECK_ALLOW_LAN=1` is set. V0 has no access control, so local bind is the safe default.
-
-## Parser Modes
-
-V0 separates parser modes at the command entry point:
-
-```bash
-just start          # ai-json disabled; regex still works
-just start-mock-ai  # explicit mock ai-json for offline demos/tests
-just start-codex-ai # real codex exec parser; may use auth/network/model quota
-```
-
-Flow V2 does not expose `parse` or `ai-json` as macro actions. These parser-mode server entries remain for explicit developer probes and do not change the runnable macro language.
-
-## Terminal Deck
-
-Open two browser tabs to the same URL and config. Terminal output, terminal order, aliases, and replay are synchronized by the server. A fresh `just start` opens two real shell terminals by default.
-
-While a shell tab stays open, its active xterm consumes the complete live output stream. Real PTY output is coalesced in exact order with a 4ms / 256KiB server bound. Each browser connection has a 64MiB in-memory pending cap so WebSocket backpressure preserves FIFO delivery instead of silently dropping output; a client that exceeds the cap is closed loudly without pausing other clients. The browser feeds each logical update to xterm through an ordered `32Ki × 4` callback pump so a delayed animation frame cannot turn the remaining transcript into one unbounded parser write. For refresh, late browser tabs, and tab remount, shell/fake history is intentionally a bounded tail: the server retains at most 2MiB of UTF-8 replay content and the browser retains at most 2Mi UTF-16 code units. Very old scrollback may therefore be absent after reopening a tab. Text tabs are user-authored documents and keep their complete content instead of using the shell replay limit.
-
-Macro terminal refs use one of these complete JSON objects:
-
-- `{ "kind": "index", "value": 1 }`: convenient dynamic position
-- `{ "kind": "id", "value": "term_..." }`: stable terminal id
-- `{ "kind": "alias", "value": "reviewer" }`: terminal tab rename alias
-
-Each ref contains exactly `kind` and `value`. Macro JSON does not accept scalar terminal refs or additional fields.
-
-Double-click a terminal tab to rename it. The input receives focus with the caret at the end; press Enter or click elsewhere to save, and press Escape to cancel. That alias is the macro-visible alias. Use the tab close button to remove a terminal; shell-deck asks for confirmation before closing. Dragging terminal tabs is behind the drag toggle to avoid accidental reorder.
-
-Text tabs show one-based logical line numbers. Their editor does not soft-wrap: long lines scroll horizontally so the gutter remains aligned. Line numbers are UI-only and are never copied into the synchronized or captured text.
-
-## Hook-Enabled Codex
-
-Use the shell-deck justfile wrapper from any target project when you want Codex hooks to report AgentEvents back to shell-deck:
-
-```bash
-cd /path/to/target/project
-just -f <shell-deck-root>/justfile -- codex --help
-just -f <shell-deck-root>/justfile -- codex exec -
-```
-
-The wrapper injects temporary hook config only for that Codex invocation. It forwards arguments to Codex and preserves terminal/config/launch ids through environment variables. V0 records Codex session ids for traceability but does not bind macro templates or macro state to Codex sessions.
-
-## Workspace Panels
-
-The top bar has Macro and Prompt toggles. Macro is visible by default; Prompt is hidden by default. Both side panels can be resized horizontally and reset to their default widths. Panel visibility and width are stored per config and synchronized across browser tabs connected to the same config.
-
-The Prompt panel provides a compact Prompt Library with a searchable selector:
-
-- project prompts scoped to the current config
-- global prompts visible to all configs on the same server
-- create/edit/delete with confirmation
-- search by title, body, or tag
-- edit/read body in one textarea and copy body to clipboard
-
-Prompts are plain text records; V0.1 does not auto-send prompts to terminals and does not bind prompts to macros.
-
-## Macro Template Flow
-
-The macro workbench supports:
-
-- searchable template selection
-- template create/save/duplicate/delete with delete confirmation in one toolbar
-- import/export JSON backups
-- visual editing for nested Flow V2 bodies, including `if`, `for`, control action bodies, and bounded parallel lanes; each depth has one 2px medium-contrast guide shared with the node left border, plus a 2px bottom-only dashed branch that fades right. Two depths therefore show two vertical lines, not separate guide/border pairs
-- one generic `Add inside` placeholder for each empty flow body; after the first child exists, use that child's Add before/Add after. The editor does not show duplicate `Add inside for/if/...` or control `Add action` buttons
-- read-only JSON preview/import/export plus an explicit direct-edit mode for the complete `schemaVersion: 2` document
-- structured branch conditions only; no expression strings and no JS eval
-
-Flow V2 action nodes are `send`, `notify`, `input`, `wait`, `capture-source`, `extract_text`, and `parallel`. Control nodes are `if`, `for`, `break`, `continue`, and `finish`. A parallel lane ends with its mandatory `output` node; it is not a general top-level action.
-
-JSON direct editing uses an isolated buffer. Save parses and validates the complete current schema and refuses changes to the selected template id or config id; failures leave the text untouched for correction. Cancel discards the buffer. Save or Cancel is required before switching back to Editor/Trace, changing templates, or starting the runner.
-
-The Macro header and idle runner use single-row chrome so more of the Flow body remains visible. The template/Reset width header is 39px, view tabs and runner controls are 28px, editor-local actions are at least 24px, Macro textarea text is 13px, and JSON code is 14px. Prompt and Trace use matching 38px headers and the same 12–14px content scale; Trace tabs are 28px. When a run waits for user input, that editor still expands to a full-width second row. The whole workspace topbar is 36px with uniform 28px/12px Macro, Prompt, New terminal, and Settings controls; terminal tabs and metadata remain separately compact without shrinking terminal/Text content.
-
-Parallel lane Add before/Add after opens the same insertion overlay used by the main Flow editor. It follows the Settings choice for near/center placement, stays inside the viewport, focuses the first valid lane action, and closes with Escape, Cancel, or the background scrim.
-
-A count loop always stores an explicit discriminator:
-
-```json
-{
-  "id": "for_three",
-  "type": "for",
-  "range": { "kind": "count", "count": 3 },
-  "body": [
-    { "id": "wait_between", "type": "wait", "mode": "duration", "durationMs": 1000 }
-  ]
-}
-```
-
-The count range object contains exactly `kind` and the positive integer `count`.
-
-Use a `text-list` range when the same body should run once for each structured item. Each item is exactly `{ "key": string, "value": string }`, with a user-editable single-line `key` and multiline `value`; the loop generates a pure one-based numeric `index` from its current position. Plain text remains literal, including braces. To interpolate the current item, explicitly enable the default-off `Use loop template` checkbox and insert exact `{{index}}`, `{{key}}`, or `{{value}}` tokens. Template parts accept only those three exact tokens.
-
-```json
-{
-  "id": "for_phases",
-  "type": "for",
-  "range": {
-    "kind": "text-list",
-    "items": [
-      {
-        "key": "高频策略",
-        "value": "处理信号最多的三个策略"
-      },
-      {
-        "key": "边界策略",
-        "value": "处理中高频回踩和边界策略"
-      }
-    ]
-  },
-  "body": [
-    {
-      "id": "send_phase",
-      "type": "send",
-      "terminal": { "kind": "alias", "value": "worker" },
-      "message": {
-        "parts": [
-          { "kind": "template", "template": "阶段 {{index}}：{{key}}\n{{value}}" }
-        ]
-      },
-      "delivery": "auto",
-      "ending": "cr"
-    }
-  ]
-}
-```
-
-Every normal `send`, `input`, and parallel-lane `send` has two independent selectors:
-
-- `Input delivery`: `Auto (recommended)`, `Direct bytes`, or `Bracketed paste`.
-- `Ending sequence`: `None`, `CR (\r)`, `LF (\n)`, or `CRLF (\r\n)`.
-
-New actions explicitly default to Auto delivery plus CR:
-
-```json
-{
-  "delivery": "auto",
-  "ending": "cr"
-}
-```
-
-Auto resolves when the runner writes to the current target: Shell tabs use Bracketed paste, while Text tabs use Direct bytes and therefore do not display added `200~` / `201~` marker fragments. The target's tab kind controls this choice; Auto does not detect Codex or another foreground program, track DEC mode 2004, or retry with another mode.
-
-Direct bytes and Bracketed paste are manual overrides. Direct writes the body followed by the selected ending bytes. Bracketed paste wraps the body in `ESC[200~ ... ESC[201~`, then appends the ending outside the closing marker. This makes the body an explicit paste event for raw-mode TUIs while keeping the later CR separate:
-
-```json
-{
-  "delivery": "bracketed-paste",
-  "ending": "cr"
-}
-```
-
-Use the Bracketed paste override only when the target program supports DEC mode 2004; forcing it into a Text tab intentionally exposes the marker bytes. Ending has no Auto option and continues to default to CR. Raw CR is a control byte rather than a universal keyboard event; CRLF is two independent bytes.
-
-Old `enter: true/false` templates and ending-only templates without required `delivery` are invalid; missing delivery is not treated as Auto. Shell-deck does not migrate or infer either field; delete the old template or rewrite it using the current shape. Content containing the actual `ESC[201~` end marker is rejected before anything is written only when the resolved mode is Bracketed paste: Auto Shell rejects, while Auto Text resolves Direct and permits the content unchanged.
-
-Template mode is limited to six user-visible content surfaces:
-
-- normal `send.message` text parts
-- parallel-lane `send.message` text parts
-- `notify.title`
-- `notify.message` text parts
-- `input.prompt`
-- `wait.user-continue.prompt`
-
-The checkbox is available only inside a lexical `text-list for` scope. `if` branches, control action bodies, inner count/forever loops, and parallel lanes inherit the complete index/key/value binding. An inner text-list shadows all three values until its body ends. Item Key and Value are binding sources and do not get template checkboxes. V0 does not provide outer-binding access, named variables, or a general expression language; all other strings remain literal or keep their existing field-specific grammar.
-
-Macro multiline content editors keep one spare visual line, grow automatically to their row cap, and then scroll internally. You can drag them taller temporarily (up to 60% of the viewport); that manual height is intentionally not saved and resets when the editor is reopened or the page reloads.
-
-## Macro Runner HTTP
-
-Read the current runner snapshot with `GET /api/configs/<configId>/runner`. Control it with `POST /api/configs/<configId>/runner/<action>` and one of these exact JSON bodies:
-
-| Action | JSON body |
-| --- | --- |
-| `start` | `{ "templateId": "tmpl_current" }` |
-| `pause` | `{}` |
-| `resume` | `{}` |
-| `stop` | `{}` |
-| `input` | `{ "text": "user input" }` |
-
-The request object cannot contain additional fields. `templateId` must be a non-empty string. Input `text` may be empty at the HTTP boundary; the waiting node's `allowEmpty` setting decides whether the service accepts it. A zero-byte empty HTTP body is interpreted as `{}`, so it is valid only for pause/resume/stop; a whitespace-only body is malformed JSON. Malformed JSON, non-object JSON, missing or invalid required fields, and unknown fields return HTTP 422 before the action reaches the runner. Runtime state conflicts return HTTP 409. Resume always continues from the server-owned occurrence cursor.
-
-## Observability
-
-Each macro run writes one append-only event log plus artifacts. The visual node log and AI-readable trace derive from that same event log. Expand nodes to inspect inputs, waits, captures, extraction results, branch decisions, loop iterations, parallel lane events, and artifact refs.
-
-## Offline Test Gate
-
-The full V0 offline gate is:
-
-```bash
-just test-009-offline
-```
-
-Useful smaller gates:
+## 验证
 
 ```bash
 just check
 just build
-just test-unit
-just test-e2e
-just test-001-offline
-just test-006-offline
-just test-007-offline
-just test-008-offline
+just test-032
 ```
-
-Online probes are explicit and optional:
-
-```bash
-just test-001-online
-just test-006-online
-just test-007-online
-```
-
-They may require Codex auth, network, and model quota. If unavailable, record the blocked reason instead of treating them as default failures.
-
-## Known V0 Limits
-
-- No authentication or access control; keep default local bind unless you understand the LAN risk.
-- No Codex session binding or session restore; use `codex resume` manually in a terminal if needed.
-- Normal pause/resume continues the exact dynamic macro occurrence only while the same runner runtime is alive. Server restart leaves an in-flight run interrupted; it does not hydrate and resume the execution cursor.
-- Crash-safe exactly-once delivery is not guaranteed for the window where a terminal or notification side effect succeeds before its event/checkpoint is appended.
-
-Run Log / AI Trace lives under the Macro Trace tab, follows the selected macro template, and updates from server run events automatically.

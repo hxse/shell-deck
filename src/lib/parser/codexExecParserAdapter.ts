@@ -81,7 +81,7 @@ export async function runCodexExecParser(profile: ParserProfile, text: string, c
   }
 }
 
-export function buildParserInput(profile: ParserProfile, text: string, context: Pick<ParserInvocationContext, 'configId' | 'runId' | 'stepId' | 'captureArtifactRef'>): string {
+export function buildParserInput(profile: ParserProfile, text: string, context: Pick<ParserInvocationContext, 'runId' | 'stepId' | 'captureArtifactRef'>): string {
   return [
     profile.prompt.trim(),
     '',
@@ -92,7 +92,7 @@ export function buildParserInput(profile: ParserProfile, text: string, context: 
     JSON.stringify(profile.checkSet, null, 2),
     '',
     'Run metadata:',
-    JSON.stringify({ configId: context.configId, runId: context.runId, stepId: context.stepId, captureArtifactRef: context.captureArtifactRef }, null, 2),
+    JSON.stringify({ runId: context.runId, stepId: context.stepId, captureArtifactRef: context.captureArtifactRef }, null, 2),
     '',
     'Captured text:',
     text,

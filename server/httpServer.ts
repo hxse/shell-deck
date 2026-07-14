@@ -1,680 +1,440 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join } from 'node:path'
-import { parseConfigId } from '../src/lib/identifier'
-import { PROFILE_CATALOG_SUMMARY } from '../src/lib/macro/profileCatalogSummary'
-import { MacroTemplateStore } from '../src/lib/macro/templateStore'
+import { existsSync, readFileSync, unlinkSync } from 'node:fs'
+import { extname, join, resolve } from 'node:path'
+import { PROFILE_CATALOG_SUMMARY } from '../src/lib/parser/profileCatalogSummary'
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
-import { RunEventStore } from '../src/lib/runLog/runEventStore'
-import { isRunEventKind } from '../src/lib/runLog/runEventSchema'
-import type { AppendRunEventInput } from '../src/lib/runLog/runEventTypes'
-import type { ClientMessage, ServerMessage, TerminalBackendKind } from '../src/lib/protocol'
+import { assertRoomRouteToken, createGeneratedSuffix } from '../src/lib/generatedId'
+import type { ClientMessage, ServerMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
-import { TerminalDeckManager } from './terminalDeckManager'
-import { MacroRunnerService } from './macroRunnerService'
-import { ParserRuntime, type AiJsonParserMode } from '../src/lib/parser/parserRuntime'
+import type { TerminalRef } from '../src/lib/terminalIdentity'
 import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
-import { UiLayoutStore } from '../src/lib/workspace/uiLayoutStore'
-import { PromptStore } from '../src/lib/prompts/promptStore'
+import { relocateNotificationConfig } from './notificationConfigRelocation'
 import { NotificationService } from './notificationService'
-import type { PromptScope, PromptScopeFilter } from '../src/lib/prompts/promptTypes'
+import { createServerPidRecord, parseServerPidRecord } from './serverProcessIdentity'
+import { TerminalRoomManager, type RoomSummary } from './terminalRoomManager'
 import { WebSocketSendQueue } from './webSocketSendQueue'
+import { initializeUserDataRoot, resolveUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
 
 export type ShellDeckServer = {
   url: string
   port: number
-  manager: TerminalDeckManager
-  stop(): void
+  manager: TerminalRoomManager
+  userDataRoot: string
+  stop(): Promise<void>
 }
 
-type StartOptions = {
+export type StartOptions = {
   host?: string
   port?: number
-  manager?: TerminalDeckManager
-  seed?: boolean
-  aiJsonParser?: AiJsonParserMode
-  seedBackend?: TerminalBackendKind
+  manager?: TerminalRoomManager
+  dataRoot?: string
 }
 
-type RunnerAction = 'start' | 'pause' | 'resume' | 'stop' | 'input'
+export type ServerCliOptions = {
+  host: string
+  port: number
+  dataRoot?: string
+  pidFile?: string
+}
 
-type RunnerActionRequest =
-  | { action: 'start'; templateId: string }
-  | { action: 'pause' }
-  | { action: 'resume' }
-  | { action: 'stop' }
-  | { action: 'input'; text: string }
+type SocketData = {
+  clientId: string
+  roomId: string
+  roomGeneration: string
+  sender: WebSocketSendQueue | null
+  terminationTimer: ReturnType<typeof setTimeout> | null
+}
 
 export function startShellDeckServer(options: StartOptions = {}): ShellDeckServer {
   const host = options.host ?? '127.0.0.1'
-  const bindHost = host
-  const manager = options.manager ?? new TerminalDeckManager()
-  const templateStore = new MacroTemplateStore()
-  const runEventStore = new RunEventStore()
-  const agentEventStore = new AgentEventStore(runEventStore.rootDir)
-  const uiLayoutStore = new UiLayoutStore()
-  const promptStore = new PromptStore()
-  const notificationService = new NotificationService(runEventStore.rootDir)
-  const aiJsonParser = options.aiJsonParser ?? 'disabled'
-  const macroRunner = new MacroRunnerService(manager, templateStore, runEventStore, agentEventStore, new ParserRuntime(runEventStore, { aiJsonMode: aiJsonParser }), notificationService)
-  runEventStore.subscribe((update) => {
-    manager.broadcastConfigMessage(update.configId, {
-      type: 'run_log_updated',
-      configId: update.configId,
-      runId: update.runId,
-      eventSeq: update.event.eventSeq,
-      kind: update.event.kind,
-    })
-  })
-  if (options.seed ?? true) {
-    manager.ensureConfig('local')
-    if (manager.indexMap('local').length === 0) {
-      if (options.seedBackend) {
-        manager.createTerminal('local', { backend: options.seedBackend })
-        manager.createTerminal('local', { backend: options.seedBackend })
-      } else {
-        manager.createTerminal('local', { backend: 'real' })
-        manager.createTerminal('local', { backend: 'real' })
-        manager.createTerminal('local', { backend: 'text' })
-      }
-    }
-  }
+  if (host !== '127.0.0.1' && process.env.SHELL_DECK_ALLOW_LAN !== '1') throw new Error('lan_bind_requires_explicit_enable')
+  const userDataRoot = resolve(options.dataRoot ?? resolveUserDataRoot())
+  initializeUserDataRoot(userDataRoot, (warning) => console.warn(warning.code + ':' + warning.path))
+  const manager = options.manager ?? new TerminalRoomManager()
+  const agentEventStore = new AgentEventStore(userDataRoot)
+  const ingestToken = createGeneratedSuffix() + createGeneratedSuffix()
 
-  const server = Bun.serve<{
-    clientId: string
-    configId: string
-    sender: WebSocketSendQueue | null
-  }>({
+  let notificationError: string | null = null
+  try {
+    const relocationEnv = options.dataRoot === undefined
+      ? process.env
+      : { ...process.env, SHELL_DECK_DATA_ROOT: userDataRoot }
+    relocateNotificationConfig({ root: userDataRoot, env: relocationEnv })
+  }
+  catch (error) {
+    notificationError = error instanceof Error ? error.message : String(error)
+    console.warn(notificationError)
+  }
+  const notificationService = new NotificationService(userDataRoot, fetch, 10_000, notificationError)
+
+  let stopPromise: Promise<void> | null = null
+  let server: ReturnType<typeof Bun.serve<SocketData>>
+  server = Bun.serve<SocketData>({
     hostname: host,
     port: options.port ?? 5177,
     async fetch(req, bunServer) {
       const url = new URL(req.url)
-      if (url.pathname === '/ws') {
-        const configId = parseConfigId(url.searchParams.get('configId'))
-        const upgraded = bunServer.upgrade(req, { data: { clientId: '', configId, sender: null } })
-        return upgraded ? undefined : new Response('upgrade failed', { status: 400 })
+      const websocketRoomId = websocketRoomRoute(url.pathname)
+      if (websocketRoomId) {
+        try { assertNoQuery(url) } catch (error) { return errorResponse(error, true) }
+        let summary: RoomSummary
+        try { summary = manager.roomSummaryById(websocketRoomId) }
+        catch (error) { return errorResponse(error, true) }
+        const upgraded = bunServer.upgrade(req, {
+          data: { clientId: '', roomId: summary.roomId, roomGeneration: summary.roomGeneration, sender: null, terminationTimer: null },
+        })
+        return upgraded ? undefined : json({ ok: false, error: 'websocket_upgrade_failed' }, 400)
       }
+      if (url.pathname.startsWith('/ws')) return json({ ok: false, error: 'route_not_found' }, 404)
 
       try {
-        return await handleHttp(req, url, manager, bindHost, templateStore, runEventStore, macroRunner, agentEventStore, uiLayoutStore, promptStore, notificationService)
+        return await handleHttp(req, url, manager, agentEventStore, ingestToken, notificationService)
       } catch (error) {
-        return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 400)
+        return errorResponse(error, url.pathname.startsWith('/api/'))
       }
     },
     websocket: {
       open(ws) {
-        const sender = new WebSocketSendQueue({
-          target: ws,
-          onFatal: (reason) => ws.close(1011, reason),
-        })
+        const sender = new WebSocketSendQueue({ target: ws, onFatal: (reason) => ws.close(1011, reason) })
         ws.data.sender = sender
-        const client = manager.connectClient(ws.data.configId, (message) => sender.send(JSON.stringify(message)))
-        ws.data.clientId = client.clientId
+        try {
+          const client = manager.connectClient(
+            ws.data.roomId,
+            (message) => sender.send(JSON.stringify(message)),
+            (code, reason) => {
+              if (ws.data.terminationTimer) clearTimeout(ws.data.terminationTimer)
+              ws.data.terminationTimer = setTimeout(() => {
+                ws.data.terminationTimer = null
+                try { ws.terminate() } catch {}
+              }, 100)
+              try { ws.close(code, reason) } catch {}
+            },
+          )
+          if (client.roomGeneration !== ws.data.roomGeneration) throw new Error('room_generation_conflict')
+          ws.data.clientId = client.clientId
+        } catch (error) {
+          sender.send(JSON.stringify({ type: 'terminal_error', roomId: ws.data.roomId, roomGeneration: ws.data.roomGeneration, reason: errorMessage(error) } satisfies ServerMessage))
+          ws.close(4004, 'room_not_found')
+        }
       },
       message(ws, raw) {
         const send = (reply: ServerMessage) => ws.data.sender?.send(JSON.stringify(reply))
         try {
-          const payload = typeof raw === 'string' ? raw : raw.toString()
-          const message = parseClientMessage(payload)
-          handleClientMessage(manager, ws.data.configId, message, send)
+          const message = parseClientMessage(typeof raw === 'string' ? raw : raw.toString())
+          handleClientMessage(manager, ws.data.roomId, message, send)
         } catch (error) {
-          send({ type: 'terminal_error', configId: ws.data.configId, reason: error instanceof Error ? error.message : String(error) })
+          send({ type: 'terminal_error', roomId: ws.data.roomId, roomGeneration: ws.data.roomGeneration, reason: errorMessage(error) })
         }
       },
-      drain(ws) {
-        ws.data.sender?.notifyDrain()
-      },
+      drain(ws) { ws.data.sender?.notifyDrain() },
       close(ws) {
+        if (ws.data.terminationTimer) clearTimeout(ws.data.terminationTimer)
+        ws.data.terminationTimer = null
         ws.data.sender?.dispose()
-        if (ws.data.clientId) {
-          manager.disconnectClient(ws.data.clientId)
-        }
+        if (ws.data.clientId) manager.disconnectClient(ws.data.clientId)
       },
     },
   })
 
-
-  manager.setTerminalEnvProvider((configId, terminalId, launchId) => ({
-    SHELL_DECK_CONFIG_ID: configId,
-    SHELL_DECK_TERMINAL_ID: terminalId,
-    SHELL_DECK_LAUNCH_ID: launchId,
-    SHELL_DECK_DATA_ROOT: runEventStore.rootDir,
-    SHELL_DECK_INGEST_URL: bindHost === '127.0.0.1' ? 'http://' + server.hostname + ':' + server.port + '/api/agent-events' : undefined,
-    SHELL_DECK_INGEST_TOKEN: process.env.SHELL_DECK_INGEST_TOKEN,
+  manager.setTerminalEnvProvider((context) => ({
+    SHELL_DECK_SERVER_INSTANCE_ID: context.serverInstanceId,
+    SHELL_DECK_ROOM_ID: context.roomId,
+    SHELL_DECK_ROOM_GENERATION: context.roomGeneration,
+    SHELL_DECK_TERMINAL_ID: context.terminalId,
+    SHELL_DECK_LAUNCH_ID: context.launchId,
+    SHELL_DECK_INGEST_URL: 'http://127.0.0.1:' + server.port + '/api/rooms/' + context.roomId + '/agent-events',
+    SHELL_DECK_INGEST_TOKEN: ingestToken,
   }))
 
   return {
     url: 'http://' + server.hostname + ':' + server.port,
     port: server.port ?? 0,
     manager,
-    stop: () => server.stop(true),
+    userDataRoot,
+    stop() {
+      stopPromise ??= (async () => {
+        const stoppingServer = server.stop(true)
+        await manager.destroyAllRooms()
+        await stoppingServer
+      })()
+      return stopPromise
+    },
   }
 }
 
-async function handleHttp(req: Request, url: URL, manager: TerminalDeckManager, bindHost: string, templateStore: MacroTemplateStore, runEventStore: RunEventStore, macroRunner: MacroRunnerService, agentEventStore: AgentEventStore, uiLayoutStore: UiLayoutStore, promptStore: PromptStore, notificationService: NotificationService): Promise<Response> {
+async function handleHttp(
+  req: Request,
+  url: URL,
+  manager: TerminalRoomManager,
+  agentEventStore: AgentEventStore,
+  ingestToken: string,
+  notificationService: NotificationService,
+): Promise<Response> {
   if (url.pathname === '/health') {
-    return json({ ok: true, bind: bindHost, aiJsonParser: macroRunner.parserRuntime.optionsLabel() })
+    assertNoQuery(url)
+    return json({ ok: true, serverInstanceId: manager.serverInstanceId })
   }
 
-  const layoutMatch = new RegExp('^/api/configs/([^/]+)/ui-layout$').exec(url.pathname)
-  if (layoutMatch && req.method === 'GET') {
-    const configId = parseConfigId(layoutMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, layout: uiLayoutStore.read(configId) })
-  }
-  if (layoutMatch && req.method === 'PUT') {
-    const configId = parseConfigId(layoutMatch[1])
-    manager.ensureConfig(configId)
-    const layout = uiLayoutStore.save(configId, await requestJson(req))
-    manager.broadcastConfigMessage(configId, { type: 'ui_layout_updated', configId, layout })
-    return json({ ok: true, layout })
+  if (url.pathname === '/api/rooms') {
+    assertNoQuery(url)
+    if (req.method === 'GET') return json({ ok: true, rooms: manager.listRooms(), maxLiveRooms: manager.maxLiveRooms })
+    if (req.method === 'POST') {
+      if ((await req.text()).length !== 0) throw new Error('room_create_body_must_be_empty')
+      const room = manager.createRoom()
+      return json({ ok: true, room, url: '/' + room.roomId }, 201)
+    }
+    return methodNotAllowed(['GET', 'POST'])
   }
 
-  const configPromptsMatch = new RegExp('^/api/configs/([^/]+)/prompts$').exec(url.pathname)
-  if (configPromptsMatch && req.method === 'GET') {
-    const configId = parseConfigId(configPromptsMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, prompts: promptStore.list(configId, { scope: parsePromptScopeFilter(url.searchParams.get('scope')), q: url.searchParams.get('q') ?? '' }) })
-  }
-  if (configPromptsMatch && req.method === 'POST') {
-    const configId = parseConfigId(configPromptsMatch[1])
-    manager.ensureConfig(configId)
-    const prompt = promptStore.create('project', configId, await requestJson(req))
-    broadcastPromptChange(manager, configId, 'created', prompt.promptId, 'project', 'project')
-    return json({ ok: true, prompt }, 201)
-  }
-
-  const configPromptMatch = new RegExp('^/api/configs/([^/]+)/prompts/([^/]+)$').exec(url.pathname)
-  if (configPromptMatch && req.method === 'GET') {
-    const configId = parseConfigId(configPromptMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, prompt: promptStore.read('project', configId, configPromptMatch[2]) })
-  }
-  if (configPromptMatch && req.method === 'PUT') {
-    const configId = parseConfigId(configPromptMatch[1])
-    manager.ensureConfig(configId)
-    const prompt = promptStore.update('project', configId, configPromptMatch[2], await requestJson(req))
-    broadcastPromptChange(manager, configId, prompt.scope === 'project' ? 'updated' : 'moved', prompt.promptId, 'project', prompt.scope)
-    return json({ ok: true, prompt })
-  }
-  if (configPromptMatch && req.method === 'DELETE') {
-    const configId = parseConfigId(configPromptMatch[1])
-    manager.ensureConfig(configId)
-    const promptId = configPromptMatch[2]
-    promptStore.delete('project', configId, promptId)
-    broadcastPromptChange(manager, configId, 'deleted', promptId, 'project', 'project')
+  const roomApi = /^\/api\/rooms\/([^/]+)$/.exec(url.pathname)
+  if (roomApi) {
+    assertNoQuery(url)
+    const roomId = assertRoomRouteToken(decodeURIComponent(roomApi[1]))
+    if (req.method !== 'DELETE') return methodNotAllowed(['DELETE'])
+    const body = await exactObject(req, ['expectedRoomGeneration'])
+    if (typeof body.expectedRoomGeneration !== 'string') throw new Error('expected_room_generation_required')
+    await manager.destroyRoom(roomId, body.expectedRoomGeneration)
     return json({ ok: true })
   }
 
-  if (url.pathname === '/api/prompts/global' && req.method === 'GET') {
-    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
-    return json({ ok: true, prompts: promptStore.list(configId, { scope: 'global', q: url.searchParams.get('q') ?? '' }) })
-  }
-  if (url.pathname === '/api/prompts/global' && req.method === 'POST') {
-    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
-    const prompt = promptStore.create('global', configId, await requestJson(req))
-    broadcastPromptChange(manager, configId, 'created', prompt.promptId, 'global', 'global')
-    return json({ ok: true, prompt }, 201)
-  }
-
-  const globalPromptMatch = new RegExp('^/api/prompts/global/([^/]+)$').exec(url.pathname)
-  if (globalPromptMatch && req.method === 'GET') {
-    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
-    return json({ ok: true, prompt: promptStore.read('global', configId, globalPromptMatch[1]) })
-  }
-  if (globalPromptMatch && req.method === 'PUT') {
-    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
-    const prompt = promptStore.update('global', configId, globalPromptMatch[1], await requestJson(req))
-    broadcastPromptChange(manager, configId, prompt.scope === 'global' ? 'updated' : 'moved', prompt.promptId, 'global', prompt.scope)
-    return json({ ok: true, prompt })
-  }
-  if (globalPromptMatch && req.method === 'DELETE') {
-    const configId = parseConfigId(url.searchParams.get('configId') ?? 'local')
-    const promptId = globalPromptMatch[1]
-    promptStore.delete('global', configId, promptId)
-    broadcastPromptChange(manager, configId, 'deleted', promptId, 'global', 'global')
-    return json({ ok: true })
-  }
-  if (url.pathname === '/api/agent-events' && req.method === 'POST') {
+  const ingest = /^\/api\/rooms\/([^/]+)\/agent-events$/.exec(url.pathname)
+  if (ingest) {
+    assertNoQuery(url)
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const roomId = assertRoomRouteToken(decodeURIComponent(ingest[1]))
     const result = ingestAgentEvent(await requestJson(req), agentEventTokenFromRequest(req), {
-      bindHost,
-      expectedToken: process.env.SHELL_DECK_INGEST_TOKEN,
+      roomId,
+      expectedToken: ingestToken,
       manager,
       store: agentEventStore,
     })
-    if (!result.ok) return json({ ok: false, error: result.error }, result.status)
-    return json({ ok: true, event: result.event }, 201)
-  }
-  if (url.pathname === '/api/macro/profile-catalog' && req.method === 'GET') {
-    return json(PROFILE_CATALOG_SUMMARY)
-  }
-  if (url.pathname === '/api/notification-profiles/telegram' && req.method === 'GET') {
-    try {
-      return json({ ok: true, profiles: notificationService.listTelegramProfileIds().map((profileId) => ({ profileId })) })
-    } catch (error) {
-      return json({ ok: false, profiles: [], error: error instanceof Error ? error.message : 'notification_profiles_unavailable' })
-    }
-  }
-  const snapshotMatch = /^\/api\/configs\/([^/]+)\/snapshot$/.exec(url.pathname)
-  if (snapshotMatch && req.method === 'GET') {
-    const configId = parseConfigId(snapshotMatch[1])
-    manager.ensureConfig(configId)
-    return json(manager.deckSnapshot(configId))
-  }
-  const terminalMatch = /^\/api\/configs\/([^/]+)\/terminals$/.exec(url.pathname)
-  if (terminalMatch && req.method === 'POST') {
-    const configId = parseConfigId(terminalMatch[1])
-    const backendParam = url.searchParams.get('backend')
-    const backend = backendParam === 'real' ? 'real' : backendParam === 'text' ? 'text' : 'fake'
-    return json(manager.createTerminal(configId, { backend }))
-  }
-  const templatesMatch = /^\/api\/configs\/([^/]+)\/templates$/.exec(url.pathname)
-  if (templatesMatch && req.method === 'GET') {
-    const configId = parseConfigId(templatesMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, templates: templateStore.list(configId) })
-  }
-  if (templatesMatch && req.method === 'POST') {
-    const configId = parseConfigId(templatesMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, template: templateStore.create(configId, manager.indexMap(configId)) }, 201)
-  }
-  const importMatch = /^\/api\/configs\/([^/]+)\/templates\/import$/.exec(url.pathname)
-  if (importMatch && req.method === 'POST') {
-    const configId = parseConfigId(importMatch[1])
-    manager.ensureConfig(configId)
-    const body = await requestJson(req)
-    try {
-      return json({ ok: true, template: templateStore.import(configId, body, manager.indexMap(configId)) }, 201)
-    } catch (error) {
-      return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 422)
-    }
-  }
-  const duplicateMatch = /^\/api\/configs\/([^/]+)\/templates\/([^/]+)\/duplicate$/.exec(url.pathname)
-  if (duplicateMatch && req.method === 'POST') {
-    const configId = parseConfigId(duplicateMatch[1])
-    const templateId = duplicateMatch[2]
-    manager.ensureConfig(configId)
-    return json({ ok: true, template: templateStore.duplicate(configId, templateId, manager.indexMap(configId)) }, 201)
-  }
-  const exportMatch = /^\/api\/configs\/([^/]+)\/templates\/([^/]+)\/export$/.exec(url.pathname)
-  if (exportMatch && req.method === 'GET') {
-    const configId = parseConfigId(exportMatch[1])
-    const templateId = exportMatch[2]
-    manager.ensureConfig(configId)
-    return json(templateStore.read(configId, templateId))
-  }
-  const templateMatch = /^\/api\/configs\/([^/]+)\/templates\/([^/]+)$/.exec(url.pathname)
-  if (templateMatch && req.method === 'GET') {
-    const configId = parseConfigId(templateMatch[1])
-    const templateId = templateMatch[2]
-    manager.ensureConfig(configId)
-    return json({ ok: true, template: templateStore.read(configId, templateId) })
-  }
-  if (templateMatch && req.method === 'PUT') {
-    const configId = parseConfigId(templateMatch[1])
-    const templateId = templateMatch[2]
-    manager.ensureConfig(configId)
-    const body = await requestJson(req)
-    if (!body || typeof body !== 'object' || (body as { id?: unknown }).id !== templateId) {
-      return json({ ok: false, error: 'template_id_mismatch' }, 422)
-    }
-    const validation = templateStore.validate(body, manager.indexMap(configId))
-    if (!validation.ok) {
-      return json({ ok: false, issues: validation.issues }, 422)
-    }
-    return json({ ok: true, template: templateStore.save(configId, body as never, manager.indexMap(configId)) })
-  }
-  if (templateMatch && req.method === 'DELETE') {
-    const configId = parseConfigId(templateMatch[1])
-    const templateId = templateMatch[2]
-    manager.ensureConfig(configId)
-    templateStore.delete(configId, templateId)
-    return json({ ok: true })
+    return result.ok ? json({ ok: true, event: result.event }, 201) : json(result, result.status)
   }
 
-
-  const runnerMatch = /^\/api\/configs\/([^/]+)\/runner$/.exec(url.pathname)
-  if (runnerMatch && req.method === 'GET') {
-    const configId = parseConfigId(runnerMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, runner: macroRunner.snapshot(configId) })
+  if (url.pathname === '/api/notification-profiles/telegram') {
+    if (req.method !== 'GET') return methodNotAllowed(['GET'])
+    assertNoQuery(url)
+    return json({ ok: true, profiles: notificationService.listTelegramProfileIds() })
   }
-  const runnerActionMatch = /^\/api\/configs\/([^/]+)\/runner\/(start|pause|resume|stop|input)$/.exec(url.pathname)
-  if (runnerActionMatch && req.method === 'POST') {
-    const configId = parseConfigId(runnerActionMatch[1])
-    const action = runnerActionMatch[2] as RunnerAction
-    let actionRequest: RunnerActionRequest
-    try {
-      actionRequest = await parseRunnerActionRequest(req, action)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : runnerRequestError(action, 'invalid', 'body')
-      return json({ ok: false, error: message }, 422)
+
+  if (url.pathname === '/api/macro/profile-catalog') {
+    if (req.method !== 'GET') return methodNotAllowed(['GET'])
+    assertNoQuery(url)
+    return json({ ok: true, profileCatalog: PROFILE_CATALOG_SUMMARY })
+  }
+
+  if (url.pathname.startsWith('/api/')) return json({ ok: false, error: 'route_not_found' }, 404)
+
+  const asset = req.method === 'GET' ? serveStaticAsset(url.pathname) : null
+  if (asset) return asset
+  if (req.method !== 'GET') return methodNotAllowed(['GET'])
+
+  if (url.pathname === '/') {
+    assertNoQuery(url)
+    const entry = manager.ensureRootRoom()
+    if (entry.kind === 'created') {
+      return new Response(null, {
+        status: 302,
+        headers: { location: '/' + entry.room.roomId, 'cache-control': 'no-store, private' },
+      })
     }
-    manager.ensureConfig(configId)
-    try {
-      let runner
-      switch (actionRequest.action) {
-        case 'start':
-          runner = await macroRunner.start(configId, { templateId: actionRequest.templateId })
-          break
-        case 'pause':
-          runner = await macroRunner.pause(configId)
-          break
-        case 'resume':
-          runner = await macroRunner.resume(configId)
-          break
-        case 'stop':
-          runner = await macroRunner.stop(configId)
-          break
-        case 'input':
-          runner = await macroRunner.submitInput(configId, actionRequest.text)
-          break
-        default:
-          return assertNeverRunnerActionRequest(actionRequest)
-      }
-      return json({ ok: true, runner })
-    } catch (error) {
-      const existingRunId = error instanceof Error && 'existingRunId' in error ? String((error as { existingRunId?: string }).existingRunId) : undefined
-      return json({ ok: false, error: error instanceof Error ? error.message : String(error), ...(existingRunId ? { existingRunId } : {}) }, 409)
-    }
+    return serveIndex()
   }
 
-  const spoolImportMatch = /^\/api\/configs\/([^/]+)\/agent-events\/import-spool$/.exec(url.pathname)
-  if (spoolImportMatch && req.method === 'POST') {
-    const configId = parseConfigId(spoolImportMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, imported: agentEventStore.importSpool(configId) })
-  }
-
-  const runsMatch = /^\/api\/configs\/([^/]+)\/runs$/.exec(url.pathname)
-  if (runsMatch && req.method === 'GET') {
-    const configId = parseConfigId(runsMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, runs: runEventStore.listRuns(configId) })
-  }
-  if (runsMatch && req.method === 'POST') {
-    const configId = parseConfigId(runsMatch[1])
-    manager.ensureConfig(configId)
-    const body = asRecord(await requestJson(req))
-    const data = asOptionalRecord(body.data) ?? {}
-    return json({ ok: true, run: await runEventStore.createRun(configId, data) }, 201)
-  }
-  const artifactReadMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)\/artifacts\/(.+)$/.exec(url.pathname)
-  if (artifactReadMatch && req.method === 'GET') {
-    const configId = parseConfigId(artifactReadMatch[1])
-    manager.ensureConfig(configId)
-    const runId = artifactReadMatch[2]
-    const artifactRef = 'artifacts/' + decodeURIComponent(artifactReadMatch[3])
-    return new Response(runEventStore.readArtifact(configId, runId, artifactRef), { headers: { 'content-type': 'text/plain; charset=utf-8' } })
-  }
-  const artifactWriteMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)\/artifacts$/.exec(url.pathname)
-  if (artifactWriteMatch && req.method === 'POST') {
-    const configId = parseConfigId(artifactWriteMatch[1])
-    manager.ensureConfig(configId)
-    const body = asRecord(await requestJson(req))
-    const content = typeof body.content === 'string' ? body.content : ''
-    const prefix = typeof body.prefix === 'string' ? body.prefix : 'artifact'
-    const extension = typeof body.extension === 'string' ? body.extension : 'txt'
-    const stepId = typeof body.stepId === 'string' ? body.stepId : undefined
-    const result = await runEventStore.writeArtifact(configId, artifactWriteMatch[2], prefix, content, extension, stepId)
-    return json({ ok: true, ...result }, 201)
-  }
-  const runMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)$/.exec(url.pathname)
-  if (runMatch && req.method === 'GET') {
-    const configId = parseConfigId(runMatch[1])
-    manager.ensureConfig(configId)
-    return json({ ok: true, run: runEventStore.snapshot(configId, runMatch[2]) })
-  }
-  const runEventMatch = /^\/api\/configs\/([^/]+)\/runs\/([^/]+)\/events$/.exec(url.pathname)
-  if (runEventMatch && req.method === 'POST') {
-    const configId = parseConfigId(runEventMatch[1])
-    manager.ensureConfig(configId)
-    const event = await runEventStore.appendEvent(configId, runEventMatch[2], runEventInput(await requestJson(req)))
-    return json({ ok: true, event, run: runEventStore.snapshot(configId, runEventMatch[2]) }, 201)
-  }
-  return serveStatic(url)
+  if (!/^\/[^/]+$/.test(url.pathname)) return notFoundPage('route_not_found')
+  assertNoQuery(url)
+  const roomId = assertRoomRouteToken(decodeURIComponent(url.pathname.slice(1)))
+  manager.ensureRoomFromRoute(roomId)
+  return serveIndex()
 }
 
-function handleClientMessage(manager: TerminalDeckManager, configId: string, message: ClientMessage, send: (message: ServerMessage) => void) {
-  if (message.type === 'request_snapshot') {
-    send(manager.deckSnapshot(configId))
-    return
-  }
-  if (message.type === 'create_terminal') {
-    manager.createTerminal(configId, { backend: message.backend ?? 'fake', cols: message.cols, rows: message.rows })
-    return
-  }
-  if (message.type === 'set_terminal_text') {
-    manager.setTextContent(configId, refFromMessage(message), message.content)
-    return
-  }
-  if (message.type === 'terminal_input') {
-    manager.input(configId, refFromMessage(message), message.data)
-    return
-  }
-  if (message.type === 'terminal_resize') {
-    manager.resize(configId, refFromMessage(message), message.cols, message.rows)
-    return
-  }
-  if (message.type === 'rename_terminal') {
-    manager.renameTerminal(configId, message.terminalId, message.terminalAlias)
-    return
-  }
-  if (message.type === 'reorder_terminal') {
-    manager.moveTerminal(configId, message.terminalId, message.newIndex)
-    return
-  }
-  if (message.type === 'close_terminal') {
-    manager.closeTerminal(configId, refFromMessage(message))
-    return
-  }
-  if (message.type === 'reset_terminal') {
-    manager.resetTerminal(configId, refFromMessage(message), message.backend)
-    return
-  }
-  if (message.type === 'request_replay') {
-    send(manager.requestReplay(configId, refFromMessage(message)))
+function handleClientMessage(manager: TerminalRoomManager, roomId: string, message: ClientMessage, send: (message: ServerMessage) => void): void {
+  switch (message.type) {
+    case 'create_terminal': {
+      const terminal = manager.createTerminal(roomId, { backend: message.backend, cols: message.cols, rows: message.rows, cwd: message.cwd, cwdSource: message.cwdSource })
+      send({ type: 'terminal_created', roomId: terminal.roomId, roomGeneration: terminal.roomGeneration, terminalId: terminal.terminalId })
+      return
+    }
+    case 'terminal_input':
+      manager.input(roomId, terminalRefFromMessage(message), message.data)
+      return
+    case 'set_terminal_text':
+      manager.setTextContent(roomId, terminalRefFromMessage(message), message.content)
+      return
+    case 'terminal_resize':
+      manager.resize(roomId, terminalRefFromMessage(message), message.cols, message.rows)
+      return
+    case 'reorder_terminal':
+      manager.moveTerminal(roomId, message.terminalId, message.newIndex)
+      return
+    case 'close_terminal':
+      manager.closeTerminal(roomId, terminalRefFromMessage(message))
+      return
+    case 'reset_terminal': {
+      const result = manager.resetTerminal(roomId, terminalRefFromMessage(message), message.backend)
+      if (!result.ok) send({ type: 'terminal_error', ...roomContext(manager, roomId), reason: result.reason })
+      return
+    }
+    case 'request_replay':
+      send(manager.requestReplay(roomId, terminalRefFromMessage(message)))
+      return
+    case 'request_snapshot':
+      send(manager.roomSnapshot(roomId))
+      return
   }
 }
 
-function refFromMessage(message: { terminalId?: string; terminalIndex?: number; terminalAlias?: string }) {
-  if (message.terminalId) {
-    return { kind: 'id' as const, value: message.terminalId }
-  }
-  if (message.terminalIndex) {
-    return { kind: 'index' as const, value: message.terminalIndex }
-  }
-  if (message.terminalAlias) {
-    return { kind: 'alias' as const, value: message.terminalAlias }
-  }
-  throw new Error('missing_terminal_ref')
+function terminalRefFromMessage(message: { terminalId?: string; terminalIndex?: number }): TerminalRef {
+  if (message.terminalId !== undefined) return { kind: 'id', value: message.terminalId }
+  if (message.terminalIndex !== undefined) return { kind: 'index', value: message.terminalIndex }
+  throw new Error('terminal_ref_must_have_exactly_one_selector')
 }
 
-function serveStatic(url: URL): Response {
-  const publicRoot = join(process.cwd(), 'dist')
-  const path = url.pathname === '/' ? '/index.html' : url.pathname
-  const filePath = join(publicRoot, path)
-  if (existsSync(filePath)) {
-    return new Response(readFileSync(filePath), { headers: { 'content-type': contentType(filePath) } })
-  }
-  const fallback = join(process.cwd(), 'index.html')
-  if (existsSync(fallback)) {
-    return new Response(readFileSync(fallback), { headers: { 'content-type': 'text/html; charset=utf-8' } })
-  }
-  return new Response('shell-deck', { headers: { 'content-type': 'text/plain; charset=utf-8' } })
+function roomContext(manager: TerminalRoomManager, roomId: string) {
+  const room = manager.roomSummaryById(roomId)
+  return { roomId: room.roomId, roomGeneration: room.roomGeneration }
 }
 
-function broadcastPromptChange(manager: TerminalDeckManager, configId: string, action: 'created' | 'updated' | 'deleted' | 'moved', promptId: string, oldScope: PromptScope, newScope: PromptScope): void {
-  if (oldScope === 'project' || newScope === 'project') {
-    manager.broadcastConfigMessage(configId, { type: 'prompts_updated', configId, scope: 'project', action, promptId, oldScope, newScope })
-  }
-  if (oldScope === 'global' || newScope === 'global') {
-    manager.broadcastAllConfigMessages((clientConfigId) => ({ type: 'prompts_updated', configId: clientConfigId, scope: 'global', action, promptId, oldScope, newScope }))
-  }
+function websocketRoomRoute(pathname: string): string | null {
+  const match = /^\/ws\/rooms\/([^/]+)$/.exec(pathname)
+  if (!match) return null
+  try { return assertRoomRouteToken(decodeURIComponent(match[1])) }
+  catch { return null }
 }
 
-function contentType(filePath: string): string {
-  switch (extname(filePath)) {
+function serveStaticAsset(pathname: string): Response | null {
+  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico') return null
+  const dist = resolve(import.meta.dir, '..', 'dist')
+  const target = resolve(dist, '.' + pathname)
+  if (!target.startsWith(dist + '/') || !existsSync(target)) return null
+  return new Response(Bun.file(target), { headers: { 'content-type': contentType(target) } })
+}
+
+function serveIndex(): Response {
+  const built = resolve(import.meta.dir, '..', 'dist', 'index.html')
+  const fallback = resolve(import.meta.dir, '..', 'index.html')
+  const path = existsSync(built) ? built : fallback
+  if (!existsSync(path)) return new Response('shell-deck', { headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  return new Response(readFileSync(path), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } })
+}
+
+function notFoundPage(error: string): Response {
+  return new Response('<!doctype html><meta charset="utf-8"><title>shell-deck</title><p>' + escapeHtml(error) + '</p><a href="/">Home</a>', {
+    status: error === 'room_capacity_reached' ? 409 : 404,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+  })
+}
+
+function errorResponse(error: unknown, api: boolean): Response {
+  const message = errorMessage(error)
+  const status = errorStatus(message)
+  return api ? json({ ok: false, error: message }, status) : notFoundPage(message)
+}
+
+function errorStatus(message: string): number {
+  if (message === 'room_not_found' || message === 'route_not_found') return 404
+  if (message === 'room_capacity_reached' || message === 'room_destroying' || message === 'room_generation_conflict') return 409
+  if (message.includes('permissions_too_open')) return 503
+  return 400
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function json(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
+}
+
+function methodNotAllowed(allow: string[]): Response {
+  return new Response('method_not_allowed', { status: 405, headers: { allow: allow.join(', ') } })
+}
+
+async function requestJson(req: Request): Promise<unknown> {
+  const text = await req.text()
+  if (!text) throw new Error('request_body_required')
+  try { return JSON.parse(text) }
+  catch { throw new Error('invalid_json') }
+}
+
+async function exactObject(req: Request, keys: string[]): Promise<Record<string, unknown>> {
+  const value = await requestJson(req)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request_body_must_be_object')
+  const record = value as Record<string, unknown>
+  const unknown = Object.keys(record).find((key) => !keys.includes(key))
+  if (unknown) throw new Error('request_unknown_field:' + unknown)
+  const missing = keys.find((key) => !Object.prototype.hasOwnProperty.call(record, key))
+  if (missing) throw new Error('request_missing_field:' + missing)
+  return record
+}
+
+function assertNoQuery(url: URL): void {
+  if ([...url.searchParams].length > 0) throw new Error('query_not_supported')
+}
+
+function contentType(path: string): string {
+  switch (extname(path)) {
     case '.html': return 'text/html; charset=utf-8'
     case '.js': return 'text/javascript; charset=utf-8'
     case '.css': return 'text/css; charset=utf-8'
     case '.json': return 'application/json; charset=utf-8'
+    case '.svg': return 'image/svg+xml'
+    case '.ico': return 'image/x-icon'
     default: return 'application/octet-stream'
   }
 }
 
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
-}
-
-
-async function requestJson(req: Request): Promise<unknown> {
-  const text = await req.text()
-  if (!text.trim()) return {}
-  return JSON.parse(text)
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request_body_must_be_object')
-  return value as Record<string, unknown>
-}
-
-function asOptionalRecord(value: unknown): Record<string, unknown> | undefined {
-  if (value === undefined) return undefined
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request_field_must_be_object')
-  return value as Record<string, unknown>
-}
-
-async function parseRunnerActionRequest(req: Request, action: RunnerAction): Promise<RunnerActionRequest> {
-  let text: string
-  try {
-    text = await req.text()
-  } catch {
-    throw new Error(runnerRequestError(action, 'invalid', 'body'))
-  }
-  let value: unknown = {}
-  if (text.length > 0) {
-    try {
-      value = JSON.parse(text)
-    } catch {
-      throw new Error(runnerRequestError(action, 'invalid', 'body'))
-    }
-  }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(runnerRequestError(action, 'invalid', 'body'))
-  }
-  const body = value as Record<string, unknown>
-  const allowedFields = action === 'start'
-    ? ['templateId']
-    : action === 'input'
-      ? ['text']
-      : []
-  const unknownField = Object.keys(body).find((key) => !allowedFields.includes(key))
-  if (unknownField) throw new Error(runnerRequestError(action, 'unknown', unknownField))
-
-  switch (action) {
-    case 'start':
-      if (!Object.prototype.hasOwnProperty.call(body, 'templateId')) throw new Error(runnerRequestError(action, 'missing', 'templateId'))
-      if (typeof body.templateId !== 'string' || body.templateId.length === 0) throw new Error(runnerRequestError(action, 'invalid', 'templateId'))
-      return { action, templateId: body.templateId }
-    case 'pause':
-      return { action }
-    case 'resume':
-      return { action }
-    case 'stop':
-      return { action }
-    case 'input':
-      if (!Object.prototype.hasOwnProperty.call(body, 'text')) throw new Error(runnerRequestError(action, 'missing', 'text'))
-      if (typeof body.text !== 'string') throw new Error(runnerRequestError(action, 'invalid', 'text'))
-      return { action, text: body.text }
-    default:
-      return assertNeverRunnerAction(action)
-  }
-}
-
-type RunnerRequestFailure = 'missing' | 'invalid' | 'unknown'
-
-function runnerRequestError(action: RunnerAction, failure: RunnerRequestFailure, field: string): string {
-  return `runner_request_${failure}_field:${action}:${field}`
-}
-
-function assertNeverRunnerAction(action: never): never {
-  throw new Error('unreachable_runner_action:' + action)
-}
-
-function assertNeverRunnerActionRequest(value: never): never {
-  throw new Error('unreachable_runner_action_request:' + JSON.stringify(value))
-}
-
-function parsePromptScopeFilter(value: string | null): PromptScopeFilter {
-  if (value === 'project' || value === 'global' || value === 'all') return value
-  return 'all'
-}
-
-function runEventInput(value: unknown): AppendRunEventInput {
-  const body = asRecord(value)
-  if (!isRunEventKind(body.kind)) throw new Error('invalid_run_event_kind')
-  if (typeof body.summary !== 'string' || body.summary.trim().length === 0) throw new Error('event_summary_required')
-  return {
-    kind: body.kind,
-    summary: body.summary,
-    data: asOptionalRecord(body.data) ?? {},
-    stepId: typeof body.stepId === 'string' ? body.stepId : undefined,
-  }
+function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
 if (import.meta.main) {
-  const host = argValue('--host') ?? '127.0.0.1'
-  if (host !== '127.0.0.1' && process.env.SHELL_DECK_ALLOW_LAN !== '1') {
-    console.error('Refusing to bind non-local host without SHELL_DECK_ALLOW_LAN=1')
-    process.exit(1)
+  const cli = parseServerCliArgs(process.argv.slice(2))
+  const server = startShellDeckServer({ host: cli.host, port: cli.port, dataRoot: cli.dataRoot })
+  const pidFile = cli.pidFile ?? join(initializeUserDataRoot(server.userDataRoot).locks, 'server-' + cli.port + '.pid')
+  const pidRecord = createServerPidRecord(process.pid, server.manager.serverInstanceId)
+  writePrivateFileAtomic(pidFile, JSON.stringify(pidRecord) + '\n')
+  let stopping = false
+  const stop = async (exitCode: number) => {
+    if (stopping) return
+    stopping = true
+    await server.stop()
+    try {
+      const current = parseServerPidRecord(readFileSync(pidFile, 'utf8'))
+      if (current.pid === pidRecord.pid && current.processStartTime === pidRecord.processStartTime && current.serverInstanceId === pidRecord.serverInstanceId) unlinkSync(pidFile)
+    } catch {}
+    process.exit(exitCode)
   }
-  const port = Number(argValue('--port') ?? '5177')
-  const aiJsonParser = parseAiJsonParserMode(argValue('--ai-json-parser') ?? 'disabled')
-  const seedBackendArg = argValue('--seed-backend')
-  const seedBackend = seedBackendArg ? parseSeedBackend(seedBackendArg) : undefined
-  const server = startShellDeckServer({ host, port, aiJsonParser, seedBackend })
-  const pidFile = argValue('--pid-file') ?? defaultPidFile(port)
-  writePidFile(pidFile)
-  const cleanup = () => removePidFile(pidFile)
-  process.on('exit', cleanup)
-  process.once('SIGINT', () => { server.stop(); cleanup(); process.exit(0) })
-  process.once('SIGTERM', () => { server.stop(); cleanup(); process.exit(0) })
+  process.once('SIGINT', () => { void stop(130) })
+  process.once('SIGTERM', () => { void stop(143) })
   console.log('shell-deck listening on ' + server.url)
   console.log('shell-deck pid file ' + pidFile)
 }
 
-function defaultPidFile(port: number): string {
-  return join(process.env.SHELL_DECK_DATA_ROOT ?? join(process.cwd(), '.shell-deck'), 'server-' + port + '.pid')
-}
-
-function writePidFile(path: string): void {
-  mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, String(process.pid) + '\n', 'utf8')
-}
-
-function removePidFile(path: string): void {
-  try {
-    if (readFileSync(path, 'utf8').trim() === String(process.pid)) unlinkSync(path)
-  } catch {
-    // Best-effort cleanup only.
+export function parseServerCliArgs(args: string[]): ServerCliOptions {
+  const values = parseExactValueFlags(args, ['--host', '--port', '--data-root', '--pid-file'])
+  const portText = values.get('--port') ?? '5177'
+  const port = Number(portText)
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) throw new Error('invalid_server_port')
+  return {
+    host: values.get('--host') ?? '127.0.0.1',
+    port,
+    ...(values.has('--data-root') ? { dataRoot: values.get('--data-root')! } : {}),
+    ...(values.has('--pid-file') ? { pidFile: values.get('--pid-file')! } : {}),
   }
 }
 
-function parseSeedBackend(value: string): TerminalBackendKind {
-  if (value === 'fake' || value === 'real') return value
-  throw new Error('invalid_seed_backend:' + value)
-}
-
-function parseAiJsonParserMode(value: string): AiJsonParserMode {
-  if (value === 'disabled' || value === 'mock' || value === 'codex-exec') return value
-  throw new Error('invalid_ai_json_parser_mode:' + value)
-}
-
-function argValue(name: string): string | undefined {
-  const inline = process.argv.find((arg) => arg.startsWith(name + '='))
-  if (inline) return inline.slice(name.length + 1)
-  const index = process.argv.indexOf(name)
-  if (index === -1) return undefined
-  return process.argv[index + 1]
+function parseExactValueFlags(args: string[], allowed: string[]): Map<string, string> {
+  const values = new Map<string, string>()
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]
+    if (!argument.startsWith('--')) throw new Error('unexpected_server_argument:' + argument)
+    const separator = argument.indexOf('=')
+    const name = separator === -1 ? argument : argument.slice(0, separator)
+    if (!allowed.includes(name)) throw new Error('unknown_server_option:' + name)
+    if (values.has(name)) throw new Error('duplicate_server_option:' + name)
+    const value = separator === -1 ? args[++index] : argument.slice(separator + 1)
+    if (value === undefined || value.length === 0 || value.startsWith('--')) throw new Error('server_option_value_required:' + name)
+    values.set(name, value)
+  }
+  return values
 }

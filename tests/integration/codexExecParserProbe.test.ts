@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { runCodexExecParser, type ExecCommandRunner } from '../../src/lib/parser/codexExecParserAdapter'
 import { loadParserProfile } from '../../src/lib/parser/parserProfileLoader'
 import { ParserInvocationError, type ParserInvocationContext } from '../../src/lib/parser/parserProfileTypes'
+import { createGeneratedId } from '../../src/lib/generatedId'
 
 test('codex exec parser adapter uses one-shot schema constrained invocation', async () => {
   const profile = loadParserProfile('review-routing-v1')
@@ -16,8 +17,7 @@ test('codex exec parser adapter uses one-shot schema constrained invocation', as
     return { exitCode: 0, stdout: '', stderr: '' }
   }
   const context: ParserInvocationContext = {
-    configId: 'local',
-    runId: 'run_codex',
+    runId: createGeneratedId('run'),
     stepId: 'parse_review',
     captureArtifactRef: 'artifacts/capture.txt',
     writeArtifact: async (prefix, content, extension = 'txt') => {
@@ -49,8 +49,7 @@ test('codex exec parser preserves raw output artifact on non-zero exit', async (
     return { exitCode: 2, stdout: '', stderr: 'schema failed' }
   }
   const context: ParserInvocationContext = {
-    configId: 'local',
-    runId: 'run_codex_nonzero',
+    runId: createGeneratedId('run'),
     stepId: 'parse_review',
     captureArtifactRef: 'artifacts/capture.txt',
     writeArtifact: async (prefix, content, extension = 'txt') => {
@@ -79,8 +78,7 @@ test('codex exec parser writes raw artifact even when output is empty', async ()
   const artifacts = new Map<string, string>()
   const runner: ExecCommandRunner = async () => ({ exitCode: 0, stdout: '', stderr: '' })
   const context: ParserInvocationContext = {
-    configId: 'local',
-    runId: 'run_codex_empty_raw',
+    runId: createGeneratedId('run'),
     stepId: 'parse_review',
     captureArtifactRef: 'artifacts/capture.txt',
     writeArtifact: async (prefix, content, extension = 'txt') => {
@@ -113,8 +111,7 @@ test('codex exec parser preserves raw output artifact before invalid JSON failur
     return { exitCode: 0, stdout: '', stderr: '' }
   }
   const context: ParserInvocationContext = {
-    configId: 'local',
-    runId: 'run_codex_invalid',
+    runId: createGeneratedId('run'),
     stepId: 'parse_review',
     captureArtifactRef: 'artifacts/capture.txt',
     writeArtifact: async (prefix, content, extension = 'txt') => {

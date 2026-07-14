@@ -19,5 +19,8 @@
     "types": ["bun-types", "svelte"]
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", "server/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "vite.config.ts", "playwright.config.ts"],
-  "exclude": ["dist", "node_modules"]
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
 }

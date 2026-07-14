@@ -1,12 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { assertValidPublicId } from '../identifier'
-import type { BranchOperator } from '../macro/templateTypes'
-import type { ParserCheckSet, ParserFixture, ParserProfile, ParserProfileManifest, ParserValidationIssue, ParserValidationResult } from './parserProfileTypes'
+import type { BranchOperator, ParserCheckSet, ParserFixture, ParserProfile, ParserProfileManifest, ParserValidationIssue, ParserValidationResult } from './parserProfileTypes'
 
 const BRANCH_OPERATORS: BranchOperator[] = ['==', '!=', 'is_null']
 
-export function parserProfileRoot(root = process.cwd()): string {
+export function parserProfileRoot(root = resolve(import.meta.dir, '..', '..', '..')): string {
   return join(root, 'parser-profiles')
 }
 

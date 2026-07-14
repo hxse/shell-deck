@@ -3,20 +3,23 @@
   import { Terminal } from '@xterm/xterm'
   import '@xterm/xterm/css/xterm.css'
   import type { TerminalRenderUpdate, TerminalViewSnapshot } from '../terminalViewState'
+  import { terminalDisplayLabel } from '../terminalDisplay'
   import { TerminalParserWritePump } from '../terminalParserWritePump'
   import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_WEIGHT, TERMINAL_FONT_WEIGHT_BOLD } from '../terminalFont'
-  import type { TerminalDeckClient } from '../terminalDeckClient'
+  import type { TerminalRoomClient } from '../terminalRoomClient'
 
   const RENDERED_TAIL_CODE_UNIT_LIMIT = 8192
   const DEBUG_COUNTER_LIMIT = 999_999_999
 
   let { terminal, client } = $props<{
     terminal: TerminalViewSnapshot
-    client: TerminalDeckClient | null
+    client: TerminalRoomClient | null
   }>()
+  const terminalLabel = $derived(terminalDisplayLabel(terminal))
 
   let host: HTMLDivElement
   let xterm: Terminal | null = null
+  let hydratingXterm: Terminal | null = null
   let resizeObserver: ResizeObserver | null = null
   let mounted = false
   let appliedRevision = 0
@@ -48,6 +51,10 @@
       host.dataset.renderedTail = renderedTail
       host.dataset.renderedRevision = String(update.revision)
       current.scrollToBottom()
+      if (update.kind === 'replace' && hydratingXterm === current) {
+        hydratingXterm = null
+        current.options.disableStdin = false
+      }
     },
   })
 
@@ -68,6 +75,7 @@
     mounted = false
     parserPump.setTarget(null)
     resizeObserver?.disconnect()
+    hydratingXterm = null
     xterm?.dispose()
   })
 
@@ -86,6 +94,7 @@
 
   function recreateXterm(update: TerminalRenderUpdate) {
     parserPump.setTarget(null)
+    hydratingXterm = null
     xterm?.dispose()
     host.replaceChildren()
     renderedTail = ''
@@ -103,6 +112,9 @@
       rows: terminal.rows,
       convertEol: true,
       cursorBlink: true,
+      // A replacement is historical server replay, not fresh PTY output.
+      // Terminal queries inside that history must not produce new input.
+      disableStdin: true,
       theme: { background: '#111316', foreground: '#e6edf3' },
       fontFamily: TERMINAL_FONT_FAMILY,
       fontWeight: TERMINAL_FONT_WEIGHT,
@@ -111,6 +123,7 @@
       lineHeight: 1.2,
     })
     xterm = next
+    hydratingXterm = next
     next.open(host)
     const terminalId = terminal.terminalId
     next.onData((data) => client?.send({ type: 'terminal_input', terminalId, data }))
@@ -185,11 +198,7 @@
 
 <section class="terminal-pane" data-testid="terminal-pane" data-terminal-id={terminal.terminalId}>
   <div class="terminal-meta">
-    <div>
-      <strong>{terminal.terminalAlias}</strong>
-      <code>{terminal.terminalId}</code>
-    </div>
-    <span>{terminal.backend} · {terminal.status}</span>
+    <code class="terminal-meta-label" title={terminalLabel}>{terminalLabel}</code>
   </div>
   <div
     class="terminal-host"

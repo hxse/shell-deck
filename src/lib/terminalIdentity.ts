@@ -1,40 +1,26 @@
-import shortUuid from 'short-uuid'
-import { assertValidPublicId } from './identifier'
-
-const translator = shortUuid()
-const TERMINAL_ID_RE = /^term_[A-Za-z0-9_-]+$/
+import { assertGeneratedId, createGeneratedId } from './generatedId'
 
 export type TerminalId = string & { readonly __terminalId: unique symbol }
 
 export type TerminalRef =
   | { kind: 'id'; value: string }
   | { kind: 'index'; value: number }
-  | { kind: 'alias'; value: string }
 
 export type TerminalIndexMapItem = {
   index: number
   terminalId: string
-  terminalAlias?: string
 }
 
 export function createTerminalId(): string {
-  return 'term_' + translator.new()
+  return createGeneratedId('terminal')
 }
 
 export function createTerminalLaunchId(): string {
-  return 'launch_' + translator.new()
+  return createGeneratedId('terminalLaunch')
 }
 
 export function assertTerminalId(value: string): string {
-  assertValidPublicId(value, 'terminalId')
-  if (!TERMINAL_ID_RE.test(value)) {
-    throw new Error('invalid_terminalId:' + value)
-  }
-  return value
-}
-
-export function assertTerminalAlias(value: string): string {
-  return assertValidPublicId(value, 'terminalAlias')
+  return assertGeneratedId(value, 'terminal')
 }
 
 export function normalizeTerminalRef(ref: string | number | TerminalRef): TerminalRef {
@@ -45,16 +31,10 @@ export function normalizeTerminalRef(ref: string | number | TerminalRef): Termin
     if (/^\d+$/.test(ref)) {
       return { kind: 'index', value: Number(ref) }
     }
-    if (TERMINAL_ID_RE.test(ref)) {
-      return { kind: 'id', value: assertTerminalId(ref) }
-    }
-    return { kind: 'alias', value: assertTerminalAlias(ref) }
+    return { kind: 'id', value: assertTerminalId(ref) }
   }
   if (ref.kind === 'id') {
     return { kind: 'id', value: assertTerminalId(ref.value) }
-  }
-  if (ref.kind === 'alias') {
-    return { kind: 'alias', value: assertTerminalAlias(ref.value) }
   }
   if (!Number.isInteger(ref.value) || ref.value < 1) {
     throw new Error('invalid_terminalIndex:' + ref.value)

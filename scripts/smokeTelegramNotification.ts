@@ -1,7 +1,9 @@
 import { NotificationService } from '../server/notificationService'
+import { relocateNotificationConfig } from '../server/notificationConfigRelocation'
 
 const profileId = process.argv[2] ?? 'default'
-const service = new NotificationService()
+const location = relocateNotificationConfig()
+const service = new NotificationService(location.paths.root)
 const result = await service.sendTelegram({
   profileId,
   level: 'info',

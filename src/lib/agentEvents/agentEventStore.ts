@@ -1,158 +1,88 @@
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, existsSync, fchmodSync, fsyncSync, openSync, readFileSync, writeSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import shortUuid from 'short-uuid'
-import { assertValidPublicId } from '../identifier'
+import { assertGeneratedId, assertRoomRouteToken } from '../generatedId'
+import { assertManagedRegularFile, ensurePrivateDirectory, fsyncDirectory, initializeUserDataRoot, PRIVATE_FILE_MODE } from '../../../server/userDataRoot'
 import { assertValidAgentEvent } from './agentEventSchema'
 import type { AgentEvent, AgentEventMatch } from './agentEventTypes'
 
-const translator = shortUuid()
-
 export class AgentEventStore {
-  constructor(readonly rootDir = process.env.SHELL_DECK_DATA_ROOT ?? process.cwd()) {}
+  readonly evidenceRoot: string
+
+  constructor(root?: string) {
+    this.evidenceRoot = initializeUserDataRoot(root).agentEvents
+  }
 
   append(event: AgentEvent): AgentEvent {
     const valid = assertValidAgentEvent(event)
-    this.appendValidatedIfNew(valid)
+    const existing = this.list(valid.serverInstanceId, valid.roomId, valid.roomGeneration)
+    if (existing.some((candidate) => candidate.eventId === valid.eventId)) throw new Error('duplicate_agent_event_id:' + valid.eventId)
+    appendJsonLine(this.eventsPath(valid.serverInstanceId, valid.roomId, valid.roomGeneration), valid)
     return valid
   }
 
-  private appendValidatedIfNew(event: AgentEvent): boolean {
-    const key = agentEventKey(event)
-    if (this.list(event.configId).some((candidate) => agentEventKey(candidate) === key)) return false
-    appendJsonLine(this.eventsPath(event.configId), event)
-    return true
-  }
-
-  spool(event: AgentEvent): string {
-    const valid = assertValidAgentEvent(event)
-    const path = join(this.agentEventsDir(valid.configId), 'spool-' + Date.now() + '-' + translator.new() + '.jsonl')
-    const tmpPath = path + '.writing-' + translator.new()
-    writeJsonLineAtomic(tmpPath, path, valid)
-    return path
-  }
-
-  importSpool(configId: string): number {
-    const dir = this.agentEventsDir(configId)
-    if (!existsSync(dir)) return 0
-    let imported = 0
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith('.jsonl') || !entry.name.startsWith('spool-')) continue
-      const path = join(dir, entry.name)
-      const importingPath = path + '.importing'
-      renameSync(path, importingPath)
-      try {
-        for (const event of readEventsFromJsonl(importingPath)) {
-          if (event.configId !== configId) throw new Error('spool_config_mismatch:' + event.configId)
-          if (this.appendValidatedIfNew(event)) imported += 1
-        }
-        unlinkSync(importingPath)
-      } catch (error) {
-        renameSync(importingPath, path)
-        throw error
-      }
-    }
-    return imported
-  }
-
-  list(configId: string): AgentEvent[] {
-    const path = this.eventsPath(configId)
+  list(serverInstanceId: string, roomId: string, roomGeneration: string): AgentEvent[] {
+    const path = this.eventsPath(serverInstanceId, roomId, roomGeneration)
     if (!existsSync(path)) return []
     return readEventsFromJsonl(path)
+  }
+
+  matching(match: AgentEventMatch): AgentEvent[] {
+    return this.list(match.serverInstanceId, match.roomId, match.roomGeneration).filter((event) => matchesAgentEvent(event, match))
   }
 
   latestMatching(match: AgentEventMatch): AgentEvent | undefined {
     return this.matching(match).at(-1)
   }
 
-  matching(match: AgentEventMatch): AgentEvent[] {
-    const seen = new Set<string>()
-    return this.list(match.configId).filter((event) => {
-      if (!matchesAgentEvent(event, match)) return false
-      const key = agentEventKey(event)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-  }
-
   countMatching(match: AgentEventMatch): number {
     return this.matching(match).length
   }
 
-  nextMatching(match: AgentEventMatch, afterCount = 0, consumedKeys = new Set<string>()): AgentEvent | undefined {
-    return this.matching(match).slice(afterCount).find((event) => !consumedKeys.has(agentEventKey(event)))
+  nextMatching(match: AgentEventMatch, afterCount = 0, consumedIds = new Set<string>()): AgentEvent | undefined {
+    return this.matching(match).slice(afterCount).find((event) => !consumedIds.has(event.eventId))
   }
 
-  eventsPath(configId: string): string {
-    return join(this.agentEventsDir(configId), 'events.jsonl')
-  }
-
-  agentEventsDir(configId: string): string {
-    return join(this.configDir(configId), 'agent-events')
-  }
-
-  configDir(configId: string): string {
-    return join(this.rootDir, '.shell-deck', 'configs', assertValidPublicId(configId, 'configId'))
+  eventsPath(serverInstanceId: string, roomId: string, roomGeneration: string): string {
+    const server = assertGeneratedId(serverInstanceId, 'serverInstance')
+    const room = assertRoomRouteToken(roomId)
+    const generation = assertGeneratedId(roomGeneration, 'roomGeneration')
+    const dir = join(this.evidenceRoot, server, room)
+    ensurePrivateDirectory(join(this.evidenceRoot, server))
+    ensurePrivateDirectory(dir)
+    return join(dir, generation + '.jsonl')
   }
 }
 
 function readEventsFromJsonl(path: string): AgentEvent[] {
-  const text = readFileSync(path, 'utf8')
   const events: AgentEvent[] = []
-  for (const [index, line] of text.split('\n').entries()) {
+  for (const [index, line] of readFileSync(path, 'utf8').split('\n').entries()) {
     if (!line.trim()) continue
-    try {
-      events.push(assertValidAgentEvent(JSON.parse(line)))
-    } catch (error) {
-      throw new Error(path + ':' + (index + 1) + ':' + (error instanceof Error ? error.message : String(error)))
-    }
+    try { events.push(assertValidAgentEvent(JSON.parse(line))) }
+    catch (error) { throw new Error(path + ':' + (index + 1) + ':' + (error instanceof Error ? error.message : String(error))) }
   }
   return events
 }
 
 function appendJsonLine(path: string, value: unknown): void {
-  mkdirSync(dirname(path), { recursive: true })
-  const fd = openSync(path, 'a')
+  assertManagedRegularFile(path)
+  const fd = openSync(path, 'a', PRIVATE_FILE_MODE)
   try {
-    const line = JSON.stringify(value) + '\n'
-    writeSync(fd, line)
+    fchmodSync(fd, PRIVATE_FILE_MODE)
+    const buffer = Buffer.from(JSON.stringify(value) + '\n')
+    let offset = 0
+    while (offset < buffer.length) offset += writeSync(fd, buffer, offset, buffer.length - offset)
     fsyncSync(fd)
-  } finally {
-    closeSync(fd)
-  }
-}
-
-function writeJsonLineAtomic(tmpPath: string, finalPath: string, value: unknown): void {
-  mkdirSync(dirname(finalPath), { recursive: true })
-  let fd: number | null = null
-  try {
-    fd = openSync(tmpPath, 'wx')
-    const line = JSON.stringify(value) + '\n'
-    writeSync(fd, line)
-    fsyncSync(fd)
-  } catch (error) {
-    if (fd !== null) {
-      try { closeSync(fd) } catch {}
-      fd = null
-    }
-    try { unlinkSync(tmpPath) } catch {}
-    throw error
-  } finally {
-    if (fd !== null) closeSync(fd)
-  }
-  renameSync(tmpPath, finalPath)
-  const dirFd = openSync(dirname(finalPath), 'r')
-  try { fsyncSync(dirFd) } finally { closeSync(dirFd) }
-}
-
-export function agentEventKey(event: AgentEvent): string {
-  return [event.configId, event.terminalId, event.launchId, event.agentSessionId, event.agentTurnId ?? '', event.receivedAt, event.eventKind, event.adapterMetadata.adapter, event.capturedText?.length ?? 0].join('|')
+  } finally { closeSync(fd) }
+  fsyncDirectory(dirname(path))
 }
 
 function matchesAgentEvent(event: AgentEvent, match: AgentEventMatch): boolean {
-  if (event.terminalId !== match.terminalId) return false
-  if (match.agentKind && event.agentKind !== match.agentKind) return false
-  if (match.eventKind && event.eventKind !== match.eventKind) return false
-  if (match.adapter && event.adapterMetadata.adapter !== match.adapter) return false
-  return true
+  return event.serverInstanceId === match.serverInstanceId
+    && event.roomId === match.roomId
+    && event.roomGeneration === match.roomGeneration
+    && event.terminalId === match.terminalId
+    && event.launchId === match.launchId
+    && (!match.agentKind || event.agentKind === match.agentKind)
+    && (!match.eventKind || event.eventKind === match.eventKind)
+    && (!match.adapter || event.adapterMetadata.adapter === match.adapter)
 }

@@ -21,7 +21,7 @@ button {
   padding: 6px 10px;
 }
 
-.deck-shell {
+.room-shell {
   height: 100vh;
   min-height: 100vh;
   display: flex;
@@ -134,7 +134,7 @@ button {
   position: relative;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 4px;
   padding: 0 8px;
@@ -163,18 +163,9 @@ button {
   box-shadow: inset 0 -2px 0 #1769aa;
 }
 
-.terminal-tab.active .tab-index {
-  background: #1769aa;
-  color: #ffffff;
-}
-
-.terminal-tab.active .tab-alias {
+.terminal-tab.active .tab-label {
   color: #111820;
   font-weight: 700;
-}
-
-.terminal-tab.active .tab-kind {
-  color: #25577f;
 }
 
 .tab-close {
@@ -212,47 +203,14 @@ button {
   outline-offset: -2px;
 }
 
-.tab-index {
-  width: 19px;
-  height: 19px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: #cbd6df;
-  color: #314151;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.tab-alias {
+.tab-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-weight: 600;
-}
-
-.tab-kind {
-  color: #697887;
-  font-size: 10px;
-}
-
-.tab-alias-input {
-  min-width: 0;
-  width: 100%;
-  border: 1px solid #1769aa;
-  border-radius: 4px;
-  padding: 3px 5px;
-  color: #202428;
-}
-
-.alias-error {
-  padding: 8px 12px;
-  border-bottom: 1px solid #e3c2c2;
-  background: #fff1f1;
-  color: #8a1f1f;
-  font-size: 13px;
 }
 
 .terminal-stage {

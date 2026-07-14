@@ -1,4 +1,4 @@
-import type { ProfileCatalogSummary } from '../macro/profileCatalogSummary'
+import type { ProfileCatalogSummary } from './profileCatalogSummary'
 import type { ParserProfile, ParserValidationIssue, ParserValidationResult } from './parserProfileTypes'
 
 export function validateProfileCatalogCompatibility(profiles: ParserProfile[], summary: ProfileCatalogSummary): ParserValidationResult {

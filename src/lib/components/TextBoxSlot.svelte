@@ -1,15 +1,27 @@
 <script lang="ts">
   import type { TerminalSnapshot } from '../protocol'
-  import type { TerminalDeckClient } from '../terminalDeckClient'
+  import { terminalDisplayLabel } from '../terminalDisplay'
+  import type { TerminalRoomClient } from '../terminalRoomClient'
+  import {
+    beginLatestTextWrite,
+    createTextTerminalWriteState,
+    editTextTerminal,
+    observeTextTerminalTruth,
+  } from '../textTerminalWriteState'
 
   let { terminal, client } = $props<{
     terminal: TerminalSnapshot
-    client: TerminalDeckClient | null
+    client: TerminalRoomClient | null
   }>()
+  const terminalLabel = $derived(terminalDisplayLabel(terminal))
 
-  let localTerminalId = $state('')
-  let localContent = $state('')
-  let lastAppliedReplay = $state('')
+  let writeState = $state(createTextTerminalWriteState({
+    terminalId: '',
+    launchId: '',
+    content: '',
+    textRevision: 0,
+  }))
+  const localContent = $derived(writeState.localContent)
   let copyStatus = $state('Copy')
   let editorScrollTop = $state(0)
   let editorElement = $state<HTMLTextAreaElement | null>(null)
@@ -18,23 +30,31 @@
 
   $effect(() => {
     const content = terminal.replay.join('')
-    if (terminal.terminalId !== localTerminalId) {
-      localTerminalId = terminal.terminalId
-      localContent = content
-      lastAppliedReplay = content
+    const identityChanged = terminal.terminalId !== writeState.terminalId || terminal.launchId !== writeState.launchId
+    const observed = observeTextTerminalTruth(writeState, {
+      terminalId: terminal.terminalId,
+      launchId: terminal.launchId,
+      content,
+      textRevision: terminal.textRevision,
+    })
+    if (observed.state !== writeState) writeState = observed.state
+    if (identityChanged) {
       editorScrollTop = 0
       if (editorElement) editorElement.scrollTop = 0
-      return
     }
-    if (content !== lastAppliedReplay) {
-      localContent = content
-      lastAppliedReplay = content
-    }
+    if (observed.needsWrite) sendLatestContent(terminal.textRevision)
   })
 
   function updateContent(value: string) {
-    localContent = value
-    client?.send({ type: 'set_terminal_text', terminalId: terminal.terminalId, content: value })
+    writeState = editTextTerminal(writeState, value)
+    if (!writeState.inFlight) sendLatestContent(terminal.textRevision)
+  }
+
+  function sendLatestContent(baseTextRevision: number) {
+    const started = beginLatestTextWrite(writeState, baseTextRevision)
+    if (started && client?.send({ type: 'set_terminal_text', terminalId: terminal.terminalId, content: started.request.content })) {
+      writeState = started.state
+    }
   }
 
   async function copyContent() {
@@ -50,12 +70,8 @@
 
 <section class="terminal-pane text-box-pane" data-testid="text-box-pane" data-terminal-id={terminal.terminalId}>
   <div class="terminal-meta text-box-meta">
-    <div>
-      <strong>{terminal.terminalAlias}</strong>
-      <code>{terminal.terminalId}</code>
-    </div>
+    <code class="terminal-meta-label" title={terminalLabel}>{terminalLabel}</code>
     <div class="inline-actions">
-      <span>{terminal.backend} · {terminal.status}</span>
       <button type="button" data-testid="text-box-copy" onclick={copyContent}>{copyStatus}</button>
     </div>
   </div>

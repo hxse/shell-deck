@@ -12,14 +12,18 @@ export type TerminalBackend = {
   start(events: TerminalBackendEvent): void
   write(data: string): void
   resize(cols: number, rows: number): void
-  close(): void
+  currentCwd?(): string | null
+  close(): Promise<void> | void
 }
 
 export type TerminalBackendOptions = {
   cols: number
   rows: number
   shell?: string
-  configId?: string
+  cwd?: string
+  serverInstanceId?: string
+  roomId?: string
+  roomGeneration?: string
   terminalId?: string
   launchId?: string
   env?: Record<string, string | undefined>

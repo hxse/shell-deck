@@ -1,33 +1,35 @@
 # shell-deck
 
-`shell-deck` is a local browser terminal deck with a visual macro panel. It keeps Codex and other terminal programs as ordinary processes inside PTYs, then lets users run flexible, pauseable, observable macros against terminal indexes, aliases, or stable terminal ids. It is also an experiment in tooling the strict spec/review/Gate workflow used by `<pyo3-quant-root>/AGENTS.md`, so the first target audience is high-control AI collaboration rather than generic terminal automation.
+`shell-deck` is a local browser terminal workspace with live, URL-addressed Rooms and a visual macro system. Codex and other programs remain ordinary processes inside PTYs; a macro addresses terminals by their current index/type and resolves that logical layout to runtime terminal IDs at Start.
 
-Current status: V0 local/offline implementation has landed through `20260627A.009 v0 closeout`. The stable behavior is summarized in `doc/tasks/active_specs/**`; detailed design and verification history remain in `doc/tasks/snapshots/20260627A shell deck bootstrap/**`.
+Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. `.032` is a foundation revision rather than a standalone release: Room routing, runtime isolation, user-level storage, notification relocation and browser settings land here; the production Macro V3 cutover lands atomically in `.034`.
 
 Core V0 behavior:
 
-- one local server with config-scoped decks and synchronized browser tabs
-- multiple terminal tabs per config, backed by fake terminals for deterministic tests or real PTYs for shell use
-- stable `terminalId=term_<shortUuid>`, dynamic terminal indexes, and tab aliases from terminal rename
+- one server process with multiple memory-only Rooms selected by `/<roomId>` URLs
+- the same user can open one Room from multiple tabs/devices and receive synchronized terminal state
+- multiple Shell/Text terminals per Room; each Shell owns its own cwd
+- full UUID-v4 short IDs through one generated-ID module; index follows UI order while terminalId follows the terminal object
+- no terminal alias or rename identity
+- user-level Macro/evidence/Library storage is independent from Room URLs and terminal cwd
 - no role system and no Codex pre-injected prompts
-- `just codex` wrapper injects temporary Codex hook config without changing global Codex config or installing global commands
+- `just codex` only runs inside a shell-deck-created Shell with complete Room context; external terminals fail loudly
 - AgentEvent ingest normalizes Codex hook callbacks; Codex session ids are trace data, not macro template state
-- macro templates are persisted as JSON and editable through a basic visual panel plus JSON preview/import/export
-- macro runs are append-only event logs plus artifacts; UI node logs and AI trace use that same log truth
-- capture source is user-selected: terminal-buffer by default, AgentEvent/Codex hook optional
-- parser supports template-local `regex` and explicit `ai-json` modes; mock and real Codex parser entry points are separate
-- V0 restores macro state and logs, not Codex sessions
+- `.032` exposes only the generic user-global MacroRecord storage primitive; production Macro schema/API/editor/runner return in `.034`
+- run evidence is append-only events plus artifacts and never hydrates runtime state
+- Room-scoped AgentEvent/Codex hook ingest persists attributable evidence; Macro capture consumption returns in `.034`
+- parser profiles remain an independent catalog/developer surface and are not a current Macro action
+- Room, terminal, runner cursor and run snapshot are never restored after server restart; read-only Trace/evidence remains persistent
 
 Quickstart: `doc/guides/001_quickstart.md`.
 
 Primary commands:
 
 ```bash
-just start                 # local server, ai-json disabled
-just start-mock-ai         # local server with explicit mock ai-json parser
-just start-codex-ai        # local server with real codex-exec parser
+just start                 # production build + local Room server
+just dev                   # Vite HMR frontend plus Bun API/WebSocket server
 just stop                  # stop the default local server pid
-just test-009-offline      # full V0 offline gate aggregate
+just test-032              # Room/user-storage foundation gate
 ```
 
 V0 phase tasks:
@@ -47,4 +49,5 @@ Documentation entry points:
 - `AGENTS.md`
 - `doc/guides/001_quickstart.md`
 - `doc/tasks/active_specs/000_readme.md`
-- `doc/tasks/index/001_20260627A.md`
+- `doc/tasks/index/001_20260627A_20260627A.031.md`
+- `doc/tasks/index/002_20260627A.032.md`
