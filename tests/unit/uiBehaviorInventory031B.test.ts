@@ -4,13 +4,16 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { parse } from 'svelte/compiler'
 import {
+  attributedBehaviorChanges,
   attributedControlChanges,
   baseline031ARuntimeControlIds,
   baseline031ASourceInteractiveControlCount,
   baseline031ASourceInteractiveControlDigest,
   runtimeControlInventory,
   sourceInteractiveControlCount,
+  sourceInteractiveControlCount032,
   sourceInteractiveControlDigest,
+  sourceInteractiveControlDigest032,
 } from '../ui-baseline/031B/controlInventory'
 
 const projectRoot = resolve(import.meta.dir, '../..')
@@ -25,7 +28,12 @@ describe('.031B evolving UI source inventory', () => {
     expect(baseline031ASourceInteractiveControlDigest).toBe('7de9ac2946db94a2134e22539477094c04cc95caef6f44afce0738ff388fec19')
   })
 
-  test('.032 interactive source controls match its attributed current snapshot', () => {
+  test('.032 source snapshot remains available after later contract evolution', () => {
+    expect(sourceInteractiveControlCount032).toBe(18)
+    expect(sourceInteractiveControlDigest032).toBe('08cd10d9663687281cecf5f1b2d761cd55570efafabd57bf0de9972aba8a2b2d')
+  })
+
+  test('.033 interactive source controls match its attributed current snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -51,11 +59,24 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(change?.changedBy).toBe('20260627A.032')
+      expect(change?.changedBy === '20260627A.032' || change?.changedBy === '20260627A.033').toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
     }
+    expect(changes.get('take-control')?.changedBy).toBe('20260627A.033')
+  })
+
+  test('.033 attributes every controller-only behavior change on surviving controls', () => {
+    expect(attributedBehaviorChanges.map(({ key }) => key).sort()).toEqual([
+      'terminal-create-real',
+      'terminal-create-text',
+      'terminal-host',
+      'terminal-tab',
+      'terminal-tab-close',
+      'text-box-editor',
+    ])
+    expect(attributedBehaviorChanges.every((entry) => entry.changedBy === '20260627A.033' && entry.oldBehavior && entry.newBehavior && entry.spec)).toBe(true)
   })
 })
 

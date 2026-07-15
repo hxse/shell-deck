@@ -1,3 +1,6 @@
+import type { ContentEditLeaseView, ContentResourceKey } from './contentEditLease'
+import type { RoomControlGrant, RoomControlView } from './roomControl'
+
 export type TerminalBackendKind = 'fake' | 'real' | 'text'
 export type TerminalStatus = 'starting' | 'running' | 'closed' | 'failed'
 
@@ -42,6 +45,9 @@ export type RoomSnapshot = {
 
 export type ServerMessage =
   | { type: 'client_registered'; clientId: string; roomId: string; roomGeneration: string; serverInstanceId: string }
+  | { type: 'room_control'; roomId: string; roomGeneration: string; view: RoomControlView; grant?: RoomControlGrant }
+  | { type: 'room_control_lost'; roomId: string; roomGeneration: string; controlEpoch: number }
+  | { type: 'content_edit_lease_changed'; roomId: string; roomGeneration: string; resourceKey: ContentResourceKey; view: ContentEditLeaseView }
   | RoomSnapshot
   | TerminalSnapshot
   | { type: 'terminal_created'; roomId: string; roomGeneration: string; terminalId: string }

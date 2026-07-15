@@ -6,7 +6,7 @@ const SETTINGS_KEY = 'shell-deck:settings:v2'
 
 test.describe.configure({ mode: 'serial' })
 
-test('current UI journey preserves every .032 Room and terminal interaction through user-visible controls', async ({ browser }) => {
+test('current UI journey preserves .032 interactions and exercises .033 single-writer handoff through visible controls', async ({ browser }) => {
   test.setTimeout(180_000)
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const covered = new Set<string>()
@@ -37,6 +37,7 @@ test('current UI journey preserves every .032 Room and terminal interaction thro
     await clickAndCover(first.getByTestId('notice-dismiss-layer'), 'notice-dismiss-layer', covered)
     await expect(first.getByTestId('notice-item')).toHaveCount(0)
   })
+  await ensureController(first, covered)
 
   await test.step('Settings closes through both paths and enables the only surviving browser-local toggle', async () => {
     await clickAndCover(first.getByTestId('settings-button'), 'settings-button', covered)
@@ -103,31 +104,73 @@ test('current UI journey preserves every .032 Room and terminal interaction thro
     await expect(second.getByTestId('text-box-editor')).toHaveValue(text)
   })
 
+  await test.step('observer stays useful but read-only, then explicitly takes control without losing shared state', async () => {
+    await expect(second.getByTestId('take-control')).toHaveText('Read-only · Take control')
+    await expect(second.getByTestId('terminal-create-real')).toBeDisabled()
+    await expect(second.getByTestId('terminal-create-text')).toBeDisabled()
+    await expect(tabById(second, textId).getByTestId('terminal-tab-close')).toBeDisabled()
+    await expect(second.getByTestId('text-box-editor')).toHaveAttribute('readonly', '')
+    await expect(second.getByTestId('text-box-copy')).toBeEnabled()
+
+    await second.getByTestId('settings-button').click()
+    await expect(second.getByTestId('settings-popover')).toBeVisible()
+    await expect(second.getByTestId('tab-drag-toggle')).toBeEnabled()
+    if (await second.getByTestId('tab-drag-toggle').getAttribute('aria-pressed') !== 'true') {
+      await second.getByTestId('tab-drag-toggle').click()
+    }
+    await second.getByTestId('settings-close').click()
+
+    second.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain('Take control of this Room?')
+      await dialog.dismiss()
+    })
+    await second.getByTestId('take-control').click()
+    covered.add('take-control')
+    await expect(second.getByTestId('take-control')).toBeVisible()
+
+    second.once('dialog', async (dialog) => {
+      expect(dialog.message()).toContain('Take control of this Room?')
+      await dialog.accept()
+    })
+    await clickAndCover(second.getByTestId('take-control'), 'take-control', covered)
+    await expect(second.getByTestId('room-control-status')).toHaveText('Control: This device')
+    await expect(first.getByTestId('take-control')).toHaveText('Read-only · Take control')
+    await expect(first.getByTestId('terminal-create-real')).toBeDisabled()
+    await expect(first.getByTestId('notice-item')).toContainText('Control moved to another device')
+    await first.getByTestId('notice-dismiss-layer').click()
+    covered.add('notice-dismiss-layer')
+    await tabById(first, textId).click()
+    await expect(first.getByTestId('text-box-editor')).toHaveAttribute('readonly', '')
+    await expect(second.getByTestId('text-box-editor')).toBeEditable()
+    await second.getByTestId('text-box-editor').fill('shared after explicit takeover')
+    await expect(first.getByTestId('text-box-editor')).toHaveValue('shared after explicit takeover')
+  })
+
   await test.step('tab keyboard selection, drag reorder and close confirmation remain synchronized across two clients', async () => {
-    const firstTab = tabById(first, firstShellId)
+    const firstTab = tabById(second, firstShellId)
     await firstTab.focus()
-    await first.keyboard.press(' ')
+    await second.keyboard.press(' ')
     covered.add('terminal-tab')
     await expect(firstTab).toHaveAttribute('aria-selected', 'true')
 
-    await firstTab.dragTo(tabById(first, inheritedShellId))
+    await firstTab.dragTo(tabById(second, inheritedShellId))
     covered.add('terminal-tab')
     await expect.poll(async () => terminalIds(first)).toEqual([textId, inheritedShellId, firstShellId])
     await expect.poll(async () => terminalIds(second)).toEqual([textId, inheritedShellId, firstShellId])
 
-    first.once('dialog', async (dialog) => {
+    second.once('dialog', async (dialog) => {
       expect(dialog.message()).toContain('Close terminal')
       await dialog.dismiss()
     })
-    await tabById(first, inheritedShellId).getByTestId('terminal-tab-close').click()
+    await tabById(second, inheritedShellId).getByTestId('terminal-tab-close').click()
     covered.add('terminal-tab-close')
     await expect(first.getByTestId('terminal-tab')).toHaveCount(3)
 
-    first.once('dialog', async (dialog) => {
+    second.once('dialog', async (dialog) => {
       expect(dialog.message()).toContain('Close terminal')
       await dialog.accept()
     })
-    await tabById(first, inheritedShellId).getByTestId('terminal-tab-close').click()
+    await tabById(second, inheritedShellId).getByTestId('terminal-tab-close').click()
     covered.add('terminal-tab-close')
     await expect(first.getByTestId('terminal-tab')).toHaveCount(2)
     await expect(second.getByTestId('terminal-tab')).toHaveCount(2)
@@ -191,6 +234,21 @@ test('current UI journey preserves every .032 Room and terminal interaction thro
 
 async function invalidateBrowserSettings(page: Page) {
   await page.evaluate(([key]) => window.localStorage.setItem(key, '{invalid'), [SETTINGS_KEY])
+}
+
+async function ensureController(page: Page, covered: Set<string>) {
+  if (await page.getByTestId('room-control-status').count()) {
+    await expect(page.getByTestId('room-control-status')).toHaveText('Control: This device')
+    return
+  }
+  const acceptTakeover = async (dialog: { accept(): Promise<void> }) => dialog.accept()
+  page.on('dialog', acceptTakeover)
+  try {
+    await clickAndCover(page.getByTestId('take-control'), 'take-control', covered)
+  } finally {
+    page.off('dialog', acceptTakeover)
+  }
+  await expect(page.getByTestId('room-control-status')).toHaveText('Control: This device')
 }
 
 async function clickAndCover(locator: Locator, key: string, covered: Set<string>) {

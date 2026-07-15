@@ -11,9 +11,10 @@
   const RENDERED_TAIL_CODE_UNIT_LIMIT = 8192
   const DEBUG_COUNTER_LIMIT = 999_999_999
 
-  let { terminal, client } = $props<{
+  let { terminal, client, readOnly = false } = $props<{
     terminal: TerminalViewSnapshot
     client: TerminalRoomClient | null
+    readOnly?: boolean
   }>()
   const terminalLabel = $derived(terminalDisplayLabel(terminal))
 
@@ -30,6 +31,7 @@
   let fitCount = 0
   let sentCols = 0
   let sentRows = 0
+  let appliedReadOnly = false
 
   const parserPump = new TerminalParserWritePump({
     onChunkWrite: (_data, _update, target) => {
@@ -53,7 +55,7 @@
       current.scrollToBottom()
       if (update.kind === 'replace' && hydratingXterm === current) {
         hydratingXterm = null
-        current.options.disableStdin = false
+        current.options.disableStdin = readOnly
       }
     },
   })
@@ -69,6 +71,23 @@
     const update = terminal.renderUpdate
     if (!mounted || update.revision === appliedRevision) return
     applyRenderUpdate(update)
+  })
+
+  $effect(() => {
+    const wasReadOnly = appliedReadOnly
+    appliedReadOnly = readOnly
+    if (!xterm) return
+    xterm.options.disableStdin = readOnly || hydratingXterm === xterm
+    if (!readOnly) {
+      // An observer still fits its local xterm for readable/copyable output, but
+      // it must not resize the shared PTY. Force the first controller-side fit
+      // to publish the current dimensions even when the local grid is unchanged.
+      if (wasReadOnly) {
+        sentCols = 0
+        sentRows = 0
+      }
+      fitToHost()
+    }
   })
 
   onDestroy(() => {
@@ -126,7 +145,7 @@
     hydratingXterm = next
     next.open(host)
     const terminalId = terminal.terminalId
-    next.onData((data) => client?.send({ type: 'terminal_input', terminalId, data }))
+    next.onData((data) => { if (!readOnly) client?.send({ type: 'terminal_input', terminalId, data }) })
     parserPump.setTarget(next)
     fitToHost()
     writeToParser(update)
@@ -154,7 +173,7 @@
     sentRows = rows
     xterm.resize(cols, rows)
     xterm.scrollToBottom()
-    client?.send({ type: 'terminal_resize', terminalId: terminal.terminalId, cols, rows })
+    if (!readOnly) client?.send({ type: 'terminal_resize', terminalId: terminal.terminalId, cols, rows })
   }
 
   function measureCellSize() {
@@ -196,7 +215,7 @@
   }
 </script>
 
-<section class="terminal-pane" data-testid="terminal-pane" data-terminal-id={terminal.terminalId}>
+<section class="terminal-pane" class:shared-read-only={readOnly} data-testid="terminal-pane" data-terminal-id={terminal.terminalId} data-shared-read-only={readOnly}>
   <div class="terminal-meta">
     <code class="terminal-meta-label" title={terminalLabel}>{terminalLabel}</code>
   </div>

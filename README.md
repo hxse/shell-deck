@@ -7,11 +7,12 @@ Current stack work is the destructive Room/user-storage redesign beginning at `2
 Core V0 behavior:
 
 - one server process with multiple memory-only Rooms selected by `/<roomId>` URLs
-- the same user can open one Room from multiple tabs/devices and receive synchronized terminal state
+- the same user can open one Room from multiple tabs/devices and receive synchronized terminal state; one server-enforced controller writes while other connections observe
 - multiple Shell/Text terminals per Room; each Shell owns its own cwd
 - full UUID-v4 short IDs through one generated-ID module; index follows UI order while terminalId follows the terminal object
 - no terminal alias or rename identity
 - user-level Macro/evidence/Library storage is independent from Room URLs and terminal cwd
+- saved Macro/Library records use per-record cross-Room/process edit leases plus optimistic revision; different records remain independent
 - no role system and no Codex pre-injected prompts
 - `just codex` only runs inside a shell-deck-created Shell with complete Room context; external terminals fail loudly
 - AgentEvent ingest normalizes Codex hook callbacks; Codex session ids are trace data, not macro template state
@@ -30,6 +31,7 @@ just start                 # production build + local Room server
 just dev                   # Vite HMR frontend plus Bun API/WebSocket server
 just stop                  # stop the default local server pid
 just test-032              # Room/user-storage foundation gate
+just test-033              # Room controller/content edit lease gate
 ```
 
 V0 phase tasks:
@@ -51,3 +53,4 @@ Documentation entry points:
 - `doc/tasks/active_specs/000_readme.md`
 - `doc/tasks/index/001_20260627A_20260627A.031.md`
 - `doc/tasks/index/002_20260627A.032.md`
+- `doc/tasks/index/003_20260627A.033.md`

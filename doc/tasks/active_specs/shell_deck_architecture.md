@@ -2,7 +2,7 @@
 
 ## 当前边界
 
-shell-deck 是一个 local-first、terminal-first workspace。一个 server process 可以承载多个由 `/<roomId>` URL 选择的 live Room；同一用户可通过多个标签页或设备连接同一 Room 并同步 terminal state。产品不建立多人协作或 Project/target-directory 模型。
+shell-deck 是一个 local-first、terminal-first workspace。一个 server process 可以承载多个由 `/<roomId>` URL 选择的 live Room；同一用户可通过多个标签页或设备连接同一 Room并同步terminal state，但server强制一个Room同时只有一个controller，其他连接只读观察。产品不建立多人协作或Project/target-directory模型。
 
 Room、terminal、Text content、replay、client、runner cursor 与 run snapshot 都只存在于当前 server process。长期 MacroRecord、Trace/artifact、AgentEvent evidence、Library（后继任务）和 notification config 位于同一 OS 用户的 User Data Root，不与 Room URL、server cwd 或 Shell cwd 绑定。
 
@@ -20,7 +20,9 @@ Room、terminal、Text content、replay、client、runner cursor 与 run snapsho
 
 Room identity 是 `serverInstanceId + roomId + roomGeneration`。生命周期为 `active -> destroying -> destroyed`。所有 Room mutation 先取得 generation-bound ticket；Destroy 先关闭 admission 并 abort，再 drain 已取得的 ticket，最后关闭 PTY/client 并移除 Room，因此异步操作不能在销毁后重新发布 terminal 或 run state。
 
-Room runtime message 只广播到同一 Room。长期 user content 不属于 Room；其 single-writer/control enforcement 由 `.033` 接入。
+Room runtime message只广播到同一Room。Room controller是process-local memory state并随generation销毁；shared mutation先取得lifecycle ticket，再验证owner control epoch/lease。Home lifecycle管理是唯一不要求目标Room controller的外部入口。
+
+长期user content不属于Room。saved Macro/Library record另由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
 
 ## 启动与安全
 

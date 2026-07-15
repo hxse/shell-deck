@@ -15,10 +15,13 @@ export type UiControlInventoryEntry = {
 export const baseline031ASourceInteractiveControlCount = 202
 export const baseline031ASourceInteractiveControlDigest = '7de9ac2946db94a2134e22539477094c04cc95caef6f44afce0738ff388fec19'
 
+export const sourceInteractiveControlCount032 = 18
+export const sourceInteractiveControlDigest032 = '08cd10d9663687281cecf5f1b2d761cd55570efafabd57bf0de9972aba8a2b2d'
+
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
-export const sourceInteractiveControlCount = 18
-export const sourceInteractiveControlDigest = '08cd10d9663687281cecf5f1b2d761cd55570efafabd57bf0de9972aba8a2b2d'
+export const sourceInteractiveControlCount = 19
+export const sourceInteractiveControlDigest = '4ff921d1d3f120d6cffee8b2b842a9edfefcc545dedf2fec0d8080d6185afb3b'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
@@ -286,6 +289,7 @@ const currentRuntimeControls = [
   ['room-open', 'clicked'],
   ['room-destroy', 'clicked'],
   ['home-button', 'clicked'],
+  ['take-control', 'clicked'],
   ['terminal-create-real', 'clicked'],
   ['terminal-create-text', 'clicked'],
   ['settings-button', 'clicked'],
@@ -322,12 +326,28 @@ export const attributedControlChanges: UiControlInventoryEntry[] = [
     .map(([key, evidence]) => ({
       key,
       evidence,
-      changedBy: '20260627A.032',
-      oldBehavior: '.031A had no routed Room/Home control with this identity.',
-      newBehavior: '.032 adds the canonical Room/Home or current-schema terminal interaction.',
-      spec: '20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime',
+      changedBy: key === 'take-control' ? '20260627A.033' : '20260627A.032',
+      oldBehavior: key === 'take-control' ? '.032 had no explicit controller handoff control.' : '.031A had no routed Room/Home control with this identity.',
+      newBehavior: key === 'take-control' ? '.033 adds explicit confirmed takeover for an observer.' : '.032 adds the canonical Room/Home or current-schema terminal interaction.',
+      spec: key === 'take-control' ? '20260627A.033/02_spec/01_contract.md — Take Control与丢失控制' : '20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime',
     })),
 ]
+
+export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
+  ['terminal-create-real', 'Shell creation becomes controller-only.'],
+  ['terminal-create-text', 'Text creation becomes controller-only.'],
+  ['terminal-host', 'Shell input becomes controller-only while output remains observable.'],
+  ['text-box-editor', 'Text content mutation becomes controller-only while observer content remains readable.'],
+  ['terminal-tab', 'Tab selection remains local, while drag reorder becomes controller-only.'],
+  ['terminal-tab-close', 'Terminal close becomes controller-only.'],
+].map<UiControlInventoryEntry>(([key, newBehavior]) => ({
+  key,
+  evidence: 'boundary',
+  changedBy: '20260627A.033',
+  oldBehavior: '.032 allowed every connected Room client to submit this shared mutation.',
+  newBehavior,
+  spec: '20260627A.033/02_spec/01_contract.md — Server-side mutation guard and UI精准重构边界',
+}))
 
 function removedBy032Behavior(key: string): string {
   if (key === 'terminal-create-fake') return '.032 removes the fake-terminal production control; tests use real Shell and Text only.'

@@ -32,3 +32,11 @@ Text browser每个terminal串行一个full-state write，后续输入coalesce为
 selected terminal严格属于browser-local state。Room snapshot、terminal snapshot与其他client创建terminal的广播只能更新terminal集合，不能改写已有且仍有效的active terminal。发起New Shell/Text的client在create成功后单独收到不含client identity的`terminal_created`消息，并只在该client选择新terminal；observer不收到该消息。当前没有有效selection时，client本地选择排序后的第一个terminal。
 
 最后一个 client 断开不会销毁 Room。晚到 client 收到当前 snapshot/replay；Destroy 或 server shutdown 才关闭目标 Room 的 terminal/process。
+
+## Single-controller
+
+同一Room任一时刻只有一个controller。fresh generation中第一个完成WebSocket握手的client自动取得控制；其余连接是observer。observer继续接收snapshot/output/replay，可以选择terminal、滚动、复制和修改browser-local Settings，但Shell input、Text edit、terminal create/close/reset/reorder/resize等shared mutation同时由UI readonly和server统一guard拒绝。
+
+顶栏显示`Control: This device`、`Read-only · Take control`或`Reconnecting · Read-only`。Take Control使用确认时看到的controlEpoch，成功后旧owner立即收到`room_control_lost`；release、disconnect或30秒TTL到期只进入available，不自动提升普通observer。若同一browser tab在reload或短暂重连前就是controller，它可在5秒窗口内保存非secret session intent，并仅在server已广播available时自动执行正常epoch-bound acquire；它不保存grant、不自动takeover，也不能抢走另一个live controller。owner server每10秒用WebSocket ping/pong续期，browser timer不承担authority。
+
+HTTP shared mutation使用仅owner可见的clientId/controlLeaseId/controlEpoch bearer，并逐请求复核live owner WebSocket、Room generation和lifecycle。grant只在内存中存在，不进入observer message、Room list、Trace、URL或localStorage。Home New/Destroy是generation-bound process lifecycle operation，不要求目标Room controller；Destroy仍先关闭admission并撤销control/content lease，再清理runtime。

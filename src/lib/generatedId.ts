@@ -5,6 +5,8 @@ export const GENERATED_ID_PREFIX = {
   serverInstance: 'server_',
   roomGeneration: 'roomgen_',
   client: 'client_',
+  roomControlLease: 'control_',
+  contentEditLease: 'edit_',
   terminal: 'term_',
   terminalLaunch: 'launch_',
   macroTemplate: 'tmpl_',

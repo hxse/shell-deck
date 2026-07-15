@@ -4,6 +4,7 @@
   import NoticeStack, { type NoticeItem } from './lib/components/workspace/NoticeStack.svelte'
   import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
   import type { ServerMessage, TerminalSnapshot } from './lib/protocol'
+  import type { RoomControlView } from './lib/roomControl'
   import { TerminalRoomClient } from './lib/terminalRoomClient'
   import { TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
 
@@ -16,8 +17,10 @@
   }
 
   const initialPath = window.location.pathname
+  const initialRoomId = initialPath === '/' ? '' : decodeURIComponent(initialPath.slice(1))
   let isHome = $state(initialPath === '/')
-  let roomId = $state(initialPath === '/' ? '' : decodeURIComponent(initialPath.slice(1)))
+  let roomId = $state(initialRoomId)
+  const ROOM_CONTROL_RECLAIM_WINDOW_MS = 5_000
   const loadedSettings = loadBrowserSettings()
   const terminalViews = new TerminalViewStateStore()
 
@@ -31,30 +34,50 @@
   let maxLiveRooms = $state(32)
 
   let connected = $state(false)
+  let reconnectNonce = $state(0)
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let controlReclaimTimer: ReturnType<typeof setTimeout> | null = null
+  let controlReclaimPending = initialRoomId !== '' && isReloadNavigation() && rememberedRoomControl(initialRoomId)
   let roomGeneration = $state('')
   let latestRoomRevision = $state(0)
+  let controlView = $state<RoomControlView | null>(null)
+  let controlPending = $state(false)
   let client = $state<TerminalRoomClient | null>(null)
   let terminals = $state<TerminalViewSnapshot[]>([])
   let activeTerminalId = $state<string | null>(null)
   let draggingTerminalId = $state<string | null>(null)
   let activeTerminal = $derived(terminals.find((terminal) => terminal.terminalId === activeTerminalId) ?? terminals[0] ?? null)
+  let canMutateShared = $derived(connected && controlView?.mode === 'controller' && client?.canMutateShared === true)
 
   onMount(() => {
     if (loadedSettings.reset) pushNotice('Browser settings were reset because the stored schema is invalid.')
+    if (controlReclaimPending) armControlReclaim()
     if (isHome) void loadRooms()
     const refresh = () => { if (isHome) void loadRooms() }
     window.addEventListener('focus', refresh)
-    return () => window.removeEventListener('focus', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
+    }
   })
 
   $effect(() => {
     if (isHome) return
+    reconnectNonce
     terminalViews.clear()
     terminals = []
     latestRoomRevision = 0
+    connected = false
+    controlView = null
+    controlPending = false
     const connection = new TerminalRoomClient({
       roomId,
-      onOpen: () => { connected = true },
+      onOpen: () => {
+        connected = true
+        if (reconnectTimer) clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      },
       onClose: (event) => { void handleConnectionClose(event) },
       onMessage: handleMessage,
     })
@@ -77,6 +100,21 @@
       latestRoomRevision = 0
     }
     if ('roomGeneration' in message && roomGeneration && message.roomGeneration !== roomGeneration) return
+    if (message.type === 'room_control') {
+      controlView = message.view
+      if (message.view.mode === 'controller') {
+        rememberRoomControl(roomId, true)
+        clearControlReclaim()
+      } else if (message.view.mode === 'available' && controlReclaimPending) {
+        void reclaimControlAfterReconnect(message.view.controlEpoch)
+      } else if (!controlReclaimPending) rememberRoomControl(roomId, false)
+    }
+    if (message.type === 'room_control_lost') {
+      rememberRoomControl(roomId, false)
+      clearControlReclaim()
+      controlView = { mode: 'observer', controlEpoch: message.controlEpoch, expiresAt: new Date().toISOString() }
+      pushNotice('Control moved to another device. This page is now read-only.')
+    }
     if (message.type === 'room_snapshot') {
       if (!acceptRoomRevision(message.roomRevision)) return
       terminals = terminalViews.mergeRoom(message.terminals, terminals)
@@ -139,6 +177,8 @@
     isHome = true
     roomId = ''
     connected = false
+    controlView = null
+    controlPending = false
     roomGeneration = ''
     latestRoomRevision = 0
     terminalViews.clear()
@@ -148,7 +188,10 @@
   }
 
   async function handleConnectionClose(event?: CloseEvent) {
+    if (!isHome && controlView?.mode === 'controller' && client?.canMutateShared) armControlReclaim()
     connected = false
+    controlView = null
+    controlPending = false
     if (isHome) return
     const closedRoomId = roomId
     const closedGeneration = roomGeneration
@@ -162,7 +205,18 @@
       if (!response.ok || !body.ok || isHome || roomId !== closedRoomId) return
       const stillLive = (body.rooms ?? []).some((room) => room.roomId === closedRoomId && (!closedGeneration || room.roomGeneration === closedGeneration))
       if (!stillLive) enterHomeWithoutRootRequest()
-    } catch {}
+      else scheduleReconnect(closedRoomId)
+    } catch {
+      scheduleReconnect(closedRoomId)
+    }
+  }
+
+  function scheduleReconnect(expectedRoomId: string) {
+    if (isHome || roomId !== expectedRoomId || reconnectTimer) return
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      if (!isHome && roomId === expectedRoomId) reconnectNonce += 1
+    }, 750)
   }
 
   async function newRoom() {
@@ -190,11 +244,68 @@
   }
 
   function createShell() {
+    if (!canMutateShared) return
     client?.send({ type: 'create_terminal', backend: 'real', cwdSource: 'last-shell' })
   }
 
   function createText() {
+    if (!canMutateShared) return
     client?.send({ type: 'create_terminal', backend: 'text' })
+  }
+
+  async function takeControl() {
+    const connection = client
+    const view = controlView
+    if (!connection || !connected || !view || view.mode === 'controller' || controlPending) return
+    if (view.mode === 'observer' && !window.confirm('Take control of this Room?\nThe other device will become read-only immediately. Unsaved content edits there may no longer be saved.')) return
+    controlPending = true
+    try {
+      const result = view.mode === 'available'
+        ? await connection.acquireControl(view.controlEpoch)
+        : await connection.takeOverControl(view.controlEpoch)
+      controlView = result.view
+      rememberRoomControl(roomId, true)
+      clearControlReclaim()
+    } catch (error) {
+      pushNotice(messageOf(error))
+    } finally {
+      controlPending = false
+    }
+  }
+
+  async function reclaimControlAfterReconnect(expectedControlEpoch: number) {
+    const connection = client
+    if (!controlReclaimPending || !connection || !connected || controlPending || controlView?.mode !== 'available') return
+    clearControlReclaim()
+    controlPending = true
+    try {
+      const result = await connection.acquireControl(expectedControlEpoch)
+      controlView = result.view
+      rememberRoomControl(roomId, true)
+    } catch (error) {
+      rememberRoomControl(roomId, false)
+      const reason = messageOf(error)
+      if (reason !== 'room_control_held' && reason !== 'room_control_epoch_conflict') pushNotice(reason)
+    } finally {
+      controlPending = false
+    }
+  }
+
+  function armControlReclaim() {
+    controlReclaimPending = true
+    rememberRoomControl(roomId, true)
+    if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
+    controlReclaimTimer = setTimeout(() => {
+      controlReclaimTimer = null
+      controlReclaimPending = false
+      rememberRoomControl(roomId, false)
+    }, ROOM_CONTROL_RECLAIM_WINDOW_MS)
+  }
+
+  function clearControlReclaim() {
+    controlReclaimPending = false
+    if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
+    controlReclaimTimer = null
   }
 
   function updateSettings(next: Partial<BrowserSettings>) {
@@ -235,11 +346,12 @@
 
   function closeTerminalTab(event: MouseEvent, terminal: TerminalSnapshot) {
     event.stopPropagation()
+    if (!canMutateShared) return
     if (window.confirm('Close terminal ' + terminal.terminalIndex + ' · ' + terminal.terminalId + '?')) client?.send({ type: 'close_terminal', terminalId: terminal.terminalId })
   }
 
   function startDrag(event: DragEvent, terminalId: string) {
-    if (!settings.terminalDragEnabled) { event.preventDefault(); return }
+    if (!settings.terminalDragEnabled || !canMutateShared) { event.preventDefault(); return }
     draggingTerminalId = terminalId
     event.dataTransfer?.setData('text/plain', terminalId)
   }
@@ -248,7 +360,7 @@
     event.preventDefault()
     const source = event.dataTransfer?.getData('text/plain') || draggingTerminalId
     draggingTerminalId = null
-    if (settings.terminalDragEnabled && source && source !== target.terminalId) {
+    if (settings.terminalDragEnabled && canMutateShared && source && source !== target.terminalId) {
       client?.send({ type: 'reorder_terminal', terminalId: source, newIndex: target.terminalIndex })
       activeTerminalId = source
     }
@@ -263,6 +375,22 @@
   }
 
   function messageOf(error: unknown) { return error instanceof Error ? error.message : String(error) }
+
+  function controlMemoryKey(targetRoomId: string) { return 'shell-deck:room-control-intent:' + targetRoomId }
+  function rememberedRoomControl(targetRoomId: string): boolean {
+    try { return sessionStorage.getItem(controlMemoryKey(targetRoomId)) === 'controller' }
+    catch { return false }
+  }
+  function rememberRoomControl(targetRoomId: string, owned: boolean) {
+    if (!targetRoomId) return
+    try {
+      if (owned) sessionStorage.setItem(controlMemoryKey(targetRoomId), 'controller')
+      else sessionStorage.removeItem(controlMemoryKey(targetRoomId))
+    } catch {}
+  }
+  function isReloadNavigation(): boolean {
+    return (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload'
+  }
 </script>
 
 {#if isHome}
@@ -295,9 +423,22 @@
     <header class="topbar compact-topbar">
       <div class="brand-line"><h1>shell-deck</h1><p data-testid="room-identity">{roomId} · {connected ? 'connected' : 'disconnected'}</p></div>
       <div class="actions">
+        {#if !connected || !controlView}
+          <span class="room-control-status reconnecting" data-testid="room-control-status">Reconnecting · Read-only</span>
+        {:else if controlView.mode === 'controller'}
+          <span class="room-control-status controller" data-testid="room-control-status">Control: This device</span>
+        {:else}
+          <button
+            type="button"
+            class="room-control-takeover"
+            data-testid="take-control"
+            onclick={() => void takeControl()}
+            disabled={controlPending}
+          >{controlPending ? 'Taking control…' : 'Read-only · Take control'}</button>
+        {/if}
         <button type="button" data-testid="home-button" onclick={() => window.open('/', '_blank', 'noopener')}>Home</button>
-        <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} disabled={!connected}>New shell</button>
-        <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} disabled={!connected}>New text</button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} disabled={!canMutateShared}>New shell</button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} disabled={!canMutateShared}>New text</button>
         <button type="button" class="settings-button" data-testid="settings-button" onclick={() => { settingsOpen = !settingsOpen }}>Settings</button>
       </div>
     </header>
@@ -321,7 +462,8 @@
       {activeTerminal}
       {activeTerminalId}
       {draggingTerminalId}
-      tabDragEnabled={settings.terminalDragEnabled}
+      tabDragEnabled={settings.terminalDragEnabled && canMutateShared}
+      sharedReadOnly={!canMutateShared}
       onSelectTerminal={(id) => { activeTerminalId = id }}
       onCloseTerminal={closeTerminalTab}
       onStartTabDrag={startDrag}

@@ -7,6 +7,7 @@
     activeTerminalId,
     draggingTerminalId,
     tabDragEnabled,
+    sharedReadOnly,
     onSelect,
     onClose,
     onStartDrag,
@@ -18,6 +19,7 @@
     activeTerminalId: string | null
     draggingTerminalId: string | null
     tabDragEnabled: boolean
+    sharedReadOnly: boolean
     onSelect: (terminalId: string) => void
     onClose: (event: MouseEvent, terminal: TerminalSnapshot) => void
     onStartDrag: (event: DragEvent, terminalId: string) => void
@@ -37,7 +39,7 @@
         class:dragging={terminal.terminalId === draggingTerminalId}
         role="tab"
         tabindex="0"
-        draggable={tabDragEnabled}
+        draggable={tabDragEnabled && !sharedReadOnly}
         aria-selected={terminal.terminalId === activeTerminalId}
         title={label}
         data-testid="terminal-tab"
@@ -56,6 +58,7 @@
           data-testid="terminal-tab-close"
           aria-label={"Close terminal " + terminal.terminalIndex}
           title="Close tab"
+          disabled={sharedReadOnly}
           onpointerdown={(event) => event.stopPropagation()}
           onclick={(event) => onClose(event, terminal)}
         >x</button>

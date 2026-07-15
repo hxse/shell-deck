@@ -1,6 +1,6 @@
 # Active Specs
 
-本目录记录已经落地的 current-schema implementation truth。当前 foundation 真值对应 `20260627A.032 multi-room routing and user-level content storage`；该 change 不是 standalone release，Room controller/content lease、Macro V3 integration 与 Library 分别由后继 `.033`、`.034`、`.035` 接续。
+本目录记录已经落地的 current-schema implementation truth。当前底座真值对应`.032`的multi-Room/user-level storage与`.033`的single-controller/content edit lease；完整产品仍需由`.034`接回Macro V3并由`.035`接回Library。
 
 当前文件：
 

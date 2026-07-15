@@ -13,33 +13,16 @@ test('New shell skips a cwd dialog and tab/header share one single-line label', 
   await page.goto('/')
   await expect(page).toHaveURL(/\/room_[1-9A-HJ-NP-Za-km-z]{22}$/)
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(`ws://${location.host}/ws/rooms/${location.pathname.slice(1)}`)
-      const timeout = window.setTimeout(() => reject(new Error('seed_shell_timeout')), 5_000)
-      socket.addEventListener('open', () => socket.send(JSON.stringify({ type: 'create_terminal', backend: 'fake', cwd: '/tmp' })), { once: true })
-      socket.addEventListener('message', (event) => {
-        const message = JSON.parse(String(event.data))
-        if (message.type !== 'terminal_snapshot' || message.backend !== 'fake' || message.cwd !== '/tmp') return
-        window.clearTimeout(timeout)
-        socket.close()
-        resolve()
-      })
-      socket.addEventListener('error', () => reject(new Error('seed_shell_websocket_failed')), { once: true })
-    })
-  })
-  await expect(page.getByTestId('terminal-tab')).toHaveCount(1)
-
   let dialogCount = 0
   page.on('dialog', async (dialog) => {
     dialogCount += 1
     await dialog.dismiss()
   })
   await page.getByRole('button', { name: 'New shell' }).click()
-  await expect(page.getByTestId('terminal-tab')).toHaveCount(2)
-  const tab = page.getByTestId('terminal-tab').nth(1)
+  await expect(page.getByTestId('terminal-tab')).toHaveCount(1)
+  const tab = page.getByTestId('terminal-tab')
   const label = page.locator('.terminal-meta-label')
-  await expect(label).toContainText(' · /tmp · real · running')
+  await expect(label).toContainText(' · real · running')
   await expect(tab).toHaveAttribute('title', await label.textContent() ?? '')
   expect(await label.evaluate((element) => ({
     whiteSpace: getComputedStyle(element).whiteSpace,
@@ -79,6 +62,7 @@ test('canonical Room URL, Home lifecycle and same-user tab sync work without con
   const second = await context.newPage()
   await second.goto(roomUrl)
   await expect(second.getByTestId('terminal-tab')).toHaveCount(1)
+  await expect(second.getByTestId('text-box-editor')).toHaveAttribute('readonly', '')
 
   await first.getByTestId('text-box-editor').fill('shared note')
   await expect(second.getByTestId('text-box-editor')).toHaveValue('shared note')

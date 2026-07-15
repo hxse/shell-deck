@@ -13,6 +13,7 @@
     activeTerminalId,
     draggingTerminalId,
     tabDragEnabled,
+    sharedReadOnly,
     onSelectTerminal,
     onCloseTerminal,
     onStartTabDrag,
@@ -26,6 +27,7 @@
     activeTerminalId: string | null
     draggingTerminalId: string | null
     tabDragEnabled: boolean
+    sharedReadOnly: boolean
     onSelectTerminal: (terminalId: string) => void
     onCloseTerminal: (event: MouseEvent, terminal: TerminalSnapshot) => void
     onStartTabDrag: (event: DragEvent, terminalId: string) => void
@@ -42,6 +44,7 @@
       {activeTerminalId}
       {draggingTerminalId}
       {tabDragEnabled}
+      {sharedReadOnly}
       onSelect={onSelectTerminal}
       onClose={onCloseTerminal}
       onStartDrag={onStartTabDrag}
@@ -53,9 +56,9 @@
       {#if activeTerminal}
         {#key activeTerminal.terminalId}
           {#if activeTerminal.backend === 'text'}
-            <TextBoxSlot terminal={activeTerminal} {client} />
+            <TextBoxSlot terminal={activeTerminal} {client} readOnly={sharedReadOnly} />
           {:else}
-            <TerminalSlot terminal={activeTerminal} {client} />
+            <TerminalSlot terminal={activeTerminal} {client} readOnly={sharedReadOnly} />
           {/if}
         {/key}
       {:else}

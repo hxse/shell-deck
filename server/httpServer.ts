@@ -2,15 +2,23 @@ import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { PROFILE_CATALOG_SUMMARY } from '../src/lib/parser/profileCatalogSummary'
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
-import { assertRoomRouteToken, createGeneratedSuffix } from '../src/lib/generatedId'
+import { assertGeneratedId, assertRoomRouteToken, createGeneratedSuffix } from '../src/lib/generatedId'
+import { assertContentResourceKey } from '../src/lib/contentEditLease'
 import type { ClientMessage, ServerMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
+import {
+  ROOM_CONTROL_CLIENT_HEADER,
+  ROOM_CONTROL_EPOCH_HEADER,
+  ROOM_CONTROL_LEASE_HEADER,
+  type RoomControlBearer,
+} from '../src/lib/roomControl'
 import type { TerminalRef } from '../src/lib/terminalIdentity'
 import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
+import { ContentEditLeaseService } from './contentEditLeaseService'
 import { relocateNotificationConfig } from './notificationConfigRelocation'
 import { NotificationService } from './notificationService'
 import { createServerPidRecord, parseServerPidRecord } from './serverProcessIdentity'
-import { TerminalRoomManager, type RoomSummary } from './terminalRoomManager'
+import { ROOM_CONTROL_HEARTBEAT_MS, TerminalRoomManager, type RoomSummary } from './terminalRoomManager'
 import { WebSocketSendQueue } from './webSocketSendQueue'
 import { initializeUserDataRoot, resolveUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
 
@@ -18,6 +26,7 @@ export type ShellDeckServer = {
   url: string
   port: number
   manager: TerminalRoomManager
+  contentEditLeases: ContentEditLeaseService
   userDataRoot: string
   stop(): Promise<void>
 }
@@ -50,6 +59,20 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const userDataRoot = resolve(options.dataRoot ?? resolveUserDataRoot())
   initializeUserDataRoot(userDataRoot, (warning) => console.warn(warning.code + ':' + warning.path))
   const manager = options.manager ?? new TerminalRoomManager()
+  const contentEditLeases = new ContentEditLeaseService(userDataRoot, manager, {
+    onChanged: (resourceKey, view) => {
+      manager.broadcastAllClients((roomId, roomGeneration) => ({
+        type: 'content_edit_lease_changed',
+        roomId,
+        roomGeneration,
+        resourceKey,
+        view,
+      }))
+    },
+  })
+  manager.setControlLostHook(async (context) => await contentEditLeases.releaseForController(context))
+  manager.setControlHeartbeatHook(async (context) => await contentEditLeases.renewForController(context))
+  manager.addDestroyHook(async (roomId, roomGeneration) => await contentEditLeases.releaseForRoom(roomId, roomGeneration))
   const agentEventStore = new AgentEventStore(userDataRoot)
   const ingestToken = createGeneratedSuffix() + createGeneratedSuffix()
 
@@ -87,7 +110,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       if (url.pathname.startsWith('/ws')) return json({ ok: false, error: 'route_not_found' }, 404)
 
       try {
-        return await handleHttp(req, url, manager, agentEventStore, ingestToken, notificationService)
+        return await handleHttp(req, url, manager, contentEditLeases, agentEventStore, ingestToken, notificationService)
       } catch (error) {
         return errorResponse(error, url.pathname.startsWith('/api/'))
       }
@@ -108,6 +131,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
               }, 100)
               try { ws.close(code, reason) } catch {}
             },
+            () => ws.ping(),
           )
           if (client.roomGeneration !== ws.data.roomGeneration) throw new Error('room_generation_conflict')
           ws.data.clientId = client.clientId
@@ -120,12 +144,15 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
         const send = (reply: ServerMessage) => ws.data.sender?.send(JSON.stringify(reply))
         try {
           const message = parseClientMessage(typeof raw === 'string' ? raw : raw.toString())
-          handleClientMessage(manager, ws.data.roomId, message, send)
+          handleClientMessage(manager, ws.data.clientId, ws.data.roomId, message, send)
         } catch (error) {
           send({ type: 'terminal_error', roomId: ws.data.roomId, roomGeneration: ws.data.roomGeneration, reason: errorMessage(error) })
         }
       },
       drain(ws) { ws.data.sender?.notifyDrain() },
+      pong(ws) {
+        if (ws.data.clientId) manager.noteClientPong(ws.data.clientId)
+      },
       close(ws) {
         if (ws.data.terminationTimer) clearTimeout(ws.data.terminationTimer)
         ws.data.terminationTimer = null
@@ -134,6 +161,9 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       },
     },
   })
+
+  const heartbeatTimer = setInterval(() => manager.heartbeatSweep(), ROOM_CONTROL_HEARTBEAT_MS)
+  heartbeatTimer.unref?.()
 
   manager.setTerminalEnvProvider((context) => ({
     SHELL_DECK_SERVER_INSTANCE_ID: context.serverInstanceId,
@@ -149,12 +179,14 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     url: 'http://' + server.hostname + ':' + server.port,
     port: server.port ?? 0,
     manager,
+    contentEditLeases,
     userDataRoot,
     stop() {
       stopPromise ??= (async () => {
-        const stoppingServer = server.stop(true)
+        clearInterval(heartbeatTimer)
+        const transportStop = Promise.resolve(server.stop(true))
         await manager.destroyAllRooms()
-        await stoppingServer
+        await finishHttpTransportStop(server, transportStop)
       })()
       return stopPromise
     },
@@ -165,6 +197,7 @@ async function handleHttp(
   req: Request,
   url: URL,
   manager: TerminalRoomManager,
+  contentEditLeases: ContentEditLeaseService,
   agentEventStore: AgentEventStore,
   ingestToken: string,
   notificationService: NotificationService,
@@ -183,6 +216,74 @@ async function handleHttp(
       return json({ ok: true, room, url: '/' + room.roomId }, 201)
     }
     return methodNotAllowed(['GET', 'POST'])
+  }
+
+  const roomControlAcquire = /^\/api\/rooms\/([^/]+)\/control\/acquire$/.exec(url.pathname)
+  if (roomControlAcquire) {
+    assertNoQuery(url)
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const roomId = assertRoomRouteToken(decodeURIComponent(roomControlAcquire[1]))
+    const body = await exactObject(req, ['expectedControlEpoch'])
+    const clientId = roomControlClientId(req)
+    manager.roomControlView(roomId, clientId)
+    const grant = manager.acquireRoomControl(clientId, body.expectedControlEpoch as number)
+    return json({ ok: true, view: manager.roomControlView(roomId, clientId), grant })
+  }
+
+  const roomControlTakeOver = /^\/api\/rooms\/([^/]+)\/control\/take-over$/.exec(url.pathname)
+  if (roomControlTakeOver) {
+    assertNoQuery(url)
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const roomId = assertRoomRouteToken(decodeURIComponent(roomControlTakeOver[1]))
+    const body = await exactObject(req, ['expectedControlEpoch', 'confirmed'])
+    const clientId = roomControlClientId(req)
+    manager.roomControlView(roomId, clientId)
+    const grant = await manager.takeOverRoomControl(clientId, body.expectedControlEpoch as number, body.confirmed === true)
+    return json({ ok: true, view: manager.roomControlView(roomId, clientId), grant })
+  }
+
+  const roomControlRelease = /^\/api\/rooms\/([^/]+)\/control$/.exec(url.pathname)
+  if (roomControlRelease) {
+    assertNoQuery(url)
+    if (req.method !== 'DELETE') return methodNotAllowed(['DELETE'])
+    const roomId = assertRoomRouteToken(decodeURIComponent(roomControlRelease[1]))
+    await exactObject(req, [])
+    await manager.releaseRoomControl(roomControlBearer(req), roomId)
+    return json({ ok: true })
+  }
+
+  if (url.pathname === '/api/content-edit-leases/acquire') {
+    assertNoQuery(url)
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const body = await exactObject(req, ['resourceKey', 'expectedLeaseEpoch'])
+    const resourceKey = assertContentResourceKey(body.resourceKey)
+    const result = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
+      await contentEditLeases.acquire(ticket, resourceKey, body.expectedLeaseEpoch as number)
+    ))
+    return json({ ok: true, ...result })
+  }
+
+  if (url.pathname === '/api/content-edit-leases/take-over') {
+    assertNoQuery(url)
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const body = await exactObject(req, ['resourceKey', 'expectedLeaseEpoch', 'confirmed'])
+    const resourceKey = assertContentResourceKey(body.resourceKey)
+    const result = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
+      await contentEditLeases.takeOver(ticket, resourceKey, body.expectedLeaseEpoch as number, body.confirmed === true)
+    ))
+    return json({ ok: true, ...result })
+  }
+
+  const contentLeaseRelease = /^\/api\/content-edit-leases\/([^/]+)$/.exec(url.pathname)
+  if (contentLeaseRelease) {
+    assertNoQuery(url)
+    if (req.method !== 'DELETE') return methodNotAllowed(['DELETE'])
+    await exactObject(req, [])
+    const editLeaseId = assertGeneratedId(decodeURIComponent(contentLeaseRelease[1]), 'contentEditLease')
+    const view = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
+      await contentEditLeases.release(ticket, editLeaseId)
+    ))
+    return json({ ok: true, view })
   }
 
   const roomApi = /^\/api\/rooms\/([^/]+)$/.exec(url.pathname)
@@ -247,7 +348,16 @@ async function handleHttp(
   return serveIndex()
 }
 
-function handleClientMessage(manager: TerminalRoomManager, roomId: string, message: ClientMessage, send: (message: ServerMessage) => void): void {
+function handleClientMessage(manager: TerminalRoomManager, clientId: string, roomId: string, message: ClientMessage, send: (message: ServerMessage) => void): void {
+  if (message.type !== 'request_replay' && message.type !== 'request_snapshot') {
+    manager.runControlledClientMutation(clientId, () => handleMutatingClientMessage(manager, roomId, message, send))
+    return
+  }
+  if (message.type === 'request_replay') send(manager.requestReplay(roomId, terminalRefFromMessage(message)))
+  else send(manager.roomSnapshot(roomId))
+}
+
+function handleMutatingClientMessage(manager: TerminalRoomManager, roomId: string, message: Exclude<ClientMessage, { type: 'request_replay' | 'request_snapshot' }>, send: (message: ServerMessage) => void): void {
   switch (message.type) {
     case 'create_terminal': {
       const terminal = manager.createTerminal(roomId, { backend: message.backend, cols: message.cols, rows: message.rows, cwd: message.cwd, cwdSource: message.cwdSource })
@@ -274,12 +384,6 @@ function handleClientMessage(manager: TerminalRoomManager, roomId: string, messa
       if (!result.ok) send({ type: 'terminal_error', ...roomContext(manager, roomId), reason: result.reason })
       return
     }
-    case 'request_replay':
-      send(manager.requestReplay(roomId, terminalRefFromMessage(message)))
-      return
-    case 'request_snapshot':
-      send(manager.roomSnapshot(roomId))
-      return
   }
 }
 
@@ -332,7 +436,14 @@ function errorResponse(error: unknown, api: boolean): Response {
 
 function errorStatus(message: string): number {
   if (message === 'room_not_found' || message === 'route_not_found') return 404
-  if (message === 'room_capacity_reached' || message === 'room_destroying' || message === 'room_generation_conflict') return 409
+  if (
+    message === 'room_capacity_reached'
+    || message === 'room_destroying'
+    || message === 'room_generation_conflict'
+    || message.startsWith('room_control_')
+    || message.startsWith('content_edit_')
+    || message === 'content_revision_conflict'
+  ) return 409
   if (message.includes('permissions_too_open')) return 503
   return 400
 }
@@ -367,6 +478,30 @@ async function exactObject(req: Request, keys: string[]): Promise<Record<string,
   return record
 }
 
+function roomControlClientId(req: Request): string {
+  const value = req.headers.get(ROOM_CONTROL_CLIENT_HEADER)
+  if (!value) throw new Error('room_control_required')
+  try { return assertGeneratedId(value, 'client') }
+  catch { throw new Error('room_control_required') }
+}
+
+function roomControlBearer(req: Request): RoomControlBearer {
+  const clientId = req.headers.get(ROOM_CONTROL_CLIENT_HEADER)
+  const controlLeaseId = req.headers.get(ROOM_CONTROL_LEASE_HEADER)
+  const epochText = req.headers.get(ROOM_CONTROL_EPOCH_HEADER)
+  if (!clientId || !controlLeaseId || !epochText) throw new Error('room_control_required')
+  if (!/^(0|[1-9][0-9]*)$/.test(epochText)) throw new Error('room_control_lost')
+  try {
+    return {
+      clientId: assertGeneratedId(clientId, 'client'),
+      controlLeaseId: assertGeneratedId(controlLeaseId, 'roomControlLease'),
+      controlEpoch: Number(epochText),
+    }
+  } catch {
+    throw new Error('room_control_lost')
+  }
+}
+
 function assertNoQuery(url: URL): void {
   if ([...url.searchParams].length > 0) throw new Error('query_not_supported')
 }
@@ -385,6 +520,21 @@ function contentType(path: string): string {
 
 function escapeHtml(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+async function finishHttpTransportStop(server: { unref(): void }, stopping: Promise<void>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const drained = await Promise.race([
+    stopping.then(() => true),
+    new Promise<boolean>((resolveTimeout) => {
+      timer = setTimeout(() => resolveTimeout(false), 250)
+    }),
+  ])
+  if (timer) clearTimeout(timer)
+  if (!drained) {
+    server.unref()
+    void stopping.catch(() => {})
+  }
 }
 
 if (import.meta.main) {

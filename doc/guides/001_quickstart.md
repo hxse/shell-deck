@@ -28,6 +28,8 @@ http://127.0.0.1:5177/room_<22-char-short-uuid-v4>
 
 把同一个完整 Room URL 放到另一个标签页或设备，会连接同一 live Room并同步 terminal order、Text content、PTY output 与 replay。Room 和 terminal 都只在当前 server process 内存在；server restart 后，即使重新访问相同 token，也会得到新的 generation 和空 runtime。
 
+第一个连接是controller，顶栏显示`Control: This device`；之后打开的同Room页面显示`Read-only · Take control`。observer仍能查看、滚动、复制、切换terminal和修改本地Settings，但不能输入Shell、编辑Text或改变terminal结构。点击Take control并确认后，当前页面取得写权，原页面立即只读。断线、release或TTL后不会自动把写权交给另一个页面，需显式点击Take control。
+
 ## Terminal
 
 Room 内可创建：
@@ -57,7 +59,7 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-当前 `.032` revision 只交付 Room/user-storage foundation，不是 standalone release。Room controller/content lease、production Macro V3 与 Library UI 分别在 `.033`、`.034`、`.035` 接回。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease；production Macro V3与Library UI分别在`.034`、`.035`接回。
 
 ## 验证
 
@@ -65,4 +67,5 @@ just notification-config-init
 just check
 just build
 just test-032
+just test-033
 ```

@@ -1,5 +1,7 @@
 import { relocateNotificationConfig } from '../../server/notificationConfigRelocation'
+import { ContentEditLeaseService } from '../../server/contentEditLeaseService'
 import { MacroRecordStore } from '../../server/sharedContentStore'
+import { TerminalRoomManager } from '../../server/terminalRoomManager'
 
 const [mode, root, value, extra] = process.argv.slice(2)
 try {
@@ -15,6 +17,18 @@ try {
   } else if (mode === 'notification') {
     const result = relocateNotificationConfig({ env: { HOME: root }, root, cwd: value })
     process.stdout.write(JSON.stringify({ ok: true, state: result.state }))
+  } else if (mode === 'lease-acquire') {
+    const manager = new TerminalRoomManager()
+    const room = manager.createRoom()
+    const client = manager.connectClient(room.roomId, () => {})
+    const ticket = manager.admitControlledClient(client.clientId)
+    try {
+      const service = new ContentEditLeaseService(root, manager)
+      const result = await service.acquire(ticket, { kind: 'macro', itemId: value }, Number(extra))
+      process.stdout.write(JSON.stringify({ ok: true, leaseEpoch: result.grant.leaseEpoch }))
+    } finally {
+      ticket.finish()
+    }
   } else {
     throw new Error('unknown_worker_mode')
   }

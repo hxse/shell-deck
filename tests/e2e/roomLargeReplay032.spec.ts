@@ -29,13 +29,16 @@ test('real Room PTY streams 37 MB to its final marker without blocking browser p
   await expect(host).toHaveAttribute('data-rendered-tail', /@/, { timeout: 10_000 })
 
   const marker = 'SD_REAL_LARGE_BURST_COMPLETE_032'
-  await host.click()
-  await page.keyboard.type(`stty -opost; yes "$(head -c 2047 /dev/zero | tr '\\0' x)" | head -c ${REAL_PTY_BURST_BYTES}; printf 'SD_REAL_%s\\n' 'LARGE_BURST_COMPLETE_032'; stty opost`)
+  await sendTerminalMessages(page, [{
+    type: 'terminal_input',
+    terminalId: terminal.terminalId,
+    data: `stty -opost; yes "$(head -c 2047 /dev/zero | tr '\\0' x)" | head -c ${REAL_PTY_BURST_BYTES}; printf 'SD_REAL_%s\\n' 'LARGE_BURST_COMPLETE_032'; stty opost`,
+  }])
   await expect(host).toHaveAttribute('data-rendered-tail', /stty -opost/, { timeout: 10_000 })
   await expect.poll(async () => host.evaluate((element) => Number(element.dataset.terminalEnqueuedCodeUnits ?? '0') - Number(element.dataset.terminalParserConsumedCodeUnits ?? '0'))).toBe(0)
   const baseline = await renderCounters(host)
   await installHeartbeat(page)
-  await page.keyboard.press('Enter')
+  await sendTerminalMessages(page, [{ type: 'terminal_input', terminalId: terminal.terminalId, data: '\r' }])
 
   await expect.poll(async () => host.evaluate((element, expected) => {
     const enqueued = Number(element.dataset.terminalEnqueuedCodeUnits ?? '0') - expected.enqueued
@@ -141,8 +144,42 @@ async function openNewRoom(page: Page, request: APIRequestContext): Promise<void
 
 async function createTerminal(page: Page, backend: 'fake' | 'real'): Promise<{ terminalId: string; launchId: string }> {
   const terminal = await page.evaluate(async (requestedBackend) => {
+    type HarnessScope = typeof window & { __shellDeckControllerSocket033?: WebSocket }
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socket = new WebSocket(`${protocol}//${location.host}/ws/rooms/${location.pathname.slice(1)}`)
+    const scope = window as HarnessScope
+    let socket = scope.__shellDeckControllerSocket033
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      socket = new WebSocket(`${protocol}//${location.host}/ws/rooms/${location.pathname.slice(1)}`)
+      scope.__shellDeckControllerSocket033 = socket
+      await new Promise<void>((resolve, reject) => {
+        let clientId = ''
+        let controlEpoch: number | null = null
+        let takingControl = false
+        const timer = window.setTimeout(() => reject(new Error('room_control_timeout')), 5000)
+        const maybeTakeControl = async () => {
+          if (!clientId || controlEpoch === null || takingControl) return
+          takingControl = true
+          try {
+            const response = await fetch(`/api/rooms/${encodeURIComponent(location.pathname.slice(1))}/control/take-over`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json', 'x-shell-deck-client-id': clientId },
+              body: JSON.stringify({ expectedControlEpoch: controlEpoch, confirmed: true }),
+            })
+            const body = await response.json() as { ok?: boolean; error?: string }
+            if (!response.ok || body.ok !== true) throw new Error(body.error ?? 'room_control_takeover_failed')
+            window.clearTimeout(timer)
+            resolve()
+          } catch (error) { reject(error) }
+        }
+        socket!.addEventListener('error', () => reject(new Error('room_control_socket_error')), { once: true })
+        socket!.addEventListener('message', (event) => {
+          const message = JSON.parse(String(event.data)) as { type: string; clientId?: string; view?: { controlEpoch?: number } }
+          if (message.type === 'client_registered' && message.clientId) clientId = message.clientId
+          if (message.type === 'room_control' && typeof message.view?.controlEpoch === 'number') controlEpoch = message.view.controlEpoch
+          void maybeTakeControl()
+        })
+      })
+    }
     return await new Promise<{ terminalId: string; launchId: string }>((resolve, reject) => {
       const timer = window.setTimeout(() => reject(new Error('terminal_create_timeout')), 5000)
       socket.addEventListener('error', () => reject(new Error('terminal_create_socket_error')), { once: true })
@@ -150,10 +187,9 @@ async function createTerminal(page: Page, backend: 'fake' | 'real'): Promise<{ t
         const message = JSON.parse(String(event.data)) as { type: string; terminalId?: string; launchId?: string; backend?: string }
         if (message.type !== 'terminal_snapshot' || message.backend !== requestedBackend || !message.terminalId || !message.launchId) return
         window.clearTimeout(timer)
-        socket.close()
         resolve({ terminalId: message.terminalId, launchId: message.launchId })
       })
-      socket.addEventListener('open', () => socket.send(JSON.stringify({ type: 'create_terminal', backend: requestedBackend })), { once: true })
+      socket.send(JSON.stringify({ type: 'create_terminal', backend: requestedBackend }))
     })
   }, backend)
   await expect(page.locator(`[data-testid="terminal-tab"][data-terminal-id="${terminal.terminalId}"]`)).toBeVisible()
@@ -171,16 +207,10 @@ async function createUiTerminal(page: Page, buttonName: 'New shell' | 'New text'
 }
 
 async function sendTerminalMessages(page: Page, messages: Array<Record<string, unknown>>): Promise<void> {
-  await page.evaluate(async (payloads) => {
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socket = new WebSocket(`${protocol}//${location.host}/ws/rooms/${location.pathname.slice(1)}`)
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener('open', () => resolve(), { once: true })
-      socket.addEventListener('error', () => reject(new Error('terminal_message_socket_error')), { once: true })
-    })
+  await page.evaluate((payloads) => {
+    const socket = (window as typeof window & { __shellDeckControllerSocket033?: WebSocket }).__shellDeckControllerSocket033
+    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('room_controller_socket_missing')
     for (const message of payloads) socket.send(JSON.stringify(message))
-    ;(window as typeof window & { __shellDeckInputSockets032?: WebSocket[] }).__shellDeckInputSockets032 ??= []
-    ;(window as typeof window & { __shellDeckInputSockets032: WebSocket[] }).__shellDeckInputSockets032.push(socket)
   }, messages)
 }
 

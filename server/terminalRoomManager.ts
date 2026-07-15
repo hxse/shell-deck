@@ -2,6 +2,14 @@ import { accessSync, constants as fsConstants, statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { assertGeneratedId, assertRoomRouteToken, createGeneratedId } from '../src/lib/generatedId'
 import type { RoomSnapshot, ServerMessage, TerminalBackendKind, TerminalSnapshot } from '../src/lib/protocol'
+import {
+  assertControlEpoch,
+  assertRoomControlBearer,
+  type RoomControlBearer,
+  type RoomControlContext,
+  type RoomControlGrant,
+  type RoomControlView,
+} from '../src/lib/roomControl'
 import { createTerminalId, createTerminalLaunchId, normalizeTerminalRef, type TerminalRef } from '../src/lib/terminalIdentity'
 import { FakeTerminalBackend } from './fakeTerminalBackend'
 import { RealPtyBackend } from './realPtyBackend'
@@ -11,6 +19,8 @@ import type { TerminalBackend, TerminalBackendFactory } from './terminalBackend'
 
 export const DEFAULT_REPLAY_BYTE_LIMIT = 2 * 1024 * 1024
 export const MAX_LIVE_ROOMS = 32
+export const ROOM_CONTROL_HEARTBEAT_MS = 10_000
+export const ROOM_CONTROL_TTL_MS = 30_000
 const REPLAY_COMPACT_THRESHOLD = 1024
 const CWD_REFRESH_DEBOUNCE_MS = 60
 
@@ -30,6 +40,15 @@ export type RoomClient = {
   roomGeneration: string
   send(message: ServerMessage): void
   close?(code: number, reason: string): void
+  ping?(): void
+  lastPongAtMs: number
+  awaitingPong: boolean
+  lostControlEpoch: number | null
+}
+
+type RoomControlOwner = RoomControlContext & {
+  acquiredAtMs: number
+  expiresAtMs: number
 }
 
 export type TerminalRuntimeContext = {
@@ -87,6 +106,8 @@ type RoomRuntime = {
   store: RoomTerminalStore
   terminals: Map<string, TerminalSlot>
   clients: Map<string, RoomClient>
+  controlEpoch: number
+  controller: RoomControlOwner | null
   abortController: AbortController
   tickets: Set<RoomOperationTicketImpl>
   closingBackends: Set<Promise<void>>
@@ -102,6 +123,13 @@ type TerminalRoomManagerOptions = {
   launchIdFactory?: () => string
   serverInstanceIdFactory?: () => string
   homeDirectory?: string
+  now?: () => number
+  controlLeaseIdFactory?: () => string
+}
+
+export type RoomControlledOperationTicket = RoomOperationTicket & {
+  readonly context: RoomControlContext
+  assertAuthorized(): void
 }
 
 class RoomOperationTicketImpl implements RoomOperationTicket {
@@ -127,6 +155,27 @@ class RoomOperationTicketImpl implements RoomOperationTicket {
   }
 }
 
+class RoomControlledOperationTicketImpl implements RoomControlledOperationTicket {
+  constructor(
+    readonly manager: TerminalRoomManager,
+    readonly lifecycleTicket: RoomOperationTicket,
+    readonly context: RoomControlContext,
+  ) {}
+
+  get roomId(): string { return this.lifecycleTicket.roomId }
+  get roomGeneration(): string { return this.lifecycleTicket.roomGeneration }
+  get signal(): AbortSignal { return this.lifecycleTicket.signal }
+
+  assertActive(): void { this.lifecycleTicket.assertActive() }
+
+  assertAuthorized(): void {
+    this.lifecycleTicket.assertActive()
+    this.manager.assertRoomControlContext(this.context)
+  }
+
+  finish(): void { this.lifecycleTicket.finish() }
+}
+
 export class TerminalRoomManager {
   readonly rooms = new Map<string, RoomRuntime>()
   readonly clients = new Map<string, RoomClient>()
@@ -140,9 +189,13 @@ export class TerminalRoomManager {
   private readonly clientIdFactory: () => string
   private readonly terminalIdFactory: () => string
   private readonly launchIdFactory: () => string
+  private readonly controlLeaseIdFactory: () => string
+  private readonly now: () => number
   private terminalEnvProvider: (context: TerminalRuntimeContext) => Record<string, string | undefined> = () => ({})
   private activeRunProvider: (roomId: string, roomGeneration: string) => boolean = () => false
-  private destroyHook: (roomId: string, roomGeneration: string, signal: AbortSignal) => Promise<void> | void = () => {}
+  private destroyHooks: Array<(roomId: string, roomGeneration: string, signal: AbortSignal) => Promise<void> | void> = []
+  private controlLostHook: (context: RoomControlContext) => Promise<void> | void = () => {}
+  private controlHeartbeatHook: (context: RoomControlContext) => Promise<void> | void = () => {}
   private readonly destroying = new Map<string, Promise<void>>()
 
   constructor(options: TerminalRoomManagerOptions = {}) {
@@ -155,6 +208,8 @@ export class TerminalRoomManager {
     this.clientIdFactory = options.clientIdFactory ?? (() => createGeneratedId('client'))
     this.terminalIdFactory = options.terminalIdFactory ?? createTerminalId
     this.launchIdFactory = options.launchIdFactory ?? createTerminalLaunchId
+    this.controlLeaseIdFactory = options.controlLeaseIdFactory ?? (() => createGeneratedId('roomControlLease'))
+    this.now = options.now ?? Date.now
     this.serverInstanceId = assertGeneratedId((options.serverInstanceIdFactory ?? (() => createGeneratedId('serverInstance')))(), 'serverInstance')
     this.homeDirectory = resolveShellCwd(options.homeDirectory)
   }
@@ -168,7 +223,19 @@ export class TerminalRoomManager {
   }
 
   setDestroyHook(hook: (roomId: string, roomGeneration: string, signal: AbortSignal) => Promise<void> | void): void {
-    this.destroyHook = hook
+    this.destroyHooks = [hook]
+  }
+
+  addDestroyHook(hook: (roomId: string, roomGeneration: string, signal: AbortSignal) => Promise<void> | void): void {
+    this.destroyHooks.push(hook)
+  }
+
+  setControlLostHook(hook: (context: RoomControlContext) => Promise<void> | void): void {
+    this.controlLostHook = hook
+  }
+
+  setControlHeartbeatHook(hook: (context: RoomControlContext) => Promise<void> | void): void {
+    this.controlHeartbeatHook = hook
   }
 
   ensureRootRoom(): { kind: 'created'; room: RoomSummary } | { kind: 'home'; rooms: RoomSummary[] } {
@@ -208,7 +275,12 @@ export class TerminalRoomManager {
     return this.roomSummary(this.activeRoomOrThrow(roomId))
   }
 
-  connectClient(roomId: string, send: (message: ServerMessage) => void, close?: (code: number, reason: string) => void): RoomClient {
+  connectClient(
+    roomId: string,
+    send: (message: ServerMessage) => void,
+    close?: (code: number, reason: string) => void,
+    ping?: () => void,
+  ): RoomClient {
     const room = this.activeRoomOrThrow(roomId)
     let clientId: string | undefined
     for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -219,11 +291,25 @@ export class TerminalRoomManager {
       }
     }
     if (!clientId) throw new Error('client_id_collision')
-    const client: RoomClient = { clientId, roomId: room.roomId, roomGeneration: room.roomGeneration, send, close }
+    const now = this.now()
+    const client: RoomClient = {
+      clientId,
+      roomId: room.roomId,
+      roomGeneration: room.roomGeneration,
+      send,
+      close,
+      ping,
+      lastPongAtMs: now,
+      awaitingPong: false,
+      lostControlEpoch: null,
+    }
     room.clients.set(clientId, client)
     this.clients.set(clientId, client)
     try {
       send({ type: 'client_registered', clientId, roomId: room.roomId, roomGeneration: room.roomGeneration, serverInstanceId: this.serverInstanceId })
+      this.expireControllerIfNeeded(room, now)
+      if (room.controller === null && room.controlEpoch === 0) this.assignController(room, client, now)
+      else this.sendControlState(room, client)
       send(this.roomSnapshot(room.roomId))
     } catch (error) {
       room.clients.delete(clientId)
@@ -237,7 +323,210 @@ export class TerminalRoomManager {
     const client = this.clients.get(clientId)
     if (!client) return
     this.clients.delete(clientId)
-    this.rooms.get(client.roomId)?.clients.delete(clientId)
+    const room = this.rooms.get(client.roomId)
+    room?.clients.delete(clientId)
+    if (room?.controller?.clientId === clientId) this.releaseControllerInternal(room, false)
+  }
+
+  noteClientPong(clientId: string): void {
+    const client = this.clients.get(clientId)
+    if (!client) return
+    const room = this.rooms.get(client.roomId)
+    if (!room || room.lifecycle !== 'active' || room.roomGeneration !== client.roomGeneration) return
+    const now = this.now()
+    client.awaitingPong = false
+    client.lastPongAtMs = now
+    this.expireControllerIfNeeded(room, now)
+    if (room.controller?.clientId !== clientId) return
+    room.controller.expiresAtMs = now + ROOM_CONTROL_TTL_MS
+    const context = this.ownerContext(room.controller)
+    this.broadcastControlState(room)
+    void Promise.resolve(this.controlHeartbeatHook(context)).catch(() => {})
+  }
+
+  heartbeatSweep(): void {
+    const now = this.now()
+    for (const room of this.rooms.values()) {
+      if (room.lifecycle === 'active') this.expireControllerIfNeeded(room, now)
+    }
+    for (const client of [...this.clients.values()]) {
+      if (!client.ping) continue
+      if (client.awaitingPong && now - client.lastPongAtMs >= ROOM_CONTROL_TTL_MS) {
+        this.disconnectClient(client.clientId)
+        try { client.close?.(4002, 'room_control_heartbeat_timeout') } catch {}
+        continue
+      }
+      client.awaitingPong = true
+      try { client.ping() }
+      catch {
+        this.disconnectClient(client.clientId)
+        try { client.close?.(4002, 'room_control_heartbeat_failed') } catch {}
+      }
+    }
+  }
+
+  roomControlView(roomId: string, clientId: string): RoomControlView {
+    const room = this.activeRoomOrThrow(roomId)
+    const client = this.clientOrThrow(clientId)
+    if (client.roomId !== room.roomId || client.roomGeneration !== room.roomGeneration) throw new Error('room_control_lost')
+    this.expireControllerIfNeeded(room, this.now())
+    return this.controlViewForClient(room, client.clientId)
+  }
+
+  acquireRoomControl(clientId: string, expectedControlEpoch: number): RoomControlGrant {
+    const client = this.clientOrThrow(clientId)
+    const room = this.activeRoomOrThrow(client.roomId)
+    const expected = assertControlEpoch(expectedControlEpoch, 'room_control_epoch_conflict')
+    const now = this.now()
+    this.expireControllerIfNeeded(room, now)
+    if (room.controlEpoch !== expected) throw new Error('room_control_epoch_conflict')
+    if (room.controller !== null) throw new Error('room_control_held')
+    return this.assignController(room, client, now)
+  }
+
+  async takeOverRoomControl(clientId: string, expectedControlEpoch: number, confirmed: boolean): Promise<RoomControlGrant> {
+    if (confirmed !== true) throw new Error('room_control_takeover_confirmation_required')
+    const client = this.clientOrThrow(clientId)
+    const lifecycle = this.admit(client.roomId)
+    try {
+      const room = this.activeRoomOrThrow(client.roomId)
+      const expected = assertControlEpoch(expectedControlEpoch, 'room_control_epoch_conflict')
+      const now = this.now()
+      this.expireControllerIfNeeded(room, now)
+      if (room.controlEpoch !== expected) throw new Error('room_control_epoch_conflict')
+      if (room.controller === null) throw new Error('room_control_required')
+      if (room.controller.clientId === client.clientId) throw new Error('room_control_held')
+
+      const previous = this.ownerContext(room.controller)
+      const previousClient = room.clients.get(previous.clientId)
+      const grant = this.assignControllerState(room, client, now)
+      const nextContext = this.ownerContext(room.controller!)
+      if (previousClient) previousClient.lostControlEpoch = previous.controlEpoch
+      await Promise.resolve(this.controlLostHook(previous)).catch(() => {})
+      lifecycle.assertActive()
+      this.assertRoomControlContext(nextContext)
+      if (previousClient) {
+        try {
+          previousClient.send({
+            type: 'room_control_lost',
+            roomId: room.roomId,
+            roomGeneration: room.roomGeneration,
+            controlEpoch: room.controlEpoch,
+          })
+        } catch { this.disconnectClient(previousClient.clientId) }
+      }
+      this.broadcastControlState(room, true)
+      return grant
+    } finally {
+      lifecycle.finish()
+    }
+  }
+
+  async releaseRoomControl(bearer: RoomControlBearer, expectedRoomId?: string): Promise<void> {
+    const ticket = this.admitControlledBearer(bearer, expectedRoomId)
+    const context = ticket.context
+    try {
+      ticket.assertAuthorized()
+      const room = this.activeRoomOrThrow(context.roomId)
+      room.controller = null
+      this.broadcastControlState(room)
+    } finally {
+      ticket.finish()
+    }
+    await Promise.resolve(this.controlLostHook(context)).catch(() => {})
+  }
+
+  admitControlledClient(clientId: string): RoomControlledOperationTicket {
+    const client = this.clientOrThrow(clientId)
+    const lifecycle = this.admit(client.roomId)
+    try {
+      const context = this.controlContextForClient(client)
+      const ticket = new RoomControlledOperationTicketImpl(this, lifecycle, context)
+      ticket.assertAuthorized()
+      return ticket
+    } catch (error) {
+      lifecycle.finish()
+      throw error
+    }
+  }
+
+  admitControlledBearer(bearer: RoomControlBearer, expectedRoomId?: string): RoomControlledOperationTicket {
+    const normalized = assertRoomControlBearer(bearer)
+    const client = this.clientOrThrow(normalized.clientId)
+    if (expectedRoomId !== undefined && client.roomId !== assertRoomRouteToken(expectedRoomId)) throw new Error('room_control_lost')
+    const lifecycle = this.admit(client.roomId)
+    try {
+      const context: RoomControlContext = {
+        serverInstanceId: this.serverInstanceId,
+        roomId: client.roomId,
+        roomGeneration: client.roomGeneration,
+        ...normalized,
+      }
+      const ticket = new RoomControlledOperationTicketImpl(this, lifecycle, context)
+      ticket.assertAuthorized()
+      return ticket
+    } catch (error) {
+      lifecycle.finish()
+      throw error
+    }
+  }
+
+  runControlledClientMutation<T>(clientId: string, operation: (ticket: RoomControlledOperationTicket) => T): T {
+    const ticket = this.admitControlledClient(clientId)
+    try {
+      ticket.assertAuthorized()
+      const result = operation(ticket)
+      ticket.assertAuthorized()
+      return result
+    } finally {
+      ticket.finish()
+    }
+  }
+
+  async runControlledBearerOperation<T>(
+    bearer: RoomControlBearer,
+    operation: (ticket: RoomControlledOperationTicket) => Promise<T> | T,
+    expectedRoomId?: string,
+  ): Promise<T> {
+    const ticket = this.admitControlledBearer(bearer, expectedRoomId)
+    try {
+      ticket.assertAuthorized()
+      const result = await operation(ticket)
+      ticket.assertAuthorized()
+      return result
+    } finally {
+      ticket.finish()
+    }
+  }
+
+  async runControlledBearerPublishedOperation<T>(
+    bearer: RoomControlBearer,
+    operation: (ticket: RoomControlledOperationTicket) => Promise<T> | T,
+    expectedRoomId?: string,
+  ): Promise<T> {
+    const ticket = this.admitControlledBearer(bearer, expectedRoomId)
+    try {
+      ticket.assertAuthorized()
+      return await operation(ticket)
+    } finally {
+      ticket.finish()
+    }
+  }
+
+  assertRoomControlContext(context: RoomControlContext): void {
+    if (context.serverInstanceId !== this.serverInstanceId) throw new Error('room_control_lost')
+    const room = this.activeRoomOrThrow(context.roomId)
+    this.expireControllerIfNeeded(room, this.now())
+    const client = this.clients.get(context.clientId)
+    const owner = room.controller
+    if (!client || client.roomGeneration !== room.roomGeneration || context.roomGeneration !== room.roomGeneration || !owner) {
+      throw new Error('room_control_lost')
+    }
+    if (
+      owner.clientId !== context.clientId
+      || owner.controlLeaseId !== context.controlLeaseId
+      || owner.controlEpoch !== context.controlEpoch
+    ) throw new Error('room_control_lost')
   }
 
   admit(roomId: string): RoomOperationTicket {
@@ -575,19 +864,20 @@ export class TerminalRoomManager {
     if (room.roomGeneration !== generation) throw new Error('room_generation_conflict')
     if (room.lifecycle !== 'active') throw new Error('room_destroying')
 
+    const previousController = room.controller ? this.ownerContext(room.controller) : null
+    room.controller = null
     room.lifecycle = 'destroying'
     room.abortController.abort(new Error('room_destroying'))
-    const operation = this.finishDestroy(room)
+    const operation = this.finishDestroy(room, previousController)
     this.destroying.set(room.roomId, operation)
     try { await operation } finally { this.destroying.delete(room.roomId) }
   }
 
-  private async finishDestroy(room: RoomRuntime): Promise<void> {
-    try {
-      await this.destroyHook(room.roomId, room.roomGeneration, room.abortController.signal)
-    } catch {
-      // Room destruction must continue even if best-effort provenance cleanup fails.
-    }
+  private async finishDestroy(room: RoomRuntime, previousController: RoomControlContext | null): Promise<void> {
+    if (previousController) await Promise.resolve(this.controlLostHook(previousController)).catch(() => {})
+    await Promise.allSettled(this.destroyHooks.map(async (hook) => {
+      await hook(room.roomId, room.roomGeneration, room.abortController.signal)
+    }))
     while (room.tickets.size > 0) await new Promise((resolveWait) => setTimeout(resolveWait, 0))
     for (const terminal of room.terminals.values()) {
       this.cancelCwdRefresh(terminal)
@@ -624,6 +914,8 @@ export class TerminalRoomManager {
       store: new RoomTerminalStore(),
       terminals: new Map(),
       clients: new Map(),
+      controlEpoch: 0,
+      controller: null,
       abortController: new AbortController(),
       tickets: new Set(),
       closingBackends: new Set(),
@@ -634,6 +926,117 @@ export class TerminalRoomManager {
 
   private assertCapacity(): void {
     if (this.rooms.size >= MAX_LIVE_ROOMS) throw new Error('room_capacity_reached')
+  }
+
+  private clientOrThrow(clientId: string): RoomClient {
+    let normalized: string
+    try { normalized = assertGeneratedId(clientId, 'client') }
+    catch { throw new Error('room_control_required') }
+    const client = this.clients.get(normalized)
+    if (!client) throw new Error('room_control_required')
+    return client
+  }
+
+  private controlContextForClient(client: RoomClient): RoomControlContext {
+    const room = this.activeRoomOrThrow(client.roomId)
+    this.expireControllerIfNeeded(room, this.now())
+    const owner = room.controller
+    if (!owner || owner.clientId !== client.clientId) {
+      throw new Error(client.lostControlEpoch === null ? 'room_control_required' : 'room_control_lost')
+    }
+    return this.ownerContext(owner)
+  }
+
+  private assignController(room: RoomRuntime, client: RoomClient, now: number): RoomControlGrant {
+    const grant = this.assignControllerState(room, client, now)
+    this.broadcastControlState(room, true)
+    return grant
+  }
+
+  private assignControllerState(room: RoomRuntime, client: RoomClient, now: number): RoomControlGrant {
+    if (room.lifecycle !== 'active' || client.roomGeneration !== room.roomGeneration || !room.clients.has(client.clientId)) {
+      throw new Error('room_control_lost')
+    }
+    room.controlEpoch += 1
+    client.lostControlEpoch = null
+    const controlLeaseId = assertGeneratedId(this.controlLeaseIdFactory(), 'roomControlLease')
+    room.controller = {
+      serverInstanceId: this.serverInstanceId,
+      roomId: room.roomId,
+      roomGeneration: room.roomGeneration,
+      clientId: client.clientId,
+      controlLeaseId,
+      controlEpoch: room.controlEpoch,
+      acquiredAtMs: now,
+      expiresAtMs: now + ROOM_CONTROL_TTL_MS,
+    }
+    return this.controlGrant(room.controller)
+  }
+
+  private releaseControllerInternal(room: RoomRuntime, markLost: boolean): void {
+    const owner = room.controller
+    if (!owner) return
+    const context = this.ownerContext(owner)
+    room.controller = null
+    if (markLost) {
+      const client = room.clients.get(context.clientId)
+      if (client) client.lostControlEpoch = context.controlEpoch
+    }
+    if (room.lifecycle === 'active') this.broadcastControlState(room)
+    void Promise.resolve(this.controlLostHook(context)).catch(() => {})
+  }
+
+  private expireControllerIfNeeded(room: RoomRuntime, now: number): void {
+    if (room.controller && room.controller.expiresAtMs <= now) this.releaseControllerInternal(room, true)
+  }
+
+  private controlViewForClient(room: RoomRuntime, clientId: string): RoomControlView {
+    const owner = room.controller
+    if (!owner) return { mode: 'available', controlEpoch: room.controlEpoch }
+    const expiresAt = new Date(owner.expiresAtMs).toISOString()
+    return owner.clientId === clientId
+      ? { mode: 'controller', controlEpoch: owner.controlEpoch, expiresAt }
+      : { mode: 'observer', controlEpoch: owner.controlEpoch, expiresAt }
+  }
+
+  private controlGrant(owner: RoomControlOwner): RoomControlGrant {
+    return {
+      clientId: owner.clientId,
+      controlLeaseId: owner.controlLeaseId,
+      controlEpoch: owner.controlEpoch,
+      expiresAt: new Date(owner.expiresAtMs).toISOString(),
+    }
+  }
+
+  private ownerContext(owner: RoomControlOwner): RoomControlContext {
+    return {
+      serverInstanceId: owner.serverInstanceId,
+      roomId: owner.roomId,
+      roomGeneration: owner.roomGeneration,
+      clientId: owner.clientId,
+      controlLeaseId: owner.controlLeaseId,
+      controlEpoch: owner.controlEpoch,
+    }
+  }
+
+  private sendControlState(room: RoomRuntime, client: RoomClient, includeOwnerGrant = false): void {
+    const owner = room.controller
+    const message: Extract<ServerMessage, { type: 'room_control' }> = {
+      type: 'room_control',
+      roomId: room.roomId,
+      roomGeneration: room.roomGeneration,
+      view: this.controlViewForClient(room, client.clientId),
+      ...(includeOwnerGrant && owner?.clientId === client.clientId ? { grant: this.controlGrant(owner) } : {}),
+    }
+    client.send(message)
+  }
+
+  private broadcastControlState(room: RoomRuntime, includeOwnerGrant = false): void {
+    if (room.lifecycle !== 'active') return
+    for (const client of [...room.clients.values()]) {
+      try { this.sendControlState(room, client, includeOwnerGrant) }
+      catch { this.disconnectClient(client.clientId) }
+    }
   }
 
   private roomSummary(room: RoomRuntime): RoomSummary {
