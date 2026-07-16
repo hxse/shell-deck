@@ -56,7 +56,7 @@
     <button type="button" data-testid="macro-control-stop" title="Stop active run" onclick={() => onMacroControl("stop")}>Stop</button>
   </div>
   <details class="macro-debug-refresh" data-testid="macro-debug-refresh">
-    <summary>Debug</summary>
+    <summary data-testid="macro-debug-toggle">Debug</summary>
     <button type="button" data-testid="macro-run-refresh" onclick={onRefreshRunner}>Refresh</button>
   </details>
   {#if runner?.waitingInput}

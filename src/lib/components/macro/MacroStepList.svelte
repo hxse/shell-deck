@@ -772,7 +772,7 @@
 <svelte:window onkeydown={handleInsertionKeydown} onresize={handleInsertionResize} />
 
 <details class="macro-section validation-panel validation-panel-compact" data-testid="macro-validation">
-  <summary>
+  <summary data-testid="macro-validation-toggle">
     <strong>Validation</strong>
     <span class:ok={validation.ok} class:bad={!validation.ok} data-testid="macro-validation-summary">{validationSummary}</span>
   </summary>
@@ -811,7 +811,7 @@
 {/snippet}
 
 {#snippet NodeEditor(node: FlowV2Node, index: number, siblingCount: number, bodyPath: BodyPath, allowLoopControls: boolean, actionOnly: boolean, templateScope: TextTemplateScope | null, depth: number)}
-  <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)} data-flow-node-depth={depth} data-flow-sibling={index > 0}>
+  <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)} data-flow-node-id={node.id} data-flow-node-type={node.type} data-flow-node-depth={depth} data-flow-sibling={index > 0}>
     <div class="step-title node-title-row" data-testid="node-menu">
       <div class="node-title-cluster">
         <strong>{index + 1}. {node.type}{#if node.type === "for" && node.range.kind === "text-list"} <small data-testid="for-text-list-summary">text-list · {LOOP_INDEX_TEMPLATE_TOKEN} · {LOOP_KEY_TEMPLATE_TOKEN} · {LOOP_VALUE_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
@@ -870,7 +870,7 @@
         </select>
       </label>
       <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = value })} {templateScope} testId="input-prompt" multiline maxRows={3} />
-      <label class="checkbox-row"><input type="checkbox" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
+      <label class="checkbox-row"><input type="checkbox" data-testid="input-allow-empty" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
       <TerminalInputDeliveryField value={node.delivery} onChange={(delivery: TerminalInputDelivery) => updateNode(node.id, (item) => { if (item.type === "input") item.delivery = delivery })} testId="input-input-delivery" />
       <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => updateNode(node.id, (item) => { if (item.type === "input") item.ending = ending })} testId="input-ending-sequence" />
       <label>Default source
@@ -888,10 +888,10 @@
         </select>
       </label>
       {#if node.mode === "duration"}
-        <label>Duration ms<input type="number" value={node.durationMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "duration") item.durationMs = Number(event.currentTarget.value) })} /></label>
+        <label>Duration ms<input type="number" data-testid="wait-duration-ms" value={node.durationMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "duration") item.durationMs = Number(event.currentTarget.value) })} /></label>
       {:else if node.mode === "terminal-quiet"}
         <label>Target tab<select data-testid="wait-target-tab" value={quietChoiceFromTarget(node.terminal)} title={terminalChoiceTitle(quietChoiceFromTarget(node.terminal) || choiceFromTarget(node.terminal))} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet" && event.currentTarget.value) item.terminal = targetFromChoice(event.currentTarget.value) })}><option value="" disabled>Choose shell tab</option>{#each quietTerminalChoices() as choice}<option value={choice.value} title={choice.title}>{choice.label}</option>{/each}</select></label>
-        <div class="macro-row"><label>Quiet ms<input type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
+        <div class="macro-row"><label>Quiet ms<input type="number" data-testid="wait-quiet-ms" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input type="number" data-testid="wait-max-ms" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select data-testid="wait-on-timeout" value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
       {:else}
         <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = value })} {templateScope} testId="wait-user-continue-prompt" multiline maxRows={3} />
       {/if}
@@ -951,7 +951,7 @@
     {:else if node.type === "parallel"}
       <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {choiceFromTarget} {targetFromChoice} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} {templateScope} {insertionPaletteMode} />
     {:else}
-      <label>Reason<input value={node.reason ?? ""} oninput={(event) => updateNode(node.id, (item) => { if ("reason" in item) item.reason = event.currentTarget.value || undefined })} /></label>
+      <label>Reason<input data-testid="flow-control-reason" value={node.reason ?? ""} oninput={(event) => updateNode(node.id, (item) => { if ("reason" in item) item.reason = event.currentTarget.value || undefined })} /></label>
       {#if node.type === "finish" || node.type === "break" || node.type === "continue"}
         {@render NodeListEditor(node.body ?? [], [...bodyPath, { kind: "control", nodeId: node.id }], false, node.type + " action body", true, templateScope, depth + 1)}
       {/if}
@@ -1013,24 +1013,24 @@
         <option value="lines">lines</option><option value="regex">regex</option>
       </select>
     </label>
-    <label class="checkbox-row"><input type="checkbox" checked={node.split.keepEmpty} onchange={(event) => updateExtract((item) => { item.split.keepEmpty = event.currentTarget.checked })} />Keep empty</label>
+    <label class="checkbox-row"><input type="checkbox" data-testid="extract-text-keep-empty" checked={node.split.keepEmpty} onchange={(event) => updateExtract((item) => { item.split.keepEmpty = event.currentTarget.checked })} />Keep empty</label>
   </div>
   {#if node.split.kind === "regex"}
-    <div class="macro-row"><label>Split pattern<input data-testid="extract-text-split-pattern" value={node.split.pattern} oninput={(event) => updateExtract((item) => { if (item.split.kind === "regex") item.split.pattern = event.currentTarget.value })} /></label><label>Flags<input value={node.split.flags ?? ""} oninput={(event) => updateExtract((item) => { if (item.split.kind === "regex") item.split.flags = event.currentTarget.value })} /></label></div>
+    <div class="macro-row"><label>Split pattern<input data-testid="extract-text-split-pattern" value={node.split.pattern} oninput={(event) => updateExtract((item) => { if (item.split.kind === "regex") item.split.pattern = event.currentTarget.value })} /></label><label>Flags<input data-testid="extract-text-split-flags" value={node.split.flags ?? ""} oninput={(event) => updateExtract((item) => { if (item.split.kind === "regex") item.split.flags = event.currentTarget.value })} /></label></div>
   {/if}
 
   <div class="step-title"><strong>Filters</strong><button type="button" data-testid="extract-add-filter" onclick={() => addTextFilter(node.id)}>Add filter</button></div>
   {#each node.filters as filter, filterIndex}
     <div class="message-part-row" data-testid="extract-filter-row">
       <div class="macro-row">
-        <label>Mode<select value={filter.kind} onchange={(event) => updateExtract((item) => { item.filters[filterIndex].kind = event.currentTarget.value as "include" | "exclude" })}><option value="include">include</option><option value="exclude">exclude</option></select></label>
-        <label>Matcher<select value={filter.matcher.kind} onchange={(event) => updateExtract((item) => { item.filters[filterIndex].matcher = event.currentTarget.value === "regex" ? { kind: "regex", pattern: "READY", flags: "" } : { kind: "simple", op: "contains", text: "READY" } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
+        <label>Mode<select data-testid="extract-filter-mode" value={filter.kind} onchange={(event) => updateExtract((item) => { item.filters[filterIndex].kind = event.currentTarget.value as "include" | "exclude" })}><option value="include">include</option><option value="exclude">exclude</option></select></label>
+        <label>Matcher<select data-testid="extract-filter-matcher-kind" value={filter.matcher.kind} onchange={(event) => updateExtract((item) => { item.filters[filterIndex].matcher = event.currentTarget.value === "regex" ? { kind: "regex", pattern: "READY", flags: "" } : { kind: "simple", op: "contains", text: "READY" } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
         <MacroIconButton kind="remove" testId="extract-filter-remove" onClick={() => removeTextFilter(node.id, filterIndex)} />
       </div>
       {#if filter.matcher.kind === "simple"}
-        <div class="macro-row"><label>Op<select value={filter.matcher.op} onchange={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "simple") target.matcher.op = event.currentTarget.value as SimpleTextMatchOp })}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label><label>Text<input value={filter.matcher.text} oninput={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "simple") target.matcher.text = event.currentTarget.value })} /></label></div>
+        <div class="macro-row"><label>Op<select data-testid="extract-filter-simple-op" value={filter.matcher.op} onchange={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "simple") target.matcher.op = event.currentTarget.value as SimpleTextMatchOp })}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label><label>Text<input data-testid="extract-filter-simple-text" value={filter.matcher.text} oninput={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "simple") target.matcher.text = event.currentTarget.value })} /></label></div>
       {:else}
-        <div class="macro-row"><label>Pattern<input value={filter.matcher.pattern} oninput={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "regex") target.matcher.pattern = event.currentTarget.value })} /></label><label>Flags<input value={filter.matcher.flags ?? ""} oninput={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "regex") target.matcher.flags = event.currentTarget.value })} /></label></div>
+        <div class="macro-row"><label>Pattern<input data-testid="extract-filter-regex-pattern" value={filter.matcher.pattern} oninput={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "regex") target.matcher.pattern = event.currentTarget.value })} /></label><label>Flags<input data-testid="extract-filter-regex-flags" value={filter.matcher.flags ?? ""} oninput={(event) => updateExtract((item) => { const target = item.filters[filterIndex]; if (target.matcher.kind === "regex") target.matcher.flags = event.currentTarget.value })} /></label></div>
       {/if}
     </div>
   {/each}
@@ -1041,8 +1041,8 @@
         <option value="all">all</option><option value="index">index</option><option value="range">range</option>
       </select>
     </label>
-    {#if node.select.mode === "index"}<label>Index<input type="number" value={node.select.index} oninput={(event) => updateExtract((item) => { if (item.select.mode === "index") item.select.index = Number(event.currentTarget.value) })} /></label>{/if}
-    {#if node.select.mode === "range"}<label>Start<input type="number" value={node.select.start} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.start = Number(event.currentTarget.value) })} /></label><label>End<input type="number" value={node.select.end ?? ""} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.end = event.currentTarget.value === "" ? undefined : Number(event.currentTarget.value) })} /></label>{/if}
+    {#if node.select.mode === "index"}<label>Index<input type="number" data-testid="extract-text-select-index" value={node.select.index} oninput={(event) => updateExtract((item) => { if (item.select.mode === "index") item.select.index = Number(event.currentTarget.value) })} /></label>{/if}
+    {#if node.select.mode === "range"}<label>Start<input type="number" data-testid="extract-text-select-start" value={node.select.start} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.start = Number(event.currentTarget.value) })} /></label><label>End<input type="number" data-testid="extract-text-select-end" value={node.select.end ?? ""} oninput={(event) => updateExtract((item) => { if (item.select.mode === "range") item.select.end = event.currentTarget.value === "" ? undefined : Number(event.currentTarget.value) })} /></label>{/if}
   </div>
 
   <div class="macro-row">
@@ -1051,11 +1051,11 @@
         <option value="none">none</option><option value="regex">regex group</option>
       </select>
     </label>
-    <label>Trim<select value={node.trim} onchange={(event) => updateExtract((item) => { item.trim = event.currentTarget.value as never })}><option value="none">none</option><option value="left">left</option><option value="right">right</option><option value="both">both</option></select></label>
+    <label>Trim<select data-testid="extract-text-trim" value={node.trim} onchange={(event) => updateExtract((item) => { item.trim = event.currentTarget.value as never })}><option value="none">none</option><option value="left">left</option><option value="right">right</option><option value="both">both</option></select></label>
     <label>On empty<select data-testid="extract-text-on-empty" value={node.onEmpty} onchange={(event) => updateExtract((item) => { item.onEmpty = event.currentTarget.value as never })}><option value="pause">pause</option><option value="continue">continue</option><option value="fail">fail</option><option value="finish">finish</option></select></label>
   </div>
   {#if node.extract.kind === "regex"}
-    <div class="macro-row"><label>Pattern<input data-testid="extract-text-regex-pattern" value={node.extract.pattern} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.pattern = event.currentTarget.value })} /></label><label>Flags<input value={node.extract.flags ?? ""} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.flags = event.currentTarget.value })} /></label><label>Group<input value={groupInputValue(node.extract.group)} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.group = groupFromInput(event.currentTarget.value) })} /></label></div>
+    <div class="macro-row"><label>Pattern<input data-testid="extract-text-regex-pattern" value={node.extract.pattern} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.pattern = event.currentTarget.value })} /></label><label>Flags<input data-testid="extract-text-regex-flags" value={node.extract.flags ?? ""} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.flags = event.currentTarget.value })} /></label><label>Group<input data-testid="extract-text-regex-group" value={groupInputValue(node.extract.group)} oninput={(event) => updateExtract((item) => { if (item.extract.kind === "regex") item.extract.group = groupFromInput(event.currentTarget.value) })} /></label></div>
   {/if}
 {/snippet}
 
@@ -1074,7 +1074,7 @@
     {#if allowedKinds[0]}<button type="button" data-testid="capture-kind-repair" onclick={() => onChange(defaultCaptureForTarget(allowedKinds[0], node.capture.terminal))}>Use {allowedKinds[0]}</button>{/if}
   {:else if node.capture.kind === "terminal-buffer"}
     <label>Mode<select data-testid="capture-terminal-buffer-mode" value={node.capture.mode} onchange={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, mode: event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" }) }}><option value="scrollback-tail">screen text tail</option><option value="raw-stream-tail">raw stream tail (debug only)</option></select></label>
-    <label>Max chars<input type="number" value={node.capture.maxChars} oninput={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, maxChars: Number(event.currentTarget.value) }) }} /></label>
+    <label>Max chars<input type="number" data-testid="capture-max-chars" value={node.capture.maxChars} oninput={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, maxChars: Number(event.currentTarget.value) }) }} /></label>
   {:else if node.capture.kind === "agent-event"}
     <label>Agent<select data-testid="capture-agent-kind" value={node.capture.agent.kind} onchange={() => onChange(keepCodexAgent(node.capture))}><option value="codex">codex</option></select></label>
     <label>Mode<select data-testid="capture-agent-mode" value={node.capture.captureMode ?? "result_only"} onchange={(event) => { if (node.capture.kind === "agent-event") onChange({ ...node.capture, captureMode: event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" }) }}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label>
@@ -1086,16 +1086,16 @@
 
 {#snippet ConditionEditor(condition: TextMatchCondition, choices: ArtifactChoice[], onChange: (condition: TextMatchCondition) => void)}
   <div class="condition-row">
-    <label>Source<select value={sourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: requiredSourceFromKey(event.currentTarget.value, condition.source) })}>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
-    <label>Matcher<select value={condition.matcher.kind} onchange={(event) => onChange({ ...condition, matcher: event.currentTarget.value === "regex" ? { kind: "regex", pattern: "READY", flags: "i" } : { kind: "simple", op: "contains", text: "READY" } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
+    <label>Source<select data-testid="condition-source" value={sourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: requiredSourceFromKey(event.currentTarget.value, condition.source) })}>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+    <label>Matcher<select data-testid="condition-matcher-kind" value={condition.matcher.kind} onchange={(event) => onChange({ ...condition, matcher: event.currentTarget.value === "regex" ? { kind: "regex", pattern: "READY", flags: "i" } : { kind: "simple", op: "contains", text: "READY" } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
     {#if condition.matcher.kind === "simple"}
-      <label>Op<select value={condition.matcher.op} onchange={(event) => onChange(setSimpleMatcherOp(condition, event.currentTarget.value as SimpleTextMatchOp))}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label>
-      <label>Text<input value={condition.matcher.text} oninput={(event) => onChange(setSimpleMatcherText(condition, event.currentTarget.value))} /></label>
+      <label>Op<select data-testid="condition-simple-op" value={condition.matcher.op} onchange={(event) => onChange(setSimpleMatcherOp(condition, event.currentTarget.value as SimpleTextMatchOp))}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label>
+      <label>Text<input data-testid="condition-simple-text" value={condition.matcher.text} oninput={(event) => onChange(setSimpleMatcherText(condition, event.currentTarget.value))} /></label>
     {:else}
-      <label>Pattern<input value={condition.matcher.pattern} oninput={(event) => onChange(setRegexMatcherPattern(condition, event.currentTarget.value))} /></label>
-      <label>Flags<input value={condition.matcher.flags ?? ""} oninput={(event) => onChange(setRegexMatcherFlags(condition, event.currentTarget.value))} /></label>
+      <label>Pattern<input data-testid="condition-regex-pattern" value={condition.matcher.pattern} oninput={(event) => onChange(setRegexMatcherPattern(condition, event.currentTarget.value))} /></label>
+      <label>Flags<input data-testid="condition-regex-flags" value={condition.matcher.flags ?? ""} oninput={(event) => onChange(setRegexMatcherFlags(condition, event.currentTarget.value))} /></label>
     {/if}
-    <label>Scope<select value={condition.scope.kind === "lines" ? "lines:" + condition.scope.mode : "whole"} onchange={(event) => { const value = event.currentTarget.value; onChange({ ...condition, scope: value === "whole" ? { kind: "whole" } : { kind: "lines", mode: value.split(":")[1] as never, includeEmptyLines: false } }) }}><option value="whole">whole</option><option value="lines:first">lines.first</option><option value="lines:last">lines.last</option><option value="lines:any">lines.any</option><option value="lines:all">lines.all</option></select></label>
+    <label>Scope<select data-testid="condition-scope" value={condition.scope.kind === "lines" ? "lines:" + condition.scope.mode : "whole"} onchange={(event) => { const value = event.currentTarget.value; onChange({ ...condition, scope: value === "whole" ? { kind: "whole" } : { kind: "lines", mode: value.split(":")[1] as never, includeEmptyLines: false } }) }}><option value="whole">whole</option><option value="lines:first">lines.first</option><option value="lines:last">lines.last</option><option value="lines:any">lines.any</option><option value="lines:all">lines.all</option></select></label>
   </div>
 {/snippet}
 

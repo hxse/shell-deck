@@ -19,7 +19,7 @@
 
 {#if notice}
   <section class="notice-stack" aria-label="Macro notification">
-    <button class="notice-dismiss-layer" type="button" aria-label="Dismiss notice" onclick={() => onDismiss(notice.id)}></button>
+    <button class="notice-dismiss-layer" type="button" data-testid="notice-dismiss-layer" aria-label="Dismiss notice" onclick={() => onDismiss(notice.id)}></button>
     <div class="notice" class:info={notice.level === 'info'} class:success={notice.level === 'success'} class:warning={notice.level === 'warning'} class:error={notice.level === 'error'} role="alert" data-testid="notice-item">
       <span class="notice-copy">
         <small>
@@ -33,7 +33,7 @@
           {#if notice.systemStatus}<span>system_status: {notice.systemStatus}</span>{/if}
         </small>
       </span>
-      <button type="button" aria-label="Dismiss notice" onclick={() => onDismiss(notice.id)}>Dismiss</button>
+      <button type="button" data-testid="notice-dismiss" aria-label="Dismiss notice" onclick={() => onDismiss(notice.id)}>Dismiss</button>
     </div>
   </section>
 {/if}

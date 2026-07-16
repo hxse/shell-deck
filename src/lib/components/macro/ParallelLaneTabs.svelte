@@ -537,8 +537,8 @@
 {#if parallelNode}
   <section class="parallel-tabs-editor" data-testid="parallel-lane-tabs">
     <div class="macro-row">
-      <label>Separator<input value={parallelNode.merge.separator} oninput={(event) => updateParallel((node) => { node.merge.separator = event.currentTarget.value })} /></label>
-      <label class="checkbox-row"><input type="checkbox" checked={parallelNode.merge.includeEmptyOutputs} onchange={(event) => updateParallel((node) => { node.merge.includeEmptyOutputs = event.currentTarget.checked })} />Include empty outputs</label>
+      <label>Separator<input data-testid="parallel-merge-separator" value={parallelNode.merge.separator} oninput={(event) => updateParallel((node) => { node.merge.separator = event.currentTarget.value })} /></label>
+      <label class="checkbox-row"><input type="checkbox" data-testid="parallel-include-empty-outputs" checked={parallelNode.merge.includeEmptyOutputs} onchange={(event) => updateParallel((node) => { node.merge.includeEmptyOutputs = event.currentTarget.checked })} />Include empty outputs</label>
       <label>On lane fail<select data-testid="parallel-on-lane-fail" value={parallelNode.onLaneFail} onchange={(event) => updateParallel((node) => { node.onLaneFail = event.currentTarget.value as "pause" | "fail" })}><option value="pause">pause</option><option value="fail">fail</option></select></label>
     </div>
 
@@ -549,7 +549,7 @@
     </div>
 
     {#if selectedLane}
-      <div class="parallel-lane-card active-lane" data-testid="parallel-lane-editor">
+      <div class="parallel-lane-card active-lane" data-testid="parallel-lane-editor" data-parallel-lane-id={selectedLane.id}>
         <div class="step-title">
           <strong>{selectedLane.label || selectedLane.id}</strong>
           <div class="inline-actions parallel-lane-controls">
@@ -597,7 +597,7 @@
 {/if}
 
 {#snippet LaneActionEditor(lane: ParallelLane, item: ParallelLaneActionNode, itemIndex: number)}
-  <article class="step-card parallel-lane-action" class:collapsed={isLaneActionCollapsed(item.id)} data-testid="parallel-lane-action">
+  <article class="step-card parallel-lane-action" class:collapsed={isLaneActionCollapsed(item.id)} data-testid="parallel-lane-action" data-parallel-action-id={item.id} data-parallel-action-type={item.type}>
     <div class="step-title node-title-row">
       <div class="node-title-cluster">
         <strong>{itemIndex + 1}. {item.type}</strong>
@@ -612,16 +612,16 @@
       <TerminalInputDeliveryField value={item.delivery} onChange={(delivery: TerminalInputDelivery) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.delivery = delivery })} testId="parallel-send-input-delivery" />
       <TerminalEndingField value={item.ending} onChange={(ending: TerminalEnding) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "send") action.ending = ending })} testId="parallel-send-ending-sequence" />
     {:else if item.type === "wait"}
-      <label>Mode<select value={item.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => {
+      <label>Mode<select data-testid="parallel-wait-mode" value={item.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => {
         if (action.type !== "wait") return
         setLaneWaitMode(action, event.currentTarget.value, lane.terminal)
       })}><option value="duration">duration</option><option value="terminal-quiet">terminal-quiet</option></select></label>
       {#if item.mode === "duration"}
-        <label>Duration ms<input type="number" value={item.durationMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "wait" && action.mode === "duration") action.durationMs = Number(event.currentTarget.value) })} /></label>
+        <label>Duration ms<input type="number" data-testid="parallel-wait-duration-ms" value={item.durationMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "wait" && action.mode === "duration") action.durationMs = Number(event.currentTarget.value) })} /></label>
        {:else if item.mode === "terminal-quiet"}
         <div class="macro-row">
-          <label>Quiet ms<input type="number" value={item.quietMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "wait" && action.mode === "terminal-quiet") action.quietMs = Number(event.currentTarget.value) })} /></label>
-          <label>Max ms<input type="number" value={item.maxMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "wait" && action.mode === "terminal-quiet") action.maxMs = Number(event.currentTarget.value) })} /></label>
+          <label>Quiet ms<input type="number" data-testid="parallel-wait-quiet-ms" value={item.quietMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "wait" && action.mode === "terminal-quiet") action.quietMs = Number(event.currentTarget.value) })} /></label>
+          <label>Max ms<input type="number" data-testid="parallel-wait-max-ms" value={item.maxMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "wait" && action.mode === "terminal-quiet") action.maxMs = Number(event.currentTarget.value) })} /></label>
         </div>
       {/if}
     {:else if item.type === "capture-source"}
@@ -629,7 +629,7 @@
       {@const allowedKinds = laneCaptureKinds(lane)}
       {@const captureAllowed = selectedLaneChoice ? isCaptureKindAllowed(selectedLaneChoice.capabilities, item.capture.kind) : true}
       {#if allowedKinds.length > 1}
-        <label>Capture kind<select value={item.capture.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source") action.capture = defaultCaptureForLane(lane, event.currentTarget.value as CaptureSourceConfig["kind"]) })}>{#each allowedKinds as kind}<option value={kind}>{kind}</option>{/each}</select></label>
+        <label>Capture kind<select data-testid="parallel-capture-kind" value={item.capture.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source") action.capture = defaultCaptureForLane(lane, event.currentTarget.value as CaptureSourceConfig["kind"]) })}>{#each allowedKinds as kind}<option value={kind}>{kind}</option>{/each}</select></label>
       {:else}
         <p class="hint" data-testid="parallel-capture-kind-fixed">Capture kind: {allowedKinds[0] ?? item.capture.kind}</p>
       {/if}
@@ -638,17 +638,17 @@
         {#if allowedKinds[0]}<button type="button" data-testid="parallel-capture-kind-repair" onclick={() => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source") action.capture = defaultCaptureForLane(lane, allowedKinds[0]) })}>Use {allowedKinds[0]}</button>{/if}
       {:else if item.capture.kind === "terminal-buffer"}
         <div class="macro-row">
-          <label>Mode<select value={item.capture.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "terminal-buffer") action.capture.mode = event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" })}><option value="scrollback-tail">screen text</option><option value="raw-stream-tail">raw stream tail</option></select></label>
-          <label>Max chars<input type="number" value={item.capture.maxChars} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "terminal-buffer") action.capture.maxChars = Number(event.currentTarget.value) })} /></label>
+          <label>Mode<select data-testid="parallel-capture-mode" value={item.capture.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "terminal-buffer") action.capture.mode = event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" })}><option value="scrollback-tail">screen text</option><option value="raw-stream-tail">raw stream tail</option></select></label>
+          <label>Max chars<input type="number" data-testid="parallel-capture-max-chars" value={item.capture.maxChars} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "terminal-buffer") action.capture.maxChars = Number(event.currentTarget.value) })} /></label>
         </div>
       {:else if item.capture.kind === "agent-event"}
-        <div class="macro-row"><label>Agent<select value={item.capture.agent.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.agent = { kind: event.currentTarget.value as "codex" } })}><option value="codex">codex</option></select></label><label>Mode<select value={item.capture.captureMode ?? "result_only"} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.captureMode = event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" })}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label></div>
+        <div class="macro-row"><label>Agent<select data-testid="parallel-capture-agent-kind" value={item.capture.agent.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.agent = { kind: event.currentTarget.value as "codex" } })}><option value="codex">codex</option></select></label><label>Mode<select data-testid="parallel-capture-agent-mode" value={item.capture.captureMode ?? "result_only"} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.captureMode = event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" })}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label></div>
       {:else}
         <p class="hint">Captures this text lane tab as plain text.</p>
       {/if}
     {:else}
-      <label>Source<select value={sourceKey(item.source)} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.source = requiredSourceFromKey(event.currentTarget.value, action.source) })}>{#each laneArtifactChoices(lane, item.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
-      <div class="macro-row"><label>Select<select value={item.select.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type !== "extract_text") return; const mode = event.currentTarget.value; action.select = mode === "all" ? { mode } : mode === "range" ? { mode, start: 0, end: 1 } : { mode: "index", index: -1 } })}><option value="all">all</option><option value="index">index</option><option value="range">range</option></select></label><label>Trim<select value={item.trim} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.trim = event.currentTarget.value as typeof action.trim })}><option value="none">none</option><option value="left">left</option><option value="right">right</option><option value="both">both</option></select></label><label>On empty<select value={item.onEmpty} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.onEmpty = event.currentTarget.value as "pause" | "fail" })}><option value="pause">pause</option><option value="fail">fail</option></select></label></div>
+      <label>Source<select data-testid="parallel-extract-source" value={sourceKey(item.source)} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.source = requiredSourceFromKey(event.currentTarget.value, action.source) })}>{#each laneArtifactChoices(lane, item.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+      <div class="macro-row"><label>Select<select data-testid="parallel-extract-select-mode" value={item.select.mode} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type !== "extract_text") return; const mode = event.currentTarget.value; action.select = mode === "all" ? { mode } : mode === "range" ? { mode, start: 0, end: 1 } : { mode: "index", index: -1 } })}><option value="all">all</option><option value="index">index</option><option value="range">range</option></select></label><label>Trim<select data-testid="parallel-extract-trim" value={item.trim} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.trim = event.currentTarget.value as typeof action.trim })}><option value="none">none</option><option value="left">left</option><option value="right">right</option><option value="both">both</option></select></label><label>On empty<select data-testid="parallel-extract-on-empty" value={item.onEmpty} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "extract_text") action.onEmpty = event.currentTarget.value as "pause" | "fail" })}><option value="pause">pause</option><option value="fail">fail</option></select></label></div>
     {/if}
   </article>
 {/snippet}
@@ -660,6 +660,6 @@
       <button type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, "Insert before Output", event)}>Add before output</button>
     </div>
     <label>Output id<input data-testid="parallel-output-id-input" value={output.id} oninput={(event) => { if (!setLaneOutputId(lane.id, output.id, event.currentTarget.value)) event.currentTarget.value = output.id }} /></label>
-    <label>Source<select value={outputSourceKey(output.source)} onchange={(event) => updateLane(lane.id, (item) => { const node = item.body.find((candidate): candidate is ParallelLaneOutputNode => candidate.id === output.id && candidate.type === "output"); if (node) node.source = outputSourceFromKey(event.currentTarget.value) })}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+    <label>Source<select data-testid="parallel-output-source" value={outputSourceKey(output.source)} onchange={(event) => updateLane(lane.id, (item) => { const node = item.body.find((candidate): candidate is ParallelLaneOutputNode => candidate.id === output.id && candidate.type === "output"); if (node) node.source = outputSourceFromKey(event.currentTarget.value) })}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
   </article>
 {/snippet}

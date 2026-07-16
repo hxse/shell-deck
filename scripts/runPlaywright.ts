@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:net'
@@ -88,13 +88,20 @@ function shouldUseSteamRun() {
 }
 
 function resolvePlaywrightLibraryPath() {
+  const systemLibraries = '/run/current-system/sw/lib'
   const nspr = findLibraryDir('libnspr4.so')
   const nss = findLibraryDir('libnss3.so')
-  return [nspr, nss].filter(Boolean).join(':')
+  const xcomposite = findLibraryDir('libXcomposite.so.1')
+  return [...new Set([
+    existsSync(systemLibraries) ? systemLibraries : '',
+    nspr,
+    nss,
+    xcomposite,
+  ].filter(Boolean))].join(':')
 }
 
 function findLibraryDir(libraryName: string) {
-  const result = spawnSync('find', ['/nix/store', '-maxdepth', '4', '-name', libraryName, '-type', 'f'], {
+  const result = spawnSync('find', ['/nix/store', '-maxdepth', '4', '-name', libraryName], {
     encoding: 'utf8',
   })
 

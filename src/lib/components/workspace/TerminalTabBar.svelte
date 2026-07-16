@@ -85,7 +85,9 @@
             value={aliasDraft}
             oninput={(event) => onAliasDraftChange(event.currentTarget.value)}
             onkeydown={(event) => onAliasKeydown(event, terminal)}
-            onblur={() => onCommitRename(terminal)}
+            onblur={() => {
+              if (editingTerminalId === terminal.terminalId) onCommitRename(terminal)
+            }}
             onclick={(event) => event.stopPropagation()}
           />
         {:else}

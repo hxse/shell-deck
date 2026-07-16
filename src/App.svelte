@@ -528,9 +528,9 @@
         <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
         <span>Prompt</span>
       </button>
-      <button type="button" class="terminal-create-button" onclick={() => createTerminal('fake')}>New fake</button>
-      <button type="button" class="terminal-create-button" onclick={() => createTerminal('real')}>New shell</button>
-      <button type="button" class="terminal-create-button" onclick={() => createTerminal('text')}>New text</button>
+      <button type="button" class="terminal-create-button" data-testid="terminal-create-fake" onclick={() => createTerminal('fake')}>New fake</button>
+      <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={() => createTerminal('real')}>New shell</button>
+      <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={() => createTerminal('text')}>New text</button>
       <button
         type="button"
         class="settings-button"
@@ -549,7 +549,7 @@
     <section id="settings-popover" class="settings-popover" data-testid="settings-popover" aria-label="Workspace settings">
       <div class="settings-popover-head">
         <strong>Settings</strong>
-        <button type="button" aria-label="Close settings" onclick={() => { settingsOpen = false }}>Close</button>
+        <button type="button" data-testid="settings-close" aria-label="Close settings" onclick={() => { settingsOpen = false }}>Close</button>
       </div>
 
       <button

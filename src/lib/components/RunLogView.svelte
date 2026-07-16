@@ -220,7 +220,7 @@
       <button type="button" data-testid="run-append-demo" onclick={appendDemoEvents}>Append demo</button>
       <button type="button" data-testid="run-trace-copy" onclick={copyTrace} disabled={!snapshot}>{copyTraceLabel}</button>
       <details class="run-log-debug" data-testid="run-log-debug">
-        <summary>Debug</summary>
+        <summary data-testid="run-log-debug-toggle">Debug</summary>
         <button type="button" data-testid="run-log-refresh" onclick={reloadAll}>Refresh</button>
       </details>
     </div>
@@ -279,7 +279,7 @@
         <div class="run-node-list">
           {#each snapshot.nodeLogs as node (node.nodeId)}
             <details class="run-node-log" data-testid="run-node-log">
-              <summary>
+              <summary data-testid="run-node-log-toggle">
                 <span>{node.title}</span>
                 <small>{node.scope} · {node.events.length} events</small>
               </summary>
