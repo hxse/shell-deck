@@ -3,10 +3,16 @@
   import { loadBrowserSettings, saveBrowserSettings, type BrowserSettings } from './lib/browserSettings'
   import NoticeStack, { type NoticeItem } from './lib/components/workspace/NoticeStack.svelte'
   import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
-  import type { MacroNotificationMessage, MacroNotificationSound, RoomSnapshot, ServerMessage, TerminalRuntimePosition, TerminalSnapshot } from './lib/protocol'
+  import type { ContentRecordChangedMessage, MacroNotificationMessage, MacroNotificationSound, RoomSnapshot, ServerMessage, TerminalRuntimePosition, TerminalSnapshot } from './lib/protocol'
+  import type { MacroRunnerSnapshot } from './lib/macro/runnerTypes'
+  import { mergeMacroRunnerDelta } from './lib/macro/runnerSnapshotMerge'
   import type { RoomControlView } from './lib/roomControl'
+  import { RoomRevisionGate } from './lib/roomRevisionGate'
   import { TerminalRoomClient } from './lib/terminalRoomClient'
-  import { TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
+  import { applyTerminalStateProjection, TerminalViewStateStore, type TerminalViewSnapshot } from './lib/terminalViewState'
+  import { isRoomControlFeedback, sharedMutationFeedback } from './lib/sharedMutationFeedback'
+
+  type ContentEditLeaseChangedMessage = Extract<ServerMessage, { type: 'content_edit_lease_changed' }>
 
   type RoomSummary = {
     roomId: string
@@ -23,24 +29,26 @@
   const ROOM_CONTROL_RECLAIM_WINDOW_MS = 5_000
   const loadedSettings = loadBrowserSettings()
   const terminalViews = new TerminalViewStateStore()
+  const roomRevisionGate = new RoomRevisionGate()
 
   let settings = $state<BrowserSettings>(loadedSettings.settings)
   let noticeSeq = 0
   let notice = $state<NoticeItem | null>(null)
   let settingsOpen = $state(false)
   let macroDirty = $state(false)
+  let pageVisible = $state(document.visibilityState === 'visible')
 
   let homeLoading = $state(false)
   let rooms = $state<RoomSummary[]>([])
   let maxLiveRooms = $state(32)
 
   let connected = $state(false)
+  let connectionGeneration = $state(0)
   let reconnectNonce = $state(0)
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let controlReclaimTimer: ReturnType<typeof setTimeout> | null = null
   let controlReclaimPending = initialRoomId !== '' && isReloadNavigation() && rememberedRoomControl(initialRoomId)
   let roomGeneration = $state('')
-  let latestRoomRevision = $state(0)
   let controlView = $state<RoomControlView | null>(null)
   let controlPending = $state(false)
   let client = $state<TerminalRoomClient | null>(null)
@@ -48,11 +56,30 @@
   let terminalStructureRevision = $state(0)
   let terminalPositions = $state<TerminalRuntimePosition[] | null>(null)
   let terminalStructureLocked = $state(false)
+  let runnerSnapshot = $state<MacroRunnerSnapshot | null>(null)
+  const RUNNER_REPAIR_MAX_ATTEMPTS = 3
+  const RUNNER_REPAIR_RETRY_DELAYS_MS = [100, 300] as const
+  let runnerRepairPending = false
+  let runnerRepairRoomId = ''
+  let runnerRepairRoomGeneration = ''
+  let runnerRepairAttempts = 0
+  let runnerRepairToken = 0
+  let runnerRepairTimer: ReturnType<typeof setTimeout> | null = null
+  let runnerRepairAbort: AbortController | null = null
+  let runnerResyncInFlightToken: number | null = null
+  let contentChangeSequence = 0
+  let contentRecordChanges = $state<Array<ContentRecordChangedMessage & { sequence: number }>>([])
+  let contentLeaseChangeSequence = 0
+  let contentEditLeaseChanges = $state<Array<ContentEditLeaseChangedMessage & { sequence: number }>>([])
   let activeTerminalId = $state<string | null>(null)
   let draggingTerminalId = $state<string | null>(null)
   let activeTerminal = $derived(terminals.find((terminal) => terminal.terminalId === activeTerminalId) ?? terminals[0] ?? null)
   let canMutateShared = $derived(connected && controlView?.mode === 'controller' && client?.canMutateShared === true)
   const NOTIFICATION_MAX_GAIN = 0.12
+  const seenNotifications = new Set<string>()
+  const seenNotificationOrder: string[] = []
+  let homeEffectGeneration = 0
+  let homeRequestInFlight = false
 
   function handleBeforeUnload(event: BeforeUnloadEvent) {
     if (!macroDirty) return
@@ -63,13 +90,34 @@
   onMount(() => {
     if (loadedSettings.reset) pushNotice('Browser settings were reset because the stored schema is invalid.')
     if (controlReclaimPending) armControlReclaim()
-    if (isHome) void loadRooms()
-    const refresh = () => { if (isHome) void loadRooms() }
+    const refresh = () => {
+      if (isHome && pageVisible) void loadRooms(homeEffectGeneration)
+      else if (!isHome) resumeRunnerRepair()
+    }
+    const visibility = () => {
+      pageVisible = document.visibilityState === 'visible'
+      if (pageVisible && isHome) void loadRooms(homeEffectGeneration)
+      else if (pageVisible) resumeRunnerRepair()
+    }
     window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', visibility)
     return () => {
       window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', visibility)
       if (reconnectTimer) clearTimeout(reconnectTimer)
       if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
+      clearRunnerRepair()
+    }
+  })
+
+  $effect(() => {
+    if (!isHome || !pageVisible) return
+    const generation = ++homeEffectGeneration
+    void loadRooms(generation)
+    const timer = window.setInterval(() => { void loadRooms(generation) }, 1000)
+    return () => {
+      window.clearInterval(timer)
+      if (homeEffectGeneration === generation) homeEffectGeneration += 1
     }
   })
 
@@ -77,11 +125,18 @@
     if (isHome) return
     reconnectNonce
     terminalViews.clear()
+    roomRevisionGate.reset()
     terminals = []
-    latestRoomRevision = 0
     terminalStructureRevision = 0
     terminalPositions = null
     terminalStructureLocked = false
+    runnerSnapshot = null
+    if (runnerRepairPending && runnerRepairRoomId !== roomId) clearRunnerRepair()
+    else suspendRunnerRepair()
+    contentRecordChanges = []
+    contentEditLeaseChanges = []
+    seenNotifications.clear()
+    seenNotificationOrder.splice(0)
     connected = false
     controlView = null
     controlPending = false
@@ -89,8 +144,10 @@
       roomId,
       onOpen: () => {
         connected = true
+        connectionGeneration += 1
         if (reconnectTimer) clearTimeout(reconnectTimer)
         reconnectTimer = null
+        resumeRunnerRepair()
       },
       onClose: (event) => { void handleConnectionClose(event) },
       onMessage: handleMessage,
@@ -110,8 +167,10 @@
 
   function handleMessage(message: ServerMessage) {
     if (message.type === 'client_registered') {
+      if (runnerRepairPending && runnerRepairRoomGeneration !== message.roomGeneration) clearRunnerRepair()
       roomGeneration = message.roomGeneration
-      latestRoomRevision = 0
+      roomRevisionGate.reset()
+      resumeRunnerRepair()
     }
     if ('roomGeneration' in message && roomGeneration && message.roomGeneration !== roomGeneration) return
     if (message.type === 'room_control') {
@@ -127,7 +186,7 @@
       rememberRoomControl(roomId, false)
       clearControlReclaim()
       controlView = { mode: 'observer', controlEpoch: message.controlEpoch, expiresAt: new Date().toISOString() }
-      pushNotice('Control moved to another device. This page is now read-only.')
+      pushMutationNotice('room_control_lost')
     }
     if (message.type === 'room_snapshot') applyRoomSnapshot(message)
     if (message.type === 'terminal_snapshot') {
@@ -144,7 +203,7 @@
       replaceTerminalReplay(message)
     }
     if (message.type === 'terminal_index_map') {
-      if (!acceptRoomRevision(message.roomRevision)) return
+      if (!roomRevisionGate.acceptIndexMap(message.roomRevision)) return
       terminalStructureRevision = message.terminalStructureRevision
       terminalPositions = message.terminalPositions
       terminalStructureLocked = message.terminalStructureLocked
@@ -153,17 +212,30 @@
         return mapped ? { ...terminal, terminalIndex: mapped.index, visualOrder: mapped.index } : terminal
       }).sort((left, right) => left.terminalIndex - right.terminalIndex)
     }
-    if (message.type === 'terminal_error') pushNotice((message.terminalId ? message.terminalId + ': ' : '') + message.reason)
-    if (message.type === 'input_rejected') pushNotice(message.terminalId + ': input rejected: ' + message.reason)
+    if (message.type === 'terminal_error') pushMutationNotice(message.reason, message.terminalId ? message.terminalId + ': ' : '')
+    if (message.type === 'input_rejected') pushMutationNotice(message.reason, message.terminalId + ': ')
+    if (message.type === 'runner_snapshot' && (!roomGeneration || message.snapshot.roomGeneration === roomGeneration)) {
+      installFullRunnerSnapshot(message.snapshot)
+      if (runnerRepairPending) resumeRunnerRepair()
+    }
+    if (message.type === 'runner_delta' && (!roomGeneration || message.delta.roomGeneration === roomGeneration)) {
+      const merged = mergeMacroRunnerDelta(runnerSnapshot, message.delta)
+      if (merged.kind === 'applied') runnerSnapshot = merged.snapshot
+      else if (merged.kind === 'resync_required') requestRunnerRepair(message.delta.roomGeneration)
+      if (runnerRepairPending) resumeRunnerRepair()
+    }
+    if (message.type === 'content_record_changed') {
+      contentRecordChanges = [...contentRecordChanges.slice(-199), { ...message, sequence: ++contentChangeSequence }]
+    }
+    if (message.type === 'content_edit_lease_changed') {
+      contentEditLeaseChanges = [...contentEditLeaseChanges.slice(-199), { ...message, sequence: ++contentLeaseChangeSequence }]
+    }
     if (message.type === 'macro_notification') void handleMacroNotification(message)
     if (message.type === 'terminal_state') {
       observeRoomRevision(message.roomRevision)
-      terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
-        ? terminalViews.patch(terminal, message, { status: message.status, cols: message.cols, rows: message.rows, exitCode: message.exitCode, signal: message.signal })
-        : terminal)
-      terminalPositions = terminalPositions?.map((position) => position.terminalId === message.terminalId
-        ? { ...position, readiness: message.status === 'running' ? 'ready' : message.status === 'closed' ? 'exited' : message.status }
-        : position) ?? null
+      const applied = applyTerminalStateProjection(terminalViews, terminals, terminalPositions, message)
+      terminals = applied.terminals
+      terminalPositions = applied.positions
     }
     if (message.type === 'terminal_cwd') {
       observeRoomRevision(message.roomRevision)
@@ -174,18 +246,23 @@
     if (message.type === 'room_destroyed') enterHomeWithoutRootRequest()
   }
 
-  async function loadRooms() {
+  async function loadRooms(expectedGeneration = homeEffectGeneration) {
+    if (homeRequestInFlight) return
+    homeRequestInFlight = true
     homeLoading = true
     try {
       const response = await fetch('/api/rooms')
       const body = await response.json() as { ok: boolean; rooms?: RoomSummary[]; maxLiveRooms?: number; error?: string }
       if (!response.ok || !body.ok) throw new Error(body.error ?? 'room_list_failed')
-      rooms = body.rooms ?? []
-      maxLiveRooms = body.maxLiveRooms ?? 32
+      if (isHome && expectedGeneration === homeEffectGeneration) {
+        rooms = body.rooms ?? []
+        maxLiveRooms = body.maxLiveRooms ?? 32
+      }
     } catch (error) {
       pushNotice(messageOf(error))
     } finally {
       homeLoading = false
+      homeRequestInFlight = false
     }
   }
 
@@ -198,14 +275,17 @@
     controlView = null
     controlPending = false
     roomGeneration = ''
-    latestRoomRevision = 0
+    roomRevisionGate.reset()
     terminalViews.clear()
     terminals = []
     terminalStructureRevision = 0
     terminalPositions = null
     terminalStructureLocked = false
+    runnerSnapshot = null
+    clearRunnerRepair()
+    contentRecordChanges = []
     activeTerminalId = null
-    void loadRooms()
+    macroDirty = false
   }
 
   async function handleConnectionClose(event?: CloseEvent) {
@@ -246,7 +326,7 @@
       const body = await response.json() as { ok: boolean; url?: string; error?: string }
       if (!response.ok || !body.ok || !body.url) throw new Error(body.error ?? 'room_create_failed')
       window.location.assign(body.url)
-    } catch (error) { pushNotice(messageOf(error)) }
+    } catch (error) { pushMutationNotice(messageOf(error)) }
   }
 
   async function destroyRoom(room: RoomSummary) {
@@ -261,16 +341,18 @@
       const body = await response.json() as { ok: boolean; error?: string }
       if (!response.ok || !body.ok) throw new Error(body.error ?? 'room_destroy_failed')
       await loadRooms()
-    } catch (error) { pushNotice(messageOf(error)) }
+    } catch (error) { pushMutationNotice(messageOf(error)) }
   }
 
   function createShell() {
-    if (!canMutateShared || terminalStructureLocked) return
+    if (!canMutateShared) { pushMutationNotice(connected ? 'room_control_required' : 'room_disconnected'); return }
+    if (terminalStructureLocked) { pushMutationNotice('room_structure_locked_by_run'); return }
     client?.send({ type: 'create_terminal', backend: 'real', cwdSource: 'last-shell' })
   }
 
   function createText() {
-    if (!canMutateShared || terminalStructureLocked) return
+    if (!canMutateShared) { pushMutationNotice(connected ? 'room_control_required' : 'room_disconnected'); return }
+    if (terminalStructureLocked) { pushMutationNotice('room_structure_locked_by_run'); return }
     client?.send({ type: 'create_terminal', backend: 'text' })
   }
 
@@ -278,7 +360,7 @@
     const connection = client
     const view = controlView
     if (!connection || !connected || !view || view.mode === 'controller' || controlPending) return
-    if (view.mode === 'observer' && !window.confirm('Take control of this Room?\nThe other device will become read-only immediately. Unsaved content edits there may no longer be saved.')) return
+    if (view.mode === 'observer' && !window.confirm('Take control of this Room?\nShared terminals and the active Macro run stay on the server and will not be lost. The other connected device becomes read-only. Its unsaved browser-local Macro or Library draft remains on that device, but it cannot save shared changes until it takes control again.')) return
     controlPending = true
     try {
       const result = view.mode === 'available'
@@ -287,8 +369,9 @@
       controlView = result.view
       rememberRoomControl(roomId, true)
       clearControlReclaim()
+      if (notice?.kind === 'mutation' && isRoomControlFeedback(notice.reason)) notice = null
     } catch (error) {
-      pushNotice(messageOf(error))
+      pushMutationNotice(messageOf(error))
     } finally {
       controlPending = false
     }
@@ -348,7 +431,7 @@
 
   function applyRoomSnapshot(snapshot: RoomSnapshot) {
     if (roomGeneration && snapshot.roomGeneration !== roomGeneration) return
-    if (!acceptRoomRevision(snapshot.roomRevision)) return
+    if (!roomRevisionGate.acceptRoomSnapshot(snapshot.roomRevision)) return
     terminalStructureRevision = snapshot.terminalStructureRevision
     terminalPositions = snapshot.terminalPositions
     terminalStructureLocked = snapshot.terminalStructureLocked
@@ -377,24 +460,144 @@
       : terminal)
   }
 
-  function acceptRoomRevision(revision: number): boolean {
-    if (revision < latestRoomRevision) return false
-    latestRoomRevision = revision
-    return true
+  function observeRoomRevision(revision: number): void {
+    roomRevisionGate.observeTerminal(revision)
   }
 
-  function observeRoomRevision(revision: number): void {
-    latestRoomRevision = Math.max(latestRoomRevision, revision)
+  function requestRunnerRepair(expectedRoomGeneration: string): void {
+    if (isHome || !roomId || !expectedRoomGeneration) return
+    if (!runnerRepairPending || runnerRepairRoomId !== roomId || runnerRepairRoomGeneration !== expectedRoomGeneration) {
+      clearRunnerRepair()
+      runnerRepairPending = true
+      runnerRepairRoomId = roomId
+      runnerRepairRoomGeneration = expectedRoomGeneration
+      runnerRepairAttempts = 0
+    }
+    resumeRunnerRepair()
+  }
+
+  function resumeRunnerRepair(): void {
+    if (!runnerRepairPending || !connected || isHome || !roomId || roomId !== runnerRepairRoomId) return
+    if (roomGeneration && roomGeneration !== runnerRepairRoomGeneration) return
+    if (runnerResyncInFlightToken !== null || runnerRepairTimer !== null) return
+    if (runnerRepairAttempts >= RUNNER_REPAIR_MAX_ATTEMPTS) runnerRepairAttempts = 0
+    scheduleRunnerRepair(0)
+  }
+
+  function scheduleRunnerRepair(delayMs: number): void {
+    if (!runnerRepairPending || runnerResyncInFlightToken !== null || runnerRepairTimer !== null) return
+    const token = runnerRepairToken
+    runnerRepairTimer = setTimeout(() => {
+      runnerRepairTimer = null
+      if (token !== runnerRepairToken) return
+      void resyncRunnerSnapshot(token)
+    }, delayMs)
+  }
+
+  async function resyncRunnerSnapshot(expectedToken: number): Promise<void> {
+    if (!runnerRepairPending || !connected || expectedToken !== runnerRepairToken || runnerResyncInFlightToken !== null || isHome || !roomId) return
+    runnerResyncInFlightToken = expectedToken
+    runnerRepairAttempts += 1
+    const expectedRoomId = roomId
+    const expectedRoomGeneration = runnerRepairRoomGeneration
+    const expectedConnectionGeneration = connectionGeneration
+    const abort = new AbortController()
+    runnerRepairAbort = abort
+    try {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(expectedRoomId)}/runner`, { signal: abort.signal })
+      const body = await response.json() as { ok?: boolean; runner?: MacroRunnerSnapshot; error?: string }
+      if (!response.ok || body.ok !== true || !body.runner) throw new Error(body.error ?? 'runner_resync_failed')
+      if (!runnerRepairIdentityMatches(expectedToken, expectedRoomId, expectedRoomGeneration, expectedConnectionGeneration)) return
+      if (body.runner.roomId !== expectedRoomId || body.runner.roomGeneration !== expectedRoomGeneration) throw new Error('runner_resync_identity_mismatch')
+      const validated = mergeMacroRunnerDelta(null, body.runner)
+      if (validated.kind !== 'applied') throw new Error('runner_resync_invalid_snapshot')
+      if (runnerSnapshot?.roomGeneration === body.runner.roomGeneration && body.runner.runtimeRevision < runnerSnapshot.runtimeRevision) {
+        throw new Error('runner_resync_stale_snapshot')
+      }
+      runnerSnapshot = validated.snapshot
+      clearRunnerRepair()
+    } catch (error) {
+      if (abort.signal.aborted || !runnerRepairIdentityMatches(expectedToken, expectedRoomId, expectedRoomGeneration, expectedConnectionGeneration)) return
+      if (runnerRepairAttempts < RUNNER_REPAIR_MAX_ATTEMPTS) {
+        const delay = RUNNER_REPAIR_RETRY_DELAYS_MS[runnerRepairAttempts - 1] ?? RUNNER_REPAIR_RETRY_DELAYS_MS.at(-1)!
+        scheduleRunnerRepair(delay)
+      } else {
+        pushNotice('runner_resync_pending: ' + messageOf(error))
+      }
+    } finally {
+      if (runnerRepairAbort === abort) runnerRepairAbort = null
+      if (runnerResyncInFlightToken === expectedToken) runnerResyncInFlightToken = null
+      if (runnerRepairPending && runnerRepairToken === expectedToken && runnerRepairAttempts < RUNNER_REPAIR_MAX_ATTEMPTS && runnerRepairTimer === null) {
+        const delay = RUNNER_REPAIR_RETRY_DELAYS_MS[runnerRepairAttempts - 1] ?? RUNNER_REPAIR_RETRY_DELAYS_MS.at(-1)!
+        scheduleRunnerRepair(delay)
+      }
+      else if (runnerRepairPending && runnerRepairToken !== expectedToken) resumeRunnerRepair()
+    }
+  }
+
+  function installFullRunnerSnapshot(snapshot: MacroRunnerSnapshot): void {
+    const validated = mergeMacroRunnerDelta(null, snapshot)
+    if (validated.kind !== 'applied') {
+      requestRunnerRepair(snapshot.roomGeneration)
+      return
+    }
+    const mayInstall = !runnerSnapshot
+      || runnerSnapshot.roomGeneration !== snapshot.roomGeneration
+      || snapshot.runtimeRevision > runnerSnapshot.runtimeRevision
+      || (runnerRepairPending && snapshot.runtimeRevision === runnerSnapshot.runtimeRevision)
+    if (!mayInstall) return
+    runnerSnapshot = validated.snapshot
+    if (runnerRepairPending && runnerRepairRoomId === roomId && runnerRepairRoomGeneration === snapshot.roomGeneration) clearRunnerRepair()
+  }
+
+  function runnerRepairIdentityMatches(
+    expectedToken: number,
+    expectedRoomId: string,
+    expectedRoomGeneration: string,
+    expectedConnectionGeneration: number,
+  ): boolean {
+    return runnerRepairPending
+      && runnerRepairToken === expectedToken
+      && !isHome
+      && roomId === expectedRoomId
+      && runnerRepairRoomId === expectedRoomId
+      && runnerRepairRoomGeneration === expectedRoomGeneration
+      && connectionGeneration === expectedConnectionGeneration
+  }
+
+  function suspendRunnerRepair(): void {
+    if (!runnerRepairPending) return
+    runnerRepairToken += 1
+    runnerRepairAttempts = 0
+    if (runnerRepairTimer) clearTimeout(runnerRepairTimer)
+    runnerRepairTimer = null
+    runnerRepairAbort?.abort()
+    runnerRepairAbort = null
+  }
+
+  function clearRunnerRepair(): void {
+    runnerRepairPending = false
+    runnerRepairRoomId = ''
+    runnerRepairRoomGeneration = ''
+    runnerRepairAttempts = 0
+    runnerRepairToken += 1
+    if (runnerRepairTimer) clearTimeout(runnerRepairTimer)
+    runnerRepairTimer = null
+    runnerRepairAbort?.abort()
+    runnerRepairAbort = null
   }
 
   function closeTerminalTab(event: MouseEvent, terminal: TerminalSnapshot) {
     event.stopPropagation()
-    if (!canMutateShared || terminalStructureLocked) return
+    if (!canMutateShared) { pushMutationNotice(connected ? 'room_control_required' : 'room_disconnected'); return }
+    if (terminalStructureLocked) { pushMutationNotice('room_structure_locked_by_run'); return }
     if (window.confirm('Close terminal ' + terminal.terminalIndex + ' · ' + terminal.terminalId + '?')) client?.send({ type: 'close_terminal', terminalId: terminal.terminalId })
   }
 
   function startDrag(event: DragEvent, terminalId: string) {
-    if (!settings.terminalDragEnabled || !canMutateShared || terminalStructureLocked) { event.preventDefault(); return }
+    if (!settings.terminalDragEnabled) { event.preventDefault(); return }
+    if (!canMutateShared) { event.preventDefault(); pushMutationNotice(connected ? 'room_control_required' : 'room_disconnected'); return }
+    if (terminalStructureLocked) { event.preventDefault(); pushMutationNotice('room_structure_locked_by_run'); return }
     draggingTerminalId = terminalId
     event.dataTransfer?.setData('text/plain', terminalId)
   }
@@ -403,7 +606,9 @@
     event.preventDefault()
     const source = event.dataTransfer?.getData('text/plain') || draggingTerminalId
     draggingTerminalId = null
-    if (settings.terminalDragEnabled && canMutateShared && !terminalStructureLocked && source && source !== target.terminalId) {
+    if (!canMutateShared) { pushMutationNotice(connected ? 'room_control_required' : 'room_disconnected'); return }
+    if (terminalStructureLocked) { pushMutationNotice('room_structure_locked_by_run'); return }
+    if (settings.terminalDragEnabled && source && source !== target.terminalId) {
       client?.send({ type: 'reorder_terminal', terminalId: source, newIndex: target.terminalIndex })
       activeTerminalId = source
     }
@@ -414,10 +619,20 @@
   }
 
   function pushNotice(text: string) {
-    notice = { id: ++noticeSeq, text: text.length > 500 ? text.slice(0, 500) + '...' : text }
+    notice = { id: ++noticeSeq, kind: 'general', text: text.length > 500 ? text.slice(0, 500) + '...' : text }
+  }
+
+  function pushMutationNotice(reason: string, prefix = '') {
+    const text = prefix + sharedMutationFeedback(reason)
+    notice = { id: ++noticeSeq, kind: 'mutation', reason, level: 'warning', text: text.length > 500 ? text.slice(0, 500) + '...' : text }
   }
 
   async function handleMacroNotification(message: MacroNotificationMessage) {
+    const notificationKey = message.roomGeneration + ':' + message.notificationId + ':' + message.channels.map((channel) => channel.kind).sort().join(',')
+    if (seenNotifications.has(notificationKey)) return
+    seenNotifications.add(notificationKey)
+    seenNotificationOrder.push(notificationKey)
+    if (seenNotificationOrder.length > 500) seenNotifications.delete(seenNotificationOrder.shift()!)
     const app = message.channels.find((channel) => channel.kind === 'app')
     const toast = app?.kind === 'app' && app.toast
     const options = { title: message.title, level: message.level, createdAt: message.createdAt, notificationId: message.notificationId, runId: message.runId, stepId: message.stepId }
@@ -430,7 +645,7 @@
   }
 
   function pushDetailedNotice(text: string, options: Omit<NoticeItem, 'id' | 'text'>) {
-    notice = { id: ++noticeSeq, text: text.length > 500 ? text.slice(0, 500) + '...' : text, ...options }
+    notice = { id: ++noticeSeq, kind: 'notification', text: text.length > 500 ? text.slice(0, 500) + '...' : text, ...options }
   }
 
   async function showSystemNotification(message: MacroNotificationMessage): Promise<string> {
@@ -506,7 +721,7 @@
       <div><h1>shell-deck</h1><p>Live Rooms in this server process</p></div>
       <div class="actions">
         <span data-testid="room-capacity">{rooms.length} / {maxLiveRooms}</span>
-        <button type="button" data-testid="home-refresh" onclick={() => void loadRooms()} disabled={homeLoading}>Refresh</button>
+
         <button type="button" data-testid="new-room" onclick={() => void newRoom()} disabled={rooms.length >= maxLiveRooms}>New Room</button>
       </div>
     </header>
@@ -547,8 +762,8 @@
         <button type="button" class="panel-toggle" aria-pressed={settings.panels.macro.visible} data-testid="macro-panel-toggle" onclick={() => updateMacroPanel(undefined, !settings.panels.macro.visible)}>
           <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span><span>Macro</span>
         </button>
-        <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} disabled={!canMutateShared || terminalStructureLocked}>New shell</button>
-        <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} disabled={!canMutateShared || terminalStructureLocked}>New text</button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-real" onclick={createShell} aria-disabled={!canMutateShared || terminalStructureLocked}>New shell</button>
+        <button type="button" class="terminal-create-button" data-testid="terminal-create-text" onclick={createText} aria-disabled={!canMutateShared || terminalStructureLocked}>New text</button>
         <button type="button" class="settings-button" data-testid="settings-button" onclick={() => { settingsOpen = !settingsOpen }}>Settings</button>
       </div>
     </header>
@@ -584,7 +799,7 @@
       {activeTerminal}
       {activeTerminalId}
       {draggingTerminalId}
-      tabDragEnabled={settings.terminalDragEnabled && canMutateShared && !terminalStructureLocked}
+      tabDragEnabled={settings.terminalDragEnabled}
       sharedReadOnly={!canMutateShared}
       macroVisible={settings.panels.macro.visible}
       macroWidthPx={settings.panels.macro.widthPx}
@@ -592,6 +807,10 @@
       {terminalStructureRevision}
       {terminalPositions}
       {terminalStructureLocked}
+      {runnerSnapshot}
+      {contentRecordChanges}
+      {contentEditLeaseChanges}
+      {connectionGeneration}
       insertionPaletteMode={settings.macroInsertionPlacement}
       onMacroWidthChange={(widthPx) => updateMacroPanel(widthPx)}
       onMacroDirtyChange={(dirty) => { macroDirty = dirty }}
@@ -602,6 +821,7 @@
       onDropOnTab={dropOnTab}
       onTabDragEnd={() => { draggingTerminalId = null }}
       onTabKeydown={tabKeydown}
+      onMutationDenied={pushMutationNotice}
     />
   </main>
 {/if}

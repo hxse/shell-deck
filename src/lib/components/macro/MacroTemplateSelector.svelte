@@ -85,11 +85,11 @@
           </select></label>
         </div>
         <div class="inline-actions template-toolbar" data-testid="macro-template-actions">
-          <button type="button" data-testid="macro-create" onclick={onCreateTemplate} disabled={!mutationAllowed || locked}>New</button>
-          {#if selectedRecord && !contentEditing}<button type="button" data-testid="macro-edit" onclick={onBeginEdit} disabled={!mutationAllowed || locked}>Edit</button>{/if}
-          <button type="button" data-testid="macro-save" onclick={onSaveTemplate} disabled={!draft || !editable || !dirty}>Save</button>
+          <button type="button" data-testid="macro-create" onclick={onCreateTemplate} disabled={locked} aria-disabled={!mutationAllowed || locked}>New</button>
+          {#if selectedRecord && !contentEditing}<button type="button" data-testid="macro-edit" onclick={onBeginEdit} disabled={locked} aria-disabled={!mutationAllowed || locked}>Edit</button>{/if}
+          <button type="button" data-testid="macro-save" onclick={onSaveTemplate} disabled={!draft || !dirty} aria-disabled={!editable || !dirty}>Save</button>
           {#if contentEditing}<button type="button" data-testid="macro-cancel-edit" onclick={onCancelEdit} disabled={locked}>{selectedRecord ? dirty ? 'Cancel' : 'Done' : 'Discard'}</button>{/if}
-          <button type="button" data-testid="macro-delete" onclick={onDeleteTemplate} disabled={!mutationAllowed || !selectedRecord || locked}>Delete</button>
+          <button type="button" data-testid="macro-delete" onclick={onDeleteTemplate} disabled={!selectedRecord || locked} aria-disabled={!mutationAllowed || !selectedRecord || locked}>Delete</button>
         </div>
         {#if draft}
           <div class="template-metadata" data-testid="macro-template-metadata">

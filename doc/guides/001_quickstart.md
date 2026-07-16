@@ -26,9 +26,13 @@ http://127.0.0.1:5177/room_<22-char-short-uuid-v4>
 
 再次打开根 URL 会进入 Room Home。Home 可查看当前 process 的 Room 清单，并执行 New、Open、Destroy；最多同时存在 32 个 Room。关闭 browser tab 不会销毁 Room。Room 页面上的 Home 按钮在新标签页打开根 URL，不影响当前 Room。
 
+Home没有手动Refresh；页面可见时每秒自动读取server Room清单，切到后台时停止，重新获得focus/visibility时立即刷新。
+
 把同一个完整 Room URL 放到另一个标签页或设备，会连接同一 live Room并同步 terminal order、Text content、PTY output 与 replay。Room 和 terminal 都只在当前 server process 内存在；server restart 后，即使重新访问相同 token，也会得到新的 generation 和空 runtime。
 
 第一个连接是controller，顶栏显示`Control: This device`；之后打开的同Room页面显示`Read-only · Take control`。observer仍能查看、滚动、复制、切换terminal和修改本地Settings，但不能输入Shell、编辑Text或改变terminal结构。点击Take control并确认后，当前页面取得写权，原页面立即只读。断线、release或TTL后不会自动把写权交给另一个页面，需显式点击Take control。
+
+Take Control不会丢失共享terminal或active Macro run；另一设备browser-local的未保存Macro/Library draft仍留在该设备，只是取得control前不能保存shared change。observer点击明确写操作时会看到可复制的短暂toast，而不是无提示失效。
 
 ## Terminal
 
@@ -59,7 +63,7 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro V3 editor/runner；Library UI由`.035`接入。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro V3 editor/runner，`.035`交付server-authoritative runtime sync；Library UI由`.036`接入。
 
 ## Macro
 
@@ -69,6 +73,10 @@ just notification-config-init
 
 Start要求Macro已经Save，并要求当前terminal layout/type/readiness匹配。启动时server把index解析成terminalId/launchId并冻结，运行中terminal结构保持锁定；Pause只暂停live run，server restart或Room Destroy后不能Resume。Trace、manifest、events和artifact仍可只读查看，但不会恢复runner。
 
+Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Save/Delete后的record会同步，但不会切换其他browser的selector。Start后Room另有只读Running Macro；status、current step、Pause/Resume/Stop以及Input Action的prompt/draft/submit都由server主动同步到同Room设备。关闭所有页面不会停止run，重新进入原Room URL会立即得到当前live snapshot。
+
+Notify Action在server只执行一次：Telegram只发送一次；当时在线的同Room browser各自收到App/System通知，后进入的browser不补弹历史通知，但仍可在Trace查看event。
+
 ## 验证
 
 ```bash
@@ -77,4 +85,5 @@ just build
 just test-032
 just test-033
 just test-034
+just test-035
 ```

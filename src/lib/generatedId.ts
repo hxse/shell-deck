@@ -12,6 +12,7 @@ export const GENERATED_ID_PREFIX = {
   macroTemplate: 'tmpl_',
   run: 'run_',
   runEvent: 'evt_',
+  runnerInput: 'input_',
   libraryItem: 'lib_',
   notification: 'notif_',
 } as const

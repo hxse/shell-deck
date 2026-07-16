@@ -25,7 +25,7 @@ terminal tab与pane header使用同一个canonical单行label：`index · termin
 
 server 维护每个 Shell 的 2 MiB byte-bounded replay tail，Text 不截断。PTY output 在 server batching 后广播；每个 WebSocket 有独立 64 MiB backpressure queue。browser 再按 animation frame 合并连续 output，并以 generation-aware write pump 驱动 xterm，避免大历史一次性加载时逐 chunk 重渲染。完整 replay/replace 写入 xterm 时属于历史 hydration，必须在 parser callback 确认全部消费前关闭 stdin，使历史中的DA、cursor、OSC color等terminal query不能产生新的PTY input；hydration完成后的live append恢复正常query response。不得通过删除escape sequence或全局丢弃xterm response实现该边界。
 
-Room与每个terminal分别维护单调roomRevision/terminalRevision；Text另有textRevision，每次PTY output或Text正文变化另推进outputActivityRevision。quiet判断使用activity revision，不能比较已截断replay的长度。terminal structure lock acquire/release都推进roomRevision。browser完整Room snapshot/index map只有在首次初始化或revision严格更新时才能覆盖Room级字段；equal/older revision不得重写structure lock。terminal-specific event按launchId + terminalRevision合并，只有accepted terminal snapshot才能派生readiness/position，跨HTTP/WebSocket的延迟snapshot不得回滚新真值。
+Room与每个terminal分别维护单调roomRevision/terminalRevision；Text另有textRevision，每次PTY output或Text正文变化另推进outputActivityRevision。quiet判断使用activity revision，不能比较已截断replay的长度。terminal structure lock acquire/release都推进roomRevision。browser对完整Room snapshot与index map分别维护channel watermark：同一channel只有首次或revision严格更新时才能覆盖Room级字段；两种companion message可各自消费同一revision，terminal-specific event不冒充Room projection watermark。equal/older delayed snapshot不得重写structure lock。terminal-specific event按launchId + terminalRevision合并，只有accepted terminal snapshot才能派生readiness/position，跨HTTP/WebSocket的延迟snapshot不得回滚新真值。
 
 Text browser每个terminal串行一个full-state write，后续输入coalesce为latest value并带local edit generation。只有前进的textRevision和匹配正文才能确认在途echo；确认时若generation已变化，即使最终文字与旧值相同也要重发latest。旧own-echo不能覆盖较新输入，observer只消费server revision。
 
@@ -34,6 +34,8 @@ Text browser每个terminal串行一个full-state write，后续输入coalesce为
 selected terminal严格属于browser-local state。Room snapshot、terminal snapshot与其他client创建terminal的广播只能更新terminal集合，不能改写已有且仍有效的active terminal。发起New Shell/Text的client在create成功后单独收到不含client identity的`terminal_created`消息，并只在该client选择新terminal；observer不收到该消息。当前没有有效selection时，client本地选择排序后的第一个terminal。
 
 最后一个 client 断开不会销毁 Room。晚到 client 收到当前 snapshot/replay；Destroy 或 server shutdown 才关闭目标 Room 的 terminal/process。
+
+Home不提供手动Refresh。Home可见时Svelte 5 effect每秒读取同一server Room registry；页面hidden或离开Home时cleanup，focus/visibility恢复时立即读取。读取不会建立browser-to-browser通道。
 
 ## Macro binding 与 structure lock
 
@@ -46,5 +48,7 @@ Start把index/type解析为terminalId/launchId后冻结routing。active run期�
 同一Room任一时刻只有一个controller。fresh generation中第一个完成WebSocket握手的client自动取得控制；其余连接是observer。observer继续接收snapshot/output/replay，可以选择terminal、滚动、复制和修改browser-local Settings，但Shell input、Text edit、terminal create/close/reset/reorder/resize等shared mutation同时由UI readonly和server统一guard拒绝。
 
 顶栏显示`Control: This device`、`Read-only · Take control`或`Reconnecting · Read-only`。Take Control使用确认时看到的controlEpoch，成功后旧owner立即收到`room_control_lost`；release、disconnect或30秒TTL到期只进入available，不自动提升普通observer。若同一browser tab在reload或短暂重连前就是controller，它可在5秒窗口内保存非secret session intent，并仅在server已广播available时自动执行正常epoch-bound acquire；它不保存grant、不自动takeover，也不能抢走另一个live controller。owner server每10秒用WebSocket ping/pong续期，browser timer不承担authority。
+
+Take Control只转移writer，不清空terminal、Text或active Macro run，也不搬运/删除另一设备browser-local的未保存Macro/Library draft。所有明确shared mutation的client guard和server rejection进入同一toast：默认3秒、hover暂停、mouseleave继续、文字可复制、点击外部立即关闭；不能再用silent disabled制造“点击没反应”。
 
 HTTP shared mutation使用仅owner可见的clientId/controlLeaseId/controlEpoch bearer，并逐请求复核live owner WebSocket、Room generation和lifecycle。grant只在内存中存在，不进入observer message、Room list、Trace、URL或localStorage。Home New/Destroy是generation-bound process lifecycle operation，不要求目标Room controller；Destroy仍先关闭admission并撤销control/content lease，再清理runtime。

@@ -22,6 +22,9 @@ Running、Paused、Waiting input与Stopping期间，Room terminal structure由ac
 
 runner必须在tight loop内定期让出macrotask并在yield后复核abort/pause。Input submit的durable event先于pending resolver清除和Running状态发布；append失败保持waiting input可重试。每个run最多一个terminal event，终态后不得继续追加step event。
 
+live runtime通过Room WebSocket同步：connect/reconnect或gap repair发送包含bounded event tail的authoritative `runner_snapshot`，正常transition只发送最新state与newly appended events的monotonic `runner_delta`。`runtimeRevision`只在当前Room generation内单调，event按absolute eventSeq合并；gap必须以generation-bound single-flight读取完整snapshot，不能猜测。一次transient失败不会放弃repair：每批最多三次（立即、100ms、300ms），耗尽后保留pending，仅由focus、reconnect或后续runner message继续，绝不恢复周期polling。关闭全部browser不停止run，晚到browser立即取得当前snapshot。live state仍是memory-only，不能从durable evidence反向构造。
+
+runtime input draft正文不写入events/artifact。`runner_input_requested`只记录invocationId、inputRevision、hasDefaultText与promptChars；`runner_input_submitted`只记录invocationId、inputRevision与chars。两者都不得出现prompt、defaultText、draft或value正文。
 ## Trace
 
 Trace只读且最多展示当前retained event window。`run_completed`、`run_failed`、`run_stopped`分别派生completed、failed、stopped；存在`run_started`但summary未记录终态时派生interrupted。Trace可跨server restart查看，但不能成为routing、Resume或runtime hydration输入。

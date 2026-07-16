@@ -6,6 +6,7 @@ import { parse } from 'svelte/compiler'
 import {
   attributedBehaviorChanges,
   attributedControlChanges,
+  attributedControlChanges035,
   attributedRestorations034,
   baseline031ARuntimeControlIds,
   baseline031ASourceInteractiveControlCount,
@@ -15,9 +16,12 @@ import {
   sourceInteractiveControlCount,
   sourceInteractiveControlCount032,
   sourceInteractiveControlCount033,
+  sourceInteractiveControlCount034,
   sourceInteractiveControlDigest,
   sourceInteractiveControlDigest032,
   sourceInteractiveControlDigest033,
+  sourceInteractiveControlDigest034,
+  workspaceRuntimeControlInventory034,
 } from '../ui-baseline/031B/controlInventory'
 
 const projectRoot = resolve(import.meta.dir, '../..')
@@ -42,7 +46,12 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest033).toBe('4ff921d1d3f120d6cffee8b2b842a9edfefcc545dedf2fec0d8080d6185afb3b')
   })
 
-  test('.034 interactive source controls match its attributed current snapshot', () => {
+  test('.034 source snapshot remains available after later contract evolution', () => {
+    expect(sourceInteractiveControlCount034).toBe(175)
+    expect(sourceInteractiveControlDigest034).toBe('ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834')
+  })
+
+  test('.035 interactive source controls match its attributed current snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -90,6 +99,18 @@ describe('.031B evolving UI source inventory', () => {
     expect(runtimeKeys).not.toContain('macro-import')
     expect(runtimeKeys).not.toContain('macro-export')
     expect(runtimeKeys).not.toContain('capture-agent-kind')
+  })
+
+  test('.035 attributes removal of manual Home refresh without rewriting the .034 runtime snapshot', () => {
+    expect(workspaceRuntimeControlInventory034.map(({ key }) => key)).toContain('home-refresh')
+    expect(runtimeControlInventory.map(({ key }) => key)).not.toContain('home-refresh')
+    expect(attributedControlChanges035).toEqual([expect.objectContaining({
+      key: 'home-refresh',
+      changedBy: '20260627A.035',
+      oldBehavior: expect.any(String),
+      newBehavior: expect.any(String),
+      spec: expect.any(String),
+    })])
   })
 
   test('.033 attributes every controller-only behavior change on surviving controls', () => {

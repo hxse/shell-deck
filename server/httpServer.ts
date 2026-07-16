@@ -150,6 +150,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
           )
           if (client.roomGeneration !== ws.data.roomGeneration) throw new Error('room_generation_conflict')
           ws.data.clientId = client.clientId
+          sender.send(JSON.stringify({ type: 'runner_snapshot', snapshot: macroRunner.snapshot(ws.data.roomId) } satisfies ServerMessage))
         } catch (error) {
           sender.send(JSON.stringify({ type: 'terminal_error', roomId: ws.data.roomId, roomGeneration: ws.data.roomGeneration, reason: errorMessage(error) } satisfies ServerMessage))
           ws.close(4004, 'room_not_found')
@@ -326,6 +327,12 @@ async function handleHttp(
         ticket.assertAuthorized()
         return await macroStore.create(validation.value, ticket.signal, () => ticket.assertAuthorized())
       })
+      manager.broadcastAllClients(() => ({
+        type: 'content_record_changed',
+        resourceKey: { kind: 'macro', itemId: template.id },
+        operation: 'saved',
+        revision: template.revision,
+      }))
       return json({ ok: true, template }, 201)
     }
     return methodNotAllowed(['GET', 'POST'])
@@ -355,7 +362,14 @@ async function handleHttp(
           (_path, currentRevision) => macroStore.commitUpdate(templateId, currentRevision, validation.value),
         )
       ))
-      return json({ ok: true, template: committed.value, leaseOutcome: committed.leaseOutcome })
+      const template = committed.value
+      manager.broadcastAllClients(() => ({
+        type: 'content_record_changed',
+        resourceKey: { kind: 'macro', itemId: template.id },
+        operation: 'saved',
+        revision: template.revision,
+      }))
+      return json({ ok: true, template, leaseOutcome: committed.leaseOutcome })
     }
     if (req.method === 'DELETE') {
       if ((await req.text()).length !== 0) throw new Error('request_body_must_be_empty')
@@ -371,6 +385,12 @@ async function handleHttp(
           { deleteRecord: true },
         )
       ))
+      manager.broadcastAllClients(() => ({
+        type: 'content_record_changed',
+        resourceKey: { kind: 'macro', itemId: templateId },
+        operation: 'deleted',
+        revision: null,
+      }))
       return json({ ok: true, leaseOutcome: committed.leaseOutcome })
     }
     return methodNotAllowed(['GET', 'PUT', 'DELETE'])
@@ -410,7 +430,7 @@ async function handleHttp(
     return json(result, result.ok ? 200 : 409)
   }
 
-  const runnerRoute = /^\/api\/rooms\/([^/]+)\/runner(?:\/(start|pause|resume|stop|input))?$/.exec(url.pathname)
+  const runnerRoute = /^\/api\/rooms\/([^/]+)\/runner(?:\/(start|pause|resume|stop|input-draft|input))?$/.exec(url.pathname)
   const runnerTracesRoute = /^\/api\/rooms\/([^/]+)\/runner\/traces$/.exec(url.pathname)
   if (runnerTracesRoute) {
     assertNoQuery(url)
@@ -440,14 +460,20 @@ async function handleHttp(
       ), roomId)
       return json({ ok: true, runner }, 201)
     }
-    const body = action === 'input' ? await exactObject(req, ['value']) : await exactObject(req, [])
+    const body = action === 'input' || action === 'input-draft'
+      ? await exactObject(req, ['invocationId', 'value', 'expectedInputRevision'])
+      : await exactObject(req, [])
     const runner = await manager.runControlledBearerOperation(roomControlBearer(req), (ticket) => {
       ticket.assertAuthorized()
       if (action === 'pause') return macroRunner.pause(roomId)
       if (action === 'resume') return macroRunner.resume(roomId)
       if (action === 'stop') return macroRunner.stop(roomId)
       if (typeof body.value !== 'string') throw new Error('runner_input_must_be_string')
-      return macroRunner.submitInput(roomId, body.value)
+      const invocationId = assertGeneratedId(body.invocationId, 'runnerInput')
+      const expectedInputRevision = assertNonNegativeRevision(body.expectedInputRevision, 'invalid_runner_input_revision')
+      return action === 'input-draft'
+        ? macroRunner.updateInputDraft(roomId, invocationId, body.value, expectedInputRevision)
+        : macroRunner.submitInput(roomId, invocationId, body.value, expectedInputRevision)
     }, roomId)
     return json({ ok: true, runner })
   }
@@ -633,6 +659,8 @@ function errorStatus(message: string): number {
     || message === 'room_structure_locked_by_run'
     || message === 'macro_revision_conflict'
     || message === 'run_already_active'
+    || message.startsWith('runner_input_')
+    || message === 'runner_not_waiting_input'
   ) return 409
   if (message.startsWith('macro_record_not_found:')) return 404
   if (message.includes('permissions_too_open')) return 503
@@ -646,6 +674,11 @@ function assertPositiveRevision(value: unknown): number {
 
 function assertTerminalStructureRevision(value: unknown): number {
   if (!Number.isInteger(value) || (value as number) < 0) throw new Error('invalid_terminal_structure_revision')
+  return value as number
+}
+
+function assertNonNegativeRevision(value: unknown, error: string): number {
+  if (!Number.isInteger(value) || (value as number) < 0) throw new Error(error)
   return value as number
 }
 

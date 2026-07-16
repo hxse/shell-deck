@@ -190,6 +190,11 @@ button {
   color: #22313f;
 }
 
+.tab-close[aria-disabled="true"] {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
 .terminal-tab.active .tab-close {
   color: #294a62;
 }

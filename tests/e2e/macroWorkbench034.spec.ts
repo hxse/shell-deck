@@ -15,8 +15,8 @@ test('V3 Macro workbench saves without terminals, prepares only on click, and ke
   await page.goto(room.url)
 
   await expect(page.getByTestId('macro-side-panel')).toBeVisible()
-  await expect(page.getByTestId('macro-control-start')).toBeDisabled()
-  await expect(page.getByTestId('macro-prepare-terminals')).toBeDisabled()
+  await expect(page.getByTestId('macro-control-start')).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByTestId('macro-prepare-terminals')).toHaveAttribute('aria-disabled', 'true')
   await expect(page.getByTestId('terminal-tab')).toHaveCount(0)
 
   await page.getByTestId('settings-button').click()
@@ -46,13 +46,13 @@ test('V3 Macro workbench saves without terminals, prepares only on click, and ke
 
   // Save is portable-only: it neither creates nor prepares a terminal.
   await expect(page.getByTestId('terminal-tab')).toHaveCount(0)
-  await expect(page.getByTestId('macro-control-start')).toBeDisabled()
-  await expect(page.getByTestId('macro-prepare-terminals')).toBeEnabled()
+  await expect(page.getByTestId('macro-control-start')).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByTestId('macro-prepare-terminals')).toHaveAttribute('aria-disabled', 'false')
 
   await page.getByTestId('macro-prepare-terminals').click()
   await expect(page.getByTestId('terminal-tab')).toHaveCount(1)
   await expect(page.getByTestId('text-box-editor')).toBeVisible()
-  await expect(page.getByTestId('macro-control-start')).toBeEnabled()
+  await expect(page.getByTestId('macro-control-start')).toHaveAttribute('aria-disabled', 'false')
 
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status').locator('strong')).toHaveText('completed', { timeout: 5_000 })
@@ -480,7 +480,7 @@ test('dirty Start serializes Save and keeps the visual draft inert until the bou
   await expect(page.getByTestId('macro-cancel-edit')).toHaveText('Done')
   await page.getByTestId('macro-template-drawer').click()
   await page.getByTestId('macro-prepare-terminals').click()
-  await expect(page.getByTestId('macro-control-start')).toBeEnabled()
+  await expect(page.getByTestId('macro-control-start')).toHaveAttribute('aria-disabled', 'false')
 
   await openTemplateDrawer(page)
   await expect(page.getByTestId('macro-name')).toBeEnabled()
@@ -508,6 +508,8 @@ test('dirty Start serializes Save and keeps the visual draft inert until the bou
   await openTemplateDrawer(page)
   await expect(page.getByTestId('macro-name')).toBeDisabled()
   await forceInput(page.getByTestId('macro-name'), 'stale mutation')
+  await expect(page.getByTestId('notice-item')).toContainText('Wait for the current operation')
+  await page.getByTestId('notice-item').getByRole('button', { name: 'Dismiss notice' }).click()
   await page.getByTestId('macro-template-drawer').click()
   expect(startRequested).toBe(false)
 

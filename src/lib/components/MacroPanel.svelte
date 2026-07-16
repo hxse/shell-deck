@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEditLease'
   import { cloneJsonValue } from '../jsonClone'
-  import type { RoomSnapshot, TerminalRuntimePosition } from '../protocol'
+  import type { ContentRecordChangedMessage, RoomSnapshot, ServerMessage, TerminalRuntimePosition } from '../protocol'
   import type { TerminalRoomClient } from '../terminalRoomClient'
   import type { MacroInsertionPaletteMode } from '../workspace/uiLayoutTypes'
   import type { MacroDefinitionV3, MacroRecord, MacroRecordSummary } from '../macro/macroDefinitionTypes'
@@ -20,8 +20,13 @@
     record: MacroRecord
     editing: boolean
     leaseWarning: string | null
+    preservePublishedCreateBuffer: boolean
   }
   type DefinitionOperationSource = 'visual' | 'json'
+  type RefreshOutcome = 'applied' | 'stale' | 'retry'
+  type TemplateRefreshResult = { outcome: RefreshOutcome; records?: MacroRecordSummary[] }
+  type SequencedContentRecordChange = ContentRecordChangedMessage & { sequence: number }
+  type SequencedContentEditLeaseChange = Extract<ServerMessage, { type: 'content_edit_lease_changed' }> & { sequence: number }
 
   let {
     roomClient,
@@ -29,9 +34,14 @@
     terminalStructureRevision,
     terminalPositions,
     terminalStructureLocked,
+    runnerSnapshot,
+    contentRecordChanges,
+    contentEditLeaseChanges,
+    connectionGeneration,
     insertionPaletteMode,
     onRoomSnapshot,
     onDirtyChange,
+    onMutationDenied,
     onResetWidth,
   } = $props<{
     roomClient: TerminalRoomClient | null
@@ -39,9 +49,14 @@
     terminalStructureRevision: number
     terminalPositions: TerminalRuntimePosition[] | null
     terminalStructureLocked: boolean
+    runnerSnapshot: MacroRunnerSnapshot | null
+    contentRecordChanges: Array<ContentRecordChangedMessage & { sequence: number }>
+    contentEditLeaseChanges: SequencedContentEditLeaseChange[]
+    connectionGeneration: number
     insertionPaletteMode: MacroInsertionPaletteMode
     onRoomSnapshot: (snapshot: RoomSnapshot) => void
     onDirtyChange: (dirty: boolean) => void
+    onMutationDenied: (reason: string) => void
     onResetWidth?: () => void
   }>()
 
@@ -55,6 +70,8 @@
   let draftRevision = $state(0)
   let editorGeneration = $state(0)
   let contentEditing = $state(false)
+  let leaseLost = $state(false)
+  let publishedCreateBufferPreserved = $state(false)
   let editLease = $state<ContentEditLeaseGrant | null>(null)
   let leaseView = $state<ContentEditLeaseView | null>(null)
   let dirty = $state(false)
@@ -68,6 +85,11 @@
   let runner = $state<MacroRunnerSnapshot | null>(null)
   let traces = $state<MacroRunTrace[]>([])
   let runnerInput = $state('')
+  let runnerInputDirty = $state(false)
+  let runnerInputSyncing = $state(false)
+  let runnerInputFlushPromise: Promise<void> | null = null
+  let runnerInputEditGeneration = 0
+  let runnerInputAcknowledgedGeneration = 0
   let jsonEditing = $state(false)
   let jsonText = $state('')
   let jsonRevision = $state(0)
@@ -75,6 +97,15 @@
   let telegramProfileIds = $state<string[]>([])
   let telegramProfilesError = $state('')
   let runnerRefreshGeneration = 0
+  let observedContentChangeSequence = 0
+  let handledContentLeaseChangeSequence = 0
+  let contentChangeProcessing = Promise.resolve()
+  let pendingMacroRecordChanges: SequencedContentRecordChange[] = []
+  let templateListGeneration = 0
+  let templateReadGeneration = 0
+  let reconciledConnectionGeneration = 0
+  let contentRetryAttempt = 0
+  let contentRetryTimer: ReturnType<typeof setTimeout> | null = null
 
   const filteredTemplates = $derived(templates.filter((template) => `${template.name}\n${template.description}`.toLowerCase().includes(templateSearch.trim().toLowerCase())))
   const portableValidation = $derived(validateMacroDefinitionV3(draft))
@@ -86,27 +117,94 @@
   const startState = $derived(resolveStartState())
 
   $effect(() => {
-    onDirtyChange(dirty || jsonEditing)
+    onDirtyChange(dirty || jsonEditing || publishedCreateBufferPreserved)
+  })
+
+  $effect(() => {
+    const changes = contentEditLeaseChanges.filter((change: SequencedContentEditLeaseChange) => change.sequence > handledContentLeaseChangeSequence)
+    if (changes.length === 0) return
+    handledContentLeaseChangeSequence = changes.at(-1)!.sequence
+    const recordId = selectedRecord?.id
+    const lease = editLease
+    if (!recordId || !lease || !contentEditing) return
+    const latest = changes.filter((change: SequencedContentEditLeaseChange) => change.resourceKey.kind === 'macro' && change.resourceKey.itemId === recordId).at(-1)
+    if (!latest) return
+    if (latest.view.mode === 'held' && latest.view.leaseEpoch === lease.leaseEpoch) {
+      leaseView = latest.view
+      return
+    }
+    markEditLeaseLost(latest.view, 'content_edit_lease_lost')
   })
 
   onMount(() => {
-    void refreshTemplates()
-    void refreshRunner()
+    void reconcileSavedContentTruth(connectionGeneration, true)
     void refreshTraces()
     void loadNotificationProfiles()
-    const timer = window.setInterval(() => { if (roomClient) void refreshRunner(false) }, 900)
-    const focus = () => { void refreshTemplates(false) }
+    const focus = () => {
+      resetContentRetry()
+      void reconcileSavedContentTruth(connectionGeneration, false)
+      scheduleMacroRecordChangeDrain()
+    }
     window.addEventListener('focus', focus)
-    return () => { window.clearInterval(timer); window.removeEventListener('focus', focus); void releaseEditLease() }
+    return () => {
+      window.removeEventListener('focus', focus)
+      if (contentRetryTimer) clearTimeout(contentRetryTimer)
+      void releaseEditLease()
+    }
+  })
+
+  $effect(() => {
+    const generation = connectionGeneration
+    if (generation <= 0 || generation === reconciledConnectionGeneration) return
+    reconciledConnectionGeneration = generation
+    resetContentRetry()
+    void reconcileSavedContentTruth(generation, false)
+    scheduleMacroRecordChangeDrain()
+  })
+
+  $effect(() => {
+    const next = runnerSnapshot
+    if (next) installRunnerSnapshot(next)
+  })
+
+  $effect(() => {
+    const changes = contentRecordChanges.filter((change: SequencedContentRecordChange) => change.sequence > observedContentChangeSequence)
+    if (changes.length === 0) return
+    observedContentChangeSequence = changes.at(-1)!.sequence
+    const macroChanges = changes.filter((change: SequencedContentRecordChange) => change.resourceKey.kind === 'macro')
+    if (macroChanges.length > 0) {
+      resetContentRetry()
+      pendingMacroRecordChanges.push(...macroChanges)
+      scheduleMacroRecordChangeDrain()
+    }
+  })
+
+  $effect(() => {
+    if (canMutateShared) return
+    const input = runner?.runtimeInput
+    runnerInput = input?.draft ?? ''
+    runnerInputDirty = false
+    runnerInputAcknowledgedGeneration = runnerInputEditGeneration
+    if (selectedRecord && contentEditing && editLease) markEditLeaseLost(null, 'room_control_lost')
   })
 
   function emptyDefinition(): MacroDefinitionV3 {
     return { schemaVersion: 3, name: 'New Macro', description: '', terminalLayout: [], body: [] }
   }
 
-  async function refreshTemplates(report = true) {
-    try { templates = await recordClient.list() }
-    catch (error) { if (report) errorText = messageOf(error) }
+  async function refreshTemplates(report = true): Promise<TemplateRefreshResult> {
+    const generation = ++templateListGeneration
+    try {
+      const records = await recordClient.list()
+      if (generation !== templateListGeneration) return { outcome: 'stale' }
+      templates = records
+      return { outcome: 'applied', records }
+    }
+    catch (error) {
+      if (generation !== templateListGeneration) return { outcome: 'stale' }
+      if (report) errorText = messageOf(error)
+      return { outcome: 'retry' }
+    }
   }
 
   async function loadNotificationProfiles() {
@@ -131,6 +229,8 @@
         draft = null
         dirty = false
         contentEditing = false
+        leaseLost = false
+        publishedCreateBufferPreserved = false
         jsonEditing = false
         jsonText = ''
         jsonError = null
@@ -145,14 +245,16 @@
       installRecord(record)
       return true
     } catch (error) {
-      if (canCommit(token)) errorText = messageOf(error)
+      if (canCommit(token)) reportMutationError(error)
       return false
     }
     finally { endOperation(token) }
   }
 
   async function createTemplate() {
-    if (operationPending || jsonEditing) return
+    if (!canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
+    if (jsonEditing) return
     if (dirty && !confirm('Discard unsaved macro changes?')) return
     const token = beginOperation()
     try {
@@ -162,20 +264,23 @@
       baseDefinition = null
       draft = emptyDefinition()
       contentEditing = true
+      leaseLost = false
+      publishedCreateBufferPreserved = false
       dirty = true
       draftRevision += 1
       editorGeneration += 1
       errorText = null
       macroView = 'editor'
-    } catch (error) { if (canCommit(token)) errorText = messageOf(error) }
+    } catch (error) { if (canCommit(token)) reportMutationError(error) }
     finally { endOperation(token) }
   }
 
   async function beginEdit(enterJson = false) {
     if (!selectedRecord || !roomClient || operationPending || !canMutateShared) {
-      errorText = canMutateShared ? 'no_saved_macro_selected' : 'room_control_required'
+      rejectMutation(!roomClient ? 'room_disconnected' : !canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : 'no_saved_macro_selected')
       return
     }
+    if (dirty && !confirm('Discard the unsaved draft and reload the latest saved Macro before editing?')) return
     const token = beginOperation()
     try {
       const acquired = await acquireFreshEditLease(selectedRecord.id, token, 'edit')
@@ -184,7 +289,7 @@
       leaseView = acquired.view
       installRecord(acquired.record, true)
       if (enterJson) openJsonBuffer()
-    } catch (error) { if (canCommit(token)) errorText = messageOf(error) }
+    } catch (error) { if (canCommit(token)) reportMutationError(error) }
     finally { endOperation(token) }
   }
 
@@ -205,31 +310,37 @@
       }
       dirty = false
       contentEditing = false
+      publishedCreateBufferPreserved = false
       draftRevision += 1
-    } catch (error) { if (canCommit(token)) errorText = messageOf(error) }
+    } catch (error) { if (canCommit(token)) reportMutationError(error) }
     finally { endOperation(token) }
   }
 
   async function saveTemplate() {
-    if (!draft || operationPending) return
+    if (!canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
+    if (!draft) return
     const token = beginOperation()
     const revision = draftRevision
     const definition = cloneJsonValue(draft)
     try {
       const persisted = await persistDefinition(definition, token, revision)
-      if (!persisted || !canCommit(token, revision)) return
-      installRecord(persisted.record, persisted.editing)
+      if (!persisted) return
+      if (!canCommit(token, revision)) {
+        reconcilePublishedCreate(persisted.record, definition, token, revision, 'visual')
+        return
+      }
+      installRecord(persisted.record, persisted.editing, persisted.preservePublishedCreateBuffer)
       if (persisted.leaseWarning) errorText = persisted.leaseWarning
       await refreshTemplates(false)
-    } catch (error) { if (canCommit(token)) errorText = formatError(error) }
+    } catch (error) { if (canCommit(token)) reportMutationError(error, true) }
     finally { endOperation(token) }
   }
 
   async function deleteTemplate() {
-    if (!selectedRecord || !roomClient || operationPending || !canMutateShared) {
-      errorText = canMutateShared ? 'no_saved_macro_selected' : 'room_control_required'
-      return
-    }
+    if (!roomClient || !canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
+    if (!selectedRecord) { rejectMutation('no_saved_macro_selected'); return }
     const selectedId = selectedRecord.id
     const token = beginOperation()
     let temporaryLease: ContentEditLeaseGrant | null = null
@@ -258,11 +369,12 @@
       draft = null
       dirty = false
       contentEditing = false
+      publishedCreateBufferPreserved = false
       editorGeneration += 1
       await refreshTemplates(false)
     } catch (error) {
       if (temporaryLease) await roomClient.releaseContentEditLease(temporaryLease.editLeaseId).catch(() => {})
-      if (canCommit(token)) errorText = messageOf(error)
+      if (canCommit(token)) reportMutationError(error)
     }
     finally { endOperation(token) }
   }
@@ -300,7 +412,13 @@
   }
 
   function updateDraft(mutator: (definition: MacroDefinitionV3) => void) {
-    if (!draft || operationPending || (selectedRecord !== null && !contentEditing)) return
+    if (!canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
+    if (!draft) return
+    if (selectedRecord !== null && !contentEditing) {
+      rejectMutation(leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required')
+      return
+    }
     const next = cloneJsonValue(draft)
     mutator(next)
     draft = next
@@ -328,17 +446,22 @@
   async function saveJson() {
     const parsed = parseAndValidateMacroDefinitionJson(jsonText)
     if (!parsed.ok) { jsonError = formatJsonValidation(parsed); return }
-    if (operationPending) return
+    if (!canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
     const token = beginOperation()
     const revision = jsonRevision
     const candidate = cloneJsonValue(parsed.value)
     try {
       const persisted = await persistDefinition(candidate, token, revision, 'json')
-      if (!persisted || !definitionOperationIsCurrent(token, revision, 'json')) return
+      if (!persisted) return
+      if (!definitionOperationIsCurrent(token, revision, 'json')) {
+        reconcilePublishedCreate(persisted.record, candidate, token, revision, 'json')
+        return
+      }
       const refreshed = await recordClient.list()
       if (!definitionOperationIsCurrent(token, revision, 'json')) return
       templates = refreshed
-      installRecord(persisted.record, persisted.editing)
+      installRecord(persisted.record, persisted.editing, persisted.preservePublishedCreateBuffer)
       if (persisted.leaseWarning) errorText = persisted.leaseWarning
     } catch (error) {
       if (definitionOperationIsCurrent(token, revision, 'json')) jsonError = formatError(error)
@@ -353,12 +476,15 @@
   }
 
   async function prepareTerminals() {
-    if (operationPending || !roomClient) return
+    if (!roomClient || !canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
+    if (terminalStructureLocked) { rejectMutation('room_structure_locked_by_run'); return }
     const layout = jsonEditing
       ? parseAndValidateMacroTerminalLayoutFromDefinitionJson(jsonText)
       : validateMacroTerminalLayout(draft?.terminalLayout)
     if (!layout.ok) {
       errorText = 'error' in layout ? formatJsonValidation(layout) : formatIssues(layout.issues)
+      onMutationDenied(errorText)
       return
     }
     const token = beginOperation()
@@ -369,12 +495,13 @@
       if (!canCommit(token, undefined, capturedDraftRevision)) return
       onRoomSnapshot(result.snapshot)
       errorText = result.ok ? null : `${result.error}: ${result.operation} terminal ${result.failedIndex}`
-    } catch (error) { if (canCommit(token)) errorText = messageOf(error) }
+    } catch (error) { if (canCommit(token)) reportMutationError(error) }
     finally { preparing = false; endOperation(token) }
   }
 
   async function controlRunner(action: 'start' | 'pause' | 'resume' | 'stop') {
-    if (operationPending) return
+    if (!roomClient || !canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
     if (action !== 'start') {
       const token = beginOperation()
       try {
@@ -383,11 +510,14 @@
             : await runnerClient.stop()
         if (canCommit(token)) installRunnerSnapshot(nextRunner)
       }
-      catch (error) { if (canCommit(token)) errorText = messageOf(error) }
+      catch (error) { if (canCommit(token)) reportMutationError(error) }
       finally { endOperation(token) }
       return
     }
-    if (!draft || !portableValidation.ok || runtimeValidation?.status !== 'ready') return
+    if (!draft || !portableValidation.ok || runtimeValidation?.status !== 'ready') {
+      rejectMutation(startState.reason || 'macro_not_runnable')
+      return
+    }
     const token = beginOperation()
     const revision = draftRevision
     const structureRevision = terminalStructureRevision
@@ -399,16 +529,20 @@
         persisted = await persistDefinition(definition, token, revision)
         record = persisted?.record ?? null
       }
-      if (!record || !canCommit(token, revision)) return
+      if (!record) return
+      if (!canCommit(token, revision)) {
+        if (dirty) reconcilePublishedCreate(record, definition, token, revision, 'visual')
+        return
+      }
       if (dirty) {
-        installRecord(record, persisted?.editing ?? false)
+        installRecord(record, persisted?.editing ?? false, persisted?.preservePublishedCreateBuffer ?? false)
         if (persisted?.leaseWarning) errorText = persisted.leaseWarning
         await refreshTemplates(false)
       }
       if (!canCommit(token)) return
       const nextRunner = await runnerClient.start(record.id, record.revision, structureRevision)
       if (canCommit(token)) { installRunnerSnapshot(nextRunner); errorText = null }
-    } catch (error) { if (canCommit(token)) errorText = formatError(error) }
+    } catch (error) { if (canCommit(token)) reportMutationError(error, true) }
     finally { endOperation(token) }
   }
 
@@ -425,7 +559,10 @@
       ? editLease && contentEditing ? await recordClient.update(record, validation.value, editLease) : (() => { throw new Error('content_edit_lease_required') })()
       : null
     const result = updateResult?.record ?? await recordClient.create(validation.value)
-    if (!definitionOperationIsCurrent(token, revision, source)) return null
+    if (!definitionOperationIsCurrent(token, revision, source)) {
+      if (!record) reconcilePublishedCreate(result, definition, token, revision, source)
+      return null
+    }
     if (record && result.id !== record.id) throw new Error('macro_record_identity_changed')
     if (record && result.revision !== record.revision + 1) throw new Error('macro_revision_conflict')
     if (!record && result.revision !== 1) throw new Error('macro_revision_conflict')
@@ -434,19 +571,49 @@
       if (updateResult?.leaseOutcome.status === 'retained') {
         editLease = updateResult.leaseOutcome.grant
         leaseView = { mode: 'held', leaseEpoch: updateResult.leaseOutcome.grant.leaseEpoch, expiresAt: updateResult.leaseOutcome.grant.expiresAt }
-        return { record: result, editing: true, leaseWarning: null }
+        return { record: result, editing: true, leaseWarning: null, preservePublishedCreateBuffer: false }
       }
       editLease = null
       leaseView = null
-      return { record: result, editing: false, leaseWarning: updateResult?.leaseOutcome.status === 'lost' ? updateResult.leaseOutcome.reason : 'content_edit_lease_lost' }
+      return {
+        record: result,
+        editing: false,
+        leaseWarning: updateResult?.leaseOutcome.status === 'lost' ? updateResult.leaseOutcome.reason : 'content_edit_lease_lost',
+        preservePublishedCreateBuffer: false,
+      }
     }
     const acquired = await acquireCreatedRecordEditLease(result, () => definitionOperationIsCurrent(token, revision, source))
-    if (acquired === null) return null
+    if (acquired === null || !definitionOperationIsCurrent(token, revision, source)) {
+      reconcilePublishedCreate(result, definition, token, revision, source)
+      return null
+    }
     return {
       record: result,
       editing: acquired.ok,
       leaseWarning: acquired.ok ? null : `macro_saved_but_edit_lease_not_retained:${acquired.reason}`,
+      preservePublishedCreateBuffer: !acquired.ok,
     }
+  }
+
+  function reconcilePublishedCreate(
+    record: MacroRecord,
+    definition: MacroDefinitionV3,
+    token: number,
+    revision: number,
+    source: DefinitionOperationSource,
+  ): boolean {
+    const localIdentityMatches = operationGeneration === token
+      && selectedRecord === null
+      && (source === 'json' ? jsonRevision === revision : draftRevision === revision)
+    if (!localIdentityMatches || record.revision !== 1) return false
+    editLease = null
+    leaseView = null
+    installRecord(record, false, true)
+    draft = cloneJsonValue(definition)
+    baseDefinition = cloneJsonValue(record.definition)
+    dirty = false
+    errorText = 'macro_saved_but_edit_lease_not_retained:operation_context_changed'
+    return true
   }
 
   async function acquireCreatedRecordEditLease(record: MacroRecord, operationIsCurrent: () => boolean): Promise<{ ok: true } | { ok: false; reason: string } | null> {
@@ -470,14 +637,88 @@
   }
 
   async function submitRunnerInput() {
-    if (operationPending) return
+    if (!roomClient || !canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (operationPending) { rejectMutation('operation_pending'); return }
+    await flushRunnerInputDraft()
+    const input = runner?.runtimeInput
+    if (!input || runnerInputDirty) {
+      if (!input) rejectMutation('runner_not_waiting_input')
+      return
+    }
     const token = beginOperation()
     const value = runnerInput
     try {
-      const nextRunner = await runnerClient.submitInput(value)
+      const nextRunner = await runnerClient.submitInput(input.invocationId, value, input.inputRevision)
       if (canCommit(token)) installRunnerSnapshot(nextRunner)
-    } catch (error) { if (canCommit(token)) errorText = messageOf(error) }
+    } catch (error) {
+      if (canCommit(token)) {
+        reportMutationError(error)
+        if (messageOf(error) === 'runner_input_revision_conflict') await refreshRunner(false)
+      }
+    }
     finally { endOperation(token) }
+  }
+
+  function updateRunnerInput(value: string) {
+    if (!roomClient || !canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
+    if (!runner?.runtimeInput) { rejectMutation('runner_not_waiting_input'); return }
+    const requestInFlight = runnerInputFlushPromise !== null || runnerInputSyncing
+    runnerInputEditGeneration += 1
+    runnerInput = value
+    if (!requestInFlight && value === runner.runtimeInput.draft) {
+      runnerInputAcknowledgedGeneration = runnerInputEditGeneration
+      runnerInputDirty = false
+    } else runnerInputDirty = runnerInputEditGeneration > runnerInputAcknowledgedGeneration
+    if (runnerInputDirty) void flushRunnerInputDraft()
+  }
+
+  function flushRunnerInputDraft(): Promise<void> {
+    if (runnerInputFlushPromise) return runnerInputFlushPromise
+    const operation = (async () => {
+      runnerInputSyncing = true
+      try {
+        while (runnerInputEditGeneration > runnerInputAcknowledgedGeneration) {
+          if (!roomClient || !canMutateShared) break
+          const input = runner?.runtimeInput
+          if (!input) break
+          const desired = runnerInput
+          const sentGeneration = runnerInputEditGeneration
+          try {
+            const next = await runnerClient.updateInputDraft(input.invocationId, desired, input.inputRevision)
+            installRunnerSnapshot(next)
+            const acknowledged = next.runtimeInput
+            if (acknowledged?.invocationId === input.invocationId) {
+              runnerInputAcknowledgedGeneration = Math.max(runnerInputAcknowledgedGeneration, sentGeneration)
+              if (runnerInput === acknowledged.draft) {
+                runnerInputAcknowledgedGeneration = runnerInputEditGeneration
+              }
+              runnerInputDirty = runnerInputAcknowledgedGeneration < runnerInputEditGeneration
+            }
+          } catch (error) {
+            const reason = messageOf(error)
+            if (reason === 'runner_input_revision_conflict') {
+              const previousRevision = runner?.runtimeRevision
+              await refreshRunner(false)
+              if (runner?.runtimeRevision === previousRevision) {
+                reportMutationError(error)
+                break
+              }
+              continue
+            }
+            reportMutationError(error)
+            break
+          }
+        }
+      } finally {
+        runnerInputDirty = runnerInputAcknowledgedGeneration < runnerInputEditGeneration
+        runnerInputSyncing = false
+      }
+    })()
+    runnerInputFlushPromise = operation
+    void operation.finally(() => {
+      if (runnerInputFlushPromise === operation) runnerInputFlushPromise = null
+    })
+    return operation
   }
 
   async function refreshRunner(report = true) {
@@ -497,23 +738,168 @@
   }
 
   function installRunnerSnapshot(next: MacroRunnerSnapshot) {
-    const waitingInvocationChanged = next.inputPrompt !== null && (
-      runner?.runId !== next.runId
-      || runner?.currentNodeId !== next.currentNodeId
-      || runner?.inputPrompt !== next.inputPrompt
-      || runner?.status !== 'waiting_input'
-    )
-    if (waitingInvocationChanged) runnerInput = next.inputDefaultText ?? ''
-    else if (next.inputPrompt === null) runnerInput = ''
+    if (runner && runner.roomGeneration === next.roomGeneration && next.runtimeRevision < runner.runtimeRevision) return
+    const previousInput = runner?.runtimeInput
     runner = next
+    const input = next.runtimeInput
+    if (!input) {
+      runnerInput = ''
+      runnerInputDirty = false
+      runnerInputEditGeneration = 0
+      runnerInputAcknowledgedGeneration = 0
+      return
+    }
+    if (previousInput?.invocationId !== input.invocationId) {
+      runnerInput = input.draft
+      runnerInputDirty = false
+      runnerInputEditGeneration = 0
+      runnerInputAcknowledgedGeneration = 0
+      return
+    }
+    const hasUnacknowledgedLocalEdit = runnerInputEditGeneration > runnerInputAcknowledgedGeneration
+    if (!hasUnacknowledgedLocalEdit || !canMutateShared || runnerInput === input.draft) {
+      runnerInput = input.draft
+      runnerInputDirty = false
+      runnerInputAcknowledgedGeneration = runnerInputEditGeneration
+    } else {
+      runnerInputDirty = true
+    }
   }
 
-  function installRecord(record: MacroRecord, editing = false) {
+  function scheduleMacroRecordChangeDrain() {
+    contentChangeProcessing = contentChangeProcessing
+      .then(async () => { await drainMacroRecordChanges() })
+      .catch((error) => { errorText = messageOf(error) })
+  }
+
+  function resetContentRetry() {
+    contentRetryAttempt = 0
+    if (contentRetryTimer) clearTimeout(contentRetryTimer)
+    contentRetryTimer = null
+  }
+
+  function scheduleContentRetry() {
+    if (contentRetryTimer || contentRetryAttempt >= 3) return
+    const delays = [100, 300, 800]
+    const delay = delays[contentRetryAttempt++] ?? 800
+    contentRetryTimer = setTimeout(() => {
+      contentRetryTimer = null
+      void reconcileSavedContentTruth(connectionGeneration, false)
+      scheduleMacroRecordChangeDrain()
+    }, delay)
+  }
+
+  function hasProtectedMacroBuffer(): boolean {
+    return dirty || contentEditing || jsonEditing || leaseLost || publishedCreateBufferPreserved
+  }
+
+  function cleanReadonlySelectionMatches(id: string, revision: number, generation: number): boolean {
+    return selectedRecord?.id === id
+      && selectedRecord.revision === revision
+      && editorGeneration === generation
+      && !operationPending
+      && !hasProtectedMacroBuffer()
+  }
+
+  async function reconcileSavedContentTruth(expectedConnectionGeneration: number, report: boolean) {
+    const refreshed = await refreshTemplates(report)
+    if (refreshed.outcome !== 'applied') {
+      if (refreshed.outcome === 'retry') scheduleContentRetry()
+      return
+    }
+    if (expectedConnectionGeneration > 0 && expectedConnectionGeneration !== connectionGeneration) return
+    const current = selectedRecord
+    if (!current) return
+    const summary = refreshed.records?.find((candidate) => candidate.id === current.id)
+    if (!summary) {
+      errorText = 'macro_record_deleted_elsewhere'
+      return
+    }
+    if (summary.revision <= current.revision) return
+    if (operationPending || hasProtectedMacroBuffer()) {
+      errorText = 'macro_record_changed_elsewhere'
+      return
+    }
+    const readGeneration = ++templateReadGeneration
+    const capturedEditorGeneration = editorGeneration
+    try {
+      const record = await recordClient.read(current.id)
+      if (readGeneration !== templateReadGeneration) return
+      if (expectedConnectionGeneration > 0 && expectedConnectionGeneration !== connectionGeneration) return
+      if (!cleanReadonlySelectionMatches(current.id, current.revision, capturedEditorGeneration)) return
+      if (record.revision < Math.max(current.revision, summary.revision)) {
+        scheduleContentRetry()
+        return
+      }
+      installRecord(record)
+    } catch (error) {
+      if (readGeneration !== templateReadGeneration) return
+      if (isNotFoundError(error) && selectedRecord?.id === current.id) errorText = 'macro_record_deleted_elsewhere'
+      else {
+        if (report) errorText = messageOf(error)
+        scheduleContentRetry()
+      }
+    }
+  }
+
+  async function drainMacroRecordChanges() {
+    while (!operationPending && pendingMacroRecordChanges.length > 0) {
+      const batch = pendingMacroRecordChanges.slice()
+      const consumed = await handleMacroRecordChanges(batch)
+      if (!consumed) { scheduleContentRetry(); return }
+      const lastSequence = batch.at(-1)!.sequence
+      pendingMacroRecordChanges = pendingMacroRecordChanges.filter((change) => change.sequence > lastSequence)
+      resetContentRetry()
+    }
+  }
+
+  async function handleMacroRecordChanges(changes: SequencedContentRecordChange[]): Promise<boolean> {
+    if (operationPending) return false
+    const refreshed = await refreshTemplates(false)
+    if (refreshed.outcome !== 'applied' || operationPending) return false
+    if (!selectedRecord) return true
+    const change = changes.filter((candidate) => candidate.resourceKey.itemId === selectedRecord?.id).at(-1)
+    if (!change) return true
+    if (change.operation === 'deleted') {
+      errorText = 'macro_record_deleted_elsewhere'
+      return true
+    }
+    if (change.revision !== null && change.revision <= selectedRecord.revision) return true
+    if (hasProtectedMacroBuffer()) {
+      errorText = 'macro_record_changed_elsewhere'
+      return true
+    }
+    const expectedId = selectedRecord.id
+    const expectedRevision = selectedRecord.revision
+    const capturedEditorGeneration = editorGeneration
+    const requiredRevision = change.revision ?? expectedRevision
+    const readGeneration = ++templateReadGeneration
+    try {
+      const record = await recordClient.read(expectedId)
+      if (readGeneration !== templateReadGeneration) return false
+      if (!cleanReadonlySelectionMatches(expectedId, expectedRevision, capturedEditorGeneration)) return false
+      if (record.revision < Math.max(expectedRevision, requiredRevision)) return false
+      installRecord(record)
+    } catch (error) {
+      if (readGeneration !== templateReadGeneration) return false
+      if (isNotFoundError(error) && selectedRecord?.id === expectedId) {
+        errorText = 'macro_record_deleted_elsewhere'
+        return true
+      }
+      if (selectedRecord?.id === expectedId) errorText = messageOf(error)
+      return false
+    }
+    return true
+  }
+
+  function installRecord(record: MacroRecord, editing = false, preservePublishedCreateBuffer = false) {
     selectedRecord = cloneJsonValue(record)
     baseDefinition = cloneJsonValue(record.definition)
     draft = cloneJsonValue(record.definition)
     dirty = false
     contentEditing = editing
+    leaseLost = false
+    publishedCreateBufferPreserved = preservePublishedCreateBuffer
     draftRevision += 1
     editorGeneration += 1
     jsonEditing = false
@@ -525,6 +911,7 @@
     const lease = editLease
     editLease = null
     leaseView = null
+    leaseLost = false
     if (lease && roomClient?.canMutateShared) await roomClient.releaseContentEditLease(lease.editLeaseId).catch(() => {})
   }
 
@@ -548,6 +935,15 @@
     return { disabled: false, reason: '' }
   }
 
+  function markEditLeaseLost(view: ContentEditLeaseView | null, reason: string) {
+    editLease = null
+    leaseView = view
+    contentEditing = false
+    leaseLost = true
+    errorText = reason
+    onMutationDenied(reason)
+  }
+
   function beginOperation(): number {
     operationGeneration += 1
     operationControlEpoch = roomClient?.controlGrant?.controlEpoch ?? null
@@ -555,7 +951,11 @@
     errorText = null
     return operationGeneration
   }
-  function endOperation(token: number) { if (operationGeneration === token) operationPending = false }
+  function endOperation(token: number) {
+    if (operationGeneration !== token) return
+    operationPending = false
+    scheduleMacroRecordChangeDrain()
+  }
   function canCommit(token: number, expectedDraftRevision?: number, alternateRevision?: number): boolean {
     if (operationGeneration !== token) return false
     if (expectedDraftRevision !== undefined && draftRevision !== expectedDraftRevision) return false
@@ -567,6 +967,17 @@
     return source === 'json' ? canCommit(token, undefined, revision) : canCommit(token, revision)
   }
 
+  function rejectMutation(reason: string) {
+    errorText = reason
+    onMutationDenied(reason)
+  }
+
+  function reportMutationError(error: unknown, formatted = false) {
+    const reason = messageOf(error)
+    errorText = formatted ? formatError(error) : reason
+    onMutationDenied(reason)
+  }
+
   function formatIssues(issues: Array<{ path: string; code?: string; message: string }>): string { return issues.map((issue) => `${issue.path || '<root>'}: ${issue.code ? `${issue.code}: ` : ''}${issue.message}`).join('\n') }
   function formatJsonValidation(result: { ok: false; error: { code: string; message?: string; issues?: Array<{ path: string; code?: string; message: string }> } }): string {
     return result.error.issues ? formatIssues(result.error.issues) : result.error.message ?? result.error.code
@@ -575,20 +986,23 @@
     const response = error instanceof Error && 'response' in error ? (error as Error & { response?: { issues?: Array<{ path: string; code?: string; message: string }> } }).response : undefined
     return response?.issues ? formatIssues(response.issues) : messageOf(error)
   }
+  function isNotFoundError(error: unknown): boolean {
+    return error instanceof Error && (error.message.startsWith('macro_record_not_found:') || ('status' in error && error.status === 404))
+  }
   function messageOf(error: unknown): string { return error instanceof Error ? error.message : String(error) }
 </script>
 
 <section class="macro-panel" data-testid="macro-panel">
   <MacroWorkbenchChrome
     {templates} {filteredTemplates} {draft} {selectedRecord} {templateSearch} {dirty} {contentEditing} mutationAllowed={canMutateShared}
-    {errorText} {macroView} {runner} {statusText} {runnerInput} {preparing}
+    {errorText} {macroView} {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing}
     prepareDisabled={prepareState.disabled} prepareDisabledReason={prepareState.reason}
     startDisabled={startState.disabled} startDisabledReason={startState.reason}
     {jsonEditing} {operationPending}
     onTemplateSearchChange={(value) => { templateSearch = value }} onSelectTemplate={selectTemplate}
     onCreateTemplate={() => void createTemplate()} onBeginEdit={() => void beginEdit()} onSaveTemplate={() => void saveTemplate()}
     onCancelEdit={() => void cancelEdit()} onDeleteTemplate={() => void deleteTemplate()} onUpdateDraft={updateDraft}
-    onResetWidth={onResetWidth} onPrepare={() => void prepareTerminals()} onRunnerInputChange={(value) => { runnerInput = value }}
+    onResetWidth={onResetWidth} onPrepare={() => void prepareTerminals()} onRunnerInputChange={updateRunnerInput}
     onSubmitRunnerInput={() => void submitRunnerInput()} onRefreshRunner={() => void refreshRunner()}
     onMacroControl={(action) => void controlRunner(action)} onViewChange={(view) => { if (!jsonEditing) { macroView = view; if (view === 'trace') void refreshTraces() } }}
   />
@@ -599,13 +1013,14 @@
         {#if draft}
           <MacroEditorShell {draft} validation={portableValidation} runtimePositions={terminalPositions} {insertionPaletteMode}
             {telegramProfileIds} {telegramProfilesError} locked={editorLocked} editorKey={`${selectedRecord?.id ?? 'new'}:${editorGeneration}`}
-            onUpdateDraft={updateDraft} />
+            lockedReason={!canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required'}
+            {onMutationDenied} onUpdateDraft={updateDraft} />
         {:else}
           <p class="hint">Create or select a macro.</p>
         {/if}
       {/key}
     {:else if macroView === 'json'}
-      <MacroJsonView {draft} {jsonPreview} editing={jsonEditing} saving={operationPending} editText={jsonText} editError={jsonError} canEdit={canMutateShared}
+      <MacroJsonView {draft} {jsonPreview} editing={jsonEditing} saving={operationPending} editText={jsonText} editError={jsonError} canEdit={canMutateShared && (selectedRecord === null || contentEditing)}
         {operationPending} onStartEdit={startJsonBuffer} onEditTextChange={updateJsonText} onSave={saveJson} onCancel={cancelJson}
         onCopyResult={(error) => { errorText = error }} />
     {:else}

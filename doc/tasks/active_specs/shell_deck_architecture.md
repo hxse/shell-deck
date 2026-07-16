@@ -22,6 +22,8 @@ Room identity 是 `serverInstanceId + roomId + roomGeneration`。生命周期为
 
 Room runtime message只广播到同一Room。Room controller是process-local memory state并随generation销毁；shared mutation先取得lifecycle ticket，再验证owner control epoch/lease。Home lifecycle管理是唯一不要求目标Room controller的外部入口。
 
+浏览器之间从不直接同步。terminal、runner、runtime input和notification全部先进入server-owned Room state，再由Room WebSocket投影到各连接；关闭browser不会停止server runner。Macro/Library selector和未保存draft保持browser-local，saved record通过user-global store与generic content invalidation同步，不能与Room runtime混成一份状态。
+
 长期user content不属于Room。saved Macro/Library record另由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
 
 ## Macro 与 runner
@@ -31,6 +33,8 @@ production Macro采用`MacroDefinitionV3`与`MacroRecord` envelope分层。defin
 terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Library Load、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
 
 runner把manifest、append-only events和artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、run snapshot和structure lock只在live process内。日志从不恢复runner。
+
+正常runner UI不polling。连接/重连收到完整、revisioned runner snapshot，后续状态由server push；Running Macro是Room共享的冻结只读配置，不覆盖各browser本地正在查看或编辑的Macro。runtime input draft也由server内存持有并在single-controller takeover后继续。
 
 ## 启动与安全
 

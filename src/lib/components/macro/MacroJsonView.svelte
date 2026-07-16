@@ -54,10 +54,10 @@
     <div class="inline-actions">
       <button type="button" data-testid="macro-json-copy" onclick={copyJson} disabled={!draft && !editing}>{copyLabel}</button>
       {#if editing}
-        <button type="button" data-testid="macro-save-json" onclick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        <button type="button" data-testid="macro-save-json" onclick={onSave} disabled={saving} aria-disabled={saving || !canEdit}>{saving ? 'Saving…' : 'Save'}</button>
         <button type="button" data-testid="macro-cancel-json" onclick={onCancel} disabled={saving}>Cancel</button>
       {:else}
-        <button type="button" data-testid="macro-edit-json" onclick={onStartEdit} disabled={!draft || operationPending || !canEdit} title={!canEdit ? 'Room control is required' : operationPending ? 'Wait for the pending macro operation to finish' : undefined}>Edit</button>
+        <button type="button" data-testid="macro-edit-json" onclick={onStartEdit} disabled={!draft || operationPending} aria-disabled={!draft || operationPending || !canEdit} title={!canEdit ? 'Room control is required' : operationPending ? 'Wait for the pending macro operation to finish' : undefined}>Edit</button>
       {/if}
     </div>
   </div>
@@ -65,7 +65,7 @@
   {#if editing}
     <p class="macro-json-edit-lock" data-testid="macro-json-edit-lock">Save or Cancel before leaving JSON or changing macros.</p>
     <div class="macro-json-line-editor">
-      <LineNumberedTextarea testId="macro-json-editor" value={editText} maxRows={30} ariaLabel="Macro JSON editor" onInput={onEditTextChange} />
+      <LineNumberedTextarea testId="macro-json-editor" value={editText} maxRows={30} ariaLabel="Macro JSON editor" disabled={saving || !canEdit} onInput={onEditTextChange} />
     </div>
   {:else if draft}
     <pre data-testid="macro-json-preview">{jsonPreview}</pre>

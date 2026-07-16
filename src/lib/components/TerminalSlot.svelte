@@ -11,10 +11,11 @@
   const RENDERED_TAIL_CODE_UNIT_LIMIT = 8192
   const DEBUG_COUNTER_LIMIT = 999_999_999
 
-  let { terminal, client, readOnly = false } = $props<{
+  let { terminal, client, readOnly = false, onMutationDenied = () => {} } = $props<{
     terminal: TerminalViewSnapshot
     client: TerminalRoomClient | null
     readOnly?: boolean
+    onMutationDenied?: (reason: string) => void
   }>()
   const terminalLabel = $derived(terminalDisplayLabel(terminal))
 
@@ -55,7 +56,7 @@
       current.scrollToBottom()
       if (update.kind === 'replace' && hydratingXterm === current) {
         hydratingXterm = null
-        current.options.disableStdin = readOnly
+        current.options.disableStdin = false
       }
     },
   })
@@ -77,7 +78,7 @@
     const wasReadOnly = appliedReadOnly
     appliedReadOnly = readOnly
     if (!xterm) return
-    xterm.options.disableStdin = readOnly || hydratingXterm === xterm
+    xterm.options.disableStdin = hydratingXterm === xterm
     if (!readOnly) {
       // An observer still fits its local xterm for readable/copyable output, but
       // it must not resize the shared PTY. Force the first controller-side fit
@@ -145,7 +146,10 @@
     hydratingXterm = next
     next.open(host)
     const terminalId = terminal.terminalId
-    next.onData((data) => { if (!readOnly) client?.send({ type: 'terminal_input', terminalId, data }) })
+    next.onData((data) => {
+      if (readOnly) { onMutationDenied('room_control_required'); return }
+      client?.send({ type: 'terminal_input', terminalId, data })
+    })
     parserPump.setTarget(next)
     fitToHost()
     writeToParser(update)

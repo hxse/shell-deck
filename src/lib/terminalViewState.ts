@@ -1,4 +1,4 @@
-import type { TerminalBackendKind, TerminalRevisionFields, TerminalSnapshot } from './protocol'
+import type { ServerMessage, TerminalBackendKind, TerminalRevisionFields, TerminalRuntimePosition, TerminalSnapshot } from './protocol'
 
 export const BROWSER_TERMINAL_REPLAY_CODE_UNIT_LIMIT = 2 * 1024 * 1024
 
@@ -110,6 +110,34 @@ export class TerminalViewStateStore {
       replay: tail.snapshot(),
       renderUpdate: { revision, kind: 'replace', data: tail.text() },
     }
+  }
+}
+
+export function applyTerminalStateProjection(
+  store: TerminalViewStateStore,
+  terminals: TerminalViewSnapshot[],
+  positions: TerminalRuntimePosition[] | null,
+  message: Extract<ServerMessage, { type: 'terminal_state' }>,
+): { terminals: TerminalViewSnapshot[]; positions: TerminalRuntimePosition[] | null; accepted: boolean } {
+  let accepted = false
+  const nextTerminals = terminals.map((terminal) => {
+    if (terminal.terminalId !== message.terminalId) return terminal
+    const next = store.patch(terminal, message, {
+      status: message.status,
+      cols: message.cols,
+      rows: message.rows,
+      exitCode: message.exitCode,
+      signal: message.signal,
+    })
+    if (next !== terminal) accepted = true
+    return next
+  })
+  if (!accepted) return { terminals: nextTerminals, positions, accepted: false }
+  const readiness = message.status === 'running' ? 'ready' : message.status === 'closed' ? 'exited' : message.status
+  return {
+    terminals: nextTerminals,
+    positions: positions?.map((position) => position.terminalId === message.terminalId ? { ...position, readiness } : position) ?? null,
+    accepted: true,
   }
 }
 

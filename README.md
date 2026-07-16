@@ -2,7 +2,7 @@
 
 `shell-deck` is a local browser terminal workspace with live, URL-addressed Rooms and a visual macro system. Codex and other programs remain ordinary processes inside PTYs; a macro addresses terminals by their current index/type and resolves that logical layout to runtime terminal IDs at Start.
 
-Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, and the production Macro V3 editor/runner cutover in `.034`.
+Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro V3 editor/runner cutover in `.034`, and server-authoritative Room runtime sync in `.035`.
 
 Core V0 behavior:
 
@@ -19,6 +19,9 @@ Core V0 behavior:
 - MacroDefinitionV3 stores only portable Flow plus continuous terminal index/type; MacroRecord metadata and runtime terminal IDs remain separate
 - terminal layout changes only through the explicit `Prepare terminals` button; selection, Save, Start and terminal events never auto-prepare
 - Start validates a saved record revision and terminal structure revision, then freezes index/type to terminalId/launchId routing for the run
+- Macro selection/draft stays browser-local, while saved records and the Room's frozen Running Macro are synchronized through the server
+- runner status/current node/runtime input are pushed to every same-Room connection; closing browsers does not stop the live run
+- shared mutation denial uses one actionable toast instead of silent disabled controls
 - run evidence is append-only events plus artifacts and never hydrates runtime state
 - Room-scoped AgentEvent/Codex hook ingest persists attributable evidence; Macro capture consumption returns in `.034`
 - parser profiles remain an independent catalog/developer surface and are not a current Macro action
@@ -35,6 +38,7 @@ just stop                  # stop the default local server pid
 just test-032              # Room/user-storage foundation gate
 just test-033              # Room controller/content edit lease gate
 just test-034              # Macro V3 editor/Prepare/runner gate
+just test-035              # server-authoritative Room runtime sync gate
 ```
 
 V0 phase tasks:
@@ -58,3 +62,4 @@ Documentation entry points:
 - `doc/tasks/index/002_20260627A.032.md`
 - `doc/tasks/index/003_20260627A.033.md`
 - `doc/tasks/index/004_20260627A.034.md`
+- `doc/tasks/index/005_20260627A.035.md`

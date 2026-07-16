@@ -15,10 +15,10 @@ import type {
 } from '../src/lib/macro/macroDefinitionTypes'
 import { validateMacroDefinitionV3 } from '../src/lib/macro/macroDefinitionValidation'
 import { validateMacroRuntimeBinding } from '../src/lib/macro/macroRuntimeBinding'
-import type { FrozenTerminalBinding, MacroRunnerSnapshot, MacroRunTrace, RunManifestV1 } from '../src/lib/macro/runnerTypes'
+import type { FrozenTerminalBinding, MacroRunnerDelta, MacroRunnerSnapshot, MacroRunTrace, RunManifestV1 } from '../src/lib/macro/runnerTypes'
 import { renderScopedTemplate, renderTemplatableScalar, type TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
 import { buildTerminalInputPayload, resolveTerminalInputDelivery } from '../src/lib/terminal/terminalInputDelivery'
-import type { NotificationService } from './notificationService'
+import type { NotificationDispatcher } from './notificationService'
 import type { MacroRecordStore } from './sharedContentStore'
 import { macroDefinitionHash, MacroRunStore } from './macroRunStore'
 import type { RoomControlledOperationTicket, TerminalRoomManager } from './terminalRoomManager'
@@ -26,14 +26,24 @@ import type { RoomControlledOperationTicket, TerminalRoomManager } from './termi
 type ArtifactMap = Map<string, Map<string, string>>
 type RunControlSignal = 'break' | 'continue' | 'finish'
 type PendingInputResult = { kind: 'submitted'; value: string } | { kind: 'cancelled' }
-type PendingInput = { prompt: string; defaultText: string; resolve: (result: PendingInputResult) => void }
+type PendingInput = {
+  invocationId: string
+  prompt: string
+  defaultText: string
+  draft: string
+  inputRevision: number
+  resolve: (result: PendingInputResult) => void
+}
 
 type LiveRun = {
   runId: string
   roomId: string
   roomGeneration: string
-  templateId: string
-  macroRevision: number
+  recordId: string
+  recordRevision: number
+  runtimeRevision: number
+  publishedEventSeq: number
+  publishTimer: ReturnType<typeof setTimeout> | null
   definition: MacroDefinitionV3
   bindings: Map<number, FrozenTerminalBinding>
   status: MacroRunnerSnapshot['status']
@@ -58,12 +68,13 @@ const COOPERATIVE_CHECKPOINT_BUDGET = 64
 
 export class MacroRunnerService {
   private readonly runs = new Map<string, LiveRun>()
+  private readonly runtimeRevisions = new Map<string, number>()
 
   constructor(
     private readonly manager: TerminalRoomManager,
     private readonly records: MacroRecordStore<MacroDefinitionV3>,
     private readonly runStore: MacroRunStore,
-    private readonly notificationService: NotificationService,
+    private readonly notificationService: NotificationDispatcher,
     private readonly agentEvents: AgentEventStore,
   ) {}
 
@@ -75,18 +86,30 @@ export class MacroRunnerService {
   snapshot(roomId: string): MacroRunnerSnapshot {
     const room = this.manager.roomSummaryById(roomId)
     const run = this.runs.get(roomId)
-    if (!run || run.roomGeneration !== room.roomGeneration) return idleSnapshot(room.roomId, room.roomGeneration)
+    if (!run || run.roomGeneration !== room.roomGeneration) {
+      return idleSnapshot(room.roomId, room.roomGeneration, this.runtimeRevisions.get(room.roomId) ?? 0)
+    }
     return {
       roomId: run.roomId,
       roomGeneration: run.roomGeneration,
+      runtimeRevision: run.runtimeRevision,
       runId: run.runId,
-      templateId: run.templateId,
-      macroRevision: run.macroRevision,
+      runningMacro: {
+        recordId: run.recordId,
+        recordRevision: run.recordRevision,
+        definition: structuredClone(run.definition),
+      },
       status: run.status,
       currentNodeId: run.currentNodeId,
       error: run.error,
-      inputPrompt: run.pendingInput?.prompt ?? null,
-      inputDefaultText: run.pendingInput?.defaultText ?? null,
+      runtimeInput: run.pendingInput ? {
+        invocationId: run.pendingInput.invocationId,
+        prompt: run.pendingInput.prompt,
+        defaultText: run.pendingInput.defaultText,
+        draft: run.pendingInput.draft,
+        inputRevision: run.pendingInput.inputRevision,
+        status: 'waiting',
+      } : null,
       ...this.runStore.readEventWindow(run.runId),
     }
   }
@@ -157,8 +180,11 @@ export class MacroRunnerService {
         runId,
         roomId: room.roomId,
         roomGeneration: room.roomGeneration,
-        templateId: record.id,
-        macroRevision: record.revision,
+        recordId: record.id,
+        recordRevision: record.revision,
+        runtimeRevision: this.nextRuntimeRevision(room.roomId),
+        publishedEventSeq: 0,
+        publishTimer: null,
         definition,
         bindings: new Map(bindings.map((binding) => [binding.index, binding])),
         status: 'running',
@@ -178,6 +204,7 @@ export class MacroRunnerService {
       }
       this.initializeAgentEventBaselines(live)
       this.runs.set(room.roomId, live)
+      this.publishSnapshot(live)
       queueMicrotask(() => void this.execute(live))
       return this.snapshot(room.roomId)
     } catch (error) {
@@ -214,14 +241,30 @@ export class MacroRunnerService {
     run.abortController.abort()
     for (const resolve of run.pauseWaiters.splice(0)) resolve()
     this.cancelPendingInput(run)
+    this.bumpAndPublish(run)
     return this.snapshot(roomId)
   }
 
-  submitInput(roomId: string, value: string): MacroRunnerSnapshot {
+  updateInputDraft(roomId: string, invocationId: string, value: string, expectedInputRevision: number): MacroRunnerSnapshot {
     const run = this.activeRun(roomId)
-    if (!run.pendingInput) throw new Error('runner_input_not_requested')
-    const pending = run.pendingInput
-    this.appendEvent(run, 'runner_input_submitted', { chars: value.length })
+    const pending = this.assertPendingInput(run, invocationId, expectedInputRevision)
+    pending.draft = value
+    pending.inputRevision += 1
+    this.bumpAndPublish(run)
+    return this.snapshot(roomId)
+  }
+
+  submitInput(roomId: string, invocationId: string, value: string, expectedInputRevision: number): MacroRunnerSnapshot {
+    const run = this.activeRun(roomId)
+    const pending = this.assertPendingInput(run, invocationId, expectedInputRevision)
+    const nextInputRevision = pending.inputRevision + 1
+    this.appendEvent(run, 'runner_input_submitted', {
+      invocationId,
+      inputRevision: nextInputRevision,
+      chars: value.length,
+    })
+    pending.draft = value
+    pending.inputRevision = nextInputRevision
     run.pendingInput = null
     run.status = 'running'
     pending.resolve({ kind: 'submitted', value })
@@ -235,7 +278,9 @@ export class MacroRunnerService {
     for (const resolve of run.pauseWaiters.splice(0)) resolve()
     this.cancelPendingInput(run)
     try { this.finish(run, 'failed', 'run_failed', { code: 'room_destroyed' }, 'room_destroyed') } catch {}
+    if (run.publishTimer) clearTimeout(run.publishTimer)
     this.runs.delete(roomId)
+    this.runtimeRevisions.delete(roomId)
   }
 
   private async execute(run: LiveRun): Promise<void> {
@@ -260,12 +305,14 @@ export class MacroRunnerService {
       run.currentNodeId = null
       run.error = error
       run.pendingInput = null
+      this.bumpAndPublish(run)
     } catch {
       run.terminalized = true
       run.status = 'failed'
       run.currentNodeId = null
       run.error = 'run_event_append_failed'
       this.cancelPendingInput(run)
+      this.bumpAndPublish(run)
     } finally { this.manager.releaseRunStructureLock(run.roomId, run.runId) }
   }
 
@@ -667,8 +714,16 @@ export class MacroRunnerService {
   private async waitForInput(run: LiveRun, prompt: string, defaultText = ''): Promise<string> {
     if (run.pendingInput) throw new Error('runner_input_already_pending')
     run.status = 'waiting_input'
-    this.appendEvent(run, 'runner_input_requested', { prompt, hasDefaultText: defaultText.length > 0 })
-    const result = await new Promise<PendingInputResult>((resolve) => { run.pendingInput = { prompt, defaultText, resolve } })
+    const result = await new Promise<PendingInputResult>((resolve) => {
+      const invocationId = createGeneratedId('runnerInput')
+      run.pendingInput = { invocationId, prompt, defaultText, draft: defaultText, inputRevision: 0, resolve }
+      this.appendEvent(run, 'runner_input_requested', {
+        invocationId,
+        inputRevision: 0,
+        hasDefaultText: defaultText.length > 0,
+        promptChars: prompt.length,
+      })
+    })
     if (result.kind === 'cancelled') throw new Error('run_stopped')
     return result.value
   }
@@ -679,9 +734,62 @@ export class MacroRunnerService {
     pending?.resolve({ kind: 'cancelled' })
   }
 
+  private assertPendingInput(run: LiveRun, invocationId: string, expectedInputRevision: number): PendingInput {
+    const pending = run.pendingInput
+    if (!pending || run.status !== 'waiting_input') throw new Error('runner_not_waiting_input')
+    if (pending.invocationId !== invocationId) throw new Error('runner_input_invocation_mismatch')
+    if (!Number.isInteger(expectedInputRevision) || expectedInputRevision < 0 || pending.inputRevision !== expectedInputRevision) {
+      throw new Error('runner_input_revision_conflict')
+    }
+    return pending
+  }
+
   private appendEvent(run: LiveRun, kind: string, data: Record<string, unknown> = {}): void {
     if (run.terminalized) return
     this.runStore.append(run.runId, kind, data)
+    this.bumpAndPublish(run)
+  }
+
+  private bumpAndPublish(run: LiveRun): void {
+    if (this.runs.get(run.roomId) !== run) return
+    run.runtimeRevision = this.nextRuntimeRevision(run.roomId)
+    this.schedulePublish(run)
+  }
+
+  private nextRuntimeRevision(roomId: string): number {
+    const revision = (this.runtimeRevisions.get(roomId) ?? 0) + 1
+    this.runtimeRevisions.set(roomId, revision)
+    return revision
+  }
+
+  private publishSnapshot(run: LiveRun): void {
+    try {
+      const room = this.manager.roomSummaryById(run.roomId)
+      if (room.roomGeneration !== run.roomGeneration || this.runs.get(run.roomId) !== run) return
+      const snapshot = this.snapshot(run.roomId)
+      const canSendDelta = run.publishedEventSeq >= snapshot.firstAvailableEventSeq - 1
+      if (!canSendDelta) {
+        this.manager.broadcastRoomMessage(run.roomId, { type: 'runner_snapshot', snapshot })
+      } else {
+        const delta: MacroRunnerDelta = {
+          ...snapshot,
+          events: snapshot.events.filter((event) => event.eventSeq > run.publishedEventSeq),
+        }
+        this.manager.broadcastRoomMessage(run.roomId, { type: 'runner_delta', delta })
+      }
+      run.publishedEventSeq = snapshot.lastEventSeq
+    } catch {
+      // Destroy closes mutation admission and owns final client teardown.
+    }
+  }
+
+  private schedulePublish(run: LiveRun): void {
+    if (run.publishTimer) return
+    run.publishTimer = setTimeout(() => {
+      run.publishTimer = null
+      this.publishSnapshot(run)
+    }, 25)
+    run.publishTimer.unref?.()
   }
 
   private activeRun(roomId: string): LiveRun {
@@ -691,18 +799,17 @@ export class MacroRunnerService {
   }
 }
 
-function idleSnapshot(roomId: string, roomGeneration: string): MacroRunnerSnapshot {
+function idleSnapshot(roomId: string, roomGeneration: string, runtimeRevision: number): MacroRunnerSnapshot {
   return {
     roomId,
     roomGeneration,
+    runtimeRevision,
     runId: null,
-    templateId: null,
-    macroRevision: null,
+    runningMacro: null,
     status: 'idle',
     currentNodeId: null,
     error: null,
-    inputPrompt: null,
-    inputDefaultText: null,
+    runtimeInput: null,
     events: [],
     firstAvailableEventSeq: 0,
     lastEventSeq: 0,

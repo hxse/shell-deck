@@ -1,4 +1,5 @@
 import type { ContentEditLeaseView, ContentResourceKey } from './contentEditLease'
+import type { MacroRunnerDelta, MacroRunnerSnapshot } from './macro/runnerTypes'
 import type { RoomControlGrant, RoomControlView } from './roomControl'
 
 export type TerminalBackendKind = 'fake' | 'real' | 'text'
@@ -77,6 +78,13 @@ export type MacroNotificationMessage = {
   channels: MacroNotificationChannel[]
 }
 
+export type ContentRecordChangedMessage = {
+  type: 'content_record_changed'
+  resourceKey: ContentResourceKey
+  operation: 'saved' | 'deleted'
+  revision: number | null
+}
+
 export type ServerMessage =
   | { type: 'client_registered'; clientId: string; roomId: string; roomGeneration: string; serverInstanceId: string }
   | { type: 'room_control'; roomId: string; roomGeneration: string; view: RoomControlView; grant?: RoomControlGrant }
@@ -92,6 +100,9 @@ export type ServerMessage =
   | { type: 'terminal_error'; roomId: string; roomGeneration: string; terminalId?: string; reason: string }
   | (TerminalRevisionFields & { type: 'terminal_replay'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; replay: string[] })
   | { type: 'input_rejected'; roomId: string; roomGeneration: string; terminalId: string; reason: string }
+  | { type: 'runner_snapshot'; snapshot: MacroRunnerSnapshot }
+  | { type: 'runner_delta'; delta: MacroRunnerDelta }
+  | ContentRecordChangedMessage
   | MacroNotificationMessage
   | { type: 'room_destroyed'; roomId: string; roomGeneration: string }
 

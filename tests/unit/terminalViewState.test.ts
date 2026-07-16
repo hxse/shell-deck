@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import type { TerminalSnapshot } from '../../src/lib/protocol'
 import { createGeneratedId } from '../../src/lib/generatedId'
 import {
+  applyTerminalStateProjection,
   BROWSER_TERMINAL_REPLAY_CODE_UNIT_LIMIT,
   TerminalViewStateStore,
 } from '../../src/lib/terminalViewState'
@@ -72,6 +73,32 @@ test('older terminal snapshots and deltas cannot roll back newer server truth', 
   expect(staleSnapshot).toBe(newest)
   expect(staleReplay).toBe(newest)
   expect(newest.replay.join('')).toBe('old-new')
+})
+
+test('a rejected stale terminal state cannot roll back projected readiness', () => {
+  const store = new TerminalViewStateStore()
+  const current = store.mergeSnapshot(snapshot(['ready'], { terminalRevision: 3, roomRevision: 3 }))
+  const positions = [{ index: 1, type: 'shell' as const, terminalId: TERMINAL_ID, launchId: LAUNCH_ID, readiness: 'ready' as const }]
+  const stale = applyTerminalStateProjection(store, [current], positions, {
+    type: 'terminal_state',
+    roomId: ROOM_ID,
+    roomGeneration: ROOM_GENERATION,
+    terminalId: TERMINAL_ID,
+    launchId: LAUNCH_ID,
+    status: 'failed',
+    cols: 80,
+    rows: 24,
+    exitCode: null,
+    signal: null,
+    roomRevision: 2,
+    terminalRevision: 2,
+    textRevision: 0,
+    outputActivityRevision: 0,
+  })
+
+  expect(stale.accepted).toBe(false)
+  expect(stale.terminals[0]).toBe(current)
+  expect(stale.positions).toEqual(positions)
 })
 
 function snapshot(replay: string[], overrides: Partial<TerminalSnapshot> = {}): TerminalSnapshot {

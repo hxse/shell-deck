@@ -48,14 +48,28 @@ export type MacroRunEventWindow = {
 export type MacroRunnerSnapshot = MacroRunEventWindow & {
   roomId: string
   roomGeneration: string
+  runtimeRevision: number
   runId: string | null
-  templateId: string | null
-  macroRevision: number | null
+  runningMacro: {
+    recordId: string
+    recordRevision: number
+    definition: MacroDefinitionV3
+  } | null
   status: MacroRunnerStatus
   currentNodeId: string | null
   error: string | null
-  inputPrompt: string | null
-  inputDefaultText: string | null
+  runtimeInput: {
+    invocationId: string
+    prompt: string
+    defaultText: string
+    draft: string
+    inputRevision: number
+    status: 'waiting'
+  } | null
+}
+
+export type MacroRunnerDelta = Omit<MacroRunnerSnapshot, 'events'> & {
+  events: MacroRunEvent[]
 }
 
 export type MacroRunTrace = MacroRunEventWindow & {

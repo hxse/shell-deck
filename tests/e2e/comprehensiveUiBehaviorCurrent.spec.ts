@@ -6,7 +6,7 @@ const SETTINGS_KEY = 'shell-deck:settings:v2'
 
 test.describe.configure({ mode: 'serial' })
 
-test('current .034 UI journey preserves Room interactions, single-writer handoff and restored Macro chrome through visible controls', async ({ browser }) => {
+test('current .035 UI journey preserves Room interactions and exercises automatic Home refresh plus single-writer feedback', async ({ browser }) => {
   test.setTimeout(180_000)
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const covered = new Set<string>()
@@ -191,7 +191,7 @@ test('current .034 UI journey preserves Room interactions, single-writer handoff
     await expect(second.getByTestId('terminal-tab')).toHaveCount(2)
   })
 
-  await test.step('Home navigation, open, refresh, New Room and explicit Destroy cover the full Room lifecycle', async () => {
+  await test.step('Home navigation, automatic refresh, New Room and explicit Destroy cover the full Room lifecycle', async () => {
     const originalRoomUrl = first.url()
     const originalRoomId = new URL(originalRoomUrl).pathname.slice(1)
     const homePromise = context.waitForEvent('page')
@@ -201,11 +201,8 @@ test('current .034 UI journey preserves Room interactions, single-writer handoff
     await openedHome.waitForLoadState()
     await expect(openedHome).toHaveURL(/\/$/)
     await expect(openedHome.getByTestId('room-list').locator('li')).toHaveCount(1)
-    await clickAndCover(openedHome.getByTestId('home-refresh'), 'home-refresh', covered)
+    await expect(openedHome.getByRole('button', { name: 'Refresh' })).toHaveCount(0)
     await expect(openedHome.getByTestId('room-capacity')).toHaveText('1 / 32')
-    await clickAndCover(openedHome.getByTestId('room-open'), 'room-open', covered)
-    await expect(openedHome).toHaveURL(originalRoomUrl)
-    await openedHome.close()
 
     const creator = await context.newPage()
     creator.setDefaultTimeout(12_000)
@@ -214,6 +211,13 @@ test('current .034 UI journey preserves Room interactions, single-writer handoff
     await clickAndCover(creator.getByTestId('new-room'), 'new-room', covered)
     await expect(creator).toHaveURL(ROOM_URL)
     expect(creator.url()).not.toBe(originalRoomUrl)
+    await expect(openedHome.getByTestId('room-list').locator('li')).toHaveCount(2, { timeout: 3_000 })
+    await expect(openedHome.getByTestId('room-capacity')).toHaveText('2 / 32')
+
+    const originalHomeRow = openedHome.getByTestId('room-list').locator('li').filter({ hasText: originalRoomId })
+    await clickAndCover(originalHomeRow.getByTestId('room-open'), 'room-open', covered)
+    await expect(openedHome).toHaveURL(originalRoomUrl)
+    await openedHome.close()
 
     const management = await context.newPage()
     management.setDefaultTimeout(12_000)

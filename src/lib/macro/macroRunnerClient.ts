@@ -34,7 +34,13 @@ export class MacroRunnerClient {
   async pause(): Promise<MacroRunnerSnapshot> { return await this.action('pause', {}) }
   async resume(): Promise<MacroRunnerSnapshot> { return await this.action('resume', {}) }
   async stop(): Promise<MacroRunnerSnapshot> { return await this.action('stop', {}) }
-  async submitInput(value: string): Promise<MacroRunnerSnapshot> { return await this.action('input', { value }) }
+  async updateInputDraft(invocationId: string, value: string, expectedInputRevision: number): Promise<MacroRunnerSnapshot> {
+    return await this.action('input-draft', { invocationId, value, expectedInputRevision })
+  }
+
+  async submitInput(invocationId: string, value: string, expectedInputRevision: number): Promise<MacroRunnerSnapshot> {
+    return await this.action('input', { invocationId, value, expectedInputRevision })
+  }
 
   private async action(action: string, body: Record<string, unknown>): Promise<MacroRunnerSnapshot> {
     const client = this.client()

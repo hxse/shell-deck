@@ -9,10 +9,11 @@
     observeTextTerminalTruth,
   } from '../textTerminalWriteState'
 
-  let { terminal, client, readOnly = false } = $props<{
+  let { terminal, client, readOnly = false, onMutationDenied = () => {} } = $props<{
     terminal: TerminalSnapshot
     client: TerminalRoomClient | null
     readOnly?: boolean
+    onMutationDenied?: (reason: string) => void
   }>()
   const terminalLabel = $derived(terminalDisplayLabel(terminal))
 
@@ -62,7 +63,7 @@
   })
 
   function updateContent(value: string) {
-    if (readOnly) return
+    if (readOnly) { onMutationDenied('room_control_required'); return }
     writeState = editTextTerminal(writeState, value)
     if (!writeState.inFlight) sendLatestContent(terminal.textRevision)
   }
@@ -83,6 +84,16 @@
 
   function syncLineNumberScroll(event: Event) {
     editorScrollTop = event.currentTarget instanceof HTMLTextAreaElement ? event.currentTarget.scrollTop : 0
+  }
+
+  function rejectReadOnlyEdit(event: KeyboardEvent) {
+    if (!readOnly || event.altKey) return
+    if ((event.ctrlKey || event.metaKey) && ['v', 'x'].includes(event.key.toLowerCase())) {
+      onMutationDenied('room_control_required')
+      return
+    }
+    if (event.ctrlKey || event.metaKey) return
+    if (event.key.length === 1 || ['Backspace', 'Delete', 'Enter'].includes(event.key)) onMutationDenied('room_control_required')
   }
 </script>
 
@@ -110,6 +121,7 @@
       readonly={readOnly}
       value={localContent}
       oninput={(event) => updateContent(event.currentTarget.value)}
+      onkeydown={rejectReadOnlyEdit}
       onscroll={syncLineNumberScroll}
     ></textarea>
   </div>

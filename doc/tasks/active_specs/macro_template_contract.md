@@ -34,15 +34,19 @@ Visual editor创建If/Elif/Extract时必须始终完成结构插入。若exact i
 
 ## CRUD 与 editor lifecycle
 
-production surface 只提供 list/create/read/update/delete。Create/Update/Delete 是 shared mutation，必须同时通过 Room controller guard；既有 record 的 Edit/Update/Delete 还必须持有 `.033` 的 per-record content edit lease并匹配 expected revision。Delete按钮可从read-only selected record直接发起，但操作内部仍必须acquire/takeover lease、重读current record并按expected revision删除，不能要求用户先点Edit。New 是 client-local draft，新 Room默认不选Macro；New/editing期间selector与New保持可用，dirty切换走discard确认，拒绝时native select回滚，接受时release lease。selector首个`Select macro`空值option是可选的显式null selection：clean时清除selected/base/draft并回到`No macro selected`，dirty时遵守同一discard确认；它不Delete/Save/Prepare或影响active run。New Discard彻底清除draft，搜索结果始终固定显示current selection。Save只保存portable definition，不要求terminal layout当前匹配，也不触发Prepare；它更新base revision、清dirty并保留当前Edit session/lease，clean session用Done退出。New首次Create后必须取得fresh record lease才继续编辑，竞争失败保留saved record但转read-only并提示。
+production surface 只提供 list/create/read/update/delete。Create/Update/Delete 是 shared mutation，必须同时通过 Room controller guard；既有 record 的 Edit/Update/Delete 还必须持有 `.033` 的 per-record content edit lease并匹配 expected revision。Delete按钮可从read-only selected record直接发起，但操作内部仍必须acquire/takeover lease、重读current record并按expected revision删除，不能要求用户先点Edit。New 是 client-local draft，新 Room默认不选Macro；New/editing期间selector与New保持可用，dirty切换走discard确认，拒绝时native select回滚，接受时release lease。selector首个`Select macro`空值option是可选的显式null selection：clean时清除selected/base/draft并回到`No macro selected`，dirty时遵守同一discard确认；它不Delete/Save/Prepare或影响active run。New Discard彻底清除draft，搜索结果始终固定显示current selection。Save只保存portable definition，不要求terminal layout当前匹配，也不触发Prepare；它更新base revision、清dirty并保留当前Edit session/lease，clean session用Done退出。New首次Create后必须取得fresh record lease才继续编辑；竞争失败保留submitted buffer、转read-only并进入独立published-Create preservation state，直到显式New/Select/Edit latest解决。
 
 Update/Delete的record atomic publish是point-of-no-return。publish后lease-state refresh/release失败仍返回并广播authoritative saved/deleted result，并以lost lease outcome让client转read-only；不得把durable commit伪装成失败或让旧lease继续编辑。
 
-Macro panel visibility只是browser-local UI布局：组件保持常驻，隐藏/显示不得清空selection、draft、JSON buffer、dirty或lease。selection/draft/JSON buffer只存在于页面内存，不写入`localStorage`、`sessionStorage`或server；browser storage只保存visibility/width等UI偏好。dirty Macro或打开的JSON Edit必须触发native `beforeunload`确认，取消离开保持原内存状态，确认离开才丢弃；V0不恢复刷新前draft。
+Macro panel visibility只是browser-local UI布局：组件保持常驻，隐藏/显示不得清空selection、draft、JSON buffer、dirty、published-Create preservation或lease。selection/draft/JSON buffer只存在于页面内存，不写入`localStorage`、`sessionStorage`或server；browser storage只保存visibility/width等UI偏好。dirty Macro、打开的JSON Edit或published-Create preserved buffer必须触发native `beforeunload`确认，取消离开保持原内存状态，确认离开才丢弃；显式resolution后的真正clean状态解除guard。V0不恢复刷新前draft。
 
 Copy 只把 canonical pretty-printed definition 写入 browser clipboard。没有 Duplicate、clone、copy-and-create、Import 或 Export；创建相似 Macro 的路径是 New → JSON Edit → Paste → Save，由 server 生成 fresh record identity。
 
 JSON Edit期间以及 Save/Create/Start等 lock-sensitive operation pending期间，visual/JSON editor、selector和相关入口必须 inert；统一 draft mutation入口仍做 defensive guard。异步 response 只有在 operation generation、record/revision、draft revision、controller和lease identity仍匹配时才能 commit。dirty Start严格串行执行 Save/Create → 必要时取得fresh record lease → 使用 response 中的 fresh record revision Start，不能让旧 response覆盖后续编辑，也不能因内部Save把原Edit session切成永久read-only。run终态释放terminal structure lock；Macro editability仍由Edit session决定。
+
+Macro selection、visual/JSON draft、dirty和editor tab是browser-local状态，不在同Room设备间同步。成功Create/Save/Delete后的MacroRecord是user-global saved state；server通过generic `content_record_changed`通知当前process全部连接。client把local operation pending期间的事件按sequence排队，settle后才按record/revision replay并推进消费状态：相同或更旧revision是ack/stale event，更高revision与Delete必须更新saved-truth提示，但不得切换selector或覆盖submitted/dirty/editing/lease-lost/published-Create preserved draft。active run期间record再次Save或Delete也不改变已冻结的Running Macro。
+
+transient WebSocket reconnect以显式`connectionGeneration`触发saved-content reconciliation，不清dirty/preserved page-memory buffer或`beforeunload` guard。新连接ready后重读record list；只有clean readonly selection可安装revision单调不退后的server truth，protected buffer只显示changed/deleted notice。list/read continuation分别由generation、connection、record identity、editor state和minimum revision约束；旧response不能覆盖新truth，transport/5xx失败不能提前消费invalidation sequence，queue做有界重试并在focus/reconnect继续drain。Create已commit而controller/connection先变化时，若submitted identity仍匹配，必须关联fresh record identity并进入read-only published-Create preservation，禁止重复Create。
 
 ## 显式 Prepare terminals
 
@@ -57,3 +61,11 @@ resolver只按顺序 keep/move/create/insert缺少的 shell/text，不删除、r
 Start只运行明确保存的 MacroRecord revision。server在同一 Room structure operation中复核 expected Macro revision、expected terminal structure revision、完整 portable validation、index/type和readiness；失败时不修改 terminal，也不创建 run。成功后把完整 definition、record revision、Room generation、structure revision及每个 index/type解析出的 terminalId/launchId冻结到 run snapshot，Action执行期间不再按 live index解析，也不重读 MacroRecord。
 
 runner tight loop按固定budget执行macrotask cooperative yield并在yield后复核abort/pause。terminal-quiet比较frozen launch的单调outputActivityRevision，不比较截断replay长度。Input submit先durable append event再清pending/resume，append失败保留可重试input；每个run只能提交一个终态。Prepare HTTP snapshot按roomRevision monotonic merge，不能回滚更晚WebSocket Room真值。
+
+## Server-authoritative runner 与 runtime input
+
+active run属于live Room，不属于某个browser。server在WebSocket连接后立即发送一次包含最近durable tail的完整`runner_snapshot`；Start、step/current node、Pause/Resume、Waiting Input、input draft/submit、Stop和终态只广播state与新增event的`runner_delta`，rapid transition最多在25ms内合并。两者带Room-generation内单调`runtimeRevision`、冻结`runningMacro {recordId, recordRevision, definition}`、status/current node/error、runtime input和absolute event window metadata。client忽略旧revision，按eventSeq合并；gap进入绑定Room/connection generation的single-flight HTTP完整snapshot repair，每批最多三次（立即、100ms、300ms），失败后保留pending并只由focus、reconnect或后续runner message继续，不运行周期polling。
+
+`Editing/Viewing Macro`与`Running Macro`同时存在：前者保持browser-local，后者由Room snapshot只读呈现。收到run不得切换本地selector或覆盖draft；即使browser未选择Macro，也必须看到Room当前运行的同一冻结配置和状态。
+
+Input Action的invocation id、prompt、default、draft与input revision在server内存中。controller键入使用单一in-flight/latest-value coalescing更新`input-draft`；takeover不清空已确认draft，新controller继续编辑并按expected revision提交。旧`{value}` submit和flattened`inputPrompt/inputDefaultText` snapshot字段不存在。draft正文不写Trace，server restart或Room Destroy后也不恢复。

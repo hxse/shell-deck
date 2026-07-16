@@ -18,10 +18,12 @@
   font-weight: 700;
 }
 
-.macro-run-controls button:disabled {
+.macro-run-controls button:disabled,
+.macro-run-controls button[aria-disabled="true"] {
   border-color: #d1dae3;
   background: #f2f5f7;
   color: #82909e;
+  cursor: not-allowed;
 }
 
 .macro-tabs {

@@ -8,7 +8,7 @@
 
   let {
     templates, filteredTemplates, draft, selectedRecord, templateSearch, dirty, contentEditing, mutationAllowed = true,
-    errorText, macroView, runner, statusText, runnerInput, preparing = false,
+    errorText, macroView, runner, statusText, runnerInput, runnerInputSyncing = false, preparing = false,
     prepareDisabled = false, prepareDisabledReason = '', startDisabled = false, startDisabledReason = '',
     jsonEditing = false, operationPending = false,
     onTemplateSearchChange, onSelectTemplate, onCreateTemplate, onBeginEdit, onSaveTemplate,
@@ -17,7 +17,7 @@
   } = $props<{
     templates: MacroRecordSummary[]; filteredTemplates: MacroRecordSummary[]; draft: MacroDefinitionV3 | null; selectedRecord: MacroRecord | null
     templateSearch: string; dirty: boolean; contentEditing: boolean; mutationAllowed?: boolean; errorText: string | null; macroView: MacroView; runner: MacroRunnerSnapshot | null
-    statusText: string; runnerInput: string; preparing?: boolean; prepareDisabled?: boolean; prepareDisabledReason?: string
+    statusText: string; runnerInput: string; runnerInputSyncing?: boolean; preparing?: boolean; prepareDisabled?: boolean; prepareDisabledReason?: string
     startDisabled?: boolean; startDisabledReason?: string; jsonEditing?: boolean; operationPending?: boolean
     onTemplateSearchChange: (value: string) => void; onSelectTemplate: (id: string) => Promise<boolean>; onCreateTemplate: () => void
     onBeginEdit: () => void; onSaveTemplate: () => void; onCancelEdit: () => void; onDeleteTemplate: () => void
@@ -36,7 +36,8 @@
 
 <div class="macro-sticky-head" data-testid="macro-sticky-head">
   <div class="macro-top-dock" data-testid="macro-top-dock">
-    <MacroRunDock {runner} {statusText} {runnerInput} {preparing} {prepareDisabled} {prepareDisabledReason} {startDisabled} {startDisabledReason}
+    <MacroRunDock {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing} {prepareDisabled} {prepareDisabledReason} {startDisabled} {startDisabledReason}
+      runtimeInputDisabled={!mutationAllowed || operationPending}
       onPrepare={onPrepare} onRunnerInputChange={onRunnerInputChange} onSubmitRunnerInput={onSubmitRunnerInput}
       onRefreshRunner={onRefreshRunner} onMacroControl={onMacroControl} />
   </div>

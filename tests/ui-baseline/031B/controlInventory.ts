@@ -20,10 +20,13 @@ export const sourceInteractiveControlDigest032 = '08cd10d9663687281cecf5f1b2d761
 export const sourceInteractiveControlCount033 = 19
 export const sourceInteractiveControlDigest033 = '4ff921d1d3f120d6cffee8b2b842a9edfefcc545dedf2fec0d8080d6185afb3b'
 
+export const sourceInteractiveControlCount034 = 175
+export const sourceInteractiveControlDigest034 = 'ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834'
+
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
-export const sourceInteractiveControlCount = 175
-export const sourceInteractiveControlDigest = 'ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834'
+export const sourceInteractiveControlCount = 174
+export const sourceInteractiveControlDigest = 'c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
@@ -284,7 +287,7 @@ export const baseline031ARuntimeControlIds = [
   'parallel-output-source',
 ] as const
 
-const workspaceRuntimeControls = [
+const workspaceRuntimeControls034 = [
   ["home-refresh", "clicked"],
   ["new-room", "clicked"],
   ["new-room-empty", "clicked"],
@@ -307,6 +310,8 @@ const workspaceRuntimeControls = [
   ["text-box-copy", "clicked"],
 ] as const satisfies ReadonlyArray<readonly [string, UiControlEvidenceKind]>
 
+const workspaceRuntimeControls = workspaceRuntimeControls034.filter(([key]) => key !== "home-refresh")
+
 const removedMacroControls034 = new Set([
   "macro-insertion-placement-toggle",
   "macro-duplicate",
@@ -328,6 +333,7 @@ const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
   ["macro-insertion-placement", "clicked"],
 ]
 
+export const workspaceRuntimeControlInventory034: UiControlInventoryEntry[] = workspaceRuntimeControls034.map(([key, evidence]) => ({ key, evidence }))
 export const workspaceRuntimeControlInventory: UiControlInventoryEntry[] = workspaceRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
 export const macroRuntimeControlInventory: UiControlInventoryEntry[] = macroRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
 export const runtimeControlInventory: UiControlInventoryEntry[] = [...workspaceRuntimeControlInventory, ...macroRuntimeControlInventory]
@@ -367,6 +373,14 @@ export const attributedRestorations034: UiControlInventoryEntry[] = macroRuntime
   spec: "20260627A.034/02_spec/01_contract.md — UI preservation, Macro workbench and explicit Prepare/Start",
 }))
 
+export const attributedControlChanges035: UiControlInventoryEntry[] = [{
+  key: "home-refresh",
+  evidence: "boundary",
+  changedBy: "20260627A.035",
+  oldBehavior: ".034 exposed a manual Home Refresh button.",
+  newBehavior: ".035 removes the button; Home refreshes from server state on visibility/focus and a bounded Svelte effect interval.",
+  spec: "20260627A.035/02_spec/01_contract.md — Home自动刷新",
+}]
 
 export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
   ['terminal-create-real', 'Shell creation becomes controller-only.'],

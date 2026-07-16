@@ -238,8 +238,13 @@ test('input.defaultSource is exposed as editable live input without becoming per
       expectedTerminalStructureRevision: 1,
     })
     await waitFor(() => server.macroRunner.snapshot(room.roomId).status === 'waiting_input')
-    expect(server.macroRunner.snapshot(room.roomId)).toMatchObject({ inputPrompt: 'Review', inputDefaultText: 'captured draft' })
-    await request(server.url, `/api/rooms/${room.roomId}/runner/input`, grant, { value: 'edited text' })
+    const waiting = server.macroRunner.snapshot(room.roomId)
+    expect(waiting).toMatchObject({ runtimeInput: { prompt: 'Review', defaultText: 'captured draft', draft: 'captured draft', inputRevision: 0 } })
+    await request(server.url, `/api/rooms/${room.roomId}/runner/input`, grant, {
+      invocationId: waiting.runtimeInput!.invocationId,
+      value: 'edited text',
+      expectedInputRevision: waiting.runtimeInput!.inputRevision,
+    })
     await waitFor(() => server.macroRunner.snapshot(room.roomId).status === 'completed')
     expect(replay(server, room.roomId, text.terminalId)).toBe('captured draftedited text')
   } finally {
@@ -500,12 +505,14 @@ test('Input submit append failure keeps the pending request retryable and never 
     ticket.finish()
     await waitFor(() => runner.snapshot(room.roomId).status === 'waiting_input')
 
-    expect(() => runner.submitInput(room.roomId, 'first')).toThrow('injected_input_append_failure')
+    const pending = runner.snapshot(room.roomId).runtimeInput!
+    expect(() => runner.submitInput(room.roomId, pending.invocationId, 'first', pending.inputRevision)).toThrow('injected_input_append_failure')
     expect(runner.snapshot(room.roomId).status).toBe('waiting_input')
     expect(manager.roomSnapshot(room.roomId).terminalStructureLocked).toBe(true)
     expect(replayFromManager(manager, room.roomId, text.terminalId)).toBe('')
 
-    runner.submitInput(room.roomId, 'second')
+    const retry = runner.snapshot(room.roomId).runtimeInput!
+    runner.submitInput(room.roomId, retry.invocationId, 'second', retry.inputRevision)
     await waitFor(() => runner.snapshot(room.roomId).status === 'completed')
     expect(replayFromManager(manager, room.roomId, text.terminalId)).toBe('second')
     expect(manager.roomSnapshot(room.roomId).terminalStructureLocked).toBe(false)
@@ -584,7 +591,8 @@ test('published runner events stay successful when summary maintenance fails aft
       store.append(inputRunId, 'maintenance_probe', { next })
     }
     failKinds.add('runner_input_submitted')
-    expect(() => runner.submitInput(inputRoom.roomId, 'submitted')).not.toThrow()
+    const runtimeInput = runner.snapshot(inputRoom.roomId).runtimeInput!
+    expect(() => runner.submitInput(inputRoom.roomId, runtimeInput.invocationId, 'submitted', runtimeInput.inputRevision)).not.toThrow()
     await waitFor(() => runner.snapshot(inputRoom.roomId).status === 'completed')
     expect(replayFromManager(manager, inputRoom.roomId, inputTerminal.terminalId)).toBe('submitted')
     expect(store.listTracesForRoom(inputRoom.roomId)[0]).toMatchObject({ status: 'completed' })
@@ -647,6 +655,8 @@ test('published Macro create/update/delete stay successful after record or lease
   try {
     const room = server.manager.createRoom()
     const grant = roomGrant(server.manager, room.roomId)
+    const broadcasts: ServerMessage[] = []
+    server.manager.connectClient(room.roomId, (message) => broadcasts.push(message))
     const definition: MacroDefinitionV3 = { schemaVersion: 3, name: 'published', description: '', terminalLayout: [], body: [] }
 
     const created = await request(server.url, '/api/templates', grant, { definition })
@@ -654,6 +664,7 @@ test('published Macro create/update/delete stay successful after record or lease
     const first = (created.body as { template: MacroRecord }).template
     const firstLease = await acquireMacroLease(server.url, grant, first.id)
     failRecordReplace = true
+    broadcasts.length = 0
     failWrite = true
     const updateResponse = await fetch(server.url + '/api/templates/' + first.id, {
       method: 'PUT',
@@ -668,12 +679,19 @@ test('published Macro create/update/delete stay successful after record or lease
     })
     const saved = await fetch(server.url + '/api/templates/' + first.id)
     expect(await saved.json()).toMatchObject({ ok: true, template: { revision: 2, definition: { name: 'published r2' } } })
+    expect(broadcasts).toContainEqual(expect.objectContaining({
+      type: 'content_record_changed',
+      resourceKey: { kind: 'macro', itemId: first.id },
+      operation: 'saved',
+      revision: 2,
+    }))
 
     failWrite = false
     const secondCreated = await request(server.url, '/api/templates', grant, { definition: { ...definition, name: 'delete published' } })
     const second = (secondCreated.body as { template: MacroRecord }).template
     const secondLease = await acquireMacroLease(server.url, grant, second.id)
     failRecordDelete = true
+    broadcasts.length = 0
     failDelete = true
     const deleteResponse = await fetch(server.url + '/api/templates/' + second.id, {
       method: 'DELETE',
@@ -682,6 +700,12 @@ test('published Macro create/update/delete stay successful after record or lease
     expect(deleteResponse.status).toBe(200)
     expect(await deleteResponse.json()).toMatchObject({ ok: true, leaseOutcome: { status: 'lost', reason: 'content_edit_lease_state_refresh_failed' } })
     expect((await fetch(server.url + '/api/templates/' + second.id)).status).toBe(404)
+    expect(broadcasts).toContainEqual(expect.objectContaining({
+      type: 'content_record_changed',
+      resourceKey: { kind: 'macro', itemId: second.id },
+      operation: 'deleted',
+      revision: null,
+    }))
   } finally {
     await server.stop()
     rmSync(root, { recursive: true, force: true })

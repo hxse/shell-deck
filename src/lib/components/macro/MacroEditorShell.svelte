@@ -15,7 +15,9 @@
     telegramProfileIds = [],
     telegramProfilesError = '',
     locked = false,
+    lockedReason = 'macro_editor_read_only',
     editorKey = 'new',
+    onMutationDenied = () => {},
     onUpdateDraft,
   } = $props<{
     draft: MacroDefinitionV3
@@ -25,7 +27,9 @@
     telegramProfileIds?: string[]
     telegramProfilesError?: string
     locked?: boolean
+    lockedReason?: string
     editorKey?: string
+    onMutationDenied?: (reason: string) => void
     onUpdateDraft: (mutator: (definition: MacroDefinitionV3) => void) => void
   }>()
 
@@ -55,11 +59,35 @@
   function defaultCondition(source: FlowV2ArtifactSource): TextMatchCondition {
     return { kind: 'text_match', source, matcher: { kind: 'simple', op: 'contains', text: 'READY' }, scope: { kind: 'whole' } }
   }
+
+  function guardLockedField(event: Event) {
+    if (!locked) return
+    const target = event.target
+    if (target instanceof Element && target.closest('button')) return
+    event.preventDefault()
+    event.stopPropagation()
+    onMutationDenied(lockedReason)
+  }
+
+  function guardLockedFields(node: HTMLElement) {
+    const guard = (event: Event) => guardLockedField(event)
+    node.addEventListener('click', guard)
+    node.addEventListener('keydown', guard)
+    node.addEventListener('beforeinput', guard)
+    return {
+      destroy() {
+        node.removeEventListener('click', guard)
+        node.removeEventListener('keydown', guard)
+        node.removeEventListener('beforeinput', guard)
+      },
+    }
+  }
 </script>
 
 <div class="macro-editor-layout no-tools">
     <main class="macro-editor-main">
-      <fieldset class="macro-editor-lock-surface" data-testid="macro-editor-lock-surface" disabled={locked} inert={locked} aria-busy={locked} aria-disabled={locked}>
+      <fieldset class="macro-editor-lock-surface" data-testid="macro-editor-lock-surface" data-editor-locked={locked} aria-busy={locked}
+        use:guardLockedFields>
         {#key editorKey}
           <MacroStepList
             {draft}

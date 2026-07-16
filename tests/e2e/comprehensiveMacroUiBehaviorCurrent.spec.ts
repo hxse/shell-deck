@@ -32,7 +32,7 @@ async function clickWithDialog(
   await clickPromise
 }
 
-test('current .034 UI journey preserves the Room workspace and runs a complex V3 Macro built entirely through visible controls', async ({ page }) => {
+test('current .035 UI journey preserves the complex V3 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
   test.setTimeout(600_000)
   page.setDefaultTimeout(10_000)
   page.setDefaultNavigationTimeout(15_000)
@@ -575,7 +575,7 @@ test('current .034 UI journey preserves the Room workspace and runs a complex V3
     await openTemplateDrawer(page)
     await page.getByTestId('macro-save').click()
     await expect(page.getByTestId('macro-template-metadata')).not.toContainText('unsaved new macro')
-    await expect.poll(async () => page.getByTestId('macro-template-select').inputValue()).toMatch(/^tmpl_/)
+    await expect(page.getByTestId('macro-template-select')).toHaveValue(/^tmpl_/)
     mainTemplateId = await page.getByTestId('macro-template-select').inputValue()
     await closeTemplateDrawer(page)
   })

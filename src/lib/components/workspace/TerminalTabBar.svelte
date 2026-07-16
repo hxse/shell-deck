@@ -14,6 +14,7 @@
     onDrop,
     onDragEnd,
     onTabKeydown,
+    onMutationDenied,
   } = $props<{
     terminals: TerminalSnapshot[]
     activeTerminalId: string | null
@@ -26,6 +27,7 @@
     onDrop: (event: DragEvent, terminal: TerminalSnapshot) => void
     onDragEnd: () => void
     onTabKeydown: (event: KeyboardEvent, terminal: TerminalSnapshot) => void
+    onMutationDenied: (reason: string) => void
   }>()
 </script>
 
@@ -39,7 +41,7 @@
         class:dragging={terminal.terminalId === draggingTerminalId}
         role="tab"
         tabindex="0"
-        draggable={tabDragEnabled && !sharedReadOnly}
+        draggable={tabDragEnabled}
         aria-selected={terminal.terminalId === activeTerminalId}
         title={label}
         data-testid="terminal-tab"
@@ -58,9 +60,9 @@
           data-testid="terminal-tab-close"
           aria-label={"Close terminal " + terminal.terminalIndex}
           title="Close tab"
-          disabled={sharedReadOnly}
+          aria-disabled={sharedReadOnly}
           onpointerdown={(event) => event.stopPropagation()}
-          onclick={(event) => onClose(event, terminal)}
+          onclick={(event) => sharedReadOnly ? (event.stopPropagation(), onMutationDenied('room_control_required')) : onClose(event, terminal)}
         >x</button>
       </div>
     {/each}
