@@ -37,6 +37,8 @@ test('current .036 UI journey preserves Room interactions and exercises automati
   await expect(first.getByTestId('room-identity')).toContainText('connected')
   await expect(first.getByTestId('empty-terminal-room')).toBeVisible()
   await expect(first.getByTestId('macro-panel')).toBeVisible()
+  await expect(first.getByTestId('library-panel')).toHaveCount(1)
+  await expect(first.getByTestId('library-side-panel')).toBeHidden()
   await expect(first.getByTestId('prompt-panel')).toHaveCount(0)
   await expect(first.locator('.run-log-view')).toHaveCount(0)
 

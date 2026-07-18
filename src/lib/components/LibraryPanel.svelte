@@ -5,7 +5,7 @@
   import type { TerminalRoomClient } from '../terminalRoomClient'
   import { LibraryClient } from '../library/libraryClient'
   import type { LibraryItem, LibraryItemFields, LibraryItemKind, LibraryItemSummary } from '../library/libraryTypes'
-  import { parseAndValidateMacroDefinitionJson } from '../macro/macroDefinitionValidation'
+  import { parseAndValidateMacroDefinitionJson, validateRunnableMacroDefinitionV4 } from '../macro/macroDefinitionValidation'
   import LineNumberedTextarea from './macro/LineNumberedTextarea.svelte'
 
   type LibraryTab = 'json-template' | 'prompt' | 'note'
@@ -500,7 +500,13 @@
   function validateMacro() {
     if (!draft || kind !== 'macro-template') return
     const result = parseAndValidateMacroDefinitionJson(draft.content)
-    validationText = result.ok ? 'Valid MacroDefinitionV3' : formatMacroValidation(result)
+    if (result.ok) {
+      const runnable = validateRunnableMacroDefinitionV4(result.value)
+      const unassigned = runnable.ok ? [] : runnable.issues.filter((issue) => issue.code === 'unassigned_terminal_reference' || issue.code === 'unassigned_artifact_reference')
+      validationText = unassigned.length > 0
+        ? `Valid MacroDefinitionV4 · ${unassigned.length} unassigned reference${unassigned.length === 1 ? '' : 's'} (not runnable)\n${unassigned.map((issue) => issue.path).join('\n')}`
+        : 'Valid MacroDefinitionV4 · runnable'
+    } else validationText = formatMacroValidation(result)
     errorText = result.ok ? null : result.error.code
   }
 
@@ -817,7 +823,7 @@
   }
 
   function emptyMacroJson(): string {
-    return JSON.stringify({ schemaVersion: 3, name: 'Library Macro', description: '', terminalLayout: [], body: [] }, null, 2)
+    return JSON.stringify({ schemaVersion: 4, name: 'Library Macro', description: '', terminalLayout: [], body: [] }, null, 2)
   }
 
   function tabKind(tab: LibraryTab): LibraryItemKind { return tab === 'json-template' ? 'macro-template' : tab }

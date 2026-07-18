@@ -3,9 +3,9 @@
   import MacroIconButton from "./MacroIconButton.svelte"
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_TEMPLATE_TOKENS, LOOP_VALUE_TEMPLATE_TOKEN, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
   import { messageTextPartValue, withMessagePartTemplateMode, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
-  import type { FlowV2ArtifactSource, MessagePart, MessageSpec } from '../../macro/macroDefinitionTypes'
+  import type { FlowV2ArtifactSource, FlowV2StepArtifactSource, MessagePart, MessageSpec } from '../../macro/macroDefinitionTypes'
 
-  export type ArtifactChoice = { label: string; source: FlowV2ArtifactSource }
+  export type ArtifactChoice = { label: string; source: FlowV2StepArtifactSource }
 
   let {
     message,
@@ -29,12 +29,12 @@
     return JSON.parse(JSON.stringify(message)) as MessageSpec
   }
 
-  function sourceKey(source?: FlowV2ArtifactSource): string {
-    return source?.stepId ? source.stepId + ":" + source.artifact : ""
+  function sourceKey(source: FlowV2ArtifactSource): string {
+    return source.kind === 'step_artifact' ? source.stepId + ":" + source.artifact : ""
   }
 
-  function sourceFromKey(key: string): FlowV2ArtifactSource | undefined {
-    if (!key) return undefined
+  function sourceFromKey(key: string): FlowV2ArtifactSource {
+    if (!key) return { kind: 'unassigned' }
     const [stepId, artifact] = key.split(":")
     return {
       kind: "step_artifact",
@@ -53,7 +53,7 @@
   function addArtifactPart() {
     const next = cloneMessage()
     structureVersion += 1
-    next.parts.push({ kind: "artifact" })
+    next.parts.push({ kind: "artifact", source: { kind: 'unassigned' } })
     onChange(next)
   }
 
@@ -78,9 +78,7 @@
     const next = cloneMessage()
     const part = next.parts[index]
     if (part?.kind !== "artifact") return
-    const source = sourceFromKey(key)
-    if (source) part.source = source
-    else delete part.source
+    part.source = sourceFromKey(key)
     onChange(next)
   }
 
@@ -168,9 +166,12 @@
       {:else}
         <label>Source artifact
           <select data-testid="message-source-part" value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(partIndex, event.currentTarget.value)}>
-            <option value="">none</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
+            <option value="">Unassigned</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
           </select>
         </label>
+        {#if part.source.kind === 'unassigned'}
+          <small class="artifact-source-warning" data-testid="message-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>
+        {/if}
       {/if}
     </div>
   {/each}
@@ -195,5 +196,10 @@
     background: #fff4f4;
     color: #8f2626;
     font-size: 12px;
+  }
+
+  .artifact-source-warning {
+    color: #8a5b0a;
+    font-size: 11px;
   }
 </style>

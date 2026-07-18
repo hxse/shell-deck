@@ -63,15 +63,15 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro V3 editor/runner，`.035`交付server-authoritative runtime sync，`.036`接入Library UI。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro editor/runner，`.035`交付server-authoritative runtime sync，`.036`接入Library UI，`.037`破坏性切换到`MacroDefinitionV4`的exact assigned/unassigned reference。
 
 ## Macro
 
-新Room默认不选择Macro。点击Macro面板的New创建client-local draft；Save只校验并保存portable `MacroDefinitionV3`，不要求当前Room已有匹配terminal。definition只保存连续terminal index/type，不保存terminalId、cwd或Room identity。
+新Room默认不选择Macro。点击Macro面板的New创建client-local draft；Save只校验并保存portable、persistable的`MacroDefinitionV4`，不要求当前Room已有匹配terminal。definition只保存连续terminal index/type，不保存terminalId、cwd或Room identity。terminal target与必填artifact source使用exact tagged reference；新slot默认`{kind:"unassigned"}`，可Save但不可Start，旧primitive `terminalIndex`与空`stepId`写法会直接失败。
 
 需要调整当前Room terminal顺序/类型时，显式点击Start左侧的`Prepare terminals`。它读取当前visual draft或JSON Edit buffer的terminal layout；切换Macro、Save、Start和terminal变化都不会自动Prepare。Prepare只keep/move/create/insert，不删除或修复failed/exited terminal。
 
-Start要求Macro已经Save，并要求当前terminal layout/type/readiness匹配。启动时server把index解析成terminalId/launchId并冻结，运行中terminal结构保持锁定；Pause只暂停live run，server restart或Room Destroy后不能Resume。Trace、manifest、events和artifact仍可只读查看，但不会恢复runner。
+Start要求Macro已经Save，先通过runnable completeness（所有terminal/artifact reference均assigned），再要求当前terminal layout/type/readiness匹配。启动时server把index解析成terminalId/launchId并冻结，运行中terminal结构保持锁定；Pause只暂停live run，server restart或Room Destroy后不能Resume。Trace、manifest、events和artifact仍可只读查看，但不会恢复runner。
 
 Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Save/Delete后的record会同步，但不会切换其他browser的selector。Start后Room另有只读Running Macro；status、current step、Pause/Resume/Stop以及Input Action的prompt/draft/submit都由server主动同步到同Room设备。关闭所有页面不会停止run，重新进入原Room URL会立即得到当前live snapshot。
 
@@ -83,7 +83,7 @@ Notify Action在server只执行一次：Telegram只发送一次；当时在线�
 
 saved item默认只读。New建立browser-local draft；Edit取得该`(kind,itemId)`的content edit lease；Save/Delete同时验证Room controller、lease与expected revision。另一Room或server process编辑同一item时，本页面仍可Search、Read、Copy，但必须显式take over lease后才能写；不同item互不阻塞。
 
-Copy只把当前content写入clipboard，不创建item，也没有Duplicate/Import/Export。Prompt与Note接受任意文本。Macro JSON只接受纯`MacroDefinitionV3`，Validate、Save和Load into Macro共用唯一text validator；Load每次创建fresh MacroRecord。当前Macro editor clean时创建后自动选中，存在未保存编辑时只创建、不切换；两种情况都不会Prepare terminals。
+Copy只把当前content写入clipboard，不创建item，也没有Duplicate/Import/Export。Prompt与Note接受任意文本。Macro JSON只接受纯、persistable的`MacroDefinitionV4`，包括合法的`{kind:"unassigned"}`；Validate、Save和Load into Macro共用唯一text validator。Load每次创建fresh MacroRecord。当前Macro editor clean时创建后自动选中，存在未保存编辑时只创建、不切换；两种情况都不会Prepare terminals。
 
 ## 验证
 
@@ -95,4 +95,5 @@ just test-033
 just test-034
 just test-035
 just test-036
+just test-037
 ```

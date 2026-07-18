@@ -1,9 +1,11 @@
 <script lang="ts">
-  import type { MacroDefinitionV3 } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionV4 } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionIssue, MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import LineNumberedTextarea from './LineNumberedTextarea.svelte'
 
   let {
     draft,
+    runnableValidation,
     jsonPreview,
     editing,
     saving,
@@ -17,7 +19,8 @@
     onCancel,
     onCopyResult = () => {},
   } = $props<{
-    draft: MacroDefinitionV3 | null
+    draft: MacroDefinitionV4 | null
+    runnableValidation: MacroDefinitionValidation
     jsonPreview: string
     editing: boolean
     saving: boolean
@@ -34,6 +37,7 @@
 
   let copyLabel = $state('Copy')
   const copyText = $derived(editing ? editText : jsonPreview)
+  const unassignedIssues = $derived(runnableValidation.ok ? [] : runnableValidation.issues.filter((issue: MacroDefinitionIssue) => issue.code === 'unassigned_terminal_reference' || issue.code === 'unassigned_artifact_reference'))
 
   async function copyJson() {
     try {
@@ -68,8 +72,32 @@
       <LineNumberedTextarea testId="macro-json-editor" value={editText} maxRows={30} ariaLabel="Macro JSON editor" disabled={saving || !canEdit} onInput={onEditTextChange} />
     </div>
   {:else if draft}
+    {#if unassignedIssues.length > 0}
+      <div class="macro-json-runnable-warning" data-testid="macro-json-runnable-warning" role="status">
+        Valid MacroDefinitionV4, but not runnable: assign {unassignedIssues.length} terminal or artifact reference{unassignedIssues.length === 1 ? '' : 's'} before Start.
+        <ul>{#each unassignedIssues as issue}<li><code>{issue.path}</code></li>{/each}</ul>
+      </div>
+    {/if}
     <pre data-testid="macro-json-preview">{jsonPreview}</pre>
   {:else}
     <p class="empty-text">No macro selected.</p>
   {/if}
 </section>
+
+<style>
+  .macro-json-runnable-warning {
+    margin: 0 0 8px;
+    border: 1px solid #d79a35;
+    border-radius: 6px;
+    background: #fff9eb;
+    color: #725013;
+    padding: 7px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .macro-json-runnable-warning ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+</style>

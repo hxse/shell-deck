@@ -3,7 +3,7 @@ import { isTerminalEnding } from './terminalEnding'
 import { isTerminalInputDelivery } from './terminalInputDelivery'
 import { cloneJsonValue } from '../jsonClone'
 import type {
-  MacroDefinitionV3,
+  MacroDefinitionV4,
   MacroTerminalLayoutItem,
   TerminalType,
 } from './macroDefinitionTypes'
@@ -26,20 +26,22 @@ export const MACRO_DEFINITION_ISSUE_CODES = [
   'terminal_layout_not_contiguous',
   'terminal_reference_missing',
   'terminal_capability_mismatch',
+  'unassigned_terminal_reference',
+  'unassigned_artifact_reference',
   'semantic_conflict',
 ] as const
 
 export type MacroDefinitionIssueCode = (typeof MACRO_DEFINITION_ISSUE_CODES)[number]
 export type MacroDefinitionIssue = { code: MacroDefinitionIssueCode; path: string; message: string }
 export type MacroDefinitionValidation =
-  | { ok: true; value: MacroDefinitionV3 }
+  | { ok: true; value: MacroDefinitionV4 }
   | { ok: false; issues: MacroDefinitionIssue[] }
 export type MacroTerminalLayoutValidation =
   | { ok: true; value: MacroTerminalLayoutItem[] }
   | { ok: false; issues: MacroDefinitionIssue[] }
 export type InvalidJsonError = { code: 'invalid_json'; offset: number; line: number; column: number; message: string }
 export type MacroDefinitionJsonValidation =
-  | { ok: true; value: MacroDefinitionV3 }
+  | { ok: true; value: MacroDefinitionV4 }
   | { ok: false; error: InvalidJsonError }
   | { ok: false; error: { code: 'invalid_macro_definition'; issues: MacroDefinitionIssue[] } }
 export type MacroTerminalLayoutJsonValidation =
@@ -55,6 +57,7 @@ type ValidationContext = {
   artifactOutputs: Map<string, Set<string>>
   loopDepth: number
   templateScopeDepth: number
+  mode: 'persistable' | 'runnable'
 }
 
 const TOP_LEVEL_KEYS = ['schemaVersion', 'name', 'description', 'terminalLayout', 'body'] as const
@@ -83,27 +86,36 @@ export function validateMacroTerminalLayout(input: unknown, path = 'terminalLayo
   return issues.length === 0 ? { ok: true, value } : { ok: false, issues: finishIssues(issues) }
 }
 
-export function validateMacroDefinitionV3(input: unknown): MacroDefinitionValidation {
+export function validateMacroDefinitionV4(input: unknown): MacroDefinitionValidation {
+  return validateMacroDefinition(input, 'persistable')
+}
+
+export function validateRunnableMacroDefinitionV4(input: unknown): MacroDefinitionValidation {
+  const persistable = validateMacroDefinition(input, 'persistable')
+  return persistable.ok ? validateMacroDefinition(persistable.value, 'runnable') : persistable
+}
+
+function validateMacroDefinition(input: unknown, mode: ValidationContext['mode']): MacroDefinitionValidation {
   const issues: MacroDefinitionIssue[] = []
   const definition = object(input, issues, '')
   if (!definition) return { ok: false, issues: finishIssues(issues) }
   exactKeys(definition, TOP_LEVEL_KEYS, issues, '')
-  if (definition.schemaVersion !== 3) add(issues, 'invalid_literal', 'schemaVersion', 'schemaVersion must be 3')
+  if (definition.schemaVersion !== 4) add(issues, 'invalid_literal', 'schemaVersion', 'schemaVersion must be 4')
   stringValue(definition.name, issues, 'name', { nonEmpty: true })
   stringValue(definition.description, issues, 'description')
   const layoutResult = validateMacroTerminalLayout(definition.terminalLayout)
   if (!layoutResult.ok) issues.push(...layoutResult.issues)
   const layout = new Map<number, TerminalType>(layoutResult.ok ? layoutResult.value.map((item) => [item.index, item.type]) : [])
-  const context: ValidationContext = { issues, layout, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0, templateScopeDepth: 0 }
+  const context: ValidationContext = { issues, layout, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0, templateScopeDepth: 0, mode }
   validateNodeList(definition.body, 'body', context, false, false)
   if (issues.length > 0) return { ok: false, issues: finishIssues(issues) }
-  return { ok: true, value: cloneJsonValue(input) as MacroDefinitionV3 }
+  return { ok: true, value: cloneJsonValue(input) as MacroDefinitionV4 }
 }
 
 export function parseAndValidateMacroDefinitionJson(text: string): MacroDefinitionJsonValidation {
   const parsed = parseJson(text)
   if (!parsed.ok) return parsed
-  const validated = validateMacroDefinitionV3(parsed.value)
+  const validated = validateMacroDefinitionV4(parsed.value)
   return validated.ok
     ? validated
     : { ok: false, error: { code: 'invalid_macro_definition', issues: validated.issues } }
@@ -130,7 +142,7 @@ function validateNodeList(value: unknown, path: string, context: ValidationConte
   value.forEach((node, index) => validateNode(node, `${path}[${index}]`, context, actionOnly, undefined))
 }
 
-function validateNode(value: unknown, path: string, context: ValidationContext, actionOnly: boolean, inheritedTerminalIndex: number | undefined): void {
+function validateNode(value: unknown, path: string, context: ValidationContext, actionOnly: boolean, inheritedTerminalIndex: number | null | undefined): void {
   const node = object(value, context.issues, path)
   if (!node) return
   validateIdentifier(node.id, context.issues, `${path}.id`, context.nodeIds)
@@ -159,22 +171,22 @@ function validateNode(value: unknown, path: string, context: ValidationContext, 
   }
 }
 
-function validateSend(node: RecordValue, path: string, context: ValidationContext, inherited: number | undefined): void {
-  exactKeys(node, inherited === undefined ? ['id', 'type', 'terminalIndex', 'message', 'delivery', 'ending'] : ['id', 'type', 'message', 'delivery', 'ending'], context.issues, path)
-  validateTerminalUse(inherited ?? node.terminalIndex, 'send', `${path}.terminalIndex`, context)
+function validateSend(node: RecordValue, path: string, context: ValidationContext, inherited: number | null | undefined): void {
+  exactKeys(node, inherited === undefined ? ['id', 'type', 'terminal', 'message', 'delivery', 'ending'] : ['id', 'type', 'message', 'delivery', 'ending'], context.issues, path)
+  validateTerminalSlot(node.terminal, inherited, 'send', `${path}.terminal`, context)
   validateMessage(node.message, `${path}.message`, context)
   if (!isTerminalInputDelivery(node.delivery)) add(context.issues, 'invalid_literal', `${path}.delivery`, 'delivery must be auto, direct-bytes or bracketed-paste')
   if (!isTerminalEnding(node.ending)) add(context.issues, 'invalid_literal', `${path}.ending`, 'ending must be none, lf, cr or crlf')
 }
 
-function validateInput(node: RecordValue, path: string, context: ValidationContext, inherited: number | undefined): void {
-  exactKeys(node, inherited === undefined ? ['id', 'type', 'terminalIndex', 'prompt', 'allowEmpty', 'delivery', 'ending'] : ['id', 'type', 'prompt', 'allowEmpty', 'delivery', 'ending'], context.issues, path, ['defaultSource'])
-  validateTerminalUse(inherited ?? node.terminalIndex, 'input', `${path}.terminalIndex`, context)
+function validateInput(node: RecordValue, path: string, context: ValidationContext, inherited: number | null | undefined): void {
+  exactKeys(node, inherited === undefined ? ['id', 'type', 'terminal', 'prompt', 'allowEmpty', 'delivery', 'ending'] : ['id', 'type', 'prompt', 'allowEmpty', 'delivery', 'ending'], context.issues, path, ['defaultSource'])
+  validateTerminalSlot(node.terminal, inherited, 'input', `${path}.terminal`, context)
   validateTemplatable(node.prompt, `${path}.prompt`, context, true)
   booleanValue(node.allowEmpty, context.issues, `${path}.allowEmpty`)
   if (!isTerminalInputDelivery(node.delivery)) add(context.issues, 'invalid_literal', `${path}.delivery`, 'delivery must be auto, direct-bytes or bracketed-paste')
   if (!isTerminalEnding(node.ending)) add(context.issues, 'invalid_literal', `${path}.ending`, 'ending must be none, lf, cr or crlf')
-  if (node.defaultSource !== undefined) validateArtifact(node.defaultSource, `${path}.defaultSource`, context)
+  if (node.defaultSource !== undefined) validateAssignedArtifact(node.defaultSource, `${path}.defaultSource`, context)
 }
 
 function validateNotify(node: RecordValue, path: string, context: ValidationContext): void {
@@ -204,13 +216,13 @@ function validateNotifyChannel(value: unknown, path: string, context: Validation
   } else add(context.issues, 'invalid_literal', `${path}.kind`, 'channel kind must be app, system or telegram')
 }
 
-function validateWait(node: RecordValue, path: string, context: ValidationContext, inherited: number | undefined): void {
+function validateWait(node: RecordValue, path: string, context: ValidationContext, inherited: number | null | undefined): void {
   if (node.mode === 'duration') {
     exactKeys(node, ['id', 'type', 'mode', 'durationMs'], context.issues, path)
     positiveInteger(node.durationMs, context.issues, `${path}.durationMs`)
   } else if (node.mode === 'terminal-quiet') {
-    exactKeys(node, inherited === undefined ? ['id', 'type', 'mode', 'terminalIndex', 'quietMs', 'maxMs', 'onTimeout'] : ['id', 'type', 'mode', 'quietMs', 'maxMs', 'onTimeout'], context.issues, path)
-    validateTerminalUse(inherited ?? node.terminalIndex, 'terminal-quiet', `${path}.terminalIndex`, context)
+    exactKeys(node, inherited === undefined ? ['id', 'type', 'mode', 'terminal', 'quietMs', 'maxMs', 'onTimeout'] : ['id', 'type', 'mode', 'quietMs', 'maxMs', 'onTimeout'], context.issues, path)
+    validateTerminalSlot(node.terminal, inherited, 'terminal-quiet', `${path}.terminal`, context)
     const quietMs = positiveInteger(node.quietMs, context.issues, `${path}.quietMs`)
     const maxMs = positiveInteger(node.maxMs, context.issues, `${path}.maxMs`)
     if (quietMs !== undefined && maxMs !== undefined && maxMs < quietMs) add(context.issues, 'invalid_range', `${path}.maxMs`, 'maxMs must be greater than or equal to quietMs')
@@ -221,22 +233,22 @@ function validateWait(node: RecordValue, path: string, context: ValidationContex
   } else add(context.issues, 'invalid_literal', `${path}.mode`, 'wait mode must be duration, terminal-quiet or user-continue')
 }
 
-function validateCaptureNode(node: RecordValue, path: string, context: ValidationContext, inherited: number | undefined): void {
+function validateCaptureNode(node: RecordValue, path: string, context: ValidationContext, inherited: number | null | undefined): void {
   exactKeys(node, ['id', 'type', 'capture'], context.issues, path)
   const capture = object(node.capture, context.issues, `${path}.capture`)
   if (!capture) return
-  const inheritedKeys = inherited === undefined ? ['terminalIndex'] : []
+  const inheritedKeys = inherited === undefined ? ['terminal'] : []
   if (capture.kind === 'terminal-buffer') {
     exactKeys(capture, ['kind', ...inheritedKeys, 'mode', 'maxChars'], context.issues, `${path}.capture`)
-    validateTerminalUse(inherited ?? capture.terminalIndex, 'terminal-buffer', `${path}.capture.terminalIndex`, context)
+    validateTerminalSlot(capture.terminal, inherited, 'terminal-buffer', `${path}.capture.terminal`, context)
     literal(capture.mode, ['scrollback-tail', 'raw-stream-tail'], context.issues, `${path}.capture.mode`, 'unsupported terminal-buffer mode')
     positiveInteger(capture.maxChars, context.issues, `${path}.capture.maxChars`)
   } else if (capture.kind === 'text-box') {
     exactKeys(capture, ['kind', ...inheritedKeys], context.issues, `${path}.capture`)
-    validateTerminalUse(inherited ?? capture.terminalIndex, 'text-box', `${path}.capture.terminalIndex`, context)
+    validateTerminalSlot(capture.terminal, inherited, 'text-box', `${path}.capture.terminal`, context)
   } else if (capture.kind === 'agent-event') {
     exactKeys(capture, ['kind', ...inheritedKeys, 'agent', 'captureMode'], context.issues, `${path}.capture`)
-    validateTerminalUse(inherited ?? capture.terminalIndex, 'agent-event', `${path}.capture.terminalIndex`, context)
+    validateTerminalSlot(capture.terminal, inherited, 'agent-event', `${path}.capture.terminal`, context)
     const agent = object(capture.agent, context.issues, `${path}.capture.agent`)
     if (agent) {
       exactKeys(agent, ['kind'], context.issues, `${path}.capture.agent`)
@@ -249,7 +261,7 @@ function validateCaptureNode(node: RecordValue, path: string, context: Validatio
 
 function validateExtract(node: RecordValue, path: string, context: ValidationContext): void {
   exactKeys(node, ['id', 'type', 'source', 'split', 'filters', 'select', 'extract', 'trim', 'onEmpty'], context.issues, path)
-  validateArtifact(node.source, `${path}.source`, context)
+  validateArtifactReference(node.source, `${path}.source`, context)
   validateSplit(node.split, `${path}.split`, context)
   if (!Array.isArray(node.filters)) add(context.issues, 'expected_array', `${path}.filters`, 'filters must be an array')
   else node.filters.forEach((filter, index) => validateFilter(filter, `${path}.filters[${index}]`, context))
@@ -272,7 +284,7 @@ function validateParallel(node: RecordValue, path: string, context: ValidationCo
       const lanePath = `${path}.lanes[${index}]`
       const lane = object(value, context.issues, lanePath)
       if (!lane) return
-      exactKeys(lane, ['id', 'label', 'terminalIndex', 'body'], context.issues, lanePath)
+      exactKeys(lane, ['id', 'label', 'terminal', 'body'], context.issues, lanePath)
       validateIdentifier(lane.id, context.issues, `${lanePath}.id`, laneIds)
       const label = stringValue(lane.label, context.issues, `${lanePath}.label`)
       if (label?.trim()) {
@@ -280,9 +292,9 @@ function validateParallel(node: RecordValue, path: string, context: ValidationCo
         if (laneLabels.has(normalized)) add(context.issues, 'semantic_conflict', `${lanePath}.label`, 'parallel lane labels must be unique')
         laneLabels.add(normalized)
       }
-      const terminalIndex = validateTerminalUse(lane.terminalIndex, 'parallel', `${lanePath}.terminalIndex`, context)
-      if (terminalIndex !== undefined) {
-        if (terminalIndexes.has(terminalIndex)) add(context.issues, 'semantic_conflict', `${lanePath}.terminalIndex`, 'parallel lanes must use distinct terminalIndex values')
+      const terminalIndex = validateTerminalReference(lane.terminal, 'parallel', `${lanePath}.terminal`, context)
+      if (typeof terminalIndex === 'number') {
+        if (terminalIndexes.has(terminalIndex)) add(context.issues, 'semantic_conflict', `${lanePath}.terminal`, 'parallel lanes must use distinct assigned terminal indexes')
         terminalIndexes.add(terminalIndex)
       }
       validateParallelLaneBody(lane.body, `${lanePath}.body`, context, terminalIndex)
@@ -299,7 +311,7 @@ function validateParallel(node: RecordValue, path: string, context: ValidationCo
   if (typeof node.id === 'string') registerArtifact(context, node.id, 'merged_text')
 }
 
-function validateParallelLaneBody(value: unknown, path: string, context: ValidationContext, terminalIndex: number | undefined): void {
+function validateParallelLaneBody(value: unknown, path: string, context: ValidationContext, terminalIndex: number | null | undefined): void {
   if (!Array.isArray(value)) {
     add(context.issues, 'expected_array', path, 'parallel lane body must be an array')
     return
@@ -321,7 +333,7 @@ function validateParallelLaneBody(value: unknown, path: string, context: Validat
       exactKeys(childRecord, ['id', 'type', 'source'], context.issues, childPath)
       const source = object(childRecord.source, context.issues, `${childPath}.source`)
       if (source?.kind === 'none') exactKeys(source, ['kind'], context.issues, `${childPath}.source`)
-      else validateArtifact(childRecord.source, `${childPath}.source`, outputContext)
+      else validateAssignedArtifact(childRecord.source, `${childPath}.source`, outputContext)
       if (childIndex !== value.length - 1) add(context.issues, 'semantic_conflict', `${childPath}.type`, 'parallel lane output must be the final node')
       return
     }
@@ -430,8 +442,8 @@ function validateMessage(value: unknown, path: string, context: ValidationContex
       exactKeys(part, ['kind', 'template'], context.issues, partPath)
       validateTemplateString(part.template, `${partPath}.template`, context)
     } else if (part.kind === 'artifact') {
-      exactKeys(part, ['kind'], context.issues, partPath, ['source'])
-      if (part.source !== undefined) validateArtifact(part.source, `${partPath}.source`, context)
+      exactKeys(part, ['kind', 'source'], context.issues, partPath)
+      validateArtifactReference(part.source, `${partPath}.source`, context)
     } else add(context.issues, 'invalid_literal', `${partPath}.kind`, 'message part kind must be text, template or artifact')
   })
 }
@@ -459,9 +471,24 @@ function validateTemplateString(value: unknown, path: string, context: Validatio
   if (issue) add(context.issues, 'invalid_template_syntax', path, issue)
 }
 
-function validateArtifact(value: unknown, path: string, context: ValidationContext): void {
+function validateArtifactReference(value: unknown, path: string, context: ValidationContext): void {
   const source = object(value, context.issues, path)
   if (!source) return
+  if (source.kind === 'unassigned') {
+    exactKeys(source, ['kind'], context.issues, path)
+    if (context.mode === 'runnable') add(context.issues, 'unassigned_artifact_reference', path, 'artifact source must be assigned before Start')
+    return
+  }
+  validateAssignedArtifactObject(source, path, context)
+}
+
+function validateAssignedArtifact(value: unknown, path: string, context: ValidationContext): void {
+  const source = object(value, context.issues, path)
+  if (!source) return
+  validateAssignedArtifactObject(source, path, context)
+}
+
+function validateAssignedArtifactObject(source: RecordValue, path: string, context: ValidationContext): void {
   exactKeys(source, ['kind', 'stepId', 'artifact'], context.issues, path)
   if (source.kind !== 'step_artifact') add(context.issues, 'invalid_literal', `${path}.kind`, 'artifact source kind must be step_artifact')
   const stepId = stringValue(source.stepId, context.issues, `${path}.stepId`, { nonEmpty: true })
@@ -474,7 +501,7 @@ function validateCondition(value: unknown, path: string, context: ValidationCont
   if (!condition) return
   exactKeys(condition, ['kind', 'source', 'matcher', 'scope'], context.issues, path)
   if (condition.kind !== 'text_match') add(context.issues, 'invalid_literal', `${path}.kind`, 'condition kind must be text_match')
-  validateArtifact(condition.source, `${path}.source`, context)
+  validateArtifactReference(condition.source, `${path}.source`, context)
   validateFilterMatcher(condition.matcher, `${path}.matcher`, context)
   const scope = object(condition.scope, context.issues, `${path}.scope`)
   if (!scope) return
@@ -555,19 +582,46 @@ function validateRegex(pattern: unknown, flags: unknown, path: string, context: 
   }
 }
 
-function validateTerminalUse(value: unknown, capability: 'send' | 'input' | 'terminal-quiet' | 'terminal-buffer' | 'text-box' | 'agent-event' | 'parallel', path: string, context: ValidationContext): number | undefined {
-  const index = positiveInteger(value, context.issues, path)
+type TerminalCapability = 'send' | 'input' | 'terminal-quiet' | 'terminal-buffer' | 'text-box' | 'agent-event' | 'parallel'
+
+function validateTerminalSlot(value: unknown, inherited: number | null | undefined, capability: TerminalCapability, path: string, context: ValidationContext): number | null | undefined {
+  if (inherited === null) return null
+  if (inherited !== undefined) {
+    validateTerminalIndex(inherited, capability, path, context)
+    return inherited
+  }
+  return validateTerminalReference(value, capability, path, context)
+}
+
+function validateTerminalReference(value: unknown, capability: TerminalCapability, path: string, context: ValidationContext): number | null | undefined {
+  const reference = object(value, context.issues, path)
+  if (!reference) return undefined
+  if (reference.kind === 'unassigned') {
+    exactKeys(reference, ['kind'], context.issues, path)
+    if (context.mode === 'runnable') add(context.issues, 'unassigned_terminal_reference', path, 'terminal target must be assigned before Start')
+    return null
+  }
+  exactKeys(reference, ['kind', 'index'], context.issues, path)
+  if (reference.kind !== 'terminal_index') {
+    add(context.issues, 'invalid_literal', `${path}.kind`, 'terminal reference kind must be terminal_index or unassigned')
+    return undefined
+  }
+  const index = positiveInteger(reference.index, context.issues, `${path}.index`)
   if (index === undefined) return undefined
+  validateTerminalIndex(index, capability, `${path}.index`, context)
+  return index
+}
+
+function validateTerminalIndex(index: number, capability: TerminalCapability, path: string, context: ValidationContext): void {
   const type = context.layout.get(index)
   if (!type) {
-    add(context.issues, 'terminal_reference_missing', path, 'terminalIndex must exist in terminalLayout')
-    return index
+    add(context.issues, 'terminal_reference_missing', path, 'terminal reference index must exist in terminalLayout')
+    return
   }
   const allowed = type === 'shell'
     ? capability !== 'text-box'
     : capability === 'send' || capability === 'input' || capability === 'text-box' || capability === 'parallel'
   if (!allowed) add(context.issues, 'terminal_capability_mismatch', path, `${capability} is not supported by ${type} terminal`)
-  return index
 }
 
 function validateIdentifier(value: unknown, issues: MacroDefinitionIssue[], path: string, seen: Set<string>): void {

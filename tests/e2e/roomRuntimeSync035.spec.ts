@@ -778,7 +778,7 @@ test('controller and content lease loss preserve the draft but keep Macro fields
 
 function sharedRuntimeDefinition() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'Shared runtime',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
@@ -793,21 +793,21 @@ function sharedRuntimeDefinition() {
         channels: [{ kind: 'app', toast: true, sound: 'none' }],
         onFailure: 'continue',
       },
-      { id: 'input', type: 'input', terminalIndex: 1, prompt: 'Shared prompt', allowEmpty: false, delivery: 'direct', ending: 'none' },
+      { id: 'input', type: 'input', terminal: { kind: 'terminal_index', index: 1 }, prompt: 'Shared prompt', allowEmpty: false, delivery: 'direct', ending: 'none' },
     ],
   }
 }
 
 function completedRunDefinition() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'Completed run unlock',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
     body: [{
       id: 'send',
       type: 'send',
-      terminalIndex: 1,
+      terminal: { kind: 'terminal_index', index: 1 },
       message: { parts: [{ kind: 'text', text: 'done' }] },
       delivery: 'direct',
       ending: 'none',
@@ -817,7 +817,7 @@ function completedRunDefinition() {
 
 function gapRepairDefinition() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'Gap repair retry',
     description: '',
     terminalLayout: [],
@@ -831,7 +831,7 @@ function gapRepairDefinition() {
 
 function runtimeInputGenerationDefinition() {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'Runtime input generation',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
@@ -839,16 +839,16 @@ function runtimeInputGenerationDefinition() {
       {
         id: 'seed',
         type: 'send',
-        terminalIndex: 1,
+        terminal: { kind: 'terminal_index', index: 1 },
         message: { parts: [{ kind: 'text', text: 'D' }] },
         delivery: 'direct',
         ending: 'none',
       },
-      { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminalIndex: 1 } },
+      { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminal: { kind: 'terminal_index', index: 1 } } },
       {
         id: 'input',
         type: 'input',
-        terminalIndex: 1,
+        terminal: { kind: 'terminal_index', index: 1 },
         prompt: 'Keep the latest local generation',
         allowEmpty: false,
         defaultSource: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' },

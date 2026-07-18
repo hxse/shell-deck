@@ -130,11 +130,11 @@ test('current .036 Library journey exercises every control, all three kinds, lea
   })
 
   const macroDefinition = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'Loaded Library Macro',
     description: 'portable',
     terminalLayout: [],
-    body: [],
+    body: [{ id: 'send', type: 'send', terminal: { kind: 'unassigned' }, message: { parts: [{ kind: 'artifact', source: { kind: 'unassigned' } }] }, delivery: 'auto', ending: 'cr' }],
   }
   await test.step('Macro JSON uses line numbers and the single validator, then clean Load selects while dirty Load creates only', async () => {
     await page.getByTestId('library-search').fill('')
@@ -153,7 +153,9 @@ test('current .036 Library journey exercises every control, all three kinds, lea
     const macroText = JSON.stringify(macroDefinition, null, 2)
     await page.getByTestId('library-content').fill(macroText)
     await page.getByTestId('library-validate').click()
-    await expect(page.getByTestId('library-validation')).toHaveText('Valid MacroDefinitionV3')
+    await expect(page.getByTestId('library-validation')).toContainText('Valid MacroDefinitionV4 · 2 unassigned references (not runnable)')
+    await expect(page.getByTestId('library-validation')).toContainText('body[0].terminal')
+    await expect(page.getByTestId('library-validation')).toContainText('body[0].message.parts[0].source')
     await expect(page.getByTestId('library-content-line-numbers').locator(':scope > div > div')).toHaveCount(macroText.split('\n').length)
     await page.getByTestId('library-save').click()
     await expect(page.getByTestId('library-status')).toHaveText('Saved')

@@ -5,15 +5,16 @@ import { createGeneratedId } from '../src/lib/generatedId'
 import type {
   CaptureSourceConfig,
   FlowV2ArtifactSource,
+  FlowV2StepArtifactSource,
   FlowV2Node,
-  MacroDefinitionV3,
+  MacroDefinitionV4,
   MacroRecord,
   MessageSpec,
   ParallelLane,
   TemplatableScalarText,
   TextMatchCondition,
 } from '../src/lib/macro/macroDefinitionTypes'
-import { validateMacroDefinitionV3 } from '../src/lib/macro/macroDefinitionValidation'
+import { validateMacroDefinitionV4, validateRunnableMacroDefinitionV4, type MacroDefinitionIssue } from '../src/lib/macro/macroDefinitionValidation'
 import { validateMacroRuntimeBinding } from '../src/lib/macro/macroRuntimeBinding'
 import type { FrozenTerminalBinding, MacroRunnerDelta, MacroRunnerSnapshot, MacroRunTrace, RunManifestV1 } from '../src/lib/macro/runnerTypes'
 import { renderScopedTemplate, renderTemplatableScalar, type TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
@@ -44,7 +45,7 @@ type LiveRun = {
   runtimeRevision: number
   publishedEventSeq: number
   publishTimer: ReturnType<typeof setTimeout> | null
-  definition: MacroDefinitionV3
+  definition: MacroDefinitionV4
   bindings: Map<number, FrozenTerminalBinding>
   status: MacroRunnerSnapshot['status']
   currentNodeId: string | null
@@ -66,13 +67,22 @@ class FlowSignal extends Error { constructor(readonly signal: RunControlSignal) 
 
 const COOPERATIVE_CHECKPOINT_BUDGET = 64
 
+export class MacroNotRunnableError extends Error {
+  constructor(readonly issues: MacroDefinitionIssue[]) { super('macro_not_runnable') }
+}
+
+export type MacroStartPreflight = {
+  recordId: string
+  recordRevision: number
+  definitionHash: string
+}
 export class MacroRunnerService {
   private readonly runs = new Map<string, LiveRun>()
   private readonly runtimeRevisions = new Map<string, number>()
 
   constructor(
     private readonly manager: TerminalRoomManager,
-    private readonly records: MacroRecordStore<MacroDefinitionV3>,
+    private readonly records: MacroRecordStore<MacroDefinitionV4>,
     private readonly runStore: MacroRunStore,
     private readonly notificationService: NotificationDispatcher,
     private readonly agentEvents: AgentEventStore,
@@ -116,20 +126,36 @@ export class MacroRunnerService {
 
   traces(roomId: string): MacroRunTrace[] { return this.runStore.listTracesForRoom(roomId) }
 
+  preflightStart(templateId: string): MacroStartPreflight {
+    const record = this.records.read(templateId) as MacroRecord
+    const persistable = validateMacroDefinitionV4(record.definition)
+    if (!persistable.ok) throw new Error('invalid_macro_definition')
+    const runnable = validateRunnableMacroDefinitionV4(persistable.value)
+    if (!runnable.ok) throw new MacroNotRunnableError(runnable.issues)
+    return {
+      recordId: record.id,
+      recordRevision: record.revision,
+      definitionHash: macroDefinitionHash(runnable.value),
+    }
+  }
+
   async start(
     ticket: RoomControlledOperationTicket,
     templateId: string,
     expectedMacroRevision: number,
     expectedTerminalStructureRevision: number,
+    preflight: MacroStartPreflight = this.preflightStart(templateId),
   ): Promise<MacroRunnerSnapshot> {
     if (!Number.isInteger(expectedMacroRevision) || expectedMacroRevision < 1) throw new Error('invalid_macro_revision')
     const existing = this.runs.get(ticket.roomId)
     if (existing && ['starting', 'running', 'paused', 'waiting_input', 'stopping'].includes(existing.status)) throw new Error('run_already_active')
     if (this.manager.terminalStructureRevision(ticket.roomId) !== expectedTerminalStructureRevision) throw new Error('terminal_structure_revision_conflict')
     const record = this.records.read(templateId) as MacroRecord
+    if (record.id !== preflight.recordId || record.revision !== preflight.recordRevision) throw new Error('macro_revision_conflict')
     if (record.revision !== expectedMacroRevision) throw new Error('macro_revision_conflict')
-    const validated = validateMacroDefinitionV3(record.definition)
-    if (!validated.ok) throw new Error('invalid_macro_definition')
+    const validated = validateRunnableMacroDefinitionV4(record.definition)
+    if (!validated.ok) throw new MacroNotRunnableError(validated.issues)
+    if (macroDefinitionHash(validated.value) !== preflight.definitionHash) throw new Error('macro_revision_conflict')
     const definition = structuredClone(validated.value)
     const positions = this.manager.terminalPositions(ticket.roomId)
     const bindingValidation = validateMacroRuntimeBinding(definition.terminalLayout, positions)
@@ -335,7 +361,7 @@ export class MacroRunnerService {
 
   private async executeNode(run: LiveRun, node: FlowV2Node): Promise<void> {
     if (node.type === 'send') {
-      this.send(run, node.terminalIndex, this.renderMessage(run, node.message), node.delivery, node.ending, node.id)
+      this.send(run, this.assignedTerminalIndex(node.terminal), this.renderMessage(run, node.message), node.delivery, node.ending, node.id)
       return
     }
     if (node.type === 'input') {
@@ -343,7 +369,7 @@ export class MacroRunnerService {
       const defaultText = node.defaultSource ? this.artifact(run, node.defaultSource) : ''
       const value = await this.waitForInput(run, prompt, defaultText)
       if (!node.allowEmpty && value.length === 0) throw new Error('runner_input_empty')
-      this.send(run, node.terminalIndex, value, node.delivery, node.ending, node.id)
+      this.send(run, this.assignedTerminalIndex(node.terminal), value, node.delivery, node.ending, node.id)
       return
     }
     if (node.type === 'notify') {
@@ -377,7 +403,7 @@ export class MacroRunnerService {
     if (node.type === 'wait') {
       if (node.mode === 'duration') await this.waitDuration(run, node.durationMs)
       else if (node.mode === 'user-continue') await this.waitForInput(run, this.renderScalar(run, node.prompt))
-      else await this.waitQuiet(run, node.terminalIndex, node.quietMs, node.maxMs, node.onTimeout)
+      else await this.waitQuiet(run, this.assignedTerminalIndex(node.terminal), node.quietMs, node.maxMs, node.onTimeout)
       return
     }
     if (node.type === 'capture-source') {
@@ -482,8 +508,8 @@ export class MacroRunnerService {
         continue
       }
       const inherited = { ...node } as Record<string, unknown>
-      if (node.type === 'send' || (node.type === 'wait' && node.mode === 'terminal-quiet')) inherited.terminalIndex = lane.terminalIndex
-      if (node.type === 'capture-source') inherited.capture = { ...node.capture, terminalIndex: lane.terminalIndex }
+      if (node.type === 'send' || (node.type === 'wait' && node.mode === 'terminal-quiet')) inherited.terminal = lane.terminal
+      if (node.type === 'capture-source') inherited.capture = { ...node.capture, terminal: lane.terminal }
       run.currentNodeId = node.id
       this.appendEvent(run, 'step_started', { stepId: node.id, type: node.type, parallelId, laneId: lane.id })
       try {
@@ -498,7 +524,7 @@ export class MacroRunnerService {
         throw error
       }
     }
-    return { laneId: lane.id, label: lane.label, terminalIndex: lane.terminalIndex, text: run.parallelOutputs.get(progressKey) ?? '' }
+    return { laneId: lane.id, label: lane.label, terminalIndex: this.assignedTerminalIndex(lane.terminal), text: run.parallelOutputs.get(progressKey) ?? '' }
   }
 
   private send(run: LiveRun, terminalIndex: number, content: string, delivery: 'auto' | 'direct' | 'bracketed-paste', ending: 'none' | 'lf' | 'cr' | 'crlf', stepId: string): void {
@@ -514,19 +540,20 @@ export class MacroRunnerService {
   }
 
   private async capture(run: LiveRun, stepId: string, capture: CaptureSourceConfig): Promise<{ text: string; data: Record<string, unknown> }> {
-    const binding = this.binding(run, capture.terminalIndex)
+    const configuredTerminalIndex = this.assignedTerminalIndex(capture.terminal)
+    const binding = this.binding(run, configuredTerminalIndex)
     const currentTerminalIndex = this.manager.indexMap(run.roomId).find((item) => item.terminalId === binding.terminalId)?.index ?? null
     if (capture.kind === 'agent-event') {
       const captured = await this.waitForAgentEventCapture(run, stepId, binding, capture.captureMode)
       const rawArtifactRef = this.writeSupplementalArtifact(run, stepId, 'agent_event_raw', 'agent-event-raw', JSON.stringify(captured.raw, null, 2) + '\n', 'json')
       return {
         text: captured.text,
-        data: { captureKind: capture.kind, captureMode: capture.captureMode, configuredTerminalIndex: capture.terminalIndex, currentTerminalIndex, terminalId: binding.terminalId, launchId: binding.launchId, rawArtifactRef, agentEventIds: captured.events.map((event) => event.eventId) },
+        data: { captureKind: capture.kind, captureMode: capture.captureMode, configuredTerminalIndex, currentTerminalIndex, terminalId: binding.terminalId, launchId: binding.launchId, rawArtifactRef, agentEventIds: captured.events.map((event) => event.eventId) },
       }
     }
     const snapshot = this.manager.terminalSnapshot(this.manager.resolveTerminal(run.roomId, binding.terminalId))
     const text = snapshot.replay.join('')
-    if (capture.kind === 'text-box') return { text, data: { captureKind: capture.kind, configuredTerminalIndex: capture.terminalIndex, currentTerminalIndex, terminalId: binding.terminalId, launchId: binding.launchId } }
+    if (capture.kind === 'text-box') return { text, data: { captureKind: capture.kind, configuredTerminalIndex, currentTerminalIndex, terminalId: binding.terminalId, launchId: binding.launchId } }
     const captured = captureTerminalBuffer({ replay: snapshot.replay, maxChars: capture.maxChars })
     const rawArtifactRef = this.writeSupplementalArtifact(run, stepId, 'terminal_buffer_raw', 'capture-raw', captured.rawText)
     const normalizedArtifactRef = this.writeSupplementalArtifact(run, stepId, 'terminal_buffer_normalized', 'capture-normalized', captured.normalizedText)
@@ -534,7 +561,7 @@ export class MacroRunnerService {
       text: capture.mode === 'raw-stream-tail' ? captured.rawText : captured.normalizedText,
       data: {
         captureKind: capture.kind, mode: capture.mode, maxChars: capture.maxChars,
-        configuredTerminalIndex: capture.terminalIndex, currentTerminalIndex, terminalId: binding.terminalId, launchId: binding.launchId,
+        configuredTerminalIndex, currentTerminalIndex, terminalId: binding.terminalId, launchId: binding.launchId,
         rawArtifactRef, normalizedArtifactRef, truncated: captured.truncated, rawCharsBeforeTail: captured.rawCharsBeforeTail,
         capturedChars: captured.capturedChars, strippedAnsi: captured.strippedAnsi,
       },
@@ -552,16 +579,22 @@ export class MacroRunnerService {
     return message.parts.map((part) => {
       if (part.kind === 'text') return part.text
       if (part.kind === 'template') return renderScopedTemplate(part.template, run.templateBindings.at(-1))
-      return part.source ? this.artifact(run, part.source) : ''
+      return this.artifact(run, part.source)
     }).join('')
   }
 
   private renderScalar(run: LiveRun, value: TemplatableScalarText): string { return renderTemplatableScalar(value, run.templateBindings.at(-1)) }
 
-  private artifact(run: LiveRun, source: FlowV2ArtifactSource): string {
+  private artifact(run: LiveRun, source: FlowV2ArtifactSource | FlowV2StepArtifactSource): string {
+    if (source.kind === 'unassigned') throw new Error('unassigned_artifact_reference')
     const value = run.artifacts.get(source.stepId)?.get(source.artifact)
     if (value === undefined) throw new Error('artifact_not_found')
     return value
+  }
+
+  private assignedTerminalIndex(reference: { kind: 'terminal_index'; index: number } | { kind: 'unassigned' }): number {
+    if (reference.kind === 'unassigned') throw new Error('unassigned_terminal_reference')
+    return reference.index
   }
 
   private setArtifact(run: LiveRun, stepId: string, name: string, value: string): void {
@@ -653,14 +686,14 @@ export class MacroRunnerService {
   private agentCaptureTargets(nodes: FlowV2Node[]): Array<{ stepId: string; terminalIndex: number; captureMode: 'result_only' | 'prompt_only' | 'prompt_and_result' }> {
     const targets: Array<{ stepId: string; terminalIndex: number; captureMode: 'result_only' | 'prompt_only' | 'prompt_and_result' }> = []
     for (const node of nodes) {
-      if (node.type === 'capture-source' && node.capture.kind === 'agent-event') targets.push({ stepId: node.id, terminalIndex: node.capture.terminalIndex, captureMode: node.capture.captureMode })
+      if (node.type === 'capture-source' && node.capture.kind === 'agent-event' && node.capture.terminal.kind === 'terminal_index') targets.push({ stepId: node.id, terminalIndex: node.capture.terminal.index, captureMode: node.capture.captureMode })
       if (node.type === 'if') {
         for (const branch of node.branches) targets.push(...this.agentCaptureTargets(branch.body))
         if (node.else) targets.push(...this.agentCaptureTargets(node.else))
       }
       if (node.type === 'for') targets.push(...this.agentCaptureTargets(node.body))
       if (node.type === 'parallel') for (const lane of node.lanes) for (const item of lane.body) {
-        if (item.type === 'capture-source' && item.capture.kind === 'agent-event') targets.push({ stepId: item.id, terminalIndex: lane.terminalIndex, captureMode: item.capture.captureMode })
+        if (item.type === 'capture-source' && item.capture.kind === 'agent-event' && lane.terminal.kind === 'terminal_index') targets.push({ stepId: item.id, terminalIndex: lane.terminal.index, captureMode: item.capture.captureMode })
       }
       if ((node.type === 'break' || node.type === 'continue' || node.type === 'finish') && node.body) targets.push(...this.agentCaptureTargets(node.body))
     }

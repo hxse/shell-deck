@@ -397,7 +397,7 @@ export const attributedRestorations034: UiControlInventoryEntry[] = macroRuntime
   evidence,
   changedBy: "20260627A.034",
   oldBehavior: ".033 intentionally had no production Macro surface while the Room/controller foundation was rebuilt.",
-  newBehavior: ".034 restores this control on MacroDefinitionV3 while preserving the .031A presentation and current Room/controller contracts.",
+  newBehavior: ".034 restores this control on MacroDefinitionV4 while preserving the .031A presentation and current Room/controller contracts.",
   spec: "20260627A.034/02_spec/01_contract.md — UI preservation, Macro workbench and explicit Prepare/Start",
 }))
 

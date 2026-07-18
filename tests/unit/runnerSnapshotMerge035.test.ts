@@ -38,7 +38,7 @@ function snapshot(events: MacroRunEvent[], overrides: Partial<MacroRunnerSnapsho
     runningMacro: {
       recordId: createGeneratedId('macroTemplate'),
       recordRevision: 1,
-      definition: { schemaVersion: 3, name: 'merge', description: '', terminalLayout: [], body: [] },
+      definition: { schemaVersion: 4, name: 'merge', description: '', terminalLayout: [], body: [] },
     },
     status: 'running',
     currentNodeId: null,

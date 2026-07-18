@@ -1,4 +1,4 @@
-import type { CaptureSourceConfig, TerminalType } from './macroDefinitionTypes'
+import type { CaptureSourceConfig, MacroTerminalReference, TerminalType } from './macroDefinitionTypes'
 import type { TerminalRuntimePosition } from '../protocol'
 
 export type CapabilityCaptureKind = CaptureSourceConfig['kind']
@@ -16,7 +16,7 @@ export type TerminalChoice = {
   capabilities: MacroTerminalCapabilities
 }
 export type TerminalSelectState = {
-  status: 'selected' | 'unconfirmed' | 'empty' | 'missing' | 'incompatible'
+  status: 'selected' | 'unassigned' | 'unconfirmed' | 'empty' | 'missing' | 'incompatible'
   value: string
   title: string
   placeholder?: string
@@ -51,11 +51,15 @@ export function terminalChoiceForIndex(index: number, choices: TerminalChoice[])
 }
 
 export function terminalSelectState(
-  selectedIndex: number,
+  reference: MacroTerminalReference,
   compatibleChoices: TerminalChoice[],
   allChoices: TerminalChoice[] = compatibleChoices,
   expectedType?: TerminalType,
 ): TerminalSelectState {
+  if (reference.kind === 'unassigned') {
+    return { status: 'unassigned', value: 'unassigned', title: 'Unassigned' }
+  }
+  const selectedIndex = reference.index
   const selected = compatibleChoices.find((choice) => choice.index === selectedIndex)
   if (selected && expectedType === selected.type) {
     return { status: 'selected', value: selected.value, title: selected.title }

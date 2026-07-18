@@ -1,4 +1,4 @@
-import type { MacroDefinitionV3 } from './macroDefinitionTypes'
+import type { MacroDefinitionV4 } from './macroDefinitionTypes'
 
 export type FrozenTerminalBinding = {
   index: number
@@ -12,7 +12,7 @@ export type RunManifestV1 = {
   runId: string
   createdAt: string
   macroRecord: { id: string; revision: number }
-  definition: MacroDefinitionV3
+  definition: MacroDefinitionV4
   definitionHash: { algorithm: 'sha256'; value: string }
   runtime: {
     serverInstanceId: string
@@ -53,7 +53,7 @@ export type MacroRunnerSnapshot = MacroRunEventWindow & {
   runningMacro: {
     recordId: string
     recordRevision: number
-    definition: MacroDefinitionV3
+    definition: MacroDefinitionV4
   } | null
   status: MacroRunnerStatus
   currentNodeId: string | null

@@ -5,8 +5,8 @@ import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { assertGeneratedId, assertRoomRouteToken, createGeneratedSuffix } from '../src/lib/generatedId'
 import { assertContentResourceKey } from '../src/lib/contentEditLease'
 import { assertLibraryItemKind, normalizeLibraryItemFields, type LibraryItemKind } from '../src/lib/library/libraryTypes'
-import type { FlowV2Node, MacroDefinitionV3 } from '../src/lib/macro/macroDefinitionTypes'
-import { parseAndValidateMacroDefinitionJson, validateMacroDefinitionV3, validateMacroTerminalLayout } from '../src/lib/macro/macroDefinitionValidation'
+import type { FlowV2Node, MacroDefinitionV4 } from '../src/lib/macro/macroDefinitionTypes'
+import { parseAndValidateMacroDefinitionJson, validateMacroDefinitionV4, validateMacroTerminalLayout } from '../src/lib/macro/macroDefinitionValidation'
 import type { ClientMessage, ServerMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import {
@@ -22,7 +22,7 @@ import { relocateNotificationConfig } from './notificationConfigRelocation'
 import { NotificationService } from './notificationService'
 import { createServerPidRecord, parseServerPidRecord } from './serverProcessIdentity'
 import { MacroRunStore } from './macroRunStore'
-import { MacroRunnerService } from './macroRunnerService'
+import { MacroNotRunnableError, MacroRunnerService } from './macroRunnerService'
 import { LibraryStore } from './libraryStore'
 import { MacroRecordStore, type SharedContentStoreOptions } from './sharedContentStore'
 import { ROOM_CONTROL_HEARTBEAT_MS, TerminalRoomManager, type RoomSummary } from './terminalRoomManager'
@@ -35,7 +35,7 @@ export type ShellDeckServer = {
   manager: TerminalRoomManager
   contentEditLeases: ContentEditLeaseService
   libraryStore: LibraryStore
-  macroStore: MacroRecordStore<MacroDefinitionV3>
+  macroStore: MacroRecordStore<MacroDefinitionV4>
   macroRunner: MacroRunnerService
   userDataRoot: string
   stop(): Promise<void>
@@ -103,7 +103,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
   const notificationService = new NotificationService(userDataRoot, fetch, 10_000, notificationError)
   const libraryStore = new LibraryStore(userDataRoot, options.libraryStoreOptions)
-  const macroStore = new MacroRecordStore<MacroDefinitionV3>(userDataRoot, options.macroStoreOptions)
+  const macroStore = new MacroRecordStore<MacroDefinitionV4>(userDataRoot, options.macroStoreOptions)
   const macroRunStore = new MacroRunStore(userDataRoot)
   const macroRunner = new MacroRunnerService(manager, macroStore, macroRunStore, notificationService, agentEventStore)
   manager.setActiveRunProvider((roomId, roomGeneration) => macroRunner.hasActiveRun(roomId, roomGeneration))
@@ -226,7 +226,7 @@ async function handleHttp(
   ingestToken: string,
   notificationService: NotificationService,
   libraryStore: LibraryStore,
-  macroStore: MacroRecordStore<MacroDefinitionV3>,
+  macroStore: MacroRecordStore<MacroDefinitionV4>,
   macroRunner: MacroRunnerService,
 ): Promise<Response> {
   if (url.pathname === '/health') {
@@ -312,23 +312,29 @@ async function handleHttp(
   if (url.pathname === '/api/templates') {
     assertNoQuery(url)
     if (req.method === 'GET') {
-      const templates = macroStore.list().map((record) => {
-        const validated = validateMacroDefinitionV3(record.definition)
-        if (!validated.ok) throw new Error('invalid_macro_record_definition')
-        return {
+      const scan = macroStore.scan()
+      const invalidRecords: Array<{ recordId: string; error: 'invalid_macro_record' | 'invalid_macro_record_definition' }> = [...scan.invalidRecords]
+      const templates = scan.records.flatMap((record) => {
+        const validated = validateMacroDefinitionV4(record.definition)
+        if (!validated.ok) {
+          invalidRecords.push({ recordId: record.id, error: 'invalid_macro_record_definition' })
+          return []
+        }
+        return [{
           id: record.id,
           revision: record.revision,
           name: validated.value.name,
           description: validated.value.description,
           updatedAt: record.updatedAt,
           stepCount: countMacroNodes(validated.value.body),
-        }
+        }]
       })
-      return json({ ok: true, templates })
+      invalidRecords.sort((left, right) => left.recordId.localeCompare(right.recordId))
+      return json({ ok: true, templates, invalidRecords })
     }
     if (req.method === 'POST') {
       const body = await exactObject(req, ['definition'])
-      const validation = validateMacroDefinitionV3(body.definition)
+      const validation = validateMacroDefinitionV4(body.definition)
       if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
       const template = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => {
         ticket.assertAuthorized()
@@ -450,12 +456,12 @@ async function handleHttp(
     const templateId = assertGeneratedId(decodeURIComponent(templateRoute[1]), 'macroTemplate')
     if (req.method === 'GET') {
       const template = macroStore.read(templateId)
-      if (!validateMacroDefinitionV3(template.definition).ok) throw new Error('invalid_macro_record_definition')
+      if (!validateMacroDefinitionV4(template.definition).ok) throw new Error('invalid_macro_record_definition')
       return json({ ok: true, template })
     }
     if (req.method === 'PUT') {
       const body = await exactObject(req, ['expectedRevision', 'editLeaseId', 'definition'])
-      const validation = validateMacroDefinitionV3(body.definition)
+      const validation = validateMacroDefinitionV4(body.definition)
       if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
       const expectedRevision = assertPositiveRevision(body.expectedRevision)
       const editLeaseId = assertGeneratedId(body.editLeaseId, 'contentEditLease')
@@ -559,9 +565,10 @@ async function handleHttp(
       const templateId = assertGeneratedId(body.templateId, 'macroTemplate')
       const expectedMacroRevision = assertPositiveRevision(body.expectedMacroRevision)
       const expectedStructureRevision = assertTerminalStructureRevision(body.expectedTerminalStructureRevision)
+      const preflight = macroRunner.preflightStart(templateId)
       const runner = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
         await manager.runTerminalStructureOperation(ticket, expectedStructureRevision, async () => (
-          await macroRunner.start(ticket, templateId, expectedMacroRevision, expectedStructureRevision)
+          await macroRunner.start(ticket, templateId, expectedMacroRevision, expectedStructureRevision, preflight)
         ))
       ), roomId)
       return json({ ok: true, runner }, 201)
@@ -747,6 +754,7 @@ function notFoundPage(error: string): Response {
 }
 
 function errorResponse(error: unknown, api: boolean): Response {
+  if (api && error instanceof MacroNotRunnableError) return json({ ok: false, error: error.message, issues: error.issues }, 400)
   const message = errorMessage(error)
   const status = errorStatus(message)
   return api ? json({ ok: false, error: message }, status) : notFoundPage(message)

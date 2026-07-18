@@ -12,36 +12,36 @@
   import { canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, insertElifBranchAfter, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeElseFromIfNode, removeIfBranchAt, removeNodeAtPosition, resolveBodyPath, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from "../../macro/scopedTextTemplate"
   import { hasNonDefaultTextListItems, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, MacroDefinitionV3, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalEnding, TerminalInputDelivery, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, WaitNode } from "../../macro/macroDefinitionTypes"
-  import type { MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
+  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, FlowV2StepArtifactSource, MacroDefinitionV4, MacroTerminalReference, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalEnding, TerminalInputDelivery, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, WaitNode } from "../../macro/macroDefinitionTypes"
+  import type { MacroDefinitionIssue, MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import { isCaptureKindAllowed, terminalChoiceForIndex, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/macroTerminalChoices"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
 
-  type ArtifactChoice = { label: string; source: FlowV2ArtifactSource }
+  type ArtifactChoice = { label: string; source: FlowV2StepArtifactSource }
   type InsertableNodeType = FlowV2Node["type"]
   type InsertionPalettePosition = { x: number; y: number; placement: "above" | "below"; maxHeight?: number }
 
   let {
     draft,
     validation,
+    runnableValidation,
     updateDraft,
     terminalChoices,
     adoptTerminalSelection,
     choiceFromIndex,
-    indexFromChoice,
     defaultCaptureSource,
     defaultCondition,
     insertionPaletteMode,
     telegramProfileIds = [],
     telegramProfilesError = '',
   } = $props<{
-    draft: MacroDefinitionV3
+    draft: MacroDefinitionV4
     validation: MacroDefinitionValidation
-    updateDraft: (mutator: (template: MacroDefinitionV3) => void) => void
+    runnableValidation: MacroDefinitionValidation
+    updateDraft: (mutator: (template: MacroDefinitionV4) => void) => void
     terminalChoices: () => TerminalChoice[]
-    adoptTerminalSelection: (template: MacroDefinitionV3, terminalIndex: number) => boolean
+    adoptTerminalSelection: (template: MacroDefinitionV4, terminalIndex: number) => boolean
     choiceFromIndex: (target: number) => string
-    indexFromChoice: (choice: string) => number
     defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig
     defaultCondition: (source: FlowV2ArtifactSource) => TextMatchCondition
     insertionPaletteMode: MacroInsertionPaletteMode
@@ -65,7 +65,12 @@
   let textListStructureVersions = $state<Record<string, number>>({})
   const insertionPaletteAnchored = $derived(insertionPaletteMode === "anchored" && insertionPosition !== null)
   const insertionPaletteStyle = $derived(insertionPaletteAnchored && insertionPosition ? "--palette-x: " + insertionPosition.x + "px; --palette-y: " + insertionPosition.y + "px;" + (insertionPosition.maxHeight ? " --palette-max-height: " + insertionPosition.maxHeight + "px;" : "") : "")
-  const validationSummary = $derived(validation.ok ? "success" : validation.issues.length + " issues - " + (validation.issues[0] ? validation.issues[0].path + " " + validation.issues[0].message : ""))
+  const runnableIssues = $derived(runnableValidation.ok ? [] : runnableValidation.issues.filter((issue: MacroDefinitionIssue) => issue.code === "unassigned_terminal_reference" || issue.code === "unassigned_artifact_reference"))
+  const validationSummary = $derived(!validation.ok
+    ? validation.issues.length + " issues - " + (validation.issues[0] ? validation.issues[0].path + " " + validation.issues[0].message : "")
+    : runnableIssues.length > 0
+      ? "success · " + runnableIssues.length + " unassigned · not runnable"
+      : "success")
 
   const actionPaletteItems: Array<{ type: InsertableNodeType; label: string; testId: string }> = [
     { type: "send", label: "send", testId: "add-step-send" },
@@ -190,33 +195,30 @@
     return terminalChoices().filter((choice: TerminalChoice) => choice.capabilities.canWaitQuiet)
   }
 
-  function firstQuietTerminalIndex(): number | null {
-    const choice = quietTerminalChoices()[0]
-    return choice ? indexFromChoice(choice.value) : null
-  }
-
   function choiceForIndex(target: number): TerminalChoice | undefined {
     return terminalChoiceForIndex(target, terminalChoices())
   }
 
-  function expectedTerminalTypeAt(terminalIndex: number) {
-    return draft.terminalLayout[terminalIndex - 1]?.type
+  function expectedTerminalTypeAt(reference: MacroTerminalReference) {
+    return reference.kind === "terminal_index" ? draft.terminalLayout[reference.index - 1]?.type : undefined
   }
 
-  function captureKindsForIndex(target: number): CapabilityCaptureKind[] {
-    return choiceForIndex(target)?.capabilities.captureKinds ?? ["terminal-buffer", "agent-event", "text-box"]
+  function captureKindsForReference(reference: MacroTerminalReference): CapabilityCaptureKind[] {
+    return reference.kind === "terminal_index"
+      ? choiceForIndex(reference.index)?.capabilities.captureKinds ?? ["terminal-buffer", "agent-event", "text-box"]
+      : ["terminal-buffer", "agent-event", "text-box"]
   }
 
-  function defaultCaptureForIndex(kind: CaptureSourceConfig["kind"], terminalIndex: number): CaptureSourceConfig {
-    if (kind === "agent-event") return { kind, terminalIndex, agent: { kind: "codex" }, captureMode: "result_only" }
-    if (kind === "text-box") return { kind, terminalIndex }
-    return { kind, terminalIndex, mode: "scrollback-tail", maxChars: 20000 }
+  function defaultCaptureForReference(kind: CaptureSourceConfig["kind"], terminal: MacroTerminalReference): CaptureSourceConfig {
+    if (kind === "agent-event") return { kind, terminal, agent: { kind: "codex" }, captureMode: "result_only" }
+    if (kind === "text-box") return { kind, terminal }
+    return { kind, terminal, mode: "scrollback-tail", maxChars: 20000 }
   }
 
-  function defaultCaptureForFirstTab(): CaptureSourceConfig {
-    const terminal = firstTerminalIndex()
-    const kind = captureKindsForIndex(terminal)[0] ?? "terminal-buffer"
-    return defaultCaptureForIndex(kind, terminal)
+  function defaultCaptureWithUnassignedTerminal(): CaptureSourceConfig {
+    const terminal: MacroTerminalReference = { kind: "unassigned" }
+    const kind = captureKindsForReference(terminal)[0] ?? "terminal-buffer"
+    return defaultCaptureForReference(kind, terminal)
   }
 
   function notifyChannel(node: Extract<FlowV2Node, { type: "notify" }>, kind: NotifyChannel["kind"]): NotifyChannel | undefined {
@@ -256,16 +258,16 @@
     })
   }
 
-  function setWaitMode(item: WaitNode, mode: string, terminalIndex: number | null = null) {
+  function setWaitMode(item: WaitNode, mode: string, terminal: MacroTerminalReference | null = null) {
     const record = item as unknown as Record<string, unknown>
     delete record.durationMs
-    delete record.terminalIndex
+    delete record.terminal
     delete record.quietMs
     delete record.maxMs
     delete record.onTimeout
     delete record.prompt
     if (mode === "duration") Object.assign(record, { mode: "duration", durationMs: 1500 })
-    if (mode === "terminal-quiet" && terminalIndex) Object.assign(record, { mode: "terminal-quiet", terminalIndex, quietMs: 1000, maxMs: 600000, onTimeout: "pause" })
+    if (mode === "terminal-quiet" && terminal) Object.assign(record, { mode: "terminal-quiet", terminal, quietMs: 1000, maxMs: 600000, onTimeout: "pause" })
     if (mode === "user-continue") Object.assign(record, { mode: "user-continue", prompt: "Continue when ready" })
   }
 
@@ -295,21 +297,11 @@
     const anchor = insertionAnchor
     let inserted = false
     let reason = "unknown"
-    updateDraft((template: MacroDefinitionV3) => {
+    updateDraft((template: MacroDefinitionV4) => {
       const node = defaultNode(template, type)
       const result = insertNodeAtAnchor(template, anchor, node)
       inserted = result.ok
       reason = result.reason ?? "unknown"
-      if (inserted) {
-        const choices = artifactChoicesBeforeIn(template, node.id)
-        const source = choices.at(-1)?.source
-        if (node.type === "if" || node.type === "extract_text") {
-          if (source && node.type === "if") node.branches[0].condition = defaultCondition(source)
-          else if (source && node.type === "extract_text") node.source = source
-        }
-        const terminalIndex = defaultNodeTerminalIndex(node)
-        if (terminalIndex !== null) adoptTerminalSelection(template, terminalIndex)
-      }
     })
     if (inserted) {
       cancelInsertion()
@@ -324,7 +316,7 @@
     const anchor = { ...insertionAnchor, parentPath: cloneBodyPath(insertionAnchor.parentPath) } as InsertionAnchor
     const nodeId = moveNodeId
     let moved = false
-    updateDraft((template: MacroDefinitionV3) => {
+    updateDraft((template: MacroDefinitionV4) => {
       moved = moveNodeToAnchor(template, nodeId, anchor).ok
     })
     if (moved) cancelInsertion()
@@ -402,36 +394,35 @@
   }
 
   function moveNodeAt(bodyPath: BodyPath, index: number, offset: -1 | 1) {
-    updateDraft((template: MacroDefinitionV3) => { moveNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }, offset) })
+    updateDraft((template: MacroDefinitionV4) => { moveNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }, offset) })
   }
 
   function removeNodeAt(bodyPath: BodyPath, index: number, nodeId: string) {
     if (!confirm("Remove macro node " + nodeId + "?")) return
     const removedNode = resolveBodyPath(draft, bodyPath)?.[index]
     const removedNodeIds = removedNode ? allNodeIds([removedNode]) : [nodeId]
-    updateDraft((template: MacroDefinitionV3) => { removeNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    updateDraft((template: MacroDefinitionV4) => { removeNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
     clearCollapseStateForNodeIds(removedNodeIds)
   }
 
   function addElifAt(bodyPath: BodyPath, index: number, afterBranchIndex: number, nodeId: string) {
     let inserted = false
-    updateDraft((template: MacroDefinitionV3) => {
-      const source = artifactChoicesBeforeIn(template, nodeId).at(-1)?.source ?? emptyArtifactSource()
-      inserted = insertElifBranchAfter(template, { bodyPath: cloneBodyPath(bodyPath), index }, afterBranchIndex, { kind: "elif", condition: defaultCondition(source), body: [] }).ok
+    updateDraft((template: MacroDefinitionV4) => {
+      inserted = insertElifBranchAfter(template, { bodyPath: cloneBodyPath(bodyPath), index }, afterBranchIndex, { kind: "elif", condition: defaultCondition(unassignedArtifactSource()), body: [] }).ok
     })
     if (inserted) shiftIfBranchCollapseKeys(nodeId, afterBranchIndex + 1, 1)
     else insertionNotice = "Add elif failed."
   }
 
   function ensureElseAt(bodyPath: BodyPath, index: number) {
-    updateDraft((template: MacroDefinitionV3) => { ensureElseForIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    updateDraft((template: MacroDefinitionV4) => { ensureElseForIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
   }
 
   function removeElifAt(bodyPath: BodyPath, index: number, branchIndex: number, nodeId: string) {
     if (!confirm("Remove elif branch and its contents?")) return
     const node = resolveBodyPath(draft, bodyPath)?.[index]
     const removedNodeIds = node?.type === "if" ? allNodeIds(node.branches[branchIndex]?.body ?? []) : []
-    updateDraft((template: MacroDefinitionV3) => { removeIfBranchAt(template, { bodyPath: cloneBodyPath(bodyPath), index }, branchIndex) })
+    updateDraft((template: MacroDefinitionV4) => { removeIfBranchAt(template, { bodyPath: cloneBodyPath(bodyPath), index }, branchIndex) })
     clearCollapseStateForNodeIds(removedNodeIds)
     shiftIfBranchCollapseKeys(nodeId, branchIndex + 1, -1, branchIndex)
   }
@@ -440,22 +431,22 @@
     if (!confirm("Remove else branch and its contents?")) return
     const node = resolveBodyPath(draft, bodyPath)?.[index]
     const removedNodeIds = node?.type === "if" ? allNodeIds(node.else ?? []) : []
-    updateDraft((template: MacroDefinitionV3) => { removeElseFromIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    updateDraft((template: MacroDefinitionV4) => { removeElseFromIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
     clearCollapseStateForNodeIds(removedNodeIds)
     collapsedIfBranchKeys = collapsedIfBranchKeys.filter((key) => key !== ifBranchCollapseKey(nodeId, "else"))
   }
 
   function updateNode(nodeId: string, mutator: (node: FlowV2Node) => void) {
-    updateDraft((template: MacroDefinitionV3) => {
+    updateDraft((template: MacroDefinitionV4) => {
       const node = findNode(template.body, nodeId)
       if (node) mutator(node)
     })
   }
 
-  function updateNodeTerminal(nodeId: string, terminalIndex: number, mutator: (node: FlowV2Node) => void): boolean {
+  function updateNodeTerminal(nodeId: string, terminal: MacroTerminalReference, mutator: (node: FlowV2Node) => void): boolean {
     let updated = false
-    updateDraft((template: MacroDefinitionV3) => {
-      if (!adoptTerminalSelection(template, terminalIndex)) return
+    updateDraft((template: MacroDefinitionV4) => {
+      if (terminal.kind === "terminal_index" && !adoptTerminalSelection(template, terminal.index)) return
       const node = findNode(template.body, nodeId)
       if (!node) return
       mutator(node)
@@ -466,10 +457,9 @@
 
   function setNodeWaitMode(nodeId: string, mode: string): boolean {
     if (mode === "terminal-quiet") {
-      const terminalIndex = firstQuietTerminalIndex()
-      if (terminalIndex === null) return false
-      return updateNodeTerminal(nodeId, terminalIndex, (node) => {
-        if (node.type === "wait") setWaitMode(node, mode, terminalIndex)
+      const terminal: MacroTerminalReference = { kind: "unassigned" }
+      return updateNodeTerminal(nodeId, terminal, (node) => {
+        if (node.type === "wait") setWaitMode(node, mode, terminal)
       })
     }
     updateNode(nodeId, (node) => {
@@ -522,30 +512,31 @@
     }
   }
 
-  function emptyArtifactSource(): ArtifactChoice["source"] {
-    return { kind: "step_artifact", stepId: "", artifact: "captured_text" }
+  function unassignedArtifactSource(): FlowV2ArtifactSource {
+    return { kind: "unassigned" }
   }
 
-  function sourceKey(source?: ArtifactChoice["source"]) {
-    if (!source?.stepId) return ""
+  function sourceKey(source?: FlowV2ArtifactSource) {
+    if (!source || source.kind === "unassigned") return ""
     return source.stepId + ":" + source.artifact
   }
 
-  function sourceFromKey(key: string): ArtifactChoice["source"] | undefined {
+  function sourceFromKey(key: string): FlowV2ArtifactSource {
+    if (!key) return unassignedArtifactSource()
+    return assignedSourceFromKey(key)!
+  }
+
+  function assignedSourceFromKey(key: string): FlowV2StepArtifactSource | undefined {
     if (!key) return undefined
     const [stepId, artifact] = key.split(":")
     return { kind: "step_artifact", stepId, artifact: artifact === "merged_text" ? "merged_text" : artifact === "extracted_text" ? "extracted_text" : "captured_text" }
-  }
-
-  function requiredSourceFromKey(key: string, fallback: ArtifactChoice["source"]): ArtifactChoice["source"] {
-    return sourceFromKey(key) ?? fallback
   }
 
   function artifactChoicesBefore(nodeId: string): ArtifactChoice[] {
     return artifactChoicesBeforeIn(draft, nodeId)
   }
 
-  function artifactChoicesBeforeIn(template: MacroDefinitionV3, nodeId: string): ArtifactChoice[] {
+  function artifactChoicesBeforeIn(template: MacroDefinitionV4, nodeId: string): ArtifactChoice[] {
     return collectArtifactChoicesBefore(template.body, nodeId, []).choices
   }
 
@@ -631,10 +622,10 @@
   }
 
   function addParallelLane(nodeId: string) {
-    updateDraft((template: MacroDefinitionV3) => {
+    updateDraft((template: MacroDefinitionV4) => {
       const node = findNode(template.body, nodeId)
       if (node?.type !== "parallel") return
-      const terminal = nextParallelLaneTerminalIndex(node.lanes)
+      const terminal: MacroTerminalReference = { kind: "unassigned" }
       node.lanes.push(defaultParallelLane(template, nextParallelLaneId(node.lanes), terminal, node.lanes.map((item) => item.id)))
     })
   }
@@ -655,10 +646,10 @@
     })
   }
 
-  function defaultParallelLane(template: MacroDefinitionV3, rawId: string, terminalIndex: number, existingLaneIds: string[] = []): ParallelLane {
+  function defaultParallelLane(template: MacroDefinitionV4, rawId: string, terminal: MacroTerminalReference, existingLaneIds: string[] = []): ParallelLane {
     const ids = allNodeIds(template.body)
     const id = uniqueKey(rawId, existingLaneIds)
-    return { id, label: id, terminalIndex, body: [{ id: uniqueKey(id + "_output", [...ids, id]), type: "output", source: { kind: "none" } }] }
+    return { id, label: id, terminal, body: [{ id: uniqueKey(id + "_output", [...ids, id]), type: "output", source: { kind: "none" } }] }
   }
 
   function nextParallelLaneId(lanes: ParallelLane[]): string {
@@ -670,38 +661,21 @@
     return uniqueKey("lane_" + ordinal, lanes.map((lane) => lane.id))
   }
 
-  function nextParallelLaneTerminalIndex(lanes: ParallelLane[]): number {
-    const used = new Set(lanes.map((lane) => choiceFromIndex(lane.terminalIndex)))
-    const choice = terminalChoices().find((item: TerminalChoice) => !used.has(item.value))
-    return choice ? indexFromChoice(choice.value) : lanes[0]?.terminalIndex ?? firstTerminalIndex()
-  }
-
-  function defaultNode(template: MacroDefinitionV3, type: FlowV2Node["type"]): FlowV2Node {
-    const terminal = firstTerminalIndex()
+  function defaultNode(template: MacroDefinitionV4, type: FlowV2Node["type"]): FlowV2Node {
+    const terminal: MacroTerminalReference = { kind: "unassigned" }
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
-    if (type === "send") return { id, type, terminalIndex: terminal, message: { parts: [] }, delivery: "auto", ending: "cr" }
+    if (type === "send") return { id, type, terminal, message: { parts: [] }, delivery: "auto", ending: "cr" }
     if (type === "notify") return { id, type, level: "info", title: "Macro notification", message: { parts: [] }, channels: [{ kind: "app", toast: true, sound: "success" }], onFailure: "continue" }
-    if (type === "input") return { id, type, terminalIndex: terminal, prompt: "Input", allowEmpty: false, delivery: "auto", ending: "cr" }
+    if (type === "input") return { id, type, terminal, prompt: "Input", allowEmpty: false, delivery: "auto", ending: "cr" }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
-    if (type === "capture-source") return { id, type, capture: defaultCaptureForFirstTab() }
-    if (type === "extract_text") return { id, type, source: emptyArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "all" }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
+    if (type === "capture-source") return { id, type, capture: defaultCaptureWithUnassignedTerminal() }
+    if (type === "extract_text") return { id, type, source: unassignedArtifactSource(), split: { kind: "lines", keepEmpty: false }, filters: [], select: { mode: "all" }, extract: { kind: "none" }, trim: "right", onEmpty: "pause" }
     if (type === "parallel") return { id, type, lanes: [defaultParallelLane(template, "lane_1", terminal)], merge: { kind: "sectioned_text", separator: "\n\n===== {laneId} | {laneLabel} | {terminalIndex} =====\n\n", includeEmptyOutputs: false }, onLaneFail: "pause" }
-    if (type === "if") return { id, type, branches: [{ kind: "if", condition: defaultCondition(emptyArtifactSource()), body: [] }] }
+    if (type === "if") return { id, type, branches: [{ kind: "if", condition: defaultCondition(unassignedArtifactSource()), body: [] }] }
     if (type === "for") return { id, type, range: { kind: "count", count: 1 }, body: [] }
     if (type === "break") return { id, type, reason: "break", body: [] }
     if (type === "continue") return { id, type, reason: "continue", body: [] }
     return { id, type: "finish", reason: "done", body: [] }
-  }
-
-  function defaultNodeTerminalIndex(node: FlowV2Node): number | null {
-    if (node.type === "send" || node.type === "input") return node.terminalIndex
-    if (node.type === "capture-source") return node.capture.terminalIndex
-    if (node.type === "parallel") return node.lanes[0]?.terminalIndex ?? null
-    return null
-  }
-
-  function firstTerminalIndex(): number {
-    return terminalChoices()[0]?.value ? indexFromChoice(terminalChoices()[0].value) : 1
   }
 
   function allNodeIds(nodes: FlowV2Node[]): string[] {
@@ -821,10 +795,14 @@
 <details class="macro-section validation-panel validation-panel-compact" data-testid="macro-validation">
   <summary data-testid="macro-validation-toggle">
     <strong>Validation</strong>
-    <span class:ok={validation.ok} class:bad={!validation.ok} data-testid="macro-validation-summary">{validationSummary}</span>
+    <span class:ok={validation.ok && runnableIssues.length === 0} class:warning={validation.ok && runnableIssues.length > 0} class:bad={!validation.ok} data-testid="macro-validation-summary">{validationSummary}</span>
   </summary>
   {#if validation.ok}
     <p>Template validation passed.</p>
+    {#if runnableIssues.length > 0}
+      <p class="runnable-validation-warning" data-testid="macro-runnable-warning">Save is allowed, but Start requires {runnableIssues.length} reference{runnableIssues.length === 1 ? "" : "s"} to be assigned.</p>
+      <ul>{#each runnableIssues as issue}<li><strong>{issue.path}</strong> {issue.message}</li>{/each}</ul>
+    {/if}
   {:else}
     <ul>{#each validation.issues as issue}<li><strong>{issue.path}</strong> {issue.message}</li>{/each}</ul>
   {/if}
@@ -872,7 +850,7 @@
 
     {#if node.type === "send"}
       <label>Target tab
-        <MacroTerminalSelect testId="send-terminal" selectedIndex={node.terminalIndex} expectedType={expectedTerminalTypeAt(node.terminalIndex)} choices={terminalChoices()} onChange={(terminalIndex) => updateNodeTerminal(node.id, terminalIndex, (item) => { if (item.type === "send") item.terminalIndex = terminalIndex })} />
+        <MacroTerminalSelect testId="send-terminal" reference={node.terminal} expectedType={expectedTerminalTypeAt(node.terminal)} choices={terminalChoices()} onChange={(terminal) => updateNodeTerminal(node.id, terminal, (item) => { if (item.type === "send") item.terminal = terminal })} />
       </label>
       <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => updateNode(node.id, (item) => { if (item.type === "send") item.message = message })} choices={artifactChoicesBefore(node.id)} {templateScope} />
       <TerminalInputDeliveryField value={node.delivery} onChange={(delivery: TerminalInputDelivery) => updateNode(node.id, (item) => { if (item.type === "send") item.delivery = delivery })} testId="send-input-delivery" />
@@ -910,14 +888,14 @@
       </div>
     {:else if node.type === "input"}
       <label>Target tab
-        <MacroTerminalSelect testId="input-terminal" selectedIndex={node.terminalIndex} expectedType={expectedTerminalTypeAt(node.terminalIndex)} choices={terminalChoices()} onChange={(terminalIndex) => updateNodeTerminal(node.id, terminalIndex, (item) => { if (item.type === "input") item.terminalIndex = terminalIndex })} />
+        <MacroTerminalSelect testId="input-terminal" reference={node.terminal} expectedType={expectedTerminalTypeAt(node.terminal)} choices={terminalChoices()} onChange={(terminal) => updateNodeTerminal(node.id, terminal, (item) => { if (item.type === "input") item.terminal = terminal })} />
       </label>
       <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "input") item.prompt = value })} {templateScope} testId="input-prompt" multiline maxRows={3} />
       <label class="checkbox-row"><input type="checkbox" data-testid="input-allow-empty" checked={node.allowEmpty} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "input") item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
       <TerminalInputDeliveryField value={node.delivery} onChange={(delivery: TerminalInputDelivery) => updateNode(node.id, (item) => { if (item.type === "input") item.delivery = delivery })} testId="input-input-delivery" />
       <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => updateNode(node.id, (item) => { if (item.type === "input") item.ending = ending })} testId="input-ending-sequence" />
       <label>Default source
-        <select data-testid="input-default-source" value={node.defaultSource ? sourceKey(node.defaultSource) : ""} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "input") return; item.defaultSource = event.currentTarget.value ? sourceFromKey(event.currentTarget.value) : undefined })}>
+        <select data-testid="input-default-source" value={node.defaultSource ? sourceKey(node.defaultSource) : ""} onchange={(event) => updateNode(node.id, (item) => { if (item.type !== "input") return; item.defaultSource = assignedSourceFromKey(event.currentTarget.value) })}>
           <option value="">none</option>{#each artifactChoicesBefore(node.id) as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
         </select>
       </label>
@@ -927,13 +905,13 @@
           const previous = node.mode
           if (!setNodeWaitMode(node.id, event.currentTarget.value)) event.currentTarget.value = previous
         }}>
-          <option value="duration">duration</option><option value="terminal-quiet" disabled={quietTerminalChoices().length === 0}>terminal-quiet</option><option value="user-continue">user-continue</option>
+          <option value="duration">duration</option><option value="terminal-quiet">terminal-quiet</option><option value="user-continue">user-continue</option>
         </select>
       </label>
       {#if node.mode === "duration"}
         <label>Duration ms<input data-testid="wait-duration-ms" type="number" value={node.durationMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "duration") item.durationMs = Number(event.currentTarget.value) })} /></label>
       {:else if node.mode === "terminal-quiet"}
-        <label>Target tab<MacroTerminalSelect testId="wait-target-tab" selectedIndex={node.terminalIndex} expectedType={expectedTerminalTypeAt(node.terminalIndex)} choices={quietTerminalChoices()} allChoices={terminalChoices()} onChange={(terminalIndex) => updateNodeTerminal(node.id, terminalIndex, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.terminalIndex = terminalIndex })} /></label>
+        <label>Target tab<MacroTerminalSelect testId="wait-target-tab" reference={node.terminal} expectedType={expectedTerminalTypeAt(node.terminal)} choices={quietTerminalChoices()} allChoices={terminalChoices()} onChange={(terminal) => updateNodeTerminal(node.id, terminal, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.terminal = terminal })} /></label>
         <div class="macro-row"><label>Quiet ms<input data-testid="wait-quiet-ms" type="number" value={node.quietMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input data-testid="wait-max-ms" type="number" value={node.maxMs} oninput={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select data-testid="wait-on-timeout" value={node.onTimeout} onchange={(event) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "terminal-quiet") item.onTimeout = event.currentTarget.value as "pause" | "finish" })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
       {:else}
         <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => updateNode(node.id, (item) => { if (item.type === "wait" && item.mode === "user-continue") item.prompt = value })} {templateScope} testId="wait-user-continue-prompt" multiline maxRows={3} />
@@ -944,7 +922,7 @@
         terminalChoices,
         defaultCaptureSource,
         (capture: CaptureSourceConfig) => updateNode(node.id, (item) => { if (item.type === "capture-source") item.capture = capture }),
-        (terminalIndex: number, capture: CaptureSourceConfig) => updateNodeTerminal(node.id, terminalIndex, (item) => { if (item.type === "capture-source") item.capture = capture }),
+        (terminal: MacroTerminalReference, capture: CaptureSourceConfig) => updateNodeTerminal(node.id, terminal, (item) => { if (item.type === "capture-source") item.capture = capture }),
       )}
     {:else if node.type === "extract_text"}
       {@render ExtractTextEditor(node, artifactChoicesBefore(node.id), (mutator: (item: Extract<FlowV2Node, { type: "extract_text" }>) => void) => updateNode(node.id, (item) => { if (item.type === "extract_text") mutator(item) }))}
@@ -998,7 +976,7 @@
       {/if}
       {@render NodeListEditor(node.body, [...bodyPath, { kind: "for", nodeId: node.id }], true, "for body", false, forBodyTemplateScope(node, templateScope), depth + 1)}
     {:else if node.type === "parallel"}
-      <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {adoptTerminalSelection} {choiceFromIndex} {indexFromChoice} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} {templateScope} {insertionPaletteMode} />
+      <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {adoptTerminalSelection} {choiceFromIndex} {defaultCaptureSource} outerArtifactChoices={artifactChoicesBefore(node.id)} {templateScope} {insertionPaletteMode} />
     {:else}
       <label>Reason<input data-testid="flow-control-reason" value={node.reason ?? ""} oninput={(event) => updateNode(node.id, (item) => { if ("reason" in item) item.reason = event.currentTarget.value || undefined })} /></label>
       {#if node.type === "finish" || node.type === "break" || node.type === "continue"}
@@ -1052,11 +1030,12 @@
 
 {#snippet ExtractTextEditor(node: Extract<FlowV2Node, { type: "extract_text" }>, choices: ArtifactChoice[], updateExtract: (mutator: (item: Extract<FlowV2Node, { type: "extract_text" }>) => void) => void)}
   <label>Source
-    <select data-testid="extract-text-source" value={sourceKey(node.source)} onchange={(event) => updateExtract((item) => { item.source = requiredSourceFromKey(event.currentTarget.value, item.source) })}>
-      <option value="" disabled>Select an earlier artifact</option>
+    <select data-testid="extract-text-source" class:artifact-source-unassigned={node.source.kind === "unassigned"} value={sourceKey(node.source)} onchange={(event) => updateExtract((item) => { item.source = sourceFromKey(event.currentTarget.value) })}>
+      <option value="">Unassigned</option>
       {#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
     </select>
   </label>
+  {#if node.source.kind === "unassigned"}<small class="artifact-source-warning" data-testid="extract-text-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
   <div class="macro-row">
     <label>Split
       <select data-testid="extract-text-split-kind" value={node.split.kind} onchange={(event) => updateExtract((item) => { item.split = event.currentTarget.value === "regex" ? { kind: "regex", pattern: "\\n+", flags: "", keepEmpty: false } : { kind: "lines", keepEmpty: false } })}>
@@ -1114,20 +1093,20 @@
   terminalChoices: () => TerminalChoice[],
   defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig,
   onChange: (capture: CaptureSourceConfig) => void,
-  onTerminalChange: (terminalIndex: number, capture: CaptureSourceConfig) => boolean,
+  onTerminalChange: (terminal: MacroTerminalReference, capture: CaptureSourceConfig) => boolean,
 )}
-  {@const sourceChoice = choiceForIndex(node.capture.terminalIndex)}
-  {@const allowedKinds = captureKindsForIndex(node.capture.terminalIndex)}
+  {@const sourceChoice = node.capture.terminal.kind === "terminal_index" ? choiceForIndex(node.capture.terminal.index) : undefined}
+  {@const allowedKinds = captureKindsForReference(node.capture.terminal)}
   {@const captureAllowed = sourceChoice ? isCaptureKindAllowed(sourceChoice.capabilities, node.capture.kind) : true}
-  <label>Source tab<MacroTerminalSelect testId="capture-step-terminal" selectedIndex={node.capture.terminalIndex} expectedType={expectedTerminalTypeAt(node.capture.terminalIndex)} choices={terminalChoices()} onChange={(terminalIndex) => { const allowed = captureKindsForIndex(terminalIndex); const kind = allowed.includes(node.capture.kind) ? node.capture.kind : allowed[0] ?? "terminal-buffer"; return onTerminalChange(terminalIndex, defaultCaptureForIndex(kind, terminalIndex)) }} /></label>
+  <label>Source tab<MacroTerminalSelect testId="capture-step-terminal" reference={node.capture.terminal} expectedType={expectedTerminalTypeAt(node.capture.terminal)} choices={terminalChoices()} onChange={(terminal) => { const allowed = captureKindsForReference(terminal); const kind = allowed.includes(node.capture.kind) ? node.capture.kind : allowed[0] ?? "terminal-buffer"; return onTerminalChange(terminal, defaultCaptureForReference(kind, terminal)) }} /></label>
   {#if allowedKinds.length > 1}
-    <label>Capture kind<select data-testid="capture-step-kind" value={node.capture.kind} onchange={(event) => onChange(defaultCaptureForIndex(event.currentTarget.value as CaptureSourceConfig["kind"], node.capture.terminalIndex))}>{#each allowedKinds as kind}<option value={kind}>{kind}</option>{/each}</select></label>
+    <label>Capture kind<select data-testid="capture-step-kind" value={node.capture.kind} onchange={(event) => onChange(defaultCaptureForReference(event.currentTarget.value as CaptureSourceConfig["kind"], node.capture.terminal))}>{#each allowedKinds as kind}<option value={kind}>{kind}</option>{/each}</select></label>
   {:else}
     <p class="hint" data-testid="capture-kind-fixed">Capture kind: {allowedKinds[0] ?? node.capture.kind}</p>
   {/if}
   {#if !captureAllowed}
     <p class="macro-insertion-notice" data-testid="capture-kind-invalid">Capture kind {node.capture.kind} is not valid for this source tab.</p>
-    {#if allowedKinds[0]}<button type="button" data-testid="capture-kind-repair" onclick={() => onChange(defaultCaptureForIndex(allowedKinds[0], node.capture.terminalIndex))}>Use {allowedKinds[0]}</button>{/if}
+    {#if allowedKinds[0]}<button type="button" data-testid="capture-kind-repair" onclick={() => onChange(defaultCaptureForReference(allowedKinds[0], node.capture.terminal))}>Use {allowedKinds[0]}</button>{/if}
   {:else if node.capture.kind === "terminal-buffer"}
     <label>Mode<select data-testid="capture-terminal-buffer-mode" value={node.capture.mode} onchange={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, mode: event.currentTarget.value as "scrollback-tail" | "raw-stream-tail" }) }}><option value="scrollback-tail">screen text tail</option><option value="raw-stream-tail">raw stream tail (debug only)</option></select></label>
     <label>Max chars<input data-testid="capture-max-chars" type="number" value={node.capture.maxChars} oninput={(event) => { if (node.capture.kind === "terminal-buffer") onChange({ ...node.capture, maxChars: Number(event.currentTarget.value) }) }} /></label>
@@ -1142,7 +1121,7 @@
 
 {#snippet ConditionEditor(condition: TextMatchCondition, choices: ArtifactChoice[], onChange: (condition: TextMatchCondition) => void)}
   <div class="condition-row">
-    <label>Source<select data-testid="condition-source" value={sourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: requiredSourceFromKey(event.currentTarget.value, condition.source) })}><option value="" disabled>Select an earlier artifact</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+    <label>Source<select data-testid="condition-source" class:artifact-source-unassigned={condition.source.kind === "unassigned"} value={sourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: sourceFromKey(event.currentTarget.value) })}><option value="">Unassigned</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
     <label>Matcher<select data-testid="condition-matcher-kind" value={condition.matcher.kind} onchange={(event) => onChange({ ...condition, matcher: event.currentTarget.value === "regex" ? { kind: "regex", pattern: "READY", flags: "i" } : { kind: "simple", op: "contains", text: "READY" } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
     {#if condition.matcher.kind === "simple"}
       <label>Op<select data-testid="condition-simple-op" value={condition.matcher.op} onchange={(event) => onChange(setSimpleMatcherOp(condition, event.currentTarget.value as SimpleTextMatchOp))}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label>
@@ -1153,9 +1132,27 @@
     {/if}
     <label>Scope<select data-testid="condition-scope" value={condition.scope.kind === "lines" ? "lines:" + condition.scope.mode : "whole"} onchange={(event) => { const value = event.currentTarget.value; onChange({ ...condition, scope: value === "whole" ? { kind: "whole" } : { kind: "lines", mode: value.split(":")[1] as never, includeEmptyLines: false } }) }}><option value="whole">whole</option><option value="lines:first">lines.first</option><option value="lines:last">lines.last</option><option value="lines:any">lines.any</option><option value="lines:all">lines.all</option></select></label>
   </div>
+  {#if condition.source.kind === "unassigned"}<small class="artifact-source-warning" data-testid="condition-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
 {/snippet}
 
 <style>
+  .warning,
+  .runnable-validation-warning {
+    color: #8a5b0a;
+  }
+
+  select.artifact-source-unassigned {
+    border-color: #d79a35;
+    background: #fff9eb;
+    color: #725013;
+  }
+
+  .artifact-source-warning {
+    color: #8a5b0a;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
   .text-list-items {
     display: grid;
     min-width: 0;

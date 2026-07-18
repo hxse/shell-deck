@@ -30,11 +30,11 @@ Copy在read-only时复制persisted content，在New/Edit时复制当前draft con
 
 ## Macro JSON 与 Load
 
-Prompt和Note始终是任意text。Macro JSON content只能是纯`MacroDefinitionV3`，不含MacroRecord envelope、Room/cwd或physical terminal identity。Validate、server Save和Load都把原始text交给`parseAndValidateMacroDefinitionJson`，保持`invalid_json` position与`invalid_macro_definition` issues分层；Library不拥有第二套parser或validator。
+Prompt和Note始终是任意text。Macro JSON content只能是纯`MacroDefinitionV4`，不含MacroRecord envelope、Room/cwd或physical terminal identity。Validate、server Save和Load都把原始text交给`parseAndValidateMacroDefinitionJson`，保持`invalid_json` position与`invalid_macro_definition` issues分层；Library不拥有第二套parser或validator。exact`{kind:"unassigned"}` terminal/required-artifact slot属于合法的persistable Macro素材，Save与Load必须原样保留；Validate同时调用runnable completeness并把它显示为`valid · N unassigned references (not runnable)`，不能把它误报成invalid。
 
 `POST /api/templates/from-library`重读exact `(macro-template,itemId,expectedRevision)` saved source，经唯一validator后由production Macro store创建fresh `tmpl_` MacroRecord。source不改写，重复Load得到独立record。Macro editor在request/response两端都clean且operation identity未变化时自动选择新record；dirty、JSON edit、edit lease、pending或revision变化时只创建并提示，不切换。Load永远不读取terminal、不Prepare、不Start。
 
-Macro toolbar的`Save to Library`执行反向的显式domain action：当前visual draft只要portable-valid即可创建fresh `macro-template` LibraryItem，不要求先Save MacroRecord。item的title/description取definition、tags为空、content为canonical pretty JSON；server仍通过唯一text validator。成功不保存或切换Macro、不清dirty、不打开/切换Library、不Prepare/Start。JSON Edit/pending、observer、无draft或invalid definition均零write。它不是clipboard Copy、Duplicate或同kind copy-and-create。
+Macro toolbar的`Save to Library`执行反向的显式domain action：当前visual draft只要persistable-valid即可创建fresh `macro-template` LibraryItem，不要求先Save MacroRecord。item的title/description取definition、tags为空、content为canonical pretty JSON；server仍通过唯一text validator。成功不保存或切换Macro、不清dirty、不打开/切换Library、不Prepare/Start。JSON Edit/pending、observer、无draft或invalid definition均零write。它不是clipboard Copy、Duplicate或同kind copy-and-create。
 
 ## Persistence 与 runtime boundary
 

@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test'
-import type { MacroDefinitionV3 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV4 } from '../../src/lib/macro/macroDefinitionTypes'
 import {
   MACRO_DEFINITION_ISSUE_CODES,
   parseAndValidateMacroDefinitionJson,
   parseAndValidateMacroTerminalLayoutFromDefinitionJson,
-  validateMacroDefinitionV3,
+  validateMacroDefinitionV4,
+  validateRunnableMacroDefinitionV4,
   validateMacroTerminalLayout,
 } from '../../src/lib/macro/macroDefinitionValidation'
 import { validateMacroRuntimeBinding } from '../../src/lib/macro/macroRuntimeBinding'
@@ -20,26 +21,115 @@ import {
 } from '../../src/lib/macro/macroTerminalChoices'
 import type { TerminalRuntimePosition } from '../../src/lib/protocol'
 
-test('MacroDefinitionV3 accepts only index/type terminal layout and current text-list template tokens', () => {
+test('MacroDefinitionV4 accepts only index/type terminal layout and current text-list template tokens', () => {
   const definition = validDefinition()
-  const result = validateMacroDefinitionV3(definition)
+  const result = validateMacroDefinitionV4(definition)
   expect(result).toEqual({ ok: true, value: definition })
 
   const legacy = structuredClone(definition) as unknown as Record<string, unknown>
   legacy.schemaVersion = 2
   legacy.configId = 'local'
-  const rejected = validateMacroDefinitionV3(legacy)
+  const rejected = validateMacroDefinitionV4(legacy)
   expect(rejected.ok).toBe(false)
   if (!rejected.ok) {
     expect(rejected.issues).toContainEqual({ code: 'unknown_field', path: 'configId', message: 'unknown field: configId' })
-    expect(rejected.issues).toContainEqual({ code: 'invalid_literal', path: 'schemaVersion', message: 'schemaVersion must be 3' })
+    expect(rejected.issues).toContainEqual({ code: 'invalid_literal', path: 'schemaVersion', message: 'schemaVersion must be 4' })
   }
 
-  const physicalTarget = structuredClone(definition) as MacroDefinitionV3
+  const physicalTarget = structuredClone(definition) as MacroDefinitionV4
   Object.assign(physicalTarget.body[0], { terminal: { kind: 'id', value: 'term_old' } })
-  const physicalRejected = validateMacroDefinitionV3(physicalTarget)
+  const physicalRejected = validateMacroDefinitionV4(physicalTarget)
   expect(physicalRejected.ok).toBe(false)
   if (!physicalRejected.ok) expect(physicalRejected.issues.some((issue) => issue.path === 'body[0].terminal' && issue.code === 'unknown_field')).toBe(true)
+})
+
+test('unassigned terminal and required artifact slots are persistable but never runnable', () => {
+  const definition: MacroDefinitionV4 = {
+    schemaVersion: 4,
+    name: 'Persistable draft',
+    description: '',
+    terminalLayout: [],
+    body: [
+      {
+        id: 'send',
+        type: 'send',
+        terminal: { kind: 'unassigned' },
+        message: { parts: [{ kind: 'artifact', source: { kind: 'unassigned' } }] },
+        delivery: 'auto',
+        ending: 'cr',
+      },
+      {
+        id: 'if',
+        type: 'if',
+        branches: [{
+          kind: 'if',
+          condition: {
+            kind: 'text_match',
+            source: { kind: 'unassigned' },
+            matcher: { kind: 'simple', op: 'contains', text: '' },
+            scope: { kind: 'whole' },
+          },
+          body: [{ id: 'wait', type: 'wait', mode: 'duration', durationMs: 1 }],
+        }],
+      },
+    ],
+  }
+
+  expect(validateMacroDefinitionV4(definition)).toEqual({ ok: true, value: definition })
+  const runnable = validateRunnableMacroDefinitionV4(definition)
+  expect(runnable.ok).toBe(false)
+  if (!runnable.ok) expect(runnable.issues).toEqual([
+    { code: 'unassigned_artifact_reference', path: 'body[0].message.parts[0].source', message: 'artifact source must be assigned before Start' },
+    { code: 'unassigned_terminal_reference', path: 'body[0].terminal', message: 'terminal target must be assigned before Start' },
+    { code: 'unassigned_artifact_reference', path: 'body[1].branches[0].condition.source', message: 'artifact source must be assigned before Start' },
+  ])
+
+  const malformed = structuredClone(definition) as unknown as { body: Array<Record<string, unknown>> }
+  malformed.body[0].terminal = { kind: 'unassigned', index: 1 }
+  const rejected = validateMacroDefinitionV4(malformed)
+  expect(rejected.ok).toBe(false)
+  if (!rejected.ok) expect(rejected.issues).toContainEqual({ code: 'unknown_field', path: 'body[0].terminal.index', message: 'unknown field: index' })
+})
+
+test('unassigned is rejected outside the finite required-reference whitelist', () => {
+  const missingMessageSource = validDefinition()
+  const send = missingMessageSource.body[0].type === 'for' ? missingMessageSource.body[0].body[0] : undefined
+  if (!send || send.type !== 'send') throw new Error('expected send fixture')
+  send.message.parts = [{ kind: 'artifact', source: { kind: 'unassigned' } }]
+  const missingSourceShape = structuredClone(missingMessageSource) as unknown as { body: Array<{ body: Array<{ message: { parts: Array<Record<string, unknown>> } }> }> }
+  delete missingSourceShape.body[0].body[0].message.parts[0].source
+  const missing = validateMacroDefinitionV4(missingSourceShape)
+  expect(missing.ok).toBe(false)
+  if (!missing.ok) expect(missing.issues).toContainEqual({ code: 'missing_field', path: 'body[0].body[0].message.parts[0].source', message: 'source is required' })
+
+  const assignedOnly: MacroDefinitionV4 = {
+    schemaVersion: 4,
+    name: 'Assigned-only slots',
+    description: '',
+    terminalLayout: [],
+    body: [
+      { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminal: { kind: 'unassigned' } } },
+      { id: 'input', type: 'input', terminal: { kind: 'unassigned' }, prompt: 'Input', allowEmpty: true, defaultSource: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, delivery: 'auto', ending: 'none' },
+      {
+        id: 'parallel',
+        type: 'parallel',
+        lanes: [{ id: 'lane', label: 'lane', terminal: { kind: 'unassigned' }, body: [{ id: 'output', type: 'output', source: { kind: 'none' } }] }],
+        merge: { kind: 'sectioned_text', separator: '\n', includeEmptyOutputs: false },
+        onLaneFail: 'pause',
+      },
+    ],
+  }
+  const invalidDefault = structuredClone(assignedOnly) as unknown as { body: Array<Record<string, unknown>> }
+  invalidDefault.body[1].defaultSource = { kind: 'unassigned' }
+  const defaultResult = validateMacroDefinitionV4(invalidDefault)
+  expect(defaultResult.ok).toBe(false)
+  if (!defaultResult.ok) expect(defaultResult.issues).toContainEqual({ code: 'invalid_literal', path: 'body[1].defaultSource.kind', message: 'artifact source kind must be step_artifact' })
+
+  const invalidOutput = structuredClone(assignedOnly) as unknown as { body: Array<{ lanes?: Array<{ body: Array<{ source: unknown }> }> }> }
+  invalidOutput.body[2].lanes![0].body[0].source = { kind: 'unassigned' }
+  const outputResult = validateMacroDefinitionV4(invalidOutput)
+  expect(outputResult.ok).toBe(false)
+  if (!outputResult.ok) expect(outputResult.issues).toContainEqual({ code: 'invalid_literal', path: 'body[2].lanes[0].body[0].source.kind', message: 'artifact source kind must be step_artifact' })
 })
 
 test('terminal layout is empty-or-contiguous, unbounded by product policy, and runtime readiness is separate', () => {
@@ -57,43 +147,44 @@ test('terminal selectors expose only live terminal positions and explain unconfi
   const shell = terminalChoice({ index: 1, type: 'shell' })
   const text = terminalChoice({ index: 2, type: 'text' })
 
-  expect(terminalSelectState(1, [])).toEqual({
+  expect(terminalSelectState({ kind: 'terminal_index', index: 1 }, [])).toEqual({
     status: 'empty',
     value: '',
     title: 'No terminals available — create a terminal first',
     placeholder: 'No terminals available — create a terminal first',
   })
-  expect(terminalSelectState(1, [shell])).toEqual({
+  expect(terminalSelectState({ kind: 'terminal_index', index: 1 }, [shell])).toEqual({
     status: 'unconfirmed',
     value: '',
     title: 'Choose terminal 1 to confirm this target',
     placeholder: 'Choose terminal 1 to confirm this target',
   })
-  expect(terminalSelectState(3, [shell, text], [shell, text], 'shell')).toMatchObject({
+  expect(terminalSelectState({ kind: 'terminal_index', index: 3 }, [shell, text], [shell, text], 'shell')).toMatchObject({
     status: 'missing',
     value: '',
     placeholder: 'Missing terminal 3 — choose another terminal',
   })
-  expect(terminalSelectState(2, [shell], [shell, text], 'shell')).toMatchObject({
+  expect(terminalSelectState({ kind: 'terminal_index', index: 2 }, [shell], [shell, text], 'shell')).toMatchObject({
     status: 'incompatible',
     value: '',
     placeholder: 'Terminal 2 changed type — choose a target',
   })
-  expect(terminalSelectState(2, [], [text], 'shell')).toMatchObject({
+  expect(terminalSelectState({ kind: 'terminal_index', index: 2 }, [], [text], 'shell')).toMatchObject({
     status: 'incompatible',
     value: '',
     placeholder: 'Terminal 2 changed type — no compatible terminals available',
   })
-  expect(terminalSelectState(3, [], [text], 'shell')).toMatchObject({
+  expect(terminalSelectState({ kind: 'terminal_index', index: 3 }, [], [text], 'shell')).toMatchObject({
     status: 'missing',
     value: '',
     placeholder: 'Missing terminal 3 — no compatible terminals available',
   })
-  expect(terminalSelectState(1, [shell], [shell, text], 'shell')).toEqual({
+  expect(terminalSelectState({ kind: 'terminal_index', index: 1 }, [shell], [shell, text], 'shell')).toEqual({
     status: 'selected',
     value: '1',
     title: shell.title,
   })
+  expect(terminalSelectState({ kind: 'unassigned' }, [shell])).toEqual({ status: 'unassigned', value: 'unassigned', title: 'Unassigned' })
 })
 
 test('visual terminal layout is driven by explicit Action targets rather than terminal creation events', () => {
@@ -112,7 +203,7 @@ test('visual terminal layout is driven by explicit Action targets rather than te
   definition.terminalLayout = []
   const send = definition.body[0].type === 'for' ? definition.body[0].body[0] : undefined
   if (!send || send.type !== 'send') throw new Error('expected send fixture')
-  send.terminalIndex = 3
+  send.terminal = { kind: 'terminal_index', index: 3 }
 
   expect(referencedTerminalIndexes(definition)).toEqual([3])
   expect(adoptRuntimeTerminal(definition, 3, runtime)).toEqual({ ok: true })
@@ -122,7 +213,7 @@ test('visual terminal layout is driven by explicit Action targets rather than te
     { index: 3, type: 'shell' },
   ])
 
-  send.terminalIndex = 1
+  send.terminal = { kind: 'terminal_index', index: 1 }
   reconcileVisualTerminalLayout(definition)
   expect(definition.terminalLayout).toEqual([{ index: 1, type: 'shell' }])
 
@@ -133,7 +224,7 @@ test('visual terminal layout is driven by explicit Action targets rather than te
 })
 
 test('the unique JSON gateway reports deterministic UTF-16 positions and Prepare reads layout only', () => {
-  const invalid = parseAndValidateMacroDefinitionJson('{\r\n  "schemaVersion": 3,\r\n}')
+  const invalid = parseAndValidateMacroDefinitionJson('{\r\n  "schemaVersion": 4,\r\n}')
   expect(invalid).toEqual({ ok: false, error: { code: 'invalid_json', offset: 26, line: 3, column: 1, message: 'Invalid JSON at line 3, column 1' } })
 
   const prepare = parseAndValidateMacroTerminalLayoutFromDefinitionJson(JSON.stringify({ terminalLayout: [{ index: 1, type: 'text' }], body: 'intentionally invalid for full validation' }))
@@ -142,14 +233,14 @@ test('the unique JSON gateway reports deterministic UTF-16 positions and Prepare
 })
 
 test('optional Flow fields stay optional and negative text selection remains current syntax', () => {
-  const definition: MacroDefinitionV3 = {
-    schemaVersion: 3,
+  const definition: MacroDefinitionV4 = {
+    schemaVersion: 4,
     name: 'optional fields',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
     body: [
-      { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminalIndex: 1 } },
-      { id: 'input', type: 'input', terminalIndex: 1, prompt: 'Continue', allowEmpty: true, delivery: 'direct', ending: 'none' },
+      { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminal: { kind: 'terminal_index', index: 1 } } },
+      { id: 'input', type: 'input', terminal: { kind: 'terminal_index', index: 1 }, prompt: 'Continue', allowEmpty: true, delivery: 'direct', ending: 'none' },
       {
         id: 'if_node',
         type: 'if',
@@ -161,7 +252,7 @@ test('optional Flow fields stay optional and negative text selection remains cur
             matcher: { kind: 'regex', pattern: '.*' },
             scope: { kind: 'lines', mode: 'any' },
           },
-          body: [{ id: 'branch_send', type: 'send', terminalIndex: 1, message: { parts: [{ kind: 'artifact' }] }, delivery: 'direct', ending: 'none' }],
+          body: [{ id: 'branch_send', type: 'send', terminal: { kind: 'terminal_index', index: 1 }, message: { parts: [{ kind: 'artifact', source: { kind: 'unassigned' } }] }, delivery: 'direct', ending: 'none' }],
         }],
       },
       {
@@ -178,12 +269,12 @@ test('optional Flow fields stay optional and negative text selection remains cur
       { id: 'finish', type: 'finish' },
     ],
   }
-  expect(validateMacroDefinitionV3(definition)).toEqual({ ok: true, value: definition })
+  expect(validateMacroDefinitionV4(definition)).toEqual({ ok: true, value: definition })
 })
 
 test('parallel lanes require one final local Output and reject cross-lane artifacts', () => {
-  const definition: MacroDefinitionV3 = {
-    schemaVersion: 3,
+  const definition: MacroDefinitionV4 = {
+    schemaVersion: 4,
     name: 'parallel scope',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }, { index: 2, type: 'shell' }],
@@ -194,7 +285,7 @@ test('parallel lanes require one final local Output and reject cross-lane artifa
         {
           id: 'lane_one',
           label: 'one',
-          terminalIndex: 1,
+          terminal: { kind: 'terminal_index', index: 1 },
           body: [
             { id: 'capture_one', type: 'capture-source', capture: { kind: 'terminal-buffer', mode: 'scrollback-tail', maxChars: 1000 } },
             { id: 'output_one', type: 'output', source: { kind: 'step_artifact', stepId: 'capture_one', artifact: 'captured_text' } },
@@ -203,7 +294,7 @@ test('parallel lanes require one final local Output and reject cross-lane artifa
         {
           id: 'lane_two',
           label: 'two',
-          terminalIndex: 2,
+          terminal: { kind: 'terminal_index', index: 2 },
           body: [{ id: 'output_two', type: 'output', source: { kind: 'step_artifact', stepId: 'capture_one', artifact: 'captured_text' } }],
         },
       ],
@@ -211,7 +302,7 @@ test('parallel lanes require one final local Output and reject cross-lane artifa
       onLaneFail: 'fail',
     }],
   }
-  const result = validateMacroDefinitionV3(definition)
+  const result = validateMacroDefinitionV4(definition)
   expect(result.ok).toBe(false)
   if (!result.ok) expect(result.issues).toContainEqual({
     code: 'invalid_reference',
@@ -219,27 +310,27 @@ test('parallel lanes require one final local Output and reject cross-lane artifa
     message: 'artifact source must reference an earlier compatible output',
   })
 
-  const missingOutput = structuredClone(definition) as MacroDefinitionV3
+  const missingOutput = structuredClone(definition) as MacroDefinitionV4
   missingOutput.body[0] = {
-    ...(missingOutput.body[0] as Extract<MacroDefinitionV3['body'][number], { type: 'parallel' }>),
-    lanes: [{ id: 'lane', label: '', terminalIndex: 1, body: [{ id: 'send', type: 'send', message: { parts: [] }, delivery: 'auto', ending: 'cr' }] }],
+    ...(missingOutput.body[0] as Extract<MacroDefinitionV4['body'][number], { type: 'parallel' }>),
+    lanes: [{ id: 'lane', label: '', terminal: { kind: 'terminal_index', index: 1 }, body: [{ id: 'send', type: 'send', message: { parts: [] }, delivery: 'auto', ending: 'cr' }] }],
   }
-  const missing = validateMacroDefinitionV3(missingOutput)
+  const missing = validateMacroDefinitionV4(missingOutput)
   expect(missing.ok).toBe(false)
   if (!missing.ok) expect(missing.issues.some((issue) => issue.path === 'body[0].lanes[0].body' && issue.code === 'semantic_conflict')).toBe(true)
 })
 
-function validDefinition(): MacroDefinitionV3 {
+function validDefinition(): MacroDefinitionV4 {
   return {
-    schemaVersion: 3,
-    name: 'V3 macro',
+    schemaVersion: 4,
+    name: 'V4 macro',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],
     body: [{
       id: 'loop',
       type: 'for',
       range: { kind: 'text-list', items: [{ key: 'phase', value: 'one' }] },
-      body: [{ id: 'send', type: 'send', terminalIndex: 1, message: { parts: [{ kind: 'template', template: '{{index}} {{key}} {{value}}' }] }, delivery: 'auto', ending: 'cr' }],
+      body: [{ id: 'send', type: 'send', terminal: { kind: 'terminal_index', index: 1 }, message: { parts: [{ kind: 'template', template: '{{index}} {{key}} {{value}}' }] }, delivery: 'auto', ending: 'cr' }],
     }],
   }
 }

@@ -28,6 +28,16 @@ export type SharedContentStoreOptions = {
   deleteRecord?: (path: string) => PublishedFileMutationReceipt
 }
 
+export type InvalidMacroRecordEntry = {
+  recordId: string
+  error: 'invalid_macro_record'
+}
+
+export type MacroRecordScan<TDefinition> = {
+  records: MacroRecord<TDefinition>[]
+  invalidRecords: InvalidMacroRecordEntry[]
+}
+
 export class ContentResourceTransactions {
   readonly paths: UserDataPaths
 
@@ -57,18 +67,32 @@ export class MacroRecordStore<TDefinition> {
   }
 
   list(): MacroRecord<TDefinition>[] {
+    const result = this.scan()
+    if (result.invalidRecords.length > 0) throw new Error('invalid_macro_record')
+    return result.records
+  }
+
+  scan(): MacroRecordScan<TDefinition> {
     const dir = this.transactions.paths.macros
     const records: MacroRecord<TDefinition>[] = []
+    const invalidRecords: InvalidMacroRecordEntry[] = []
     for (const entry of readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
     ) {
-      try { records.push(this.read(entry.name.slice(0, -5))) }
+      const recordId = entry.name.slice(0, -5)
+      try { records.push(this.read(recordId)) }
       catch (error) {
         if (error instanceof Error && error.message.startsWith('macro_record_not_found:')) continue
+        if (isInvalidMacroRecordData(error)) {
+          invalidRecords.push({ recordId, error: 'invalid_macro_record' })
+          continue
+        }
         throw error
       }
     }
-    return records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    records.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    invalidRecords.sort((left, right) => left.recordId.localeCompare(right.recordId))
+    return { records, invalidRecords }
   }
 
   read(id: string): MacroRecord<TDefinition> {
@@ -191,4 +215,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === code
+}
+
+function isInvalidMacroRecordData(error: unknown): boolean {
+  if (error instanceof SyntaxError) return true
+  if (!(error instanceof Error)) return false
+  return error.message === 'invalid_macro_record'
+    || error.message === 'invalid_macro_record_revision'
+    || error.message === 'invalid_macro_record_timestamp'
+    || error.message === 'macro_record_id_mismatch'
+    || error.message === 'invalid_macroTemplate_id'
+    || error.message === 'invalid_generated_id_suffix'
+    || error.message === 'invalid_macro_record_path'
 }

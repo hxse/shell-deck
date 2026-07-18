@@ -14,7 +14,7 @@ import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } fr
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV3, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV4, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
@@ -136,7 +136,7 @@ test('Macro Create rechecks Room control inside the canonical record transaction
     }
 
     const pending = request(server.url, '/api/templates', grant, {
-      definition: { schemaVersion: 3, name: 'must not persist', description: '', terminalLayout: [], body: [] },
+      definition: { schemaVersion: 4, name: 'must not persist', description: '', terminalLayout: [], body: [] },
     })
     await entered.wait
     server.manager.disconnectClient(grant.clientId)
@@ -146,6 +146,95 @@ test('Macro Create rechecks Room control inside the canonical record transaction
     expect(response.status).toBe(409)
     expect(response.body).toMatchObject({ ok: false, error: 'room_control_lost' })
     expect(server.macroStore.list()).toEqual([])
+  } finally {
+    await server.stop()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('persistable unassigned references round-trip through Macro CRUD but Start fails before installing a run', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'shell-deck-unassigned-037-'))
+  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  try {
+    const room = server.manager.createRoom()
+    const grant = roomGrant(server.manager, room.roomId)
+    const definition: MacroDefinitionV4 = {
+      schemaVersion: 4,
+      name: 'Unassigned draft',
+      description: '',
+      terminalLayout: [],
+      body: [{
+        id: 'send',
+        type: 'send',
+        terminal: { kind: 'unassigned' },
+        message: { parts: [{ kind: 'artifact', source: { kind: 'unassigned' } }] },
+        delivery: 'auto',
+        ending: 'cr',
+      }],
+    }
+    const created = await request(server.url, '/api/templates', grant, { definition })
+    expect(created.status).toBe(201)
+    const record = (created.body as { template: MacroRecord }).template
+    expect(record.definition).toEqual(definition)
+    expect(server.macroStore.read(record.id).definition).toEqual(definition)
+
+    const expectedIssues = [
+      { code: 'unassigned_artifact_reference', path: 'body[0].message.parts[0].source', message: 'artifact source must be assigned before Start' },
+      { code: 'unassigned_terminal_reference', path: 'body[0].terminal', message: 'terminal target must be assigned before Start' },
+    ]
+
+    const staleStructure = await request(server.url, `/api/rooms/${room.roomId}/runner/start`, grant, {
+      templateId: record.id,
+      expectedMacroRevision: record.revision,
+      expectedTerminalStructureRevision: 99,
+    })
+    expect(staleStructure.body).toEqual({ ok: false, error: 'macro_not_runnable', issues: expectedIssues })
+
+    const staleBearerRoom = server.manager.createRoom()
+    const staleBearer = roomGrant(server.manager, staleBearerRoom.roomId)
+    server.manager.disconnectClient(staleBearer.clientId)
+    const staleControl = await request(server.url, `/api/rooms/${staleBearerRoom.roomId}/runner/start`, staleBearer, {
+      templateId: record.id,
+      expectedMacroRevision: record.revision,
+      expectedTerminalStructureRevision: 0,
+    })
+    expect(staleControl.body).toEqual({ ok: false, error: 'macro_not_runnable', issues: expectedIssues })
+
+    const activeRoom = server.manager.createRoom()
+    const activeGrant = roomGrant(server.manager, activeRoom.roomId)
+    const activeRecordResponse = await request(server.url, '/api/templates', activeGrant, {
+      definition: { schemaVersion: 4, name: 'active', description: '', terminalLayout: [], body: [{ id: 'wait', type: 'wait', mode: 'duration', durationMs: 5_000 }] },
+    })
+    const activeRecord = (activeRecordResponse.body as { template: MacroRecord }).template
+    await request(server.url, `/api/rooms/${activeRoom.roomId}/runner/start`, activeGrant, {
+      templateId: activeRecord.id,
+      expectedMacroRevision: activeRecord.revision,
+      expectedTerminalStructureRevision: 0,
+    })
+    await waitFor(() => server.macroRunner.snapshot(activeRoom.roomId).status === 'running')
+    const activeConflict = await request(server.url, `/api/rooms/${activeRoom.roomId}/runner/start`, activeGrant, {
+      templateId: record.id,
+      expectedMacroRevision: record.revision,
+      expectedTerminalStructureRevision: 0,
+    })
+    expect(activeConflict.body).toEqual({ ok: false, error: 'macro_not_runnable', issues: expectedIssues })
+    await request(server.url, `/api/rooms/${activeRoom.roomId}/runner/stop`, activeGrant, {})
+
+    const before = server.manager.roomSnapshot(room.roomId)
+    const started = await request(server.url, `/api/rooms/${room.roomId}/runner/start`, grant, {
+      templateId: record.id,
+      expectedMacroRevision: record.revision,
+      expectedTerminalStructureRevision: before.terminalStructureRevision,
+    })
+    expect(started.status).toBe(400)
+    expect(started.body).toEqual({
+      ok: false,
+      error: 'macro_not_runnable',
+      issues: expectedIssues,
+    })
+    expect(server.macroRunner.hasActiveRun(room.roomId, room.roomGeneration)).toBe(false)
+    expect(server.macroRunner.traces(room.roomId)).toEqual([])
+    expect(server.manager.roomSnapshot(room.roomId)).toEqual(before)
   } finally {
     await server.stop()
     rmSync(root, { recursive: true, force: true })
@@ -220,14 +309,14 @@ test('input.defaultSource is exposed as editable live input without becoming per
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
     server.manager.setTextContent(room.roomId, text.terminalId, 'captured draft')
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV3 = {
-      schemaVersion: 3,
+    const definition: MacroDefinitionV4 = {
+      schemaVersion: 4,
       name: 'input default',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
       body: [
-        { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminalIndex: 1 } },
-        { id: 'input', type: 'input', terminalIndex: 1, prompt: 'Review', allowEmpty: false, defaultSource: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, delivery: 'direct', ending: 'none' },
+        { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminal: { kind: 'terminal_index', index: 1 } } },
+        { id: 'input', type: 'input', terminal: { kind: 'terminal_index', index: 1 }, prompt: 'Review', allowEmpty: false, defaultSource: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' }, delivery: 'direct', ending: 'none' },
       ],
     }
     const created = await request(server.url, '/api/templates', grant, { definition })
@@ -253,17 +342,17 @@ test('input.defaultSource is exposed as editable live input without becoming per
   }
 })
 
-test('Stop and Room Destroy cancel pending Input without PTY writes or duplicate terminal events', async () => {
+test('Stop and Room Destroy cancel pending Input without terminal writes or duplicate terminal events', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-cancel-034-'))
   const server = startShellDeckServer({ port: 0, dataRoot: root })
   try {
-    const definition: MacroDefinitionV3 = {
-      schemaVersion: 3,
+    const definition: MacroDefinitionV4 = {
+      schemaVersion: 4,
       name: 'cancel input',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
       body: [
-        { id: 'input', type: 'input', terminalIndex: 1, prompt: 'Review', allowEmpty: true, delivery: 'direct', ending: 'cr' },
+        { id: 'input', type: 'input', terminal: { kind: 'terminal_index', index: 1 }, prompt: 'Review', allowEmpty: true, delivery: 'direct', ending: 'cr' },
       ],
     }
 
@@ -320,13 +409,13 @@ test('extract_text keeps the current negative index syntax and sends the selecte
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
     server.manager.setTextContent(room.roomId, text.terminalId, 'first\nlast')
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV3 = {
-      schemaVersion: 3,
+    const definition: MacroDefinitionV4 = {
+      schemaVersion: 4,
       name: 'negative select',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
       body: [
-        { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminalIndex: 1 } },
+        { id: 'capture', type: 'capture-source', capture: { kind: 'text-box', terminal: { kind: 'terminal_index', index: 1 } } },
         {
           id: 'extract',
           type: 'extract_text',
@@ -338,7 +427,7 @@ test('extract_text keeps the current negative index syntax and sends the selecte
           trim: 'none',
           onEmpty: 'fail',
         },
-        { id: 'send', type: 'send', terminalIndex: 1, message: { parts: [{ kind: 'artifact', source: { kind: 'step_artifact', stepId: 'extract', artifact: 'extracted_text' } }] }, delivery: 'direct', ending: 'none' },
+        { id: 'send', type: 'send', terminal: { kind: 'terminal_index', index: 1 }, message: { parts: [{ kind: 'artifact', source: { kind: 'step_artifact', stepId: 'extract', artifact: 'extracted_text' } }] }, delivery: 'direct', ending: 'none' },
       ],
     }
     const created = await request(server.url, '/api/templates', grant, { definition })
@@ -360,13 +449,13 @@ test('durable Start never installs a run after controller loss or Room Destroy c
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-boundary-034-'))
   try {
     const manager = new TerminalRoomManager()
-    const records = new MacroRecordStore<MacroDefinitionV3>(root)
+    const records = new MacroRecordStore<MacroDefinitionV4>(root)
     const notification = new NotificationService(root)
     const agentEvents = new AgentEventStore(root)
 
     const lostRoom = manager.createRoom()
     const lostGrant = roomGrant(manager, lostRoom.roomId)
-    const lostRecord = await records.create({ schemaVersion: 3, name: 'lost control', description: '', terminalLayout: [], body: [] })
+    const lostRecord = await records.create({ schemaVersion: 4, name: 'lost control', description: '', terminalLayout: [], body: [] })
     const lostStore = new MacroRunStore(root)
     const append = lostStore.append.bind(lostStore)
     let revoked = false
@@ -390,7 +479,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
 
     const destroyedRoom = manager.createRoom()
     const destroyedGrant = roomGrant(manager, destroyedRoom.roomId)
-    const destroyedRecord = await records.create({ schemaVersion: 3, name: 'destroyed', description: '', terminalLayout: [], body: [] })
+    const destroyedRecord = await records.create({ schemaVersion: 4, name: 'destroyed', description: '', terminalLayout: [], body: [] })
     const destroyedStore = new MacroRunStore(root)
     const publish = destroyedStore.publishManifest.bind(destroyedStore)
     let destroying: Promise<void> | null = null
@@ -412,7 +501,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
 test('tight forever flow cooperatively yields so Stop can terminalize within a deadline', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-forever-yield-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV3>(root)
+  const records = new MacroRecordStore<MacroDefinitionV4>(root)
   const store = new MacroRunStore(root)
   const runner = new MacroRunnerService(manager, records, store, new NotificationService(root), new AgentEventStore(root))
   manager.addDestroyHook((roomId, roomGeneration) => runner.destroyRoom(roomId, roomGeneration))
@@ -420,7 +509,7 @@ test('tight forever flow cooperatively yields so Stop can terminalize within a d
     const room = manager.createRoom()
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'cooperative forever',
       description: '',
       terminalLayout: [],
@@ -446,7 +535,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
     replayByteLimit: 8,
     backendFactory: (_kind, options) => new StreamingTerminalBackend(options),
   })
-  const records = new MacroRecordStore<MacroDefinitionV3>(root)
+  const records = new MacroRecordStore<MacroDefinitionV4>(root)
   const store = new MacroRunStore(root)
   const runner = new MacroRunnerService(manager, records, store, new NotificationService(root), new AgentEventStore(root))
   manager.addDestroyHook((roomId, roomGeneration) => runner.destroyRoom(roomId, roomGeneration))
@@ -455,11 +544,11 @@ test('terminal quiet observes output activity after the replay tail is full', as
     manager.createTerminal(room.roomId, { backend: 'fake' })
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'quiet activity revision',
       description: '',
       terminalLayout: [{ index: 1, type: 'shell' }],
-      body: [{ id: 'quiet', type: 'wait', mode: 'terminal-quiet', terminalIndex: 1, quietMs: 100, maxMs: 400, onTimeout: 'finish' }],
+      body: [{ id: 'quiet', type: 'wait', mode: 'terminal-quiet', terminal: { kind: 'terminal_index', index: 1 }, quietMs: 100, maxMs: 400, onTimeout: 'finish' }],
     })
     const ticket = manager.admitControlledBearer(grant, room.roomId)
     try { await runner.start(ticket, record.id, record.revision, 1) }
@@ -477,7 +566,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
 test('Input submit append failure keeps the pending request retryable and never strands the structure lock', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-append-failure-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV3>(root)
+  const records = new MacroRecordStore<MacroDefinitionV4>(root)
   const store = new MacroRunStore(root)
   const originalAppend = store.append.bind(store)
   let failSubmitted = true
@@ -494,11 +583,11 @@ test('Input submit append failure keeps the pending request retryable and never 
     const text = manager.createTerminal(room.roomId, { backend: 'text' })
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'retry input append',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
-      body: [{ id: 'input', type: 'input', terminalIndex: 1, prompt: 'Value', allowEmpty: true, delivery: 'direct', ending: 'none' }],
+      body: [{ id: 'input', type: 'input', terminal: { kind: 'terminal_index', index: 1 }, prompt: 'Value', allowEmpty: true, delivery: 'direct', ending: 'none' }],
     })
     const ticket = manager.admitControlledBearer(grant, room.roomId)
     await runner.start(ticket, record.id, record.revision, 1)
@@ -525,7 +614,7 @@ test('Input submit append failure keeps the pending request retryable and never 
 test('published runner events stay successful when summary maintenance fails after commit', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-maintenance-debt-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV3>(root)
+  const records = new MacroRecordStore<MacroDefinitionV4>(root)
   const failKinds = new Set<string>()
   let failSequence100 = true
   const evidence = new EvidenceStore(root, () => new Date().toISOString(), {
@@ -544,7 +633,7 @@ test('published runner events stay successful when summary maintenance fails aft
   try {
     const terminalRoom = manager.createRoom()
     const terminalGrant = roomGrant(manager, terminalRoom.roomId)
-    const terminalRecord = await records.create({ schemaVersion: 3, name: 'terminal debt', description: '', terminalLayout: [], body: [] })
+    const terminalRecord = await records.create({ schemaVersion: 4, name: 'terminal debt', description: '', terminalLayout: [], body: [] })
     failKinds.add('run_started')
     failKinds.add('run_completed')
     const terminalTicket = manager.admitControlledBearer(terminalGrant, terminalRoom.roomId)
@@ -558,7 +647,7 @@ test('published runner events stay successful when summary maintenance fails aft
     const checkpointRoom = manager.createRoom()
     const checkpointGrant = roomGrant(manager, checkpointRoom.roomId)
     const checkpointRecord = await records.create({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'checkpoint debt',
       description: '',
       terminalLayout: [],
@@ -575,11 +664,11 @@ test('published runner events stay successful when summary maintenance fails aft
     const inputTerminal = manager.createTerminal(inputRoom.roomId, { backend: 'text' })
     const inputGrant = roomGrant(manager, inputRoom.roomId)
     const inputRecord = await records.create({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'input debt',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
-      body: [{ id: 'input', type: 'input', terminalIndex: 1, prompt: 'Value', allowEmpty: true, delivery: 'direct', ending: 'none' }],
+      body: [{ id: 'input', type: 'input', terminal: { kind: 'terminal_index', index: 1 }, prompt: 'Value', allowEmpty: true, delivery: 'direct', ending: 'none' }],
     })
     const inputTicket = manager.admitControlledBearer(inputGrant, inputRoom.roomId)
     try { await runner.start(inputTicket, inputRecord.id, inputRecord.revision, 1) }
@@ -657,7 +746,7 @@ test('published Macro create/update/delete stay successful after record or lease
     const grant = roomGrant(server.manager, room.roomId)
     const broadcasts: ServerMessage[] = []
     server.manager.connectClient(room.roomId, (message) => broadcasts.push(message))
-    const definition: MacroDefinitionV3 = { schemaVersion: 3, name: 'published', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV4 = { schemaVersion: 4, name: 'published', description: '', terminalLayout: [], body: [] }
 
     const created = await request(server.url, '/api/templates', grant, { definition })
     expect(created.status).toBe(201)
@@ -712,17 +801,17 @@ test('published Macro create/update/delete stay successful after record or lease
   }
 })
 
-function runnableDefinition(second: string): MacroDefinitionV3 {
+function runnableDefinition(second: string): MacroDefinitionV4 {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'immutable run',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],
     body: [
-      { id: 'send_one', type: 'send', terminalIndex: 1, message: { parts: [{ kind: 'text', text: 'one' }] }, delivery: 'direct', ending: 'cr' },
+      { id: 'send_one', type: 'send', terminal: { kind: 'terminal_index', index: 1 }, message: { parts: [{ kind: 'text', text: 'one' }] }, delivery: 'direct', ending: 'cr' },
       { id: 'wait', type: 'wait', mode: 'duration', durationMs: 400 },
-      { id: 'send_two', type: 'send', terminalIndex: 1, message: { parts: [{ kind: 'text', text: second }] }, delivery: 'direct', ending: 'cr' },
-      { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminalIndex: 1, mode: 'scrollback-tail', maxChars: 20_000 } },
+      { id: 'send_two', type: 'send', terminal: { kind: 'terminal_index', index: 1 }, message: { parts: [{ kind: 'text', text: second }] }, delivery: 'direct', ending: 'cr' },
+      { id: 'capture', type: 'capture-source', capture: { kind: 'terminal-buffer', terminal: { kind: 'terminal_index', index: 1 }, mode: 'scrollback-tail', maxChars: 20_000 } },
     ],
   }
 }

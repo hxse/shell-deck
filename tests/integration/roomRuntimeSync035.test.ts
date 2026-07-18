@@ -9,7 +9,7 @@ import { MacroRecordStore } from '../../server/sharedContentStore'
 import { TerminalRoomManager } from '../../server/terminalRoomManager'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import type { NotificationDispatcher } from '../../server/notificationService'
-import type { MacroDefinitionV3, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV4, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot } from '../../src/lib/macro/runnerTypes'
 import { mergeMacroRunnerDelta } from '../../src/lib/macro/runnerSnapshotMerge'
 import type { ServerMessage } from '../../src/lib/protocol'
@@ -134,9 +134,9 @@ test('Notify executes Telegram once and broadcasts one browser message to every 
     manager.connectClient(room.roomId, (message) => firstMessages.push(message))
     manager.connectClient(room.roomId, (message) => secondMessages.push(message))
     const grant = requiredGrant(firstMessages)
-    const records = new MacroRecordStore<MacroDefinitionV3>(root)
+    const records = new MacroRecordStore<MacroDefinitionV4>(root)
     const record = await records.create({
-      schemaVersion: 3,
+      schemaVersion: 4,
       name: 'Notify once',
       description: '',
       terminalLayout: [],
@@ -183,16 +183,16 @@ test('Notify executes Telegram once and broadcasts one browser message to every 
   }
 })
 
-function waitingDefinition(): MacroDefinitionV3 {
+function waitingDefinition(): MacroDefinitionV4 {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'Shared runtime',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
     body: [{
       id: 'input',
       type: 'input',
-      terminalIndex: 1,
+      terminal: { kind: 'terminal_index', index: 1 },
       prompt: 'Shared prompt',
       allowEmpty: false,
       delivery: 'direct',

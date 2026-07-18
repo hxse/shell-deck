@@ -6,6 +6,17 @@ const devHost = process.env.SHELL_DECK_DEV_HOST ?? '127.0.0.1'
 
 export default defineConfig({
   plugins: [roomRouteBridge(), svelte()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/@xterm/xterm/')) return 'xterm'
+          if (id.includes('/node_modules/svelte/')) return 'svelte'
+          if (id.includes('/node_modules/short-uuid/')) return 'short-uuid'
+        },
+      },
+    },
+  },
   server: {
     host: devHost,
     port: 5173,

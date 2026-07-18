@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TerminalRuntimePosition } from '../../protocol'
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, MacroDefinitionV3, TextMatchCondition } from '../../macro/macroDefinitionTypes'
+  import type { CaptureSourceConfig, FlowV2ArtifactSource, MacroDefinitionV4, MacroTerminalReference, TextMatchCondition } from '../../macro/macroDefinitionTypes'
   import type { MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import { adoptRuntimeTerminal, reconcileVisualTerminalLayout } from '../../macro/macroTerminalLayoutAuthoring'
   import { terminalRuntimeChoices, type TerminalChoice } from '../../macro/macroTerminalChoices'
@@ -10,6 +10,7 @@
   let {
     draft,
     validation,
+    runnableValidation,
     runtimePositions = null,
     insertionPaletteMode,
     telegramProfileIds = [],
@@ -20,8 +21,9 @@
     onMutationDenied = () => {},
     onUpdateDraft,
   } = $props<{
-    draft: MacroDefinitionV3
+    draft: MacroDefinitionV4
     validation: MacroDefinitionValidation
+    runnableValidation: MacroDefinitionValidation
     runtimePositions?: TerminalRuntimePosition[] | null
     insertionPaletteMode: MacroInsertionPaletteMode
     telegramProfileIds?: string[]
@@ -30,30 +32,27 @@
     lockedReason?: string
     editorKey?: string
     onMutationDenied?: (reason: string) => void
-    onUpdateDraft: (mutator: (definition: MacroDefinitionV3) => void) => void
+    onUpdateDraft: (mutator: (definition: MacroDefinitionV4) => void) => void
   }>()
 
   function terminalChoices(): TerminalChoice[] { return terminalRuntimeChoices(runtimePositions) }
   function choiceFromIndex(index: number): string { return String(index) }
-  function indexFromChoice(choice: string): number { return Number(choice) }
-  function firstTerminalIndex(): number { return terminalChoices()[0]?.index ?? 1 }
-
-  function updateVisualDraft(mutator: (definition: MacroDefinitionV3) => void) {
-    onUpdateDraft((definition: MacroDefinitionV3) => {
+  function updateVisualDraft(mutator: (definition: MacroDefinitionV4) => void) {
+    onUpdateDraft((definition: MacroDefinitionV4) => {
       mutator(definition)
       reconcileVisualTerminalLayout(definition)
     })
   }
 
-  function adoptTerminalSelection(definition: MacroDefinitionV3, terminalIndex: number): boolean {
+  function adoptTerminalSelection(definition: MacroDefinitionV4, terminalIndex: number): boolean {
     return adoptRuntimeTerminal(definition, terminalIndex, runtimePositions).ok
   }
 
   function defaultCaptureSource(kind: CaptureSourceConfig['kind']): CaptureSourceConfig {
-    const terminalIndex = firstTerminalIndex()
-    if (kind === 'agent-event') return { kind, terminalIndex, agent: { kind: 'codex' }, captureMode: 'result_only' }
-    if (kind === 'text-box') return { kind, terminalIndex }
-    return { kind, terminalIndex, mode: 'scrollback-tail', maxChars: 20000 }
+    const terminal: MacroTerminalReference = { kind: 'unassigned' }
+    if (kind === 'agent-event') return { kind, terminal, agent: { kind: 'codex' }, captureMode: 'result_only' }
+    if (kind === 'text-box') return { kind, terminal }
+    return { kind, terminal, mode: 'scrollback-tail', maxChars: 20000 }
   }
 
   function defaultCondition(source: FlowV2ArtifactSource): TextMatchCondition {
@@ -92,11 +91,11 @@
           <MacroStepList
             {draft}
             {validation}
+            {runnableValidation}
             updateDraft={updateVisualDraft}
             {terminalChoices}
             {adoptTerminalSelection}
             {choiceFromIndex}
-            {indexFromChoice}
             {defaultCaptureSource}
             {defaultCondition}
             {insertionPaletteMode}

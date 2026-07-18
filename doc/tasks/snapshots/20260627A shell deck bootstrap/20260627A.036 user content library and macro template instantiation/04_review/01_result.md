@@ -34,15 +34,15 @@ implementation-complete，Document/Code/Test Gate通过。
 * 非预期漂移五：首次Create response延迟、fresh-record lease已被另一Room抢先取得时，A安装r1后曾因`dirty/editing/editLease/leaseLost`均为false而被queued r2/Delete当成普通clean view覆盖。修为语义独立的published-Create buffer preservation state，并让auto-install、remote handler与list missing-selection共同尊重它；延迟POST Create的Save/Delete E2E均等待B mutation真实commit后才释放A response。
 * 非预期漂移六：preservation state最初既未上报`beforeunload`，又让普通Cancel安装旧Create response snapshot；remote Delete时甚至形成phantom record。现在preserved local copy进入dirty聚合，且专用Discard只以server GET结果解决；读取失败不会清除唯一副本。
 
-2026-07-20 conflict-resolution复审接入`.033` published commit contract：Library Update/Delete route改用published operation boundary并返回`leaseOutcome`；record durable后lease-state refresh/delete失败仍广播saved/deleted truth，Library client只在retained outcome继续Edit，否则清除旧grant、安装authoritative record并转read-only。既有navigation、pending Save replay、takeover、reconnect与published-Create preservation状态机保持不变。
+2026-07-20 conflict-resolution复审接入`.032/.033` published commit contract：Library Create/Update/Delete以及from-Library Macro Load都使用published operation boundary；Library record replace/delete在publish后的directory fsync结果不确定时重读exact bytes/absence并收口authoritative truth。Update/Delete的lease-state refresh/release失败仍广播saved/deleted truth并返回`leaseOutcome`；Library client只在retained outcome继续Edit，否则清除旧grant、安装authoritative record并转read-only。commit前失去Room control仍零写入，commit后才转移control则不得把已发布Create/Load伪报为失败或生成重复record。既有navigation、pending Save replay、takeover、reconnect与published-Create preservation状态机保持不变。
 
-本次验证：`just check`为0 error/0 warning；Library HTTP/Store 8/8先行通过，其中新增fault injection逐项验证update/delete的HTTP、GET/404与broadcast一致；`libraryWorkbench036.spec.ts` 11/11先行通过。随后`just test-036`完整通过136 unit、43 integration、43 Chromium，覆盖全部Library UI、lease/navigation/invalidation竞态及`.032–.035`回归。
+本次验证：`just check`为0 error/0 warning；Library Store/HTTP定向10项全部通过，其中fault injection逐项验证Create/Update/Delete的HTTP、GET/404与broadcast一致，并验证Library Create/from-Library Load在commit前后control转移的不同边界；`libraryWorkbench036.spec.ts`既有竞态回归继续通过。最终整栈数字记录在`.037` review。
 * 测试自身的预期适配：Room reload产生新WebSocket client，按single-controller contract需要显式Take control；Macro selector是有dismiss layer的popover，测试必须真实开/关抽屉；折叠态用summary断言，不能假设内部表单常驻。
 
 ## Gate
 
 * `just check`：通过，TypeScript与Svelte均为0 errors、0 warnings。
-* `just build`：通过，183 modules；production JS 606.26 kB（gzip 169.57 kB），CSS 53.52 kB（gzip 10.53 kB）；保留继承的Vite单bundle大于500 kB warning。
+* `just build`：当时功能构建通过，183 modules；production JS 606.26 kB（gzip 169.57 kB），CSS 53.52 kB（gzip 10.53 kB），但继承的first-party单bundle warning仍阻断warning-free最终验收；该项随后由`.037`收口。
 * `just test-036`：通过；124 unit、37 integration、41 Playwright E2E。覆盖`.032-.036`完整回归、37 MB PTY/replay、Room controller、Macro runtime sync、Library navigation、pending Save/Create replay，以及Macro/Library reconnect、one-shot list 500 retry和Room Destroy清除聚合guard。
 * `just test-031b`：通过；11个inventory assertions、13个Chromium current journeys，当前195 controls全部归属且无未识别控件；其中人为延迟lease DELETE、Save POST、已提交PUT response、首次Create POST response、强制WebSocket reconnect及Home guard resolution均稳定通过。
 * Library UI dogfood `--repeat-each=3`：3/3通过，用于专门验证Save/list异步竞态。

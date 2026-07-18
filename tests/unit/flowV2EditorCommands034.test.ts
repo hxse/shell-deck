@@ -9,9 +9,9 @@ import {
   resolveBodyPath,
   type BodyPath,
 } from '../../src/lib/macro/flowV2EditorCommands'
-import type { FlowV2IfBranch, FlowV2Node, MacroDefinitionV3 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { FlowV2IfBranch, FlowV2Node, MacroDefinitionV4 } from '../../src/lib/macro/macroDefinitionTypes'
 
-test('V3 editor commands insert and move nodes through explicit body paths', () => {
+test('V4 editor commands insert and move nodes through explicit body paths', () => {
   const definition = macro()
   expect(insertNodeAtAnchor(definition, { kind: 'inside', parentPath: [], index: 1, slot: 'for', anchorNodeId: 'loop' }, finish('inside')).ok).toBe(true)
   const loopPath: BodyPath = [{ kind: 'for', nodeId: 'loop' }]
@@ -23,7 +23,7 @@ test('V3 editor commands insert and move nodes through explicit body paths', () 
   expect(resolveBodyPath(definition, loopPath)?.map((node) => node.id)).toEqual(['inside', 'send'])
 })
 
-test('V3 if branches and optional bodies are explicit current-schema mutations', () => {
+test('V4 if branches and optional bodies are explicit current-schema mutations', () => {
   const definition = macro()
   const branch: FlowV2IfBranch = { kind: 'elif', condition: condition('MAYBE'), body: [] }
   expect(insertElifBranchAfter(definition, { bodyPath: [], index: 1 }, 0, branch).reason).toBe('invalid_target')
@@ -43,9 +43,9 @@ test('control terminal bodies accept actions and reject nested flow controls', (
   expect(resolveBodyPath(definition, [{ kind: 'control', nodeId: 'done' }])?.map((node) => node.id)).toEqual(['before-finish'])
 })
 
-function macro(): MacroDefinitionV3 {
+function macro(): MacroDefinitionV4 {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'Editor commands',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],
@@ -67,7 +67,7 @@ function condition(text: string) {
 }
 
 function send(id: string): FlowV2Node {
-  return { id, type: 'send', terminalIndex: 1, message: { parts: [{ kind: 'text', text: id }] }, delivery: 'auto', ending: 'cr' }
+  return { id, type: 'send', terminal: { kind: 'terminal_index', index: 1 }, message: { parts: [{ kind: 'text', text: id }] }, delivery: 'auto', ending: 'cr' }
 }
 
 function finish(id: string): FlowV2Node { return { id, type: 'finish', reason: id } }

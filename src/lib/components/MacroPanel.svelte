@@ -6,8 +6,8 @@
   import type { TerminalRoomClient } from '../terminalRoomClient'
   import { LibraryClient } from '../library/libraryClient'
   import type { MacroInsertionPaletteMode } from '../workspace/uiLayoutTypes'
-  import type { MacroDefinitionV3, MacroRecord, MacroRecordSummary } from '../macro/macroDefinitionTypes'
-  import { parseAndValidateMacroDefinitionJson, parseAndValidateMacroTerminalLayoutFromDefinitionJson, validateMacroDefinitionV3, validateMacroTerminalLayout } from '../macro/macroDefinitionValidation'
+  import type { MacroDefinitionV4, MacroRecord, MacroRecordSummary } from '../macro/macroDefinitionTypes'
+  import { parseAndValidateMacroDefinitionJson, parseAndValidateMacroTerminalLayoutFromDefinitionJson, validateMacroDefinitionV4, validateMacroTerminalLayout, validateRunnableMacroDefinitionV4 } from '../macro/macroDefinitionValidation'
   import { validateMacroRuntimeBinding } from '../macro/macroRuntimeBinding'
   import { MacroRecordClient } from '../macro/macroRecordClient'
   import { MacroRunnerClient } from '../macro/macroRunnerClient'
@@ -67,8 +67,8 @@
 
   let templates = $state<MacroRecordSummary[]>([])
   let selectedRecord = $state<MacroRecord | null>(null)
-  let baseDefinition = $state<MacroDefinitionV3 | null>(null)
-  let draft = $state<MacroDefinitionV3 | null>(null)
+  let baseDefinition = $state<MacroDefinitionV4 | null>(null)
+  let draft = $state<MacroDefinitionV4 | null>(null)
   let draftRevision = $state(0)
   let editorGeneration = $state(0)
   let contentEditing = $state(false)
@@ -85,6 +85,7 @@
   let preparing = $state(false)
   let errorText = $state<string | null>(null)
   let saveToLibraryLabel = $state('Save to Library')
+  let templateListProblem = $state<string | null>(null)
   let runner = $state<MacroRunnerSnapshot | null>(null)
   let traces = $state<MacroRunTrace[]>([])
   let runnerInput = $state('')
@@ -112,13 +113,15 @@
   let saveToLibraryResetTimer: ReturnType<typeof setTimeout> | null = null
 
   const filteredTemplates = $derived(templates.filter((template) => `${template.name}\n${template.description}`.toLowerCase().includes(templateSearch.trim().toLowerCase())))
-  const portableValidation = $derived(validateMacroDefinitionV3(draft))
+  const portableValidation = $derived(validateMacroDefinitionV4(draft))
+  const runnableValidation = $derived(validateRunnableMacroDefinitionV4(draft))
   const runtimeValidation = $derived(draft ? validateMacroRuntimeBinding(draft.terminalLayout, terminalPositions) : null)
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
   const statusText = $derived(runtimeValidation?.code ?? 'no_macro_selected')
   const editorLocked = $derived(!canMutateShared || operationPending || (selectedRecord !== null && !contentEditing))
   const prepareState = $derived(resolvePrepareState())
   const startState = $derived(resolveStartState())
+  const displayedErrorText = $derived([errorText, templateListProblem].filter((value): value is string => Boolean(value)).join('\n') || null)
 
   $effect(() => {
     onDirtyChange(dirty || jsonEditing || publishedCreateBufferPreserved)
@@ -193,20 +196,24 @@
     if (selectedRecord && contentEditing && editLease) markEditLeaseLost(null, 'room_control_lost')
   })
 
-  function emptyDefinition(): MacroDefinitionV3 {
-    return { schemaVersion: 3, name: 'New Macro', description: '', terminalLayout: [], body: [] }
+  function emptyDefinition(): MacroDefinitionV4 {
+    return { schemaVersion: 4, name: 'New Macro', description: '', terminalLayout: [], body: [] }
   }
 
   async function refreshTemplates(report = true): Promise<TemplateRefreshResult> {
     const generation = ++templateListGeneration
     try {
-      const records = await recordClient.list()
+      const result = await recordClient.list()
       if (generation !== templateListGeneration) return { outcome: 'stale' }
-      templates = records
-      return { outcome: 'applied', records }
+      templates = result.templates
+      templateListProblem = result.invalidRecords.length === 0
+        ? null
+        : `Invalid Macro records ignored: ${result.invalidRecords.map((record) => `${record.recordId} (${record.error})`).join(', ')}`
+      return { outcome: 'applied', records: result.templates }
     }
     catch (error) {
       if (generation !== templateListGeneration) return { outcome: 'stale' }
+      templateListProblem = `Macro list unavailable: ${messageOf(error)}`
       if (report) errorText = messageOf(error)
       return { outcome: 'retry' }
     }
@@ -348,6 +355,7 @@
       dirty = false
       contentEditing = false
       publishedCreateBufferPreserved = false
+      leaseLost = false
       draftRevision += 1
     } catch (error) { if (canCommit(token)) reportMutationError(error) }
     finally { endOperation(token) }
@@ -379,7 +387,7 @@
     if (operationPending) { rejectMutation('operation_pending'); return }
     if (jsonEditing) { rejectMutation('finish_json_edit_before_library_save'); return }
     if (!draft) { rejectMutation('no_current_macro'); return }
-    const validation = validateMacroDefinitionV3(draft)
+    const validation = validateMacroDefinitionV4(draft)
     if (!validation.ok) {
       errorText = formatIssues(validation.issues)
       onMutationDenied('invalid_macro_definition')
@@ -444,6 +452,7 @@
       dirty = false
       contentEditing = false
       publishedCreateBufferPreserved = false
+      leaseLost = false
       editorGeneration += 1
       await refreshTemplates(false)
     } catch (error) {
@@ -485,7 +494,7 @@
     }
   }
 
-  function updateDraft(mutator: (definition: MacroDefinitionV3) => void) {
+  function updateDraft(mutator: (definition: MacroDefinitionV4) => void) {
     if (!canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
     if (operationPending) { rejectMutation('operation_pending'); return }
     if (!draft) return
@@ -534,7 +543,10 @@
       }
       const refreshed = await recordClient.list()
       if (!definitionOperationIsCurrent(token, revision, 'json')) return
-      templates = refreshed
+      templates = refreshed.templates
+      templateListProblem = refreshed.invalidRecords.length === 0
+        ? null
+        : `Invalid Macro records ignored: ${refreshed.invalidRecords.map((record) => `${record.recordId} (${record.error})`).join(', ')}`
       installRecord(persisted.record, persisted.editing, persisted.preservePublishedCreateBuffer)
       if (persisted.leaseWarning) errorText = persisted.leaseWarning
     } catch (error) {
@@ -588,7 +600,7 @@
       finally { endOperation(token) }
       return
     }
-    if (!draft || !portableValidation.ok || runtimeValidation?.status !== 'ready') {
+    if (!draft || !portableValidation.ok || !runnableValidation.ok || runtimeValidation?.status !== 'ready') {
       rejectMutation(startState.reason || 'macro_not_runnable')
       return
     }
@@ -621,12 +633,12 @@
   }
 
   async function persistDefinition(
-    definition: MacroDefinitionV3,
+    definition: MacroDefinitionV4,
     token: number,
     revision: number,
     source: DefinitionOperationSource = 'visual',
   ): Promise<PersistedDefinition | null> {
-    const validation = validateMacroDefinitionV3(definition)
+    const validation = validateMacroDefinitionV4(definition)
     if (!validation.ok) throw new Error(formatIssues(validation.issues))
     const record = selectedRecord
     const updateResult = record
@@ -671,7 +683,7 @@
 
   function reconcilePublishedCreate(
     record: MacroRecord,
-    definition: MacroDefinitionV3,
+    definition: MacroDefinitionV4,
     token: number,
     revision: number,
     source: DefinitionOperationSource,
@@ -763,9 +775,7 @@
             const acknowledged = next.runtimeInput
             if (acknowledged?.invocationId === input.invocationId) {
               runnerInputAcknowledgedGeneration = Math.max(runnerInputAcknowledgedGeneration, sentGeneration)
-              if (runnerInput === acknowledged.draft) {
-                runnerInputAcknowledgedGeneration = runnerInputEditGeneration
-              }
+              if (runnerInput === acknowledged.draft) runnerInputAcknowledgedGeneration = runnerInputEditGeneration
               runnerInputDirty = runnerInputAcknowledgedGeneration < runnerInputEditGeneration
             }
           } catch (error) {
@@ -1004,6 +1014,11 @@
     if (!roomClient || !canMutateShared) return { disabled: true, reason: 'Room control is required' }
     if (operationPending || jsonEditing) return { disabled: true, reason: 'Save or cancel the pending edit first' }
     if (!portableValidation.ok) return { disabled: true, reason: 'Fix macro validation issues' }
+    if (!runnableValidation.ok) {
+      const unassigned = runnableValidation.issues.filter((issue) => issue.code === 'unassigned_terminal_reference' || issue.code === 'unassigned_artifact_reference')
+      if (unassigned.length > 0) return { disabled: true, reason: `Assign ${unassigned.length} terminal or artifact reference${unassigned.length === 1 ? '' : 's'} before Start` }
+      return { disabled: true, reason: 'Fix macro runnable validation issues' }
+    }
     if (runtimeValidation?.status !== 'ready') return { disabled: true, reason: runtimeValidation?.code ?? 'macro_terminal_checking' }
     if (dirty && selectedRecord && (!contentEditing || !editLease)) return { disabled: true, reason: 'Edit lease is required to save before Start' }
     return { disabled: false, reason: '' }
@@ -1069,7 +1084,7 @@
 <section class="macro-panel" data-testid="macro-panel">
   <MacroWorkbenchChrome
     {templates} {filteredTemplates} {draft} {selectedRecord} {templateSearch} {dirty} {contentEditing} mutationAllowed={canMutateShared}
-    {errorText} {macroView} {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing} {saveToLibraryLabel}
+    errorText={displayedErrorText} {macroView} {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing} {saveToLibraryLabel}
     prepareDisabled={prepareState.disabled} prepareDisabledReason={prepareState.reason}
     startDisabled={startState.disabled} startDisabledReason={startState.reason}
     {jsonEditing} {operationPending}
@@ -1085,7 +1100,7 @@
     {#if macroView === 'editor'}
       {#key editorGeneration}
         {#if draft}
-          <MacroEditorShell {draft} validation={portableValidation} runtimePositions={terminalPositions} {insertionPaletteMode}
+          <MacroEditorShell {draft} validation={portableValidation} {runnableValidation} runtimePositions={terminalPositions} {insertionPaletteMode}
             {telegramProfileIds} {telegramProfilesError} locked={editorLocked} editorKey={`${selectedRecord?.id ?? 'new'}:${editorGeneration}`}
             lockedReason={!canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required'}
             {onMutationDenied} onUpdateDraft={updateDraft} />
@@ -1094,7 +1109,7 @@
         {/if}
       {/key}
     {:else if macroView === 'json'}
-      <MacroJsonView {draft} {jsonPreview} editing={jsonEditing} saving={operationPending} editText={jsonText} editError={jsonError} canEdit={canMutateShared && (selectedRecord === null || contentEditing)}
+      <MacroJsonView {draft} {runnableValidation} {jsonPreview} editing={jsonEditing} saving={operationPending} editText={jsonText} editError={jsonError} canEdit={canMutateShared && (selectedRecord === null || contentEditing)}
         {operationPending} onStartEdit={startJsonBuffer} onEditTextChange={updateJsonText} onSave={saveJson} onCancel={cancelJson}
         onCopyResult={(error) => { errorText = error }} />
     {:else}

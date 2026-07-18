@@ -32,7 +32,7 @@ async function clickWithDialog(
   await clickPromise
 }
 
-test('current .036 UI journey preserves the complex V3 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
+test('current .037 UI journey preserves the complex V4 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
   test.setTimeout(600_000)
   page.setDefaultTimeout(10_000)
   page.setDefaultNavigationTimeout(15_000)
@@ -190,14 +190,15 @@ test('current .036 UI journey preserves the complex V3 Macro and exercises serve
     const incompleteIfBranches = incompleteIf.getByTestId('if-branch-section')
     await expect(incompleteIfBranches).toHaveCount(1)
     await expect(incompleteIfBranches.first().getByTestId('condition-source')).toHaveValue('')
-    await expect(incompleteIfBranches.first().getByTestId('condition-source').locator('option:checked')).toHaveText('Select an earlier artifact')
+    await expect(incompleteIfBranches.first().getByTestId('condition-source').locator('option:checked')).toHaveText('Unassigned')
+    await expect(incompleteIfBranches.first().getByTestId('condition-source-warning')).toBeVisible()
     await incompleteIfBranches.first().getByTestId('add-flow-elif').click()
     await expect(incompleteIfBranches).toHaveCount(2)
     await expect(incompleteIfBranches.nth(1).getByTestId('condition-source')).toHaveValue('')
     await expect(page.getByTestId('macro-validation-summary')).not.toHaveText('success')
     await page.getByTestId('macro-validation-toggle').click()
-    await expect(page.getByTestId('macro-validation')).toContainText('body[0].branches[0].condition.source.stepId')
-    await expect(page.getByTestId('macro-validation')).toContainText('string must not be empty')
+    await expect(page.getByTestId('macro-validation')).toContainText('body[0].branches[0].body')
+    await expect(page.getByTestId('macro-validation')).toContainText('body must not be empty')
     await clickWithDialog(nodeControl(incompleteIf, 'node-remove'), 'accept')
     await expect(rootNodes(page)).toHaveCount(0)
     await expect(page.getByTestId('macro-validation-summary')).toHaveText('success')
@@ -590,7 +591,7 @@ test('current .036 UI journey preserves the complex V3 Macro and exercises serve
     await page.getByTestId("macro-save-json").click()
     await expect(page.getByTestId("macro-json-error")).toContainText("Invalid JSON")
     const currentJson = await page.evaluate(() => navigator.clipboard.readText())
-    await page.getByTestId("macro-json-editor").fill(currentJson.replace("\"schemaVersion\": 3", "\"schemaVersion\": 2"))
+    await page.getByTestId("macro-json-editor").fill(currentJson.replace("\"schemaVersion\": 4", "\"schemaVersion\": 3"))
     await page.getByTestId("macro-save-json").click()
     await expect(page.getByTestId("macro-json-error")).toContainText("schemaVersion")
     await page.getByTestId("macro-cancel-json").click()

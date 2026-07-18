@@ -6,6 +6,7 @@ export type { ResolvedTerminalInputDelivery, TerminalInputDelivery } from './ter
 
 export type TerminalType = 'shell' | 'text'
 export type MacroTerminalLayoutItem = { index: number; type: TerminalType }
+export type MacroTerminalReference = { kind: 'terminal_index'; index: number } | { kind: 'unassigned' }
 export type TimeoutAction = 'pause' | 'fail' | 'finish' | 'continue'
 export type NotificationLevel = 'info' | 'success' | 'warning' | 'error'
 export type NotificationFailureAction = 'continue' | 'pause' | 'fail'
@@ -18,19 +19,20 @@ export type NotifyChannel =
 
 export type AgentEventCaptureMode = 'result_only' | 'prompt_only' | 'prompt_and_result'
 export type CaptureSourceConfig =
-  | { kind: 'terminal-buffer'; terminalIndex: number; mode: 'scrollback-tail' | 'raw-stream-tail'; maxChars: number }
-  | { kind: 'text-box'; terminalIndex: number }
-  | { kind: 'agent-event'; agent: { kind: 'codex' }; terminalIndex: number; captureMode: AgentEventCaptureMode }
+  | { kind: 'terminal-buffer'; terminal: MacroTerminalReference; mode: 'scrollback-tail' | 'raw-stream-tail'; maxChars: number }
+  | { kind: 'text-box'; terminal: MacroTerminalReference }
+  | { kind: 'agent-event'; agent: { kind: 'codex' }; terminal: MacroTerminalReference; captureMode: AgentEventCaptureMode }
 export type ParallelCaptureSourceConfig =
-  | Omit<Extract<CaptureSourceConfig, { kind: 'terminal-buffer' }>, 'terminalIndex'>
-  | Omit<Extract<CaptureSourceConfig, { kind: 'text-box' }>, 'terminalIndex'>
-  | Omit<Extract<CaptureSourceConfig, { kind: 'agent-event' }>, 'terminalIndex'>
+  | Omit<Extract<CaptureSourceConfig, { kind: 'terminal-buffer' }>, 'terminal'>
+  | Omit<Extract<CaptureSourceConfig, { kind: 'text-box' }>, 'terminal'>
+  | Omit<Extract<CaptureSourceConfig, { kind: 'agent-event' }>, 'terminal'>
 
 export type ArtifactName = 'captured_text' | 'merged_text' | 'extracted_text'
-export type FlowV2ArtifactSource = { kind: 'step_artifact'; stepId: string; artifact: ArtifactName }
+export type FlowV2StepArtifactSource = { kind: 'step_artifact'; stepId: string; artifact: ArtifactName }
+export type FlowV2ArtifactSource = FlowV2StepArtifactSource | { kind: 'unassigned' }
 export type ScopedTemplateText = { kind: 'template'; template: string }
 export type TemplatableScalarText = string | ScopedTemplateText
-export type MessagePart = { kind: 'text'; text: string } | ScopedTemplateText | { kind: 'artifact'; source?: FlowV2ArtifactSource }
+export type MessagePart = { kind: 'text'; text: string } | ScopedTemplateText | { kind: 'artifact'; source: FlowV2ArtifactSource }
 export type MessageSpec = { parts: MessagePart[] }
 
 export type TextSplitSpec =
@@ -51,26 +53,26 @@ export type TextMatchCondition = {
   scope: { kind: 'whole' } | { kind: 'lines'; mode: 'first' | 'last' | 'any' | 'all'; includeEmptyLines?: boolean }
 }
 
-export type SendNode = { id: string; type: 'send'; terminalIndex: number; message: MessageSpec; delivery: TerminalInputDelivery; ending: TerminalEnding }
+export type SendNode = { id: string; type: 'send'; terminal: MacroTerminalReference; message: MessageSpec; delivery: TerminalInputDelivery; ending: TerminalEnding }
 export type NotifyNode = { id: string; type: 'notify'; level: NotificationLevel; title: TemplatableScalarText; message: MessageSpec; channels: NotifyChannel[]; onFailure: NotificationFailureAction }
-export type InputNode = { id: string; type: 'input'; terminalIndex: number; prompt: TemplatableScalarText; allowEmpty: boolean; delivery: TerminalInputDelivery; ending: TerminalEnding; defaultSource?: FlowV2ArtifactSource }
+export type InputNode = { id: string; type: 'input'; terminal: MacroTerminalReference; prompt: TemplatableScalarText; allowEmpty: boolean; delivery: TerminalInputDelivery; ending: TerminalEnding; defaultSource?: FlowV2StepArtifactSource }
 export type WaitNode =
   | { id: string; type: 'wait'; mode: 'duration'; durationMs: number }
-  | { id: string; type: 'wait'; mode: 'terminal-quiet'; terminalIndex: number; quietMs: number; maxMs: number; onTimeout: TimeoutAction }
+  | { id: string; type: 'wait'; mode: 'terminal-quiet'; terminal: MacroTerminalReference; quietMs: number; maxMs: number; onTimeout: TimeoutAction }
   | { id: string; type: 'wait'; mode: 'user-continue'; prompt: TemplatableScalarText }
 export type CaptureSourceNode = { id: string; type: 'capture-source'; capture: CaptureSourceConfig }
 export type ExtractTextNode = { id: string; type: 'extract_text'; source: FlowV2ArtifactSource; split: TextSplitSpec; filters: TextFilterSpec[]; select: TextSelectSpec; extract: TextExtractSpec; trim: TextTrimMode; onEmpty: TimeoutAction }
 
 export type ParallelLaneActionNode =
-  | Omit<SendNode, 'terminalIndex'>
+  | Omit<SendNode, 'terminal'>
   | Extract<WaitNode, { mode: 'duration' }>
-  | (Omit<Extract<WaitNode, { mode: 'terminal-quiet' }>, 'terminalIndex' | 'onTimeout'> & { onTimeout: 'pause' })
+  | (Omit<Extract<WaitNode, { mode: 'terminal-quiet' }>, 'terminal' | 'onTimeout'> & { onTimeout: 'pause' })
   | { id: string; type: 'capture-source'; capture: ParallelCaptureSourceConfig }
   | (Omit<ExtractTextNode, 'onEmpty'> & { onEmpty: 'pause' | 'fail' })
-export type ParallelLaneOutputNode = { id: string; type: 'output'; source: FlowV2ArtifactSource | { kind: 'none' } }
+export type ParallelLaneOutputNode = { id: string; type: 'output'; source: FlowV2StepArtifactSource | { kind: 'none' } }
 export type ParallelOutputSource = ParallelLaneOutputNode['source']
 export type ParallelLaneNode = ParallelLaneActionNode | ParallelLaneOutputNode
-export type ParallelLane = { id: string; label: string; terminalIndex: number; body: ParallelLaneNode[] }
+export type ParallelLane = { id: string; label: string; terminal: MacroTerminalReference; body: ParallelLaneNode[] }
 export type ParallelNode = { id: string; type: 'parallel'; lanes: ParallelLane[]; merge: { kind: 'sectioned_text'; separator: string; includeEmptyOutputs: boolean }; onLaneFail: 'pause' | 'fail' }
 
 export type FlowV2ActionNode = SendNode | NotifyNode | InputNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
@@ -87,8 +89,8 @@ export type FlowV2ControlNode =
   | FlowV2ControlTerminalNode
 export type FlowV2Node = FlowV2ActionNode | FlowV2ControlNode
 
-export type MacroDefinitionV3 = {
-  schemaVersion: 3
+export type MacroDefinitionV4 = {
+  schemaVersion: 4
   name: string
   description: string
   terminalLayout: MacroTerminalLayoutItem[]
@@ -100,7 +102,7 @@ export type MacroRecord = {
   revision: number
   createdAt: string
   updatedAt: string
-  definition: MacroDefinitionV3
+  definition: MacroDefinitionV4
 }
 
 export type MacroRecordSummary = {

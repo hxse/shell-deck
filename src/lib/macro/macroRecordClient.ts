@@ -1,26 +1,40 @@
 import type { ContentCommitLeaseOutcome, ContentEditLeaseGrant } from '../contentEditLease'
 import type { RoomControlGrant } from '../roomControl'
 import { ROOM_CONTROL_CLIENT_HEADER, ROOM_CONTROL_EPOCH_HEADER, ROOM_CONTROL_LEASE_HEADER } from '../roomControl'
-import type { MacroDefinitionV3, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
+import type { MacroDefinitionV4, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
 
 export const CONTENT_EDIT_LEASE_HEADER = 'X-Shell-Deck-Content-Edit-Lease'
+
+export type InvalidMacroRecordSummary = {
+  recordId: string
+  error: 'invalid_macro_record' | 'invalid_macro_record_definition'
+}
+
+export type MacroRecordListResult = {
+  templates: MacroRecordSummary[]
+  invalidRecords: InvalidMacroRecordSummary[]
+}
 
 export class MacroRecordClient {
   constructor(private readonly controlGrant: () => RoomControlGrant | null) {}
 
-  async list(): Promise<MacroRecordSummary[]> {
-    return (await requestJson('/api/templates')).templates as MacroRecordSummary[]
+  async list(): Promise<MacroRecordListResult> {
+    const response = await requestJson('/api/templates')
+    return {
+      templates: response.templates as MacroRecordSummary[],
+      invalidRecords: response.invalidRecords as InvalidMacroRecordSummary[],
+    }
   }
 
   async read(id: string): Promise<MacroRecord> {
     return (await requestJson('/api/templates/' + encodeURIComponent(id))).template as MacroRecord
   }
 
-  async create(definition: MacroDefinitionV3): Promise<MacroRecord> {
+  async create(definition: MacroDefinitionV4): Promise<MacroRecord> {
     return (await requestJson('/api/templates', { method: 'POST', headers: this.controlHeaders(), body: JSON.stringify({ definition }) })).template as MacroRecord
   }
 
-  async update(record: MacroRecord, definition: MacroDefinitionV3, lease: ContentEditLeaseGrant): Promise<{ record: MacroRecord; leaseOutcome: ContentCommitLeaseOutcome }> {
+  async update(record: MacroRecord, definition: MacroDefinitionV4, lease: ContentEditLeaseGrant): Promise<{ record: MacroRecord; leaseOutcome: ContentCommitLeaseOutcome }> {
     const response = await requestJson('/api/templates/' + encodeURIComponent(record.id), {
       method: 'PUT',
       headers: this.controlHeaders(),

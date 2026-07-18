@@ -8,6 +8,7 @@
 
 2026-07-18 selector follow-up：`Select macro`空值option改为显式取消当前selection；clean selection直接回到null，dirty selection复用discard确认且拒绝时恢复native value。该local action不删除record、不Prepare，也不影响active run。
 
+2026-07-18 lifecycle follow-up：Macro panel改为常驻组件的纯可见性切换，dirty/JSON Edit接入native `beforeunload`，且不把业务draft写入browser storage。定向Chromium lifecycle journey通过；后继V4 stack的完整Gate记录在`.037` review。
 ## 实际代码映射
 
 * `src/lib/macro/macroDefinitionTypes.ts`与`macroDefinitionValidation.ts`：唯一MacroDefinitionV3/Flow current schema、连续index/type layout、closed issue registry、object/text validation gateway及stable UTF-16 JSON position；旧V2/TerminalTarget/configId不进入runtime。
@@ -46,7 +47,7 @@
 ## Gate结果
 
 * `just check`：通过，TypeScript与Svelte均0 error / 0 warning。
-* `just build`：通过；177 modules，主JS 571.12 kB（gzip 160.25 kB）。保留既有单chunk大于500 kB warning，不阻断本task。
+* `just build`：当时功能构建通过；177 modules，主JS 571.12 kB（gzip 160.25 kB），但仍有first-party单chunk大于500 kB warning，因此该历史结果不能单独视为warning-free Close Gate。该跨栈 blocker随后由`.037`的稳定vendor chunks修复。
 * `just test-unit`：通过；114 unit与28 integration，0 failure。
 * `just test-032`：通过；114 unit、28 integration及10项Chromium Room/controller/Macro回归全部通过。
 * `just test-033`：通过；同批114 unit、28 integration、10 browser，覆盖controller/content lease集成。
@@ -73,11 +74,13 @@
 
 2026-07-20 conflict-resolution复审收口：在`.032/.033`底座重写后逐文件合并`.034`，没有整侧采用冲突版本。runner新增固定budget macrotask cooperative yield，tight forever不再饿死Stop/timer；terminal-quiet改用frozen launch的`outputActivityRevision`；Input submit先durable append再释放pending resolver，append fault保持可重试；run event append使用live monotonic cursor，消除逐event全量读log。Prepare的延迟HTTP snapshot按`roomRevision`拒绝回滚更晚WebSocket真值；Macro Update/Delete消费`.033` published commit `leaseOutcome`，record已durable而lease维护失败时仍返回authoritative结果并转read-only。
 
+长run follow-up把durable evidence冻结为100-event segments、最多最近1000条absolute-sequence event、永久summary与继续保留的artifact。旧完整segment在越界时删除；live run只维护bounded window和next sequence，正常append不重读完整log。完整event line已经发布但file/directory fsync或summary checkpoint结果不确定时，以稳定sequence/intent核对tail并幂等收口；partial final line在下一次read/append前截断。该实现同时消除了逐snapshot重读完整events的O(n²)路径。
+
 本次定向及完整`.034` Gate：`just check`为0 error/0 warning；132 unit与36 integration全部通过；`macroWorkbench034.spec.ts` 10/10通过，Room/controller剩余Chromium 9/9通过，共19项browser。新增确定性回归覆盖tight forever Stop deadline、满replay持续输出、Input append fault、250-event零重复log read、Macro update/delete lease-state fault和延迟Prepare snapshot。build仍报告既有single-chunk warning，留待最终stack统一拆包Gate，不把该warning记为本次冲突修复的功能失败。
 
 ## Warning与后继边界
 
-* Vite production bundle现为571.12 kB，超过默认500 kB warning阈值；功能与性能Gate通过，code splitting留作独立优化，不在本task重画或拆散Macro UI。
+* 本task当时的Vite production bundle为571.12 kB并触发默认warning；它在最终栈验收中按blocker处理，已由`.037`拆出xterm、Svelte与short-uuid稳定chunk，不再作为未解决风险。
 * Playwright必须通过项目已有`scripts/runPlaywright.ts`补齐Nix Chromium runtime；直接调用`bun x playwright`会因缺少`libnspr4.so`在browser launch前失败，不是产品断言失败。
 * `.036`必须直接复用本task的MacroDefinitionV3 text gateway与Copy-only/no-Duplicate语义；Library Load只创建MacroRecord，不能隐式Prepare。
 * 产品仍是localhost默认、显式LAN且可信单用户模型；本task不新增账号认证或多人协作。

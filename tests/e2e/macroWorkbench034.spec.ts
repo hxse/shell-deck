@@ -7,7 +7,7 @@ test.afterEach(async ({ request }) => {
   await Promise.all(body.rooms.map((room) => request.delete('/api/rooms/' + encodeURIComponent(room.roomId), { data: { expectedRoomGeneration: room.roomGeneration } })))
 })
 
-test('V3 Macro workbench saves without terminals, prepares only on click, and keeps JSON edit locked until Save or Cancel', async ({ page, request }) => {
+test('V4 Macro workbench saves without terminals, prepares only on click, and keeps JSON edit locked until Save or Cancel', async ({ page, request }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.stack ?? error.message))
   const created = await request.post('/api/rooms')
@@ -32,6 +32,8 @@ test('V3 Macro workbench saves without terminals, prepares only on click, and ke
   await page.getByRole('button', { name: 'New text', exact: true }).click()
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
+  await expect(page.getByTestId('send-terminal')).toHaveValue('unassigned')
+  await page.getByTestId('send-terminal').selectOption('1')
   await expect(page.getByTestId('send-terminal')).toHaveValue('1')
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByTestId('terminal-tab-close').click()
@@ -67,7 +69,7 @@ test('V3 Macro workbench saves without terminals, prepares only on click, and ke
   await page.getByTestId('macro-template-drawer').click()
 
   await page.getByTestId('macro-tab-json').click()
-  await expect(page.getByTestId('macro-json-preview')).toContainText('"schemaVersion": 3')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"schemaVersion": 4')
   await expect(page.getByTestId('macro-json-preview')).not.toContainText('terminalId')
   await page.getByTestId('macro-edit-json').click()
   await expect(page.getByTestId('macro-json-editor')).toBeVisible()
@@ -87,7 +89,7 @@ test('V3 Macro workbench saves without terminals, prepares only on click, and ke
   expect(pageErrors).toEqual([])
 })
 
-test('valid JSON keeps its edit buffer open when update or create persistence fails', async ({ page, request }) => {
+test('valid V4 JSON keeps its exact edit buffer open when update or create persistence fails', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -99,7 +101,7 @@ test('valid JSON keeps its edit buffer open when update or create persistence fa
   await page.getByTestId('macro-tab-json').click()
   await page.getByTestId('macro-edit-json').click()
   const updateCandidate = JSON.parse(await page.getByTestId('macro-json-editor').inputValue()) as Record<string, unknown>
-  updateCandidate.name = 'JSON update must survive'
+  updateCandidate.name = 'V4 JSON update must survive'
   const updateText = JSON.stringify(updateCandidate, null, 2)
   await page.getByTestId('macro-json-editor').fill(updateText)
   await page.route('**/api/templates/*', async (route) => {
@@ -121,7 +123,7 @@ test('valid JSON keeps its edit buffer open when update or create persistence fa
   await page.getByTestId('macro-tab-json').click()
   await page.getByTestId('macro-edit-json').click()
   const createCandidate = JSON.parse(await page.getByTestId('macro-json-editor').inputValue()) as Record<string, unknown>
-  createCandidate.name = 'JSON create must survive'
+  createCandidate.name = 'V4 JSON create must survive'
   const createText = JSON.stringify(createCandidate, null, 2)
   await page.getByTestId('macro-json-editor').fill(createText)
   await page.route('**/api/templates', async (route) => {
@@ -136,7 +138,7 @@ test('valid JSON keeps its edit buffer open when update or create persistence fa
   await page.unroute('**/api/templates')
 })
 
-test('V3 visual editor preserves anchored insertion, nested blocks and explicit collapse state', async ({ page, request }) => {
+test('V4 visual editor preserves anchored insertion, nested blocks and explicit collapse state', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -166,7 +168,7 @@ test('V3 visual editor preserves anchored insertion, nested blocks and explicit 
   await expect(rootFor.getByTestId('node-collapsed-badge')).toHaveCount(0)
 })
 
-test('source-dependent controls always insert an editable draft and default only to an earlier visible artifact', async ({ page, request }) => {
+test('every eligible new reference defaults to Unassigned even when compatible terminals or earlier artifacts exist', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -184,7 +186,8 @@ test('source-dependent controls always insert an editable draft and default only
   const incompleteIf = forBody.locator('[data-flow-node-type="if"]').first()
   await expect(incompleteIf).toBeVisible()
   await expect(incompleteIf.getByTestId('condition-source').first()).toHaveValue('')
-  await expect(incompleteIf.getByTestId('condition-source').first().locator('option:checked')).toHaveText('Select an earlier artifact')
+  await expect(incompleteIf.getByTestId('condition-source').first().locator('option:checked')).toHaveText('Unassigned')
+  await expect(incompleteIf.getByTestId('condition-source-warning').first()).toBeVisible()
   await incompleteIf.getByTestId('add-flow-elif').first().click()
   await expect(incompleteIf.getByTestId('if-branch-section')).toHaveCount(2)
   await expect(incompleteIf.getByTestId('condition-source').nth(1)).toHaveValue('')
@@ -197,26 +200,33 @@ test('source-dependent controls always insert an editable draft and default only
   const incompleteExtract = forBody.locator('[data-flow-node-type="extract_text"]').first()
   await expect(incompleteExtract).toBeVisible()
   await expect(incompleteExtract.getByTestId('extract-text-source')).toHaveValue('')
-  await expect(incompleteExtract.getByTestId('extract-text-source').locator('option:checked')).toHaveText('Select an earlier artifact')
+  await expect(incompleteExtract.getByTestId('extract-text-source').locator('option:checked')).toHaveText('Unassigned')
+  await expect(incompleteExtract.getByTestId('extract-text-source-warning')).toBeVisible()
   page.once('dialog', (dialog) => dialog.accept())
   await incompleteExtract.getByTestId('node-remove').first().click()
 
   await forBody.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-parallel').click()
   const incompleteParallel = forBody.locator('[data-flow-node-type="parallel"]').first()
+  await expect(incompleteParallel.getByTestId('parallel-lane-terminal')).toHaveValue('unassigned')
+  await incompleteParallel.getByTestId('parallel-add-lane').click()
+  await expect(incompleteParallel.getByTestId('parallel-lane-terminal')).toHaveValue('unassigned')
   await incompleteParallel.getByTestId('parallel-lane-add-before-output').click()
   await incompleteParallel.getByTestId('parallel-add-extract').click()
   const incompleteLaneExtract = incompleteParallel.locator('[data-testid="parallel-lane-action"][data-parallel-action-type="extract_text"]')
   await expect(incompleteLaneExtract).toBeVisible()
   await expect(incompleteLaneExtract.getByTestId('parallel-extract-source')).toHaveValue('')
-  await expect(incompleteLaneExtract.getByTestId('parallel-extract-source').locator('option:checked')).toHaveText('Select an earlier artifact')
+  await expect(incompleteLaneExtract.getByTestId('parallel-extract-source').locator('option:checked')).toHaveText('Unassigned')
+  await expect(incompleteLaneExtract.getByTestId('parallel-extract-source-warning')).toBeVisible()
   page.once('dialog', (dialog) => dialog.accept())
   await incompleteParallel.getByTestId('node-remove').first().click()
 
   await forBody.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-capture').click()
-  const outerCapture = forBody.locator('[data-flow-node-type="capture-source"]').first()
-  await outerCapture.getByTestId('node-add-after').click()
+  const producer = forBody.locator('[data-flow-node-type="capture-source"]').first()
+  await expect(producer.getByTestId('capture-step-terminal')).toHaveValue('unassigned')
+  await producer.getByTestId('capture-step-terminal').selectOption('1')
+  await producer.getByTestId('node-add-after').click()
   await page.getByTestId('add-step-parallel').click()
   const parallelAfterCapture = forBody.locator('[data-flow-node-type="parallel"]').first()
   await parallelAfterCapture.getByTestId('parallel-lane-add-before-output').click()
@@ -228,13 +238,16 @@ test('source-dependent controls always insert an editable draft and default only
   page.once('dialog', (dialog) => dialog.accept())
   await parallelAfterCapture.getByTestId('node-remove').first().click()
 
-  await outerCapture.getByTestId('node-add-after').click()
+  await producer.getByTestId('node-add-after').click()
   await page.getByTestId('add-flow-if').click()
 
   const branch = forBody.getByTestId('if-branch-section')
-  await expect(branch.getByLabel('Source').locator('option:checked')).toHaveText('capture_source.captured_text')
+  await expect(branch.getByLabel('Source').locator('option:checked')).toHaveText('Unassigned')
+  await branch.getByTestId('condition-source').selectOption('capture_source:captured_text')
   await branch.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
+  await expect(branch.getByTestId('send-terminal')).toHaveValue('unassigned')
+  await branch.getByTestId('send-terminal').selectOption('1')
   await expect(page.getByTestId('macro-validation-summary')).toHaveText('success')
 })
 
@@ -249,14 +262,14 @@ test('terminal selectors never render blank for empty, stale or incompatible tar
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
   const sendTarget = page.getByTestId('send-terminal')
-  await expect(sendTarget).toHaveValue('')
-  await expect(sendTarget).toHaveAttribute('data-terminal-select-status', 'empty')
-  await expect(sendTarget.locator('option:checked')).toHaveText('No terminals available — create a terminal first')
+  await expect(sendTarget).toHaveValue('unassigned')
+  await expect(sendTarget).toHaveAttribute('data-terminal-select-status', 'unassigned')
+  await expect(sendTarget.locator('option:checked')).toHaveText('Unassigned')
+  await expect(page.getByTestId('send-terminal-warning')).toBeVisible()
 
   await page.getByRole('button', { name: 'New shell', exact: true }).click()
-  await expect(sendTarget).toHaveValue('')
-  await expect(sendTarget).toHaveAttribute('data-terminal-select-status', 'unconfirmed')
-  await expect(sendTarget.locator('option:checked')).toHaveText('Choose terminal 1 to confirm this target')
+  await expect(sendTarget).toHaveValue('unassigned')
+  await expect(sendTarget).toHaveAttribute('data-terminal-select-status', 'unassigned')
   await sendTarget.selectOption('1')
   await expect(sendTarget).toHaveValue('1')
   await expect(sendTarget).toHaveAttribute('data-terminal-select-status', 'selected')
@@ -274,10 +287,12 @@ test('terminal selectors never render blank for empty, stale or incompatible tar
   await page.getByTestId('add-step-wait').click()
   await page.getByTestId('wait-mode').selectOption('terminal-quiet')
   const quietTarget = page.getByTestId('wait-target-tab')
+  await expect(quietTarget).toHaveValue('unassigned')
+  await quietTarget.selectOption('1')
   await expect(quietTarget).toHaveValue('1')
 })
 
-test('Send, Input, Wait, Capture and Parallel choose live terminals while hidden layout follows their references', async ({ page, request }) => {
+test('Send, Input, Wait, Capture and Parallel default Unassigned and hidden layout follows explicit references', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -293,8 +308,11 @@ test('Send, Input, Wait, Capture and Parallel choose live terminals while hidden
 
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
+  await expect(page.getByTestId('send-terminal')).toHaveValue('unassigned')
+  await page.getByTestId('send-terminal').selectOption('1')
   await expect(page.getByTestId('send-terminal')).toHaveValue('1')
   await expect(page.getByTestId('send-terminal').locator('option')).toHaveText([
+    'Unassigned',
     '1 · shell',
     '2 · shell',
     '3 · shell',
@@ -304,22 +322,26 @@ test('Send, Input, Wait, Capture and Parallel choose live terminals while hidden
 
   await page.getByTestId('node-add-after').last().click()
   await page.getByTestId('add-step-input').click()
+  await expect(page.getByTestId('input-terminal')).toHaveValue('unassigned')
   await page.getByTestId('input-terminal').selectOption('2')
   await expect(page.getByTestId('input-terminal')).toHaveValue('2')
 
   await page.getByTestId('node-add-after').last().click()
   await page.getByTestId('add-step-wait').click()
   await page.getByTestId('wait-mode').selectOption('terminal-quiet')
+  await expect(page.getByTestId('wait-target-tab')).toHaveValue('unassigned')
   await page.getByTestId('wait-target-tab').selectOption('3')
   await expect(page.getByTestId('wait-target-tab')).toHaveValue('3')
 
   await page.getByTestId('node-add-after').last().click()
   await page.getByTestId('add-step-parallel').click()
+  await expect(page.getByTestId('parallel-lane-terminal')).toHaveValue('unassigned')
   await page.getByTestId('parallel-lane-terminal').selectOption('4')
   await expect(page.getByTestId('parallel-lane-terminal')).toHaveValue('4')
 
   await page.getByTestId('node-add-after').last().click()
   await page.getByTestId('add-step-capture').click()
+  await expect(page.getByTestId('capture-step-terminal')).toHaveValue('unassigned')
   await page.getByTestId('capture-step-terminal').selectOption('5')
   await expect(page.getByTestId('capture-step-terminal')).toHaveValue('5')
   await expect(page.getByTestId('capture-kind-fixed')).toHaveText('Capture kind: text-box')
@@ -425,16 +447,16 @@ test('Macro New, Select, Discard and direct Delete stay operable while every Roo
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
   const sendTarget = page.getByTestId('send-terminal')
-  await expect(sendTarget.locator('option:checked')).toHaveText('No terminals available — create a terminal first')
+  await expect(sendTarget.locator('option:checked')).toHaveText('Unassigned')
 
   await page.getByRole('button', { name: 'New shell', exact: true }).click()
   await page.getByRole('button', { name: 'New shell', exact: true }).click()
   await page.getByRole('button', { name: 'New shell', exact: true }).click()
   await expect(page.getByTestId('terminal-tab')).toHaveCount(3)
-  await expect(sendTarget).toHaveValue('')
-  await expect(sendTarget).toHaveAttribute('data-terminal-select-status', 'unconfirmed')
-  await expect(sendTarget.locator('option:checked')).toHaveText('Choose terminal 1 to confirm this target')
+  await expect(sendTarget).toHaveValue('unassigned')
+  await expect(sendTarget).toHaveAttribute('data-terminal-select-status', 'unassigned')
   await expect(sendTarget.locator('option:not([value=""])')).toHaveText([
+    'Unassigned',
     '1 · shell',
     '2 · shell',
     '3 · shell',
@@ -458,8 +480,8 @@ test('Macro New, Select, Discard and direct Delete stay operable while every Roo
   await page.getByTestId('macro-template-drawer').click()
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
-  await expect(page.getByTestId('send-terminal')).toHaveValue('1')
-  await expect(page.getByTestId('send-terminal').locator('option:checked')).toHaveText('1 · shell')
+  await expect(page.getByTestId('send-terminal')).toHaveValue('unassigned')
+  await expect(page.getByTestId('send-terminal').locator('option:checked')).toHaveText('Unassigned')
   await expect(page.getByTestId('send-terminal').locator('option')).toContainText(['1 · shell', '2 · shell', '3 · shell'])
   expect(pageErrors).toEqual([])
 })
@@ -474,6 +496,8 @@ test('dirty Start serializes Save and keeps the visual draft inert until the bou
   await page.getByRole('button', { name: 'New text', exact: true }).click()
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
+  await expect(page.getByTestId('send-terminal')).toHaveValue('unassigned')
+  await page.getByTestId('send-terminal').selectOption('1')
   await openTemplateDrawer(page)
   await page.getByTestId('macro-save').click()
   await expect(page.getByTestId('macro-template-metadata')).not.toContainText('unsaved new macro')
@@ -534,11 +558,13 @@ test('Macro panel visibility preserves in-memory draft and unsaved work guards p
   await page.getByRole('button', { name: 'New shell', exact: true }).click()
   await openTemplateDrawer(page)
   await page.getByTestId('macro-create').click()
+  await page.getByTestId('macro-name').fill('Page memory Macro')
   await page.getByTestId('macro-template-drawer').click()
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
-  await expect(page.getByTestId('send-terminal')).toHaveValue('1')
+  await expect(page.getByTestId('send-terminal')).toHaveValue('unassigned')
   expect(await page.evaluate(() => window.dispatchEvent(new Event('beforeunload', { cancelable: true })))).toBe(false)
+  expect(await page.evaluate(() => [...Object.values(localStorage), ...Object.values(sessionStorage)].some((value) => value.includes('Page memory Macro')))).toBe(false)
 
   await expect(page.getByTestId('macro-panel-toggle')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('macro-panel-toggle').click()
@@ -547,8 +573,9 @@ test('Macro panel visibility preserves in-memory draft and unsaved work guards p
   await page.getByTestId('macro-panel-toggle').click()
   await expect(page.getByTestId('macro-panel-toggle')).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('macro-side-panel')).toBeVisible()
-  await expect(page.getByTestId('send-terminal')).toHaveValue('1')
+  await expect(page.getByTestId('send-terminal')).toHaveValue('unassigned')
   await openTemplateDrawer(page)
+  await expect(page.getByTestId('macro-name')).toHaveValue('Page memory Macro')
   await expect(page.getByTestId('macro-template-metadata')).toContainText('unsaved new macro')
   await page.getByTestId('macro-save').click()
   await expect(page.getByTestId('macro-template-metadata')).not.toContainText('unsaved new macro')
@@ -572,6 +599,7 @@ test('a delayed Prepare HTTP snapshot cannot roll back newer Room WebSocket trut
   await page.getByRole('button', { name: 'New text', exact: true }).click()
   await page.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-send').click()
+  await page.getByTestId('send-terminal').selectOption('1')
   await openTemplateDrawer(page)
   await page.getByTestId('macro-save').click()
   await page.getByTestId('macro-template-drawer').click()

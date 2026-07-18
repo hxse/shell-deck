@@ -177,7 +177,7 @@ test('published Library Create and Load remain successful if Room control change
     server.libraryStore.create = originalLibraryCreate
 
     const source = await createLibraryMacro(server, secondGrant, JSON.stringify({
-      schemaVersion: 3, name: 'Published source', description: '', terminalLayout: [], body: [],
+      schemaVersion: 4, name: 'Published source', description: '', terminalLayout: [], body: [],
     }))
     const sourceItem = source.body.item as { itemId: string; revision: number }
     const third = server.manager.connectClient(first.roomId, () => {})
@@ -213,7 +213,13 @@ test('Macro Library uses the single text gateway and Load creates fresh independ
     const invalidDefinition = await createLibraryMacro(server, controller.grant, JSON.stringify({ schemaVersion: 2, body: [] }))
     expect(invalidDefinition).toMatchObject({ status: 400, body: { ok: false, error: 'invalid_macro_definition' } })
 
-    const definition = { schemaVersion: 3, name: 'Portable', description: '', terminalLayout: [{ index: 1, type: 'text' }], body: [] }
+    const definition = {
+      schemaVersion: 4,
+      name: 'Portable incomplete draft',
+      description: '',
+      terminalLayout: [],
+      body: [{ id: 'send', type: 'send', terminal: { kind: 'unassigned' }, message: { parts: [{ kind: 'artifact', source: { kind: 'unassigned' } }] }, delivery: 'auto', ending: 'cr' }],
+    }
     const source = await createLibraryMacro(server, controller.grant, JSON.stringify(definition, null, 2))
     const item = source.body.item as { itemId: string; revision: number }
     const beforeStructure = server.manager.terminalStructureRevision(controller.roomId)
@@ -266,7 +272,7 @@ test('Library and from-Library Create recheck Room control at the canonical comm
     expect(server.libraryStore.list('note')).toEqual([])
 
     server.libraryStore.transactions.run = originalLibraryRun
-    const source = await createLibraryMacro(server, secondGrant, JSON.stringify({ schemaVersion: 3, name: 'Source', description: '', terminalLayout: [], body: [] }))
+    const source = await createLibraryMacro(server, secondGrant, JSON.stringify({ schemaVersion: 4, name: 'Source', description: '', terminalLayout: [], body: [] }))
     expect(source.status).toBe(201)
     const item = source.body.item as { itemId: string; revision: number }
     const third = server.manager.connectClient(first.roomId, () => {})
