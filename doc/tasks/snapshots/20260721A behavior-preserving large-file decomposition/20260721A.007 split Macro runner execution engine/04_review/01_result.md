@@ -34,7 +34,7 @@ AgentEvent match仍固定server instance、Room generation、terminalId、launch
 ## Gate结果
 
 * `just check`：通过，TypeScript与Svelte均为0 error / 0 warning。
-* `just build`：通过，216 modules transformed。
+* `just build`：通过，215 modules transformed。
 * `just test-unit`：168 unit与53 integration，0 fail；包含新增execution characterization及既有runner/store、fault injection、runtime sync和AgentEvent覆盖。
 * runner定向integration：`macroRuntime034`、`roomRuntimeSync035`与`agentEventWaitLimit038`共22项，拆分前后均为22/22通过。
 * `.034/.035/.037/.038` E2E：28项Chromium全部通过。

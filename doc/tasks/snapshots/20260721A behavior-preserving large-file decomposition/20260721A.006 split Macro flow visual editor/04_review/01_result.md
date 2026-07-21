@@ -37,7 +37,7 @@
 ## Gate结果
 
 * `just check`：通过，TypeScript与Svelte均为0 error / 0 warning。
-* `just build`：通过，216 modules transformed。
+* `just build`：通过，215 modules transformed。
 * `just test-unit`：165 unit与53 integration，0 fail；包含新增default/choice characterization及既有flow command、validation、runtime和lease覆盖。
 * `just test-e2e`：完整50项Chromium E2E全部通过，覆盖visual insertion/collapse、全部selector、terminal adoption、Unassigned、Parallel、readonly/single-writer、runtime与Library交互。
 * `just test-031b`：13项source/runtime inventory unit与13项current comprehensive Chromium UI journey全部通过。

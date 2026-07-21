@@ -37,7 +37,7 @@
 * focused static：2项、15个assertion通过；494条grouped rule、612条semantic selector与160组重复selector/property cascade的`.008`父版本oracle parity通过。
 * focused browser visual：1项通过；27组computed style完全一致，覆盖1600 px、900 px和720 px viewport。
 * `just check`：通过，TypeScript与Svelte均为0 error / 0 warning。
-* `just build`：通过，216 modules transformed。
+* `just build`：通过，215 modules transformed。
 * `just test-unit`：174 unit与53 integration全部通过，共1426个expectation、0 fail。
 * `just test-e2e`：由Playwright目录级自动发现53项current Chromium测试，全部通过；冻结历史的`.historical.ts`不进入current suite，新增样式回归无需维护手写文件清单。
 * `just test-031b`：14项UI inventory unit与13项综合Macro/Library/current UI Chromium全部通过。

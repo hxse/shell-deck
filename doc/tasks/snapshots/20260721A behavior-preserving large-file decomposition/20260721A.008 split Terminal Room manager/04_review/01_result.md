@@ -33,7 +33,7 @@ Destroy仍先清空controller、进入destroying并abort，随后按既有顺序
 ## Gate结果
 
 * `just check`：通过，TypeScript与Svelte均为0 error / 0 warning。
-* `just build`：通过，216 modules transformed。
+* `just build`：通过，215 modules transformed。
 * `just test-unit`：173 unit与53 integration，0 fail；覆盖real PTY lifecycle/input/output/resize、Room routing/multi-client、Text delayed echo、Prepare/runner、quiet activity与旧launch隔离。
 * `just test-e2e`：50项Chromium全部通过；包含Room双标签single-controller、显式Prepare/runner、37 MB真实PTY、Shell/Text tab切换及historical terminal query/TUI response filtering回归。
 * `git diff --check`：通过；`.orig/.rej/.bak`扫描无遗留。
