@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TerminalRuntimePosition } from '../../protocol'
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, MacroDefinitionV5, MacroTerminalReference, TextMatchCondition } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionV5 } from '../../macro/macroDefinitionTypes'
   import type { MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import { adoptRuntimeTerminal, reconcileVisualTerminalLayout } from '../../macro/macroTerminalLayoutAuthoring'
   import { terminalRuntimeChoices, type TerminalChoice } from '../../macro/macroTerminalChoices'
@@ -48,17 +48,6 @@
     return adoptRuntimeTerminal(definition, terminalIndex, runtimePositions).ok
   }
 
-  function defaultCaptureSource(kind: CaptureSourceConfig['kind']): CaptureSourceConfig {
-    const terminal: MacroTerminalReference = { kind: 'unassigned' }
-    if (kind === 'agent-event') return { kind, terminal, agent: { kind: 'codex' }, captureMode: 'result_only', waitLimit: { kind: 'unbounded' } }
-    if (kind === 'text-box') return { kind, terminal }
-    return { kind, terminal, mode: 'scrollback-tail', maxChars: 20000 }
-  }
-
-  function defaultCondition(source: FlowV2ArtifactSource): TextMatchCondition {
-    return { kind: 'text_match', source, matcher: { kind: 'simple', op: 'contains', text: 'READY' }, scope: { kind: 'whole' } }
-  }
-
   function guardLockedField(event: Event) {
     if (!locked) return
     const target = event.target
@@ -96,8 +85,6 @@
             {terminalChoices}
             {adoptTerminalSelection}
             {choiceFromIndex}
-            {defaultCaptureSource}
-            {defaultCondition}
             {insertionPaletteMode}
             {telegramProfileIds}
             {telegramProfilesError}

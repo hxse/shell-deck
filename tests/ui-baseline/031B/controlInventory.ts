@@ -30,7 +30,7 @@ export const sourceInteractiveControlDigest038 = '278ac0156e82120cbe483e2fb76427
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
 export const sourceInteractiveControlCount = 199
-export const sourceInteractiveControlDigest = 'a0d99f15b97937147d7e4e56eb0c8072f3966d4e14fdba03cf7f220147422025'
+export const sourceInteractiveControlDigest = '6ad22bd572150c1a025f7b5221d991dfb9febd8da274bc71ba8be9c718cb7e61'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
