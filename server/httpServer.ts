@@ -1,32 +1,28 @@
-import { existsSync, readFileSync, unlinkSync } from 'node:fs'
-import { extname, join, resolve } from 'node:path'
-import { PROFILE_CATALOG_SUMMARY } from '../src/lib/parser/profileCatalogSummary'
+import { readFileSync, unlinkSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
-import { assertGeneratedId, assertRoomRouteToken, createGeneratedSuffix } from '../src/lib/generatedId'
-import { assertContentResourceKey } from '../src/lib/contentEditLease'
-import { assertLibraryItemKind, libraryItemSummary, normalizeLibraryItemFields, type InvalidLibraryItemSummary, type LibraryItemKind } from '../src/lib/library/libraryTypes'
-import type { FlowV2Node, MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
-import { parseAndValidateMacroDefinitionJson, validateMacroDefinitionV5, validateMacroTerminalLayout } from '../src/lib/macro/macroDefinitionValidation'
-import type { ClientMessage, ServerMessage } from '../src/lib/protocol'
-import { parseClientMessage } from '../src/lib/protocol'
-import {
-  ROOM_CONTROL_CLIENT_HEADER,
-  ROOM_CONTROL_EPOCH_HEADER,
-  ROOM_CONTROL_LEASE_HEADER,
-  type RoomControlBearer,
-} from '../src/lib/roomControl'
-import type { TerminalRef } from '../src/lib/terminalIdentity'
-import { agentEventTokenFromRequest, ingestAgentEvent } from './agentEventIngest'
+import { createGeneratedSuffix } from '../src/lib/generatedId'
+import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
 import { ContentEditLeaseService, type ContentEditLeaseServiceOptions } from './contentEditLeaseService'
+import { handleContentRoutes } from './http/contentRoutes'
+import type { HttpContext } from './http/httpContext'
+import { errorResponse, json } from './http/httpPrimitives'
+import { handlePageRoutes } from './http/pageRoutes'
+import { handleRoomRoutes } from './http/roomRoutes'
+import { handleRunnerRoutes } from './http/runnerRoutes'
+import { LibraryStore } from './libraryStore'
+import { MacroRunStore } from './macroRunStore'
+import { MacroRunnerService } from './macroRunnerService'
 import { relocateNotificationConfig } from './notificationConfigRelocation'
 import { NotificationService } from './notificationService'
+import {
+  createRoomWebSocketHandler,
+  handleRoomWebSocketUpgrade,
+  type RoomSocketData,
+} from './roomWebSocketTransport'
 import { createServerPidRecord, parseServerPidRecord } from './serverProcessIdentity'
-import { MacroRunStore } from './macroRunStore'
-import { MacroNotRunnableError, MacroRunnerService } from './macroRunnerService'
-import { LibraryStore } from './libraryStore'
 import { MacroRecordStore, type SharedContentStoreOptions } from './sharedContentStore'
-import { ROOM_CONTROL_HEARTBEAT_MS, TerminalRoomManager, type RoomSummary } from './terminalRoomManager'
-import { WebSocketSendQueue } from './webSocketSendQueue'
+import { ROOM_CONTROL_HEARTBEAT_MS, TerminalRoomManager } from './terminalRoomManager'
 import { initializeUserDataRoot, resolveUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
 
 export type ShellDeckServer = {
@@ -56,14 +52,6 @@ export type ServerCliOptions = {
   port: number
   dataRoot?: string
   pidFile?: string
-}
-
-type SocketData = {
-  clientId: string
-  roomId: string
-  roomGeneration: string
-  sender: WebSocketSendQueue | null
-  terminationTimer: ReturnType<typeof setTimeout> | null
 }
 
 export function startShellDeckServer(options: StartOptions = {}): ShellDeckServer {
@@ -109,78 +97,48 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   manager.setActiveRunProvider((roomId, roomGeneration) => macroRunner.hasActiveRun(roomId, roomGeneration))
   manager.addDestroyHook((roomId, roomGeneration) => macroRunner.destroyRoom(roomId, roomGeneration))
 
+  const httpContext: HttpContext = {
+    manager,
+    contentEditLeases,
+    agentEventStore,
+    ingestToken,
+    notificationService,
+    libraryStore,
+    macroStore,
+    macroRunner,
+  }
+  const websocket = createRoomWebSocketHandler(httpContext)
+
   let stopPromise: Promise<void> | null = null
-  let server: ReturnType<typeof Bun.serve<SocketData>>
-  server = Bun.serve<SocketData>({
+  let server: ReturnType<typeof Bun.serve<RoomSocketData>>
+  server = Bun.serve<RoomSocketData>({
     hostname: host,
     port: options.port ?? 5177,
     async fetch(req, bunServer) {
       const url = new URL(req.url)
-      const websocketRoomId = websocketRoomRoute(url.pathname)
-      if (websocketRoomId) {
-        try { assertNoQuery(url) } catch (error) { return errorResponse(error, true) }
-        let summary: RoomSummary
-        try { summary = manager.roomSummaryById(websocketRoomId) }
-        catch (error) { return errorResponse(error, true) }
-        const upgraded = bunServer.upgrade(req, {
-          data: { clientId: '', roomId: summary.roomId, roomGeneration: summary.roomGeneration, sender: null, terminationTimer: null },
-        })
-        return upgraded ? undefined : json({ ok: false, error: 'websocket_upgrade_failed' }, 400)
-      }
-      if (url.pathname.startsWith('/ws')) return json({ ok: false, error: 'route_not_found' }, 404)
+      const websocketUpgrade = handleRoomWebSocketUpgrade(req, url, bunServer, httpContext)
+      if (websocketUpgrade.handled) return websocketUpgrade.response
 
       try {
-        return await handleHttp(req, url, manager, contentEditLeases, agentEventStore, ingestToken, notificationService, libraryStore, macroStore, macroRunner)
+        const roomResponse = await handleRoomRoutes(req, url, httpContext)
+        if (roomResponse) return roomResponse
+
+        const contentResponse = await handleContentRoutes(req, url, httpContext)
+        if (contentResponse) return contentResponse
+
+        const runnerResponse = await handleRunnerRoutes(req, url, httpContext)
+        if (runnerResponse) return runnerResponse
+
+        if (url.pathname.startsWith('/api/')) return json({ ok: false, error: 'route_not_found' }, 404)
+
+        const pageResponse = handlePageRoutes(req, url, httpContext)
+        if (pageResponse) return pageResponse
+        throw new Error('route_not_found')
       } catch (error) {
         return errorResponse(error, url.pathname.startsWith('/api/'))
       }
     },
-    websocket: {
-      open(ws) {
-        const sender = new WebSocketSendQueue({ target: ws, onFatal: (reason) => ws.close(1011, reason) })
-        ws.data.sender = sender
-        try {
-          const client = manager.connectClient(
-            ws.data.roomId,
-            (message) => sender.send(JSON.stringify(message)),
-            (code, reason) => {
-              if (ws.data.terminationTimer) clearTimeout(ws.data.terminationTimer)
-              ws.data.terminationTimer = setTimeout(() => {
-                ws.data.terminationTimer = null
-                try { ws.terminate() } catch {}
-              }, 100)
-              try { ws.close(code, reason) } catch {}
-            },
-            () => ws.ping(),
-          )
-          if (client.roomGeneration !== ws.data.roomGeneration) throw new Error('room_generation_conflict')
-          ws.data.clientId = client.clientId
-          sender.send(JSON.stringify({ type: 'runner_snapshot', snapshot: macroRunner.snapshot(ws.data.roomId) } satisfies ServerMessage))
-        } catch (error) {
-          sender.send(JSON.stringify({ type: 'terminal_error', roomId: ws.data.roomId, roomGeneration: ws.data.roomGeneration, reason: errorMessage(error) } satisfies ServerMessage))
-          ws.close(4004, 'room_not_found')
-        }
-      },
-      async message(ws, raw) {
-        const send = (reply: ServerMessage) => ws.data.sender?.send(JSON.stringify(reply))
-        try {
-          const message = parseClientMessage(typeof raw === 'string' ? raw : raw.toString())
-          await handleClientMessage(manager, ws.data.clientId, ws.data.roomId, message, send)
-        } catch (error) {
-          send({ type: 'terminal_error', roomId: ws.data.roomId, roomGeneration: ws.data.roomGeneration, reason: errorMessage(error) })
-        }
-      },
-      drain(ws) { ws.data.sender?.notifyDrain() },
-      pong(ws) {
-        if (ws.data.clientId) manager.noteClientPong(ws.data.clientId)
-      },
-      close(ws) {
-        if (ws.data.terminationTimer) clearTimeout(ws.data.terminationTimer)
-        ws.data.terminationTimer = null
-        ws.data.sender?.dispose()
-        if (ws.data.clientId) manager.disconnectClient(ws.data.clientId)
-      },
-    },
+    websocket,
   })
 
   const heartbeatTimer = setInterval(() => manager.heartbeatSweep(), ROOM_CONTROL_HEARTBEAT_MS)
@@ -215,732 +173,6 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
       return stopPromise
     },
   }
-}
-
-async function handleHttp(
-  req: Request,
-  url: URL,
-  manager: TerminalRoomManager,
-  contentEditLeases: ContentEditLeaseService,
-  agentEventStore: AgentEventStore,
-  ingestToken: string,
-  notificationService: NotificationService,
-  libraryStore: LibraryStore,
-  macroStore: MacroRecordStore<MacroDefinitionV5>,
-  macroRunner: MacroRunnerService,
-): Promise<Response> {
-  if (url.pathname === '/health') {
-    assertNoQuery(url)
-    return json({ ok: true, serverInstanceId: manager.serverInstanceId })
-  }
-
-  if (url.pathname === '/api/rooms') {
-    assertNoQuery(url)
-    if (req.method === 'GET') return json({ ok: true, rooms: manager.listRooms(), maxLiveRooms: manager.maxLiveRooms })
-    if (req.method === 'POST') {
-      if ((await req.text()).length !== 0) throw new Error('room_create_body_must_be_empty')
-      const room = manager.createRoom()
-      return json({ ok: true, room, url: '/' + room.roomId }, 201)
-    }
-    return methodNotAllowed(['GET', 'POST'])
-  }
-
-  const roomControlAcquire = /^\/api\/rooms\/([^/]+)\/control\/acquire$/.exec(url.pathname)
-  if (roomControlAcquire) {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const roomId = assertRoomRouteToken(decodeURIComponent(roomControlAcquire[1]))
-    const body = await exactObject(req, ['expectedControlEpoch'])
-    const clientId = roomControlClientId(req)
-    manager.roomControlView(roomId, clientId)
-    const grant = manager.acquireRoomControl(clientId, body.expectedControlEpoch as number)
-    return json({ ok: true, view: manager.roomControlView(roomId, clientId), grant })
-  }
-
-  const roomControlTakeOver = /^\/api\/rooms\/([^/]+)\/control\/take-over$/.exec(url.pathname)
-  if (roomControlTakeOver) {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const roomId = assertRoomRouteToken(decodeURIComponent(roomControlTakeOver[1]))
-    const body = await exactObject(req, ['expectedControlEpoch', 'confirmed'])
-    const clientId = roomControlClientId(req)
-    manager.roomControlView(roomId, clientId)
-    const grant = await manager.takeOverRoomControl(clientId, body.expectedControlEpoch as number, body.confirmed === true)
-    return json({ ok: true, view: manager.roomControlView(roomId, clientId), grant })
-  }
-
-  const roomControlRelease = /^\/api\/rooms\/([^/]+)\/control$/.exec(url.pathname)
-  if (roomControlRelease) {
-    assertNoQuery(url)
-    if (req.method !== 'DELETE') return methodNotAllowed(['DELETE'])
-    const roomId = assertRoomRouteToken(decodeURIComponent(roomControlRelease[1]))
-    await exactObject(req, [])
-    await manager.releaseRoomControl(roomControlBearer(req), roomId)
-    return json({ ok: true })
-  }
-
-  if (url.pathname === '/api/content-edit-leases/acquire') {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const body = await exactObject(req, ['resourceKey', 'expectedLeaseEpoch'])
-    const resourceKey = assertContentResourceKey(body.resourceKey)
-    const result = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
-      await contentEditLeases.acquire(ticket, resourceKey, body.expectedLeaseEpoch as number)
-    ))
-    return json({ ok: true, ...result })
-  }
-
-  if (url.pathname === '/api/content-edit-leases/view') {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const body = await exactObject(req, ['resourceKey'])
-    const view = await contentEditLeases.view(assertContentResourceKey(body.resourceKey))
-    return json({ ok: true, view })
-  }
-
-  if (url.pathname === '/api/content-edit-leases/take-over') {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const body = await exactObject(req, ['resourceKey', 'expectedLeaseEpoch', 'confirmed'])
-    const resourceKey = assertContentResourceKey(body.resourceKey)
-    const result = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
-      await contentEditLeases.takeOver(ticket, resourceKey, body.expectedLeaseEpoch as number, body.confirmed === true)
-    ))
-    return json({ ok: true, ...result })
-  }
-
-  if (url.pathname === '/api/templates') {
-    assertNoQuery(url)
-    if (req.method === 'GET') {
-      const scan = macroStore.scan()
-      const invalidRecords: Array<{ recordId: string; error: 'invalid_macro_record' | 'invalid_macro_record_definition' }> = [...scan.invalidRecords]
-      const templates = scan.records.flatMap((record) => {
-        const validated = validateMacroDefinitionV5(record.definition)
-        if (!validated.ok) {
-          invalidRecords.push({ recordId: record.id, error: 'invalid_macro_record_definition' })
-          return []
-        }
-        return [{
-          id: record.id,
-          revision: record.revision,
-          name: validated.value.name,
-          description: validated.value.description,
-          updatedAt: record.updatedAt,
-          stepCount: countMacroNodes(validated.value.body),
-        }]
-      })
-      invalidRecords.sort((left, right) => left.recordId.localeCompare(right.recordId))
-      return json({ ok: true, templates, invalidRecords })
-    }
-    if (req.method === 'POST') {
-      const body = await exactObject(req, ['definition'])
-      const validation = validateMacroDefinitionV5(body.definition)
-      if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
-      const template = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => {
-        ticket.assertAuthorized()
-        return await macroStore.create(validation.value, ticket.signal, () => ticket.assertAuthorized())
-      })
-      manager.broadcastAllClients(() => ({
-        type: 'content_record_changed',
-        resourceKey: { kind: 'macro', itemId: template.id },
-        operation: 'saved',
-        revision: template.revision,
-      }))
-      return json({ ok: true, template }, 201)
-    }
-    return methodNotAllowed(['GET', 'POST'])
-  }
-
-  if (url.pathname === '/api/library/items') {
-    if (req.method === 'GET') {
-      const query = exactQuery(url, ['kind', 'q'], ['kind'])
-      const kind = assertLibraryItemKind(query.get('kind'))
-      const scan = libraryStore.scan(kind, query.get('q') ?? '')
-      const invalidItems: InvalidLibraryItemSummary[] = [...scan.invalidItems]
-      const items = scan.records.flatMap((item) => {
-        if (kind === 'macro-template' && !parseAndValidateMacroDefinitionJson(item.content).ok) {
-          invalidItems.push({ itemId: item.itemId, error: 'invalid_library_macro_definition' })
-          return []
-        }
-        return [libraryItemSummary(item)]
-      })
-      invalidItems.sort((left, right) => left.itemId.localeCompare(right.itemId))
-      return json({ ok: true, items, invalidItems })
-    }
-    assertNoQuery(url)
-    if (req.method === 'POST') {
-      const body = await exactObject(req, ['kind', 'title', 'content', 'description', 'tags'])
-      const kind = assertLibraryItemKind(body.kind)
-      const fields = normalizeLibraryItemFields({ title: body.title, content: body.content, description: body.description, tags: body.tags })
-      const macroValidation = validateLibraryMacroContent(kind, fields.content)
-      if (macroValidation) return macroValidation
-      const item = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => {
-        ticket.assertAuthorized()
-        return await libraryStore.create(kind, fields, ticket.signal, () => ticket.assertAuthorized())
-      })
-      broadcastLibraryChange(manager, item.kind, item.itemId, 'saved', item.revision)
-      return json({ ok: true, item }, 201)
-    }
-    return methodNotAllowed(['GET', 'POST'])
-  }
-
-  const libraryItemRoute = /^\/api\/library\/items\/([^/]+)\/([^/]+)$/.exec(url.pathname)
-  if (libraryItemRoute) {
-    assertNoQuery(url)
-    const kind = assertLibraryItemKind(decodeURIComponent(libraryItemRoute[1]))
-    const itemId = assertGeneratedId(decodeURIComponent(libraryItemRoute[2]), 'libraryItem')
-    if (req.method === 'GET') {
-      const item = libraryStore.read(kind, itemId)
-      if (kind === 'macro-template' && !parseAndValidateMacroDefinitionJson(item.content).ok) throw new Error('invalid_library_macro_definition')
-      return json({ ok: true, item })
-    }
-    if (req.method === 'PUT') {
-      const body = await exactObject(req, ['title', 'content', 'description', 'tags', 'expectedRevision', 'editLeaseId'])
-      const fields = normalizeLibraryItemFields({ title: body.title, content: body.content, description: body.description, tags: body.tags })
-      const macroValidation = validateLibraryMacroContent(kind, fields.content)
-      if (macroValidation) return macroValidation
-      const expectedRevision = assertPositiveRevision(body.expectedRevision, 'invalid_library_item_revision')
-      const editLeaseId = assertGeneratedId(body.editLeaseId, 'contentEditLease')
-      const committed = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => (
-        await contentEditLeases.commit(
-          ticket,
-          { kind: 'library', itemKind: kind, itemId },
-          editLeaseId,
-          expectedRevision,
-          (_path, currentRevision) => libraryStore.commitUpdate(kind, itemId, currentRevision, fields),
-        )
-      ))
-      const item = committed.value
-      broadcastLibraryChange(manager, kind, itemId, 'saved', item.revision)
-      return json({ ok: true, item, leaseOutcome: committed.leaseOutcome })
-    }
-    if (req.method === 'DELETE') {
-      if ((await req.text()).length !== 0) throw new Error('request_body_must_be_empty')
-      const expectedRevision = parseIfMatch(req, 'invalid_library_item_revision')
-      const editLeaseId = contentEditLeaseHeader(req)
-      const committed = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => (
-        await contentEditLeases.commit(
-          ticket,
-          { kind: 'library', itemKind: kind, itemId },
-          editLeaseId,
-          expectedRevision,
-          (_path, currentRevision) => libraryStore.commitDelete(kind, itemId, currentRevision),
-          { deleteRecord: true },
-        )
-      ))
-      broadcastLibraryChange(manager, kind, itemId, 'deleted', null)
-      return json({ ok: true, leaseOutcome: committed.leaseOutcome })
-    }
-    return methodNotAllowed(['GET', 'PUT', 'DELETE'])
-  }
-
-  if (url.pathname === '/api/templates/from-library') {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const body = await exactObject(req, ['itemId', 'expectedRevision'])
-    const itemId = assertGeneratedId(body.itemId, 'libraryItem')
-    const expectedRevision = assertPositiveRevision(body.expectedRevision, 'invalid_library_item_revision')
-    const result = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => {
-      ticket.assertAuthorized()
-      const item = libraryStore.read('macro-template', itemId)
-      if (item.revision !== expectedRevision) throw new Error('content_revision_conflict')
-      const validation = parseAndValidateMacroDefinitionJson(item.content)
-      if (!validation.ok) return { ok: false as const, error: validation.error }
-      const created = await macroStore.create(validation.value, ticket.signal, () => {
-        ticket.assertAuthorized()
-        if (libraryStore.read('macro-template', itemId).revision !== expectedRevision) throw new Error('content_revision_conflict')
-      })
-      return { ok: true as const, template: created }
-    })
-    if (!result.ok) return macroValidationResponse(result.error)
-    const template = result.template
-    manager.broadcastAllClients(() => ({
-      type: 'content_record_changed',
-      resourceKey: { kind: 'macro', itemId: template.id },
-      operation: 'saved',
-      revision: template.revision,
-    }))
-    return json({ ok: true, template }, 201)
-  }
-
-  const templateRoute = /^\/api\/templates\/([^/]+)$/.exec(url.pathname)
-  if (templateRoute) {
-    assertNoQuery(url)
-    const templateId = assertGeneratedId(decodeURIComponent(templateRoute[1]), 'macroTemplate')
-    if (req.method === 'GET') {
-      const template = macroStore.read(templateId)
-      if (!validateMacroDefinitionV5(template.definition).ok) throw new Error('invalid_macro_record_definition')
-      return json({ ok: true, template })
-    }
-    if (req.method === 'PUT') {
-      const body = await exactObject(req, ['expectedRevision', 'editLeaseId', 'definition'])
-      const validation = validateMacroDefinitionV5(body.definition)
-      if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
-      const expectedRevision = assertPositiveRevision(body.expectedRevision)
-      const editLeaseId = assertGeneratedId(body.editLeaseId, 'contentEditLease')
-      const committed = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => (
-        await contentEditLeases.commit(
-          ticket,
-          { kind: 'macro', itemId: templateId },
-          editLeaseId,
-          expectedRevision,
-          (_path, currentRevision) => macroStore.commitUpdate(templateId, currentRevision, validation.value),
-        )
-      ))
-      const template = committed.value
-      manager.broadcastAllClients(() => ({
-        type: 'content_record_changed',
-        resourceKey: { kind: 'macro', itemId: template.id },
-        operation: 'saved',
-        revision: template.revision,
-      }))
-      return json({ ok: true, template, leaseOutcome: committed.leaseOutcome })
-    }
-    if (req.method === 'DELETE') {
-      if ((await req.text()).length !== 0) throw new Error('request_body_must_be_empty')
-      const expectedRevision = parseIfMatch(req)
-      const editLeaseId = contentEditLeaseHeader(req)
-      const committed = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => (
-        await contentEditLeases.commit(
-          ticket,
-          { kind: 'macro', itemId: templateId },
-          editLeaseId,
-          expectedRevision,
-          (_path, currentRevision) => macroStore.commitDelete(templateId, currentRevision),
-          { deleteRecord: true },
-        )
-      ))
-      manager.broadcastAllClients(() => ({
-        type: 'content_record_changed',
-        resourceKey: { kind: 'macro', itemId: templateId },
-        operation: 'deleted',
-        revision: null,
-      }))
-      return json({ ok: true, leaseOutcome: committed.leaseOutcome })
-    }
-    return methodNotAllowed(['GET', 'PUT', 'DELETE'])
-  }
-
-  const prepareRoute = /^\/api\/rooms\/([^/]+)\/terminals\/prepare$/.exec(url.pathname)
-  if (prepareRoute) {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const roomId = assertRoomRouteToken(decodeURIComponent(prepareRoute[1]))
-    const body = await exactObject(req, ['terminalLayout', 'expectedTerminalStructureRevision'])
-    const layout = validateMacroTerminalLayout(body.terminalLayout)
-    if (!layout.ok) return json({ ok: false, error: 'invalid_terminal_layout', issues: layout.issues }, 400)
-    const expectedRevision = assertTerminalStructureRevision(body.expectedTerminalStructureRevision)
-    const result = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
-      await manager.runTerminalStructureOperation(ticket, expectedRevision, async () => {
-        for (const required of layout.value) {
-          ticket.assertAuthorized()
-          const positions = manager.terminalPositions(roomId)
-          const current = positions[required.index - 1]
-          if (current?.type === required.type) continue
-          const later = positions.slice(required.index).find((position) => position.type === required.type)
-          try {
-            if (later) manager.moveTerminal(roomId, later.terminalId, required.index)
-            else manager.createTerminal(roomId, { backend: required.type === 'text' ? 'text' : 'real', insertAtIndex: required.index })
-          } catch (error) {
-            const code = errorMessage(error)
-            if (code.startsWith('room_') || code.startsWith('terminal_structure_')) throw error
-            const snapshot = manager.roomSnapshot(roomId)
-            return { ok: false as const, error: 'terminal_prepare_backend_failed', failedIndex: required.index, operation: later ? 'move' : 'create', snapshot }
-          }
-          ticket.assertAuthorized()
-        }
-        return { ok: true as const, snapshot: manager.roomSnapshot(roomId) }
-      })
-    ), roomId)
-    return json(result, result.ok ? 200 : 409)
-  }
-
-  const runnerRoute = /^\/api\/rooms\/([^/]+)\/runner(?:\/(start|pause|resume|stop|input-draft|input))?$/.exec(url.pathname)
-  const runnerTracesRoute = /^\/api\/rooms\/([^/]+)\/runner\/traces$/.exec(url.pathname)
-  if (runnerTracesRoute) {
-    assertNoQuery(url)
-    if (req.method !== 'GET') return methodNotAllowed(['GET'])
-    const roomId = assertRoomRouteToken(decodeURIComponent(runnerTracesRoute[1]))
-    manager.roomSummaryById(roomId)
-    return json({ ok: true, traces: macroRunner.traces(roomId) })
-  }
-  if (runnerRoute) {
-    assertNoQuery(url)
-    const roomId = assertRoomRouteToken(decodeURIComponent(runnerRoute[1]))
-    const action = runnerRoute[2]
-    if (!action) {
-      if (req.method !== 'GET') return methodNotAllowed(['GET'])
-      return json({ ok: true, runner: macroRunner.snapshot(roomId) })
-    }
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    if (action === 'start') {
-      const body = await exactObject(req, ['templateId', 'expectedMacroRevision', 'expectedTerminalStructureRevision'])
-      const templateId = assertGeneratedId(body.templateId, 'macroTemplate')
-      const expectedMacroRevision = assertPositiveRevision(body.expectedMacroRevision)
-      const expectedStructureRevision = assertTerminalStructureRevision(body.expectedTerminalStructureRevision)
-      const preflight = macroRunner.preflightStart(templateId)
-      const runner = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
-        await manager.runTerminalStructureOperation(ticket, expectedStructureRevision, async () => (
-          await macroRunner.start(ticket, templateId, expectedMacroRevision, expectedStructureRevision, preflight)
-        ))
-      ), roomId)
-      return json({ ok: true, runner }, 201)
-    }
-    const body = action === 'input' || action === 'input-draft'
-      ? await exactObject(req, ['invocationId', 'value', 'expectedInputRevision'])
-      : await exactObject(req, [])
-    const runner = await manager.runControlledBearerOperation(roomControlBearer(req), (ticket) => {
-      ticket.assertAuthorized()
-      if (action === 'pause') return macroRunner.pause(roomId)
-      if (action === 'resume') return macroRunner.resume(roomId)
-      if (action === 'stop') return macroRunner.stop(roomId)
-      if (typeof body.value !== 'string') throw new Error('runner_input_must_be_string')
-      const invocationId = assertGeneratedId(body.invocationId, 'runnerInput')
-      const expectedInputRevision = assertNonNegativeRevision(body.expectedInputRevision, 'invalid_runner_input_revision')
-      return action === 'input-draft'
-        ? macroRunner.updateInputDraft(roomId, invocationId, body.value, expectedInputRevision)
-        : macroRunner.submitInput(roomId, invocationId, body.value, expectedInputRevision)
-    }, roomId)
-    return json({ ok: true, runner })
-  }
-
-  const contentLeaseRelease = /^\/api\/content-edit-leases\/([^/]+)$/.exec(url.pathname)
-  if (contentLeaseRelease) {
-    assertNoQuery(url)
-    if (req.method !== 'DELETE') return methodNotAllowed(['DELETE'])
-    await exactObject(req, [])
-    const editLeaseId = assertGeneratedId(decodeURIComponent(contentLeaseRelease[1]), 'contentEditLease')
-    const view = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
-      await contentEditLeases.release(ticket, editLeaseId)
-    ))
-    return json({ ok: true, view })
-  }
-
-  const roomApi = /^\/api\/rooms\/([^/]+)$/.exec(url.pathname)
-  if (roomApi) {
-    assertNoQuery(url)
-    const roomId = assertRoomRouteToken(decodeURIComponent(roomApi[1]))
-    if (req.method !== 'DELETE') return methodNotAllowed(['DELETE'])
-    const body = await exactObject(req, ['expectedRoomGeneration'])
-    if (typeof body.expectedRoomGeneration !== 'string') throw new Error('expected_room_generation_required')
-    await manager.destroyRoom(roomId, body.expectedRoomGeneration)
-    return json({ ok: true })
-  }
-
-  const ingest = /^\/api\/rooms\/([^/]+)\/agent-events$/.exec(url.pathname)
-  if (ingest) {
-    assertNoQuery(url)
-    if (req.method !== 'POST') return methodNotAllowed(['POST'])
-    const roomId = assertRoomRouteToken(decodeURIComponent(ingest[1]))
-    const result = ingestAgentEvent(await requestJson(req), agentEventTokenFromRequest(req), {
-      roomId,
-      expectedToken: ingestToken,
-      manager,
-      store: agentEventStore,
-    })
-    return result.ok ? json({ ok: true, event: result.event }, 201) : json(result, result.status)
-  }
-
-  if (url.pathname === '/api/notification-profiles/telegram') {
-    if (req.method !== 'GET') return methodNotAllowed(['GET'])
-    assertNoQuery(url)
-    return json({ ok: true, profiles: notificationService.listTelegramProfileIds() })
-  }
-
-  if (url.pathname === '/api/macro/profile-catalog') {
-    if (req.method !== 'GET') return methodNotAllowed(['GET'])
-    assertNoQuery(url)
-    return json({ ok: true, profileCatalog: PROFILE_CATALOG_SUMMARY })
-  }
-
-  if (url.pathname.startsWith('/api/')) return json({ ok: false, error: 'route_not_found' }, 404)
-
-  const asset = req.method === 'GET' ? serveStaticAsset(url.pathname) : null
-  if (asset) return asset
-  if (req.method !== 'GET') return methodNotAllowed(['GET'])
-
-  if (url.pathname === '/') {
-    assertNoQuery(url)
-    const entry = manager.ensureRootRoom()
-    if (entry.kind === 'created') {
-      return new Response(null, {
-        status: 302,
-        headers: { location: '/' + entry.room.roomId, 'cache-control': 'no-store, private' },
-      })
-    }
-    return serveIndex()
-  }
-
-  if (!/^\/[^/]+$/.test(url.pathname)) return notFoundPage('route_not_found')
-  assertNoQuery(url)
-  const roomId = assertRoomRouteToken(decodeURIComponent(url.pathname.slice(1)))
-  manager.ensureRoomFromRoute(roomId)
-  return serveIndex()
-}
-
-async function handleClientMessage(manager: TerminalRoomManager, clientId: string, roomId: string, message: ClientMessage, send: (message: ServerMessage) => void): Promise<void> {
-  if (message.type !== 'request_replay' && message.type !== 'request_snapshot') {
-    if (isTerminalStructureMessage(message)) {
-      await manager.runControlledClientOperation(clientId, async (ticket) => (
-        await manager.runTerminalStructureMutation(ticket, () => handleMutatingClientMessage(manager, roomId, message, send))
-      ))
-    } else manager.runControlledClientMutation(clientId, () => handleMutatingClientMessage(manager, roomId, message, send))
-    return
-  }
-  if (message.type === 'request_replay') send(manager.requestReplay(roomId, terminalRefFromMessage(message)))
-  else send(manager.roomSnapshot(roomId))
-}
-
-function isTerminalStructureMessage(message: ClientMessage): boolean {
-  return message.type === 'create_terminal' || message.type === 'reorder_terminal' || message.type === 'close_terminal' || message.type === 'reset_terminal'
-}
-
-function handleMutatingClientMessage(manager: TerminalRoomManager, roomId: string, message: Exclude<ClientMessage, { type: 'request_replay' | 'request_snapshot' }>, send: (message: ServerMessage) => void): void {
-  switch (message.type) {
-    case 'create_terminal': {
-      const terminal = manager.createTerminal(roomId, { backend: message.backend, cols: message.cols, rows: message.rows, cwd: message.cwd, cwdSource: message.cwdSource })
-      send({ type: 'terminal_created', roomId: terminal.roomId, roomGeneration: terminal.roomGeneration, terminalId: terminal.terminalId })
-      return
-    }
-    case 'terminal_input':
-      manager.input(roomId, terminalRefFromMessage(message), message.data)
-      return
-    case 'set_terminal_text':
-      manager.setTextContent(roomId, terminalRefFromMessage(message), message.content)
-      return
-    case 'terminal_resize':
-      manager.resize(roomId, terminalRefFromMessage(message), message.cols, message.rows)
-      return
-    case 'reorder_terminal':
-      manager.moveTerminal(roomId, message.terminalId, message.newIndex)
-      return
-    case 'close_terminal':
-      manager.closeTerminal(roomId, terminalRefFromMessage(message))
-      return
-    case 'reset_terminal': {
-      const result = manager.resetTerminal(roomId, terminalRefFromMessage(message), message.backend)
-      if (!result.ok) send({ type: 'terminal_error', ...roomContext(manager, roomId), reason: result.reason })
-      return
-    }
-  }
-}
-
-function terminalRefFromMessage(message: { terminalId?: string; terminalIndex?: number }): TerminalRef {
-  if (message.terminalId !== undefined) return { kind: 'id', value: message.terminalId }
-  if (message.terminalIndex !== undefined) return { kind: 'index', value: message.terminalIndex }
-  throw new Error('terminal_ref_must_have_exactly_one_selector')
-}
-
-function roomContext(manager: TerminalRoomManager, roomId: string) {
-  const room = manager.roomSummaryById(roomId)
-  return { roomId: room.roomId, roomGeneration: room.roomGeneration }
-}
-
-function websocketRoomRoute(pathname: string): string | null {
-  const match = /^\/ws\/rooms\/([^/]+)$/.exec(pathname)
-  if (!match) return null
-  try { return assertRoomRouteToken(decodeURIComponent(match[1])) }
-  catch { return null }
-}
-
-function serveStaticAsset(pathname: string): Response | null {
-  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico') return null
-  const dist = resolve(import.meta.dir, '..', 'dist')
-  const target = resolve(dist, '.' + pathname)
-  if (!target.startsWith(dist + '/') || !existsSync(target)) return null
-  return new Response(Bun.file(target), { headers: { 'content-type': contentType(target) } })
-}
-
-function serveIndex(): Response {
-  const built = resolve(import.meta.dir, '..', 'dist', 'index.html')
-  const fallback = resolve(import.meta.dir, '..', 'index.html')
-  const path = existsSync(built) ? built : fallback
-  if (!existsSync(path)) return new Response('shell-deck', { headers: { 'content-type': 'text/plain; charset=utf-8' } })
-  return new Response(readFileSync(path), { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } })
-}
-
-function notFoundPage(error: string): Response {
-  return new Response('<!doctype html><meta charset="utf-8"><title>shell-deck</title><p>' + escapeHtml(error) + '</p><a href="/">Home</a>', {
-    status: error === 'room_capacity_reached' ? 409 : 404,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
-  })
-}
-
-function errorResponse(error: unknown, api: boolean): Response {
-  if (api && error instanceof MacroNotRunnableError) return json({ ok: false, error: error.message, issues: error.issues }, 400)
-  const message = errorMessage(error)
-  const status = errorStatus(message)
-  return api ? json({ ok: false, error: message }, status) : notFoundPage(message)
-}
-
-function errorStatus(message: string): number {
-  if (message === 'room_not_found' || message === 'route_not_found') return 404
-  if (
-    message === 'room_capacity_reached'
-    || message === 'room_destroying'
-    || message === 'room_generation_conflict'
-    || message.startsWith('room_control_')
-    || message.startsWith('content_edit_')
-    || message === 'content_revision_conflict'
-    || message === 'terminal_structure_revision_conflict'
-    || message === 'room_structure_locked_by_run'
-    || message === 'macro_revision_conflict'
-    || message === 'run_already_active'
-    || message.startsWith('runner_input_')
-    || message === 'runner_not_waiting_input'
-  ) return 409
-  if (message.startsWith('macro_record_not_found:') || message.startsWith('library_item_not_found:')) return 404
-  if (message.includes('permissions_too_open')) return 503
-  return 400
-}
-
-function assertPositiveRevision(value: unknown, error = 'invalid_macro_revision'): number {
-  if (!Number.isInteger(value) || (value as number) < 1) throw new Error(error)
-  return value as number
-}
-
-function assertTerminalStructureRevision(value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) < 0) throw new Error('invalid_terminal_structure_revision')
-  return value as number
-}
-
-function assertNonNegativeRevision(value: unknown, error: string): number {
-  if (!Number.isInteger(value) || (value as number) < 0) throw new Error(error)
-  return value as number
-}
-
-function parseIfMatch(req: Request, error = 'invalid_macro_revision'): number {
-  const value = req.headers.get('if-match')
-  if (!value || !/^[1-9][0-9]*$/.test(value)) throw new Error(error)
-  return Number(value)
-}
-
-function exactQuery(url: URL, allowed: string[], required: string[] = []): URLSearchParams {
-  for (const key of url.searchParams.keys()) {
-    if (!allowed.includes(key)) throw new Error('query_unknown_field:' + key)
-    if (url.searchParams.getAll(key).length !== 1) throw new Error('query_duplicate_field:' + key)
-  }
-  for (const key of required) if (!url.searchParams.has(key)) throw new Error('query_missing_field:' + key)
-  return url.searchParams
-}
-
-function validateLibraryMacroContent(kind: LibraryItemKind, content: string): Response | null {
-  if (kind !== 'macro-template') return null
-  const validation = parseAndValidateMacroDefinitionJson(content)
-  return validation.ok ? null : macroValidationResponse(validation.error)
-}
-
-function macroValidationResponse(error: Exclude<ReturnType<typeof parseAndValidateMacroDefinitionJson>, { ok: true }>['error']): Response {
-  return error.code === 'invalid_json'
-    ? json({ ok: false, error: error.code, offset: error.offset, line: error.line, column: error.column, message: error.message }, 400)
-    : json({ ok: false, error: error.code, issues: error.issues }, 400)
-}
-
-function broadcastLibraryChange(manager: TerminalRoomManager, kind: LibraryItemKind, itemId: string, operation: 'saved' | 'deleted', revision: number | null): void {
-  manager.broadcastAllClients(() => ({
-    type: 'content_record_changed',
-    resourceKey: { kind: 'library', itemKind: kind, itemId },
-    operation,
-    revision,
-  }))
-}
-
-function contentEditLeaseHeader(req: Request): string {
-  const value = req.headers.get('x-shell-deck-content-edit-lease')
-  if (!value) throw new Error('content_edit_lease_required')
-  return assertGeneratedId(value, 'contentEditLease')
-}
-
-function countMacroNodes(nodes: FlowV2Node[]): number {
-  let count = 0
-  const visit = (items: FlowV2Node[]) => {
-    for (const node of items) {
-      count += 1
-      if (node.type === 'if') {
-        for (const branch of node.branches) visit(branch.body)
-        if (node.else) visit(node.else)
-      }
-      if (node.type === 'for') visit(node.body)
-      if (node.type === 'parallel') for (const lane of node.lanes) count += lane.body.length
-      if ((node.type === 'break' || node.type === 'continue' || node.type === 'finish') && node.body) visit(node.body)
-    }
-  }
-  visit(nodes)
-  return count
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
-}
-
-function methodNotAllowed(allow: string[]): Response {
-  return new Response('method_not_allowed', { status: 405, headers: { allow: allow.join(', ') } })
-}
-
-async function requestJson(req: Request): Promise<unknown> {
-  const text = await req.text()
-  if (!text) throw new Error('request_body_required')
-  try { return JSON.parse(text) }
-  catch { throw new Error('invalid_request_json') }
-}
-
-async function exactObject(req: Request, keys: string[]): Promise<Record<string, unknown>> {
-  const value = await requestJson(req)
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('request_body_must_be_object')
-  const record = value as Record<string, unknown>
-  const unknown = Object.keys(record).find((key) => !keys.includes(key))
-  if (unknown) throw new Error('request_unknown_field:' + unknown)
-  const missing = keys.find((key) => !Object.prototype.hasOwnProperty.call(record, key))
-  if (missing) throw new Error('request_missing_field:' + missing)
-  return record
-}
-
-function roomControlClientId(req: Request): string {
-  const value = req.headers.get(ROOM_CONTROL_CLIENT_HEADER)
-  if (!value) throw new Error('room_control_required')
-  try { return assertGeneratedId(value, 'client') }
-  catch { throw new Error('room_control_required') }
-}
-
-function roomControlBearer(req: Request): RoomControlBearer {
-  const clientId = req.headers.get(ROOM_CONTROL_CLIENT_HEADER)
-  const controlLeaseId = req.headers.get(ROOM_CONTROL_LEASE_HEADER)
-  const epochText = req.headers.get(ROOM_CONTROL_EPOCH_HEADER)
-  if (!clientId || !controlLeaseId || !epochText) throw new Error('room_control_required')
-  if (!/^(0|[1-9][0-9]*)$/.test(epochText)) throw new Error('room_control_lost')
-  try {
-    return {
-      clientId: assertGeneratedId(clientId, 'client'),
-      controlLeaseId: assertGeneratedId(controlLeaseId, 'roomControlLease'),
-      controlEpoch: Number(epochText),
-    }
-  } catch {
-    throw new Error('room_control_lost')
-  }
-}
-
-function assertNoQuery(url: URL): void {
-  if ([...url.searchParams].length > 0) throw new Error('query_not_supported')
-}
-
-function contentType(path: string): string {
-  switch (extname(path)) {
-    case '.html': return 'text/html; charset=utf-8'
-    case '.js': return 'text/javascript; charset=utf-8'
-    case '.css': return 'text/css; charset=utf-8'
-    case '.json': return 'application/json; charset=utf-8'
-    case '.svg': return 'image/svg+xml'
-    case '.ico': return 'image/x-icon'
-    default: return 'application/octet-stream'
-  }
-}
-
-function escapeHtml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
 async function finishHttpTransportStop(server: { unref(): void }, stopping: Promise<void>): Promise<void> {
