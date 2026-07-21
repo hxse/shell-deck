@@ -4,6 +4,7 @@ import {
   MACRO_DEFINITION_ISSUE_CODES,
   parseAndValidateMacroDefinitionJson,
   parseAndValidateMacroTerminalLayoutFromDefinitionJson,
+  type MacroDefinitionIssue,
   validateMacroDefinitionV5,
   validateRunnableMacroDefinitionV5,
   validateMacroTerminalLayout,
@@ -20,6 +21,55 @@ import {
   terminalSelectState,
 } from '../../src/lib/macro/macroTerminalChoices'
 import type { TerminalRuntimePosition } from '../../src/lib/protocol'
+
+test('Macro validation keeps the complete multi-issue code, path, message and order across value and JSON gateways', () => {
+  const invalid = {
+    schemaVersion: 4,
+    name: '',
+    description: 1,
+    terminalLayout: [{ index: 2, type: 'shell', legacy: true }],
+    body: [
+      {
+        id: 'duplicate',
+        type: 'send',
+        legacy: true,
+        terminal: { kind: 'unassigned', index: 1 },
+        message: { parts: [{ kind: 'artifact', source: { kind: 'step_artifact', stepId: 'later', artifact: 'captured_text' } }] },
+        delivery: 'legacy',
+        ending: 'legacy',
+      },
+      {
+        id: 'duplicate',
+        type: 'capture-source',
+        capture: { kind: 'text-box', terminal: { kind: 'terminal_index', index: 2 } },
+      },
+    ],
+    legacyTop: true,
+  }
+  const issues: MacroDefinitionIssue[] = [
+    { code: 'invalid_literal', path: 'body[0].delivery', message: 'delivery must be auto, direct-bytes or bracketed-paste' },
+    { code: 'invalid_literal', path: 'body[0].ending', message: 'ending must be none, lf, cr or crlf' },
+    { code: 'unknown_field', path: 'body[0].legacy', message: 'unknown field: legacy' },
+    { code: 'invalid_reference', path: 'body[0].message.parts[0].source', message: 'artifact source must reference an earlier compatible output' },
+    { code: 'unknown_field', path: 'body[0].terminal.index', message: 'unknown field: index' },
+    { code: 'terminal_reference_missing', path: 'body[1].capture.terminal.index', message: 'terminal reference index must exist in terminalLayout' },
+    { code: 'duplicate_identifier', path: 'body[1].id', message: 'identifier must be unique' },
+    { code: 'expected_string', path: 'description', message: 'value must be a string' },
+    { code: 'unknown_field', path: 'legacyTop', message: 'unknown field: legacyTop' },
+    { code: 'invalid_range', path: 'name', message: 'string must not be empty' },
+    { code: 'invalid_literal', path: 'schemaVersion', message: 'schemaVersion must be 5' },
+    { code: 'terminal_layout_not_contiguous', path: 'terminalLayout[0].index', message: 'terminalLayout index must be 1' },
+    { code: 'unknown_field', path: 'terminalLayout[0].legacy', message: 'unknown field: legacy' },
+  ]
+
+  const valueResult = validateMacroDefinitionV5(invalid)
+  expect(valueResult).toEqual({ ok: false, issues })
+  expect(validateRunnableMacroDefinitionV5(invalid)).toEqual(valueResult)
+  expect(parseAndValidateMacroDefinitionJson(JSON.stringify(invalid))).toEqual({
+    ok: false,
+    error: { code: 'invalid_macro_definition', issues },
+  })
+})
 
 test('MacroDefinitionV5 accepts only index/type terminal layout and current text-list template tokens', () => {
   const definition = validDefinition()
