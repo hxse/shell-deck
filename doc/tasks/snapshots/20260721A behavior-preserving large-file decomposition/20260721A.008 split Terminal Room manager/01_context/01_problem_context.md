@@ -1,0 +1,5 @@
+# Problem Context
+
+TerminalRoomManager同时维护多个层次：process内Room registry、每Room lifecycle/queue、terminal结构、PTY/Text实例、replay/output activity和wire snapshot。它们都在一个文件中，但不能被拆成互不协调的services，因为terminal mutation与Destroy必须共享同一admission/critical section。
+
+本任务采用内部模块而非多个公开manager。runtime object仍由一个Room record拥有；snapshot projection只读取该record；mutation/lifecycle coordinator只在manager持有的串行domain内执行。
