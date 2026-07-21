@@ -1,0 +1,5 @@
+# Problem Context
+
+MacroRunnerService当前既拥有run状态机，也递归解释For/If/Parallel并实现每种Action。这些职责共享checkpoint和event append，但ownership不同：executor决定下一步，service决定run是否仍然存在、是否能提交状态和何时形成唯一终态。
+
+本任务不能把service拆成多个并列state machine。抽出的executor是受控执行器，每次I/O或cooperative yield前后都调用由service提供的checkpoint；所有live state和durable event仍通过service的单一commit boundary。
