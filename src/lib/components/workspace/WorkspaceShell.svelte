@@ -36,6 +36,23 @@
   }>()
 
   let macroPanel = $state<{ loadFromLibrary(itemId: string, expectedRevision: number): Promise<{ selected: boolean; recordId: string }> } | null>(null)
+  let retainedTerminalIds = $state<string[]>([])
+  const visibleTerminalId = $derived(activeTerminal?.terminalId ?? null)
+  const retainedTerminalIdSet = $derived(new Set(retainedTerminalIds))
+  const retainedTerminals = $derived(terminals.filter((terminal: TerminalViewSnapshot) =>
+    terminal.terminalId === visibleTerminalId || retainedTerminalIdSet.has(terminal.terminalId),
+  ))
+
+  $effect(() => {
+    const liveTerminalIds = new Set(terminals.map((terminal: TerminalViewSnapshot) => terminal.terminalId))
+    const next = retainedTerminalIds.filter((terminalId) => liveTerminalIds.has(terminalId))
+    if (visibleTerminalId && liveTerminalIds.has(visibleTerminalId) && !next.includes(visibleTerminalId)) {
+      next.push(visibleTerminalId)
+    }
+    if (next.length !== retainedTerminalIds.length || next.some((terminalId, index) => terminalId !== retainedTerminalIds[index])) {
+      retainedTerminalIds = next
+    }
+  })
 
   function beginResize(event: PointerEvent) {
     event.preventDefault()
@@ -70,12 +87,22 @@
       onSelect={onSelectTerminal} onClose={onCloseTerminal} onStartDrag={onStartTabDrag} onDrop={onDropOnTab}
       onDragEnd={onTabDragEnd} onTabKeydown={onTabKeydown} {onMutationDenied} />
     <div class="terminal-stage">
-      {#if activeTerminal}
-        {#key activeTerminal.terminalId}
-          {#if activeTerminal.backend === 'text'}<TextBoxSlot terminal={activeTerminal} {client} readOnly={sharedReadOnly} {onMutationDenied} />
-          {:else}<TerminalSlot terminal={activeTerminal} {client} readOnly={sharedReadOnly} {onMutationDenied} />{/if}
-        {/key}
-      {:else}<div class="empty-terminal-room" data-testid="empty-terminal-room">Create a Shell or Text terminal to begin.</div>{/if}
+      {#each retainedTerminals as terminal (terminal.terminalId)}
+        <div
+          class="terminal-view-slot"
+          data-testid="terminal-view-slot"
+          data-terminal-id={terminal.terminalId}
+          hidden={terminal.terminalId !== visibleTerminalId}
+          aria-hidden={terminal.terminalId !== visibleTerminalId}
+        >
+          {#if terminal.backend === 'text'}
+            <TextBoxSlot {terminal} {client} readOnly={sharedReadOnly} {onMutationDenied} />
+          {:else}
+            <TerminalSlot {terminal} {client} active={terminal.terminalId === visibleTerminalId} readOnly={sharedReadOnly} {onMutationDenied} />
+          {/if}
+        </div>
+      {/each}
+      {#if !activeTerminal}<div class="empty-terminal-room" data-testid="empty-terminal-room">Create a Shell or Text terminal to begin.</div>{/if}
     </div>
   </div>
 

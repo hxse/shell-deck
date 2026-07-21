@@ -21,6 +21,60 @@ test('large live Room burst keeps browser replay and render work bounded', async
   expect(work.fitCount).toBeLessThan(25)
 })
 
+test('visited terminal views survive Shell and Text tab switches without replaying long history', async ({ page, request }) => {
+  await openNewRoom(page, request)
+  const shell = await createTerminal(page, 'fake')
+  const text = await createTerminal(page, 'text')
+  const shellHost = terminalHost(page, shell.terminalId)
+  const textPane = page.locator(`[data-testid="text-box-pane"][data-terminal-id="${text.terminalId}"]`)
+  const textEditor = textPane.getByTestId('text-box-editor')
+  const historyMarker = 'SD_RETAINED_HISTORY_039'
+  const textContent = Array.from({ length: 240 }, (_, index) => `retained text line ${index + 1}`).join('\n')
+
+  await expect(shellHost).toBeVisible()
+  await expect(textPane).toHaveCount(0)
+  await sendTerminalMessages(page, [
+    { type: 'set_terminal_text', terminalId: text.terminalId, content: textContent },
+    { type: 'terminal_input', terminalId: shell.terminalId, data: 'h'.repeat(160_000) + historyMarker + '\r' },
+  ])
+  await expect(shellHost).toHaveAttribute('data-rendered-tail', new RegExp(historyMarker), { timeout: 20_000 })
+  await expectParserIdle(shellHost)
+  await shellHost.evaluate((element) => { element.dataset.retainedViewProbe = 'same-shell-view' })
+
+  const hiddenMarker = 'SD_HIDDEN_LIVE_OUTPUT_039'
+  await terminalTab(page, text.terminalId).click()
+  await expect(textEditor).toHaveValue(textContent)
+  await textEditor.evaluate((element) => {
+    element.scrollTop = 480
+    element.dispatchEvent(new Event('scroll'))
+  })
+  const retainedTextScrollTop = await textEditor.evaluate((element) => element.scrollTop)
+  expect(retainedTextScrollTop).toBeGreaterThan(0)
+  await expect(shellHost).toHaveCount(1)
+  await expect(shellHost).not.toBeVisible()
+  await sendTerminalMessages(page, [{ type: 'terminal_input', terminalId: shell.terminalId, data: hiddenMarker + '\r' }])
+  await expect(shellHost).toHaveAttribute('data-rendered-tail', new RegExp(hiddenMarker))
+  await expectParserIdle(shellHost)
+
+  await terminalTab(page, shell.terminalId).click()
+  await expect(shellHost).toBeVisible()
+  await expect(shellHost).toHaveAttribute('data-retained-view-probe', 'same-shell-view')
+  const beforeSwitch = parserWork(await renderCounters(shellHost))
+
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    await terminalTab(page, text.terminalId).click()
+    await expect(textPane).toBeVisible()
+    expect(await textEditor.evaluate((element) => element.scrollTop)).toBe(retainedTextScrollTop)
+    await expect(shellHost).toHaveCount(1)
+    await expect(shellHost).not.toBeVisible()
+
+    await terminalTab(page, shell.terminalId).click()
+    await expect(shellHost).toBeVisible()
+    await expect(shellHost).toHaveAttribute('data-retained-view-probe', 'same-shell-view')
+    expect(parserWork(await renderCounters(shellHost))).toEqual(beforeSwitch)
+  }
+})
+
 test('real Room PTY streams 37 MB to its final marker without blocking browser progress', async ({ page, request }) => {
   test.setTimeout(60_000)
   await openNewRoom(page, request)
@@ -81,7 +135,7 @@ test('Room terminal reset replaces launch output and stale parser callbacks cann
   await expect(host).not.toHaveAttribute('data-rendered-tail', new RegExp(oldMarker))
 })
 
-test('historical terminal queries never emit fresh PTY input when a Shell tab is rehydrated', async ({ page, request }) => {
+test('historical terminal queries stay inert on real page hydration and later tab switches retain that xterm', async ({ page, request }) => {
   await page.addInitScript(() => {
     const nativeSend = WebSocket.prototype.send
     ;(window as typeof window & { __terminalInputFrames032?: string[] }).__terminalInputFrames032 = []
@@ -118,20 +172,27 @@ test('historical terminal queries never emit fresh PTY input when a Shell tab is
   }))).toEqual({ deviceAttributes: true, cursorPosition: true, foreground: true, background: true })
 
   await page.keyboard.press('Control+C')
-  await page.evaluate(() => {
-    ;(window as typeof window & { __terminalInputFrames032: string[] }).__terminalInputFrames032 = []
-  })
+  await page.reload()
+  await expect(page.getByTestId('room-identity')).toContainText('connected')
+  await expect(page.getByTestId('room-control-status')).toHaveText('Control: This device')
+  const hydrated = terminalHost(page, shell.terminalId)
+  await expect(hydrated).toBeVisible()
+  await expectParserIdle(hydrated)
+  expect(await terminalInputFrames(page)).toEqual([])
+  await hydrated.evaluate((element) => { element.dataset.retainedViewProbe = 'hydrated-shell-view' })
+  const hydratedWork = parserWork(await renderCounters(hydrated))
 
   for (let iteration = 0; iteration < 3; iteration += 1) {
     await terminalTab(page, text.terminalId).click()
     await terminalTab(page, shell.terminalId).click()
-    const rehydrated = terminalHost(page, shell.terminalId)
-    await expect.poll(async () => rehydrated.evaluate((element) =>
-      Number(element.dataset.terminalEnqueuedCodeUnits ?? '0') - Number(element.dataset.terminalParserConsumedCodeUnits ?? '0'),
-    )).toBe(0)
+    await expect(hydrated).toHaveAttribute('data-retained-view-probe', 'hydrated-shell-view')
+    expect(parserWork(await renderCounters(hydrated))).toEqual(hydratedWork)
   }
 
   expect(await terminalInputFrames(page)).toEqual([])
+  page.once('dialog', (dialog) => dialog.accept())
+  await terminalTab(page, shell.terminalId).getByTestId('terminal-tab-close').click()
+  await expect(hydrated).toHaveCount(0)
 })
 
 async function openNewRoom(page: Page, request: APIRequestContext): Promise<void> {
@@ -142,7 +203,7 @@ async function openNewRoom(page: Page, request: APIRequestContext): Promise<void
   await expect(page.getByTestId('room-identity')).toContainText('connected')
 }
 
-async function createTerminal(page: Page, backend: 'fake' | 'real'): Promise<{ terminalId: string; launchId: string }> {
+async function createTerminal(page: Page, backend: 'fake' | 'real' | 'text'): Promise<{ terminalId: string; launchId: string }> {
   const terminal = await page.evaluate(async (requestedBackend) => {
     type HarnessScope = typeof window & { __shellDeckControllerSocket033?: WebSocket }
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -237,6 +298,21 @@ async function renderCounters(host: ReturnType<typeof terminalHost>) {
     parserConsumedCodeUnits: Number(element.dataset.terminalParserConsumedCodeUnits ?? '0'),
     fitCount: Number(element.dataset.terminalFitCount ?? '0'),
   }))
+}
+
+async function expectParserIdle(host: ReturnType<typeof terminalHost>): Promise<void> {
+  await expect.poll(async () => host.evaluate((element) =>
+    Number(element.dataset.terminalEnqueuedCodeUnits ?? '0') - Number(element.dataset.terminalParserConsumedCodeUnits ?? '0'),
+  )).toBe(0)
+}
+
+function parserWork(counters: Awaited<ReturnType<typeof renderCounters>>) {
+  return {
+    revision: counters.revision,
+    writeCount: counters.writeCount,
+    enqueuedCodeUnits: counters.enqueuedCodeUnits,
+    parserConsumedCodeUnits: counters.parserConsumedCodeUnits,
+  }
 }
 
 async function installHeartbeat(page: Page): Promise<void> {

@@ -55,6 +55,9 @@ test-037:
 test-038:
     bun run test:038
 
+test-039:
+    bun run test:039
+
 debug-large-replay *args:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "real Room PTY" {{args}}
 

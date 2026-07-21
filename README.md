@@ -2,7 +2,7 @@
 
 `shell-deck` is a local browser terminal workspace with live, URL-addressed Rooms and a visual macro system. Codex and other programs remain ordinary processes inside PTYs; a macro addresses terminals by their current index/type and resolves that logical layout to runtime terminal IDs at Start.
 
-Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro editor/runner cutover in `.034`, server-authoritative Room runtime sync in `.035`, the user-global Library in `.036`, exact persistable unassigned references in MacroDefinitionV4 in `.037`, and explicit AgentEvent wait limits in MacroDefinitionV5 in `.038`.
+Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro editor/runner cutover in `.034`, server-authoritative Room runtime sync in `.035`, the user-global Library in `.036`, exact persistable unassigned references in MacroDefinitionV4 in `.037`, explicit AgentEvent wait limits in MacroDefinitionV5 in `.038`, and retained terminal views across tab switches in `.039`.
 
 Core V0 behavior:
 
@@ -43,6 +43,7 @@ just test-035              # server-authoritative Room runtime sync gate
 just test-036              # user-global Macro JSON / Prompt / Note Library gate
 just test-037              # Macro unassigned-reference regression gate
 just test-038              # Macro V5 explicit AgentEvent wait-limit gate
+just test-039              # retained terminal view lifecycle gate
 ```
 
 V0 phase tasks:
@@ -70,3 +71,4 @@ Documentation entry points:
 - `doc/tasks/index/006_20260627A.036.md`
 - `doc/tasks/index/007_20260627A.037.md`
 - `doc/tasks/index/008_20260627A.038.md`
+- `doc/tasks/index/020_20260627A.039.md`

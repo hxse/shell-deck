@@ -11,9 +11,10 @@
   const RENDERED_TAIL_CODE_UNIT_LIMIT = 8192
   const DEBUG_COUNTER_LIMIT = 999_999_999
 
-  let { terminal, client, readOnly = false, onMutationDenied = () => {} } = $props<{
+  let { terminal, client, active = true, readOnly = false, onMutationDenied = () => {} } = $props<{
     terminal: TerminalViewSnapshot
     client: TerminalRoomClient | null
+    active?: boolean
     readOnly?: boolean
     onMutationDenied?: (reason: string) => void
   }>()
@@ -91,6 +92,14 @@
     }
   })
 
+  $effect(() => {
+    if (!active) return
+    const frame = window.requestAnimationFrame(() => {
+      if (mounted && active) fitToHost()
+    })
+    return () => window.cancelAnimationFrame(frame)
+  })
+
   onDestroy(() => {
     mounted = false
     parserPump.setTarget(null)
@@ -162,7 +171,7 @@
   }
 
   function fitToHost() {
-    if (!xterm || !host) return
+    if (!active || !xterm || !host) return
     fitCount = incrementDebugCounter(fitCount)
     host.dataset.terminalFitCount = String(fitCount)
     const terminalElement = host.querySelector('.xterm') as HTMLElement | null

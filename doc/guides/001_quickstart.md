@@ -63,7 +63,7 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro editor/runner，`.035`交付server-authoritative runtime sync，`.036`接入Library UI，`.037`切换到`MacroDefinitionV4` exact assigned/unassigned reference，`.038`再切换到`MacroDefinitionV5` explicit AgentEvent wait limit。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro editor/runner，`.035`交付server-authoritative runtime sync，`.036`接入Library UI，`.037`切换到`MacroDefinitionV4` exact assigned/unassigned reference，`.038`再切换到`MacroDefinitionV5` explicit AgentEvent wait limit，`.039`让访问过的terminal view在tab切换时保持挂载，不再重复回放长历史。
 
 ## Macro
 
@@ -99,4 +99,5 @@ just test-035
 just test-036
 just test-037
 just test-038
+just test-039
 ```

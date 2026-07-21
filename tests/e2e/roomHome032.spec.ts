@@ -1,4 +1,4 @@
-import { expect, test } from 'playwright/test'
+import { expect, test, type Page } from 'playwright/test'
 
 test.afterEach(async ({ request }) => {
   const response = await request.get('/api/rooms')
@@ -21,7 +21,9 @@ test('New shell skips a cwd dialog and tab/header share one single-line label', 
   await page.getByRole('button', { name: 'New shell' }).click()
   await expect(page.getByTestId('terminal-tab')).toHaveCount(1)
   const tab = page.getByTestId('terminal-tab')
-  const label = page.locator('.terminal-meta-label')
+  const terminalId = await tab.getAttribute('data-terminal-id')
+  if (!terminalId) throw new Error('terminal_id_missing')
+  const label = terminalMetaLabel(page, terminalId)
   await expect(label).toContainText(' · real · running')
   await expect(tab).toHaveAttribute('title', await label.textContent() ?? '')
   expect(await label.evaluate((element) => ({
@@ -35,17 +37,22 @@ test('New shell skips a cwd dialog and tab/header share one single-line label', 
 test('live cwd updates the label and New shell inherits it after a trailing Text tab', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'New shell' }).click()
+  const firstShellId = await page.getByTestId('terminal-tab').getAttribute('data-terminal-id')
+  if (!firstShellId) throw new Error('first_shell_id_missing')
   await expect(page.getByTestId('terminal-host')).toBeVisible()
   await page.getByTestId('terminal-host').click()
   await page.keyboard.type('cd /tmp')
   await page.keyboard.press('Enter')
-  await expect(page.locator('.terminal-meta-label')).toContainText(' · /tmp · real · running')
+  await expect(terminalMetaLabel(page, firstShellId)).toContainText(' · /tmp · real · running')
 
   await page.getByRole('button', { name: 'New text' }).click()
   await page.getByRole('button', { name: 'New shell' }).click()
   await expect(page.getByTestId('terminal-tab')).toHaveCount(3)
-  await expect(page.locator('.terminal-meta-label')).toContainText(' · /tmp · real · running')
-  await expect(page.getByTestId('terminal-tab').nth(2)).toHaveAttribute('title', / · \/tmp · real · running$/)
+  const inheritedShellTab = page.getByTestId('terminal-tab').nth(2)
+  const inheritedShellId = await inheritedShellTab.getAttribute('data-terminal-id')
+  if (!inheritedShellId) throw new Error('inherited_shell_id_missing')
+  await expect(terminalMetaLabel(page, inheritedShellId)).toContainText(' · /tmp · real · running')
+  await expect(inheritedShellTab).toHaveAttribute('title', / · \/tmp · real · running$/)
 })
 
 test('canonical Room URL, Home lifecycle and same-user tab sync work without config scope', async ({ browser }) => {
@@ -162,3 +169,7 @@ test('delayed Text own echo coalesces rapid edits without rolling the textarea b
   await expect.poll(async () => page.evaluate(() => (window as typeof window & { __textWrites?: string[] }).__textWrites)).toEqual(['a', 'a'])
   await expect(editor).toHaveValue('a')
 })
+
+function terminalMetaLabel(page: Page, terminalId: string) {
+  return page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"] .terminal-meta-label`)
+}

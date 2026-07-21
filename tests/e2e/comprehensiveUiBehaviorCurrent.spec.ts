@@ -87,7 +87,7 @@ test('current .036 UI journey preserves Room interactions and exercises automati
     await expect(shellHost).toHaveAttribute('data-rendered-tail', /UI_SHELL_032/, { timeout: 15_000 })
     await first.keyboard.type('cd /tmp')
     await first.keyboard.press('Enter')
-    await expect(first.locator('.terminal-meta-label')).toContainText(' · /tmp · real · running', { timeout: 15_000 })
+    await expect(terminalMetaLabel(first, firstShellId)).toContainText(' · /tmp · real · running', { timeout: 15_000 })
 
     await clickAndCover(first.getByTestId('terminal-create-text'), 'terminal-create-text', covered)
     await expect(first.getByTestId('terminal-tab')).toHaveCount(2)
@@ -116,7 +116,7 @@ test('current .036 UI journey preserves Room interactions and exercises automati
     await expect(first.getByTestId('terminal-tab')).toHaveCount(3)
     inheritedShellId = await terminalIdAt(first, 2)
     await expect(tabById(first, inheritedShellId)).toHaveAttribute('title', / · \/tmp · real · running$/)
-    await expect(first.locator('.terminal-meta-label')).toContainText(' · /tmp · real · running')
+    await expect(terminalMetaLabel(first, inheritedShellId)).toContainText(' · /tmp · real · running')
     await expect(second.getByTestId('terminal-tab')).toHaveCount(3)
     await expect(tabById(second, textId)).toHaveAttribute('aria-selected', 'true')
     await expect(second.getByTestId('text-box-editor')).toHaveValue(text)
@@ -286,6 +286,10 @@ async function terminalIdAt(page: Page, index: number): Promise<string> {
 
 function tabById(page: Page, terminalId: string): Locator {
   return page.getByTestId('terminal-tab').filter({ has: page.locator(`[data-terminal-id="${terminalId}"]`) }).or(page.locator(`[data-testid="terminal-tab"][data-terminal-id="${terminalId}"]`)).first()
+}
+
+function terminalMetaLabel(page: Page, terminalId: string): Locator {
+  return page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"] .terminal-meta-label`)
 }
 
 async function terminalIds(page: Page): Promise<string[]> {

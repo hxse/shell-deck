@@ -36,6 +36,16 @@ const sourceRoots = [
 ]
 
 describe('.031B evolving UI source inventory', () => {
+  test('.031A historical browser journey remains byte-frozen outside current Playwright discovery', () => {
+    const historicalPath = resolve(projectRoot, 'tests/e2e/comprehensiveUiBehavior031B.historical.ts')
+    const digest = createHash('sha256').update(readFileSync(historicalPath)).digest('hex')
+    const accidentallyDiscoverable = readdirSync(resolve(projectRoot, 'tests/e2e'))
+      .filter((name) => name.startsWith('comprehensiveUiBehavior031B') && name.endsWith('.spec.ts'))
+
+    expect(digest).toBe('358c2f4cb913d9f9f132ae770015a502dd07f02c752b5259b06e836d508160bc')
+    expect(accidentallyDiscoverable).toEqual([])
+  })
+
   test('.031A historical source truth remains immutable', () => {
     expect(baseline031ASourceInteractiveControlCount).toBe(202)
     expect(baseline031ASourceInteractiveControlDigest).toBe('7de9ac2946db94a2134e22539477094c04cc95caef6f44afce0738ff388fec19')

@@ -1,6 +1,6 @@
 # Active Specs
 
-本目录记录已经落地的current-schema implementation truth。当前真值对应`.032`的multi-Room/user-level storage、`.033`的single-controller/content edit lease、`.034`的Macro editor/Prepare/runner、`.035`的server-authoritative Room runtime sync与统一mutation feedback、`.036`的Library、`.037`的MacroDefinitionV4 assigned/unassigned reference，以及`.038`的MacroDefinitionV5 explicit AgentEvent wait limit。
+本目录记录已经落地的current-schema implementation truth。当前真值对应`.032`的multi-Room/user-level storage、`.033`的single-controller/content edit lease、`.034`的Macro editor/Prepare/runner、`.035`的server-authoritative Room runtime sync与统一mutation feedback、`.036`的Library、`.037`的MacroDefinitionV4 assigned/unassigned reference、`.038`的MacroDefinitionV5 explicit AgentEvent wait limit，以及`.039`的retained terminal tab views。
 
 当前文件：
 

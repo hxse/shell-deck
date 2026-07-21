@@ -25,6 +25,8 @@ terminal tab与pane header使用同一个canonical单行label：`index · termin
 
 server 维护每个 Shell 的 2 MiB byte-bounded replay tail，Text 不截断。PTY output 在 server batching 后广播；每个 WebSocket 有独立 64 MiB backpressure queue。browser 再按 animation frame 合并连续 output，并以 generation-aware write pump 驱动 xterm，避免大历史一次性加载时逐 chunk 重渲染。完整 replay/replace 写入 xterm 时属于历史 hydration，必须在 parser callback 确认全部消费前关闭 stdin，使历史中的DA、cursor、OSC color等terminal query不能产生新的PTY input；hydration完成后的live append恢复正常query response。不得通过删除escape sequence或全局丢弃xterm response实现该边界。
 
+terminal view采用lazy retained lifecycle。未访问terminal不mount、不解析replay；第一次成为active时hydration一次。已经访问且仍属于Room的Shell/Text pane在tab切换后只hidden，不unmount，不重建xterm/Text editor，也不重新enqueue完整replay。hidden Shell继续消费live append，但不测量零尺寸或上报PTY resize；再次active后只做必要的host fit。terminal删除、Room workspace退出、launch/reset触发的authoritative replace仍按对应生命周期销毁或重建。active selection仍是browser-local纯UI状态，切tab不得产生Room mutation。
+
 Room与每个terminal分别维护单调roomRevision/terminalRevision；Text另有textRevision，每次PTY output或Text正文变化另推进outputActivityRevision。quiet判断使用activity revision，不能比较已截断replay的长度。terminal structure lock acquire/release都推进roomRevision。browser对完整Room snapshot与index map分别维护channel watermark：同一channel只有首次或revision严格更新时才能覆盖Room级字段；两种companion message可各自消费同一revision，terminal-specific event不冒充Room projection watermark。equal/older delayed snapshot不得重写structure lock。terminal-specific event按launchId + terminalRevision合并，只有accepted terminal snapshot才能派生readiness/position，跨HTTP/WebSocket的延迟snapshot不得回滚新真值。
 
 Text browser每个terminal串行一个full-state write，后续输入coalesce为latest value并带local edit generation。只有前进的textRevision和匹配正文才能确认在途echo；确认时若generation已变化，即使最终文字与旧值相同也要重发latest。旧own-echo不能覆盖较新输入，observer只消费server revision。
