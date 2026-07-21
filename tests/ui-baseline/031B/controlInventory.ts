@@ -24,11 +24,13 @@ export const sourceInteractiveControlCount034 = 175
 export const sourceInteractiveControlDigest034 = 'ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834'
 export const sourceInteractiveControlCount035 = 174
 export const sourceInteractiveControlDigest035 = 'c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584'
+export const sourceInteractiveControlCount038 = 199
+export const sourceInteractiveControlDigest038 = '278ac0156e82120cbe483e2fb764273d28b7c21b78661c5b9a299bbd5a8e2c63'
 
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
 export const sourceInteractiveControlCount = 199
-export const sourceInteractiveControlDigest = '278ac0156e82120cbe483e2fb764273d28b7c21b78661c5b9a299bbd5a8e2c63'
+export const sourceInteractiveControlDigest = 'a0d99f15b97937147d7e4e56eb0c8072f3966d4e14fdba03cf7f220147422025'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.

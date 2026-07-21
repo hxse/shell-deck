@@ -21,11 +21,13 @@ import {
   sourceInteractiveControlCount033,
   sourceInteractiveControlCount034,
   sourceInteractiveControlCount035,
+  sourceInteractiveControlCount038,
   sourceInteractiveControlDigest,
   sourceInteractiveControlDigest032,
   sourceInteractiveControlDigest033,
   sourceInteractiveControlDigest034,
   sourceInteractiveControlDigest035,
+  sourceInteractiveControlDigest038,
   workspaceRuntimeControlInventory034,
 } from '../ui-baseline/031B/controlInventory'
 
@@ -71,7 +73,12 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest035).toBe('c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584')
   })
 
-  test('.038 interactive source controls match its attributed current snapshot', () => {
+  test('.038 source snapshot remains available after App workspace decomposition', () => {
+    expect(sourceInteractiveControlCount038).toBe(199)
+    expect(sourceInteractiveControlDigest038).toBe('278ac0156e82120cbe483e2fb764273d28b7c21b78661c5b9a299bbd5a8e2c63')
+  })
+
+  test('20260721A.003 interactive source controls match its path-only current snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
