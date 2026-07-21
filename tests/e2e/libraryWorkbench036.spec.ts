@@ -130,7 +130,7 @@ test('current .036 Library journey exercises every control, all three kinds, lea
   })
 
   const macroDefinition = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: 'Loaded Library Macro',
     description: 'portable',
     terminalLayout: [],
@@ -153,7 +153,7 @@ test('current .036 Library journey exercises every control, all three kinds, lea
     const macroText = JSON.stringify(macroDefinition, null, 2)
     await page.getByTestId('library-content').fill(macroText)
     await page.getByTestId('library-validate').click()
-    await expect(page.getByTestId('library-validation')).toContainText('Valid MacroDefinitionV4 · 2 unassigned references (not runnable)')
+    await expect(page.getByTestId('library-validation')).toContainText('Valid MacroDefinitionV5 · 2 unassigned references (not runnable)')
     await expect(page.getByTestId('library-validation')).toContainText('body[0].terminal')
     await expect(page.getByTestId('library-validation')).toContainText('body[0].message.parts[0].source')
     await expect(page.getByTestId('library-content-line-numbers').locator(':scope > div > div')).toHaveCount(macroText.split('\n').length)

@@ -2,15 +2,19 @@ import type { ContentCommitLeaseOutcome, ContentEditLeaseGrant } from '../conten
 import type { RoomControlGrant } from '../roomControl'
 import { roomControlHeaders } from '../roomControl'
 import type { MacroRecord } from '../macro/macroDefinitionTypes'
-import type { LibraryItem, LibraryItemFields, LibraryItemKind, LibraryItemSummary } from './libraryTypes'
+import type { LibraryItem, LibraryItemFields, LibraryItemKind, LibraryItemListResult } from './libraryTypes'
 
 export class LibraryClient {
   constructor(private readonly controlGrant: () => RoomControlGrant | null) {}
 
-  async list(kind: LibraryItemKind, query = ''): Promise<LibraryItemSummary[]> {
+  async list(kind: LibraryItemKind, query = ''): Promise<LibraryItemListResult> {
     const params = new URLSearchParams({ kind })
     if (query.length > 0) params.set('q', query)
-    return (await requestJson('/api/library/items?' + params)).items as LibraryItemSummary[]
+    const response = await requestJson('/api/library/items?' + params)
+    return {
+      items: response.items as LibraryItemListResult['items'],
+      invalidItems: response.invalidItems as LibraryItemListResult['invalidItems'],
+    }
   }
 
   async read(kind: LibraryItemKind, itemId: string): Promise<LibraryItem> {

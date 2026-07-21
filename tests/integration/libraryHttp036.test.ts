@@ -177,7 +177,7 @@ test('published Library Create and Load remain successful if Room control change
     server.libraryStore.create = originalLibraryCreate
 
     const source = await createLibraryMacro(server, secondGrant, JSON.stringify({
-      schemaVersion: 4, name: 'Published source', description: '', terminalLayout: [], body: [],
+      schemaVersion: 5, name: 'Published source', description: '', terminalLayout: [], body: [],
     }))
     const sourceItem = source.body.item as { itemId: string; revision: number }
     const third = server.manager.connectClient(first.roomId, () => {})
@@ -208,13 +208,34 @@ test('Macro Library uses the single text gateway and Load creates fresh independ
   const server = startShellDeckServer({ port: 0, dataRoot: root })
   try {
     const controller = connectController(server)
+    const legacy = await server.libraryStore.create('macro-template', {
+      title: 'Legacy hidden Macro',
+      content: JSON.stringify({ schemaVersion: 4, name: 'Legacy hidden Macro', description: '', terminalLayout: [], body: [] }),
+      description: '',
+      tags: [],
+    })
+    const isolated = await jsonRequest(server.url + '/api/library/items?kind=macro-template')
+    expect(isolated.body).toMatchObject({
+      ok: true,
+      items: [],
+      invalidItems: [{ itemId: legacy.itemId, error: 'invalid_library_macro_definition' }],
+    })
+    expect(await jsonRequest(server.url + `/api/library/items/macro-template/${legacy.itemId}`)).toMatchObject({
+      status: 400,
+      body: { ok: false, error: 'invalid_library_macro_definition' },
+    })
+    expect(await loadMacro(server, controller.grant, legacy)).toMatchObject({
+      status: 400,
+      body: { ok: false, error: 'invalid_macro_definition' },
+    })
+
     const invalidJson = await createLibraryMacro(server, controller.grant, '{')
     expect(invalidJson).toMatchObject({ status: 400, body: { ok: false, error: 'invalid_json', offset: 1, line: 1, column: 2 } })
     const invalidDefinition = await createLibraryMacro(server, controller.grant, JSON.stringify({ schemaVersion: 2, body: [] }))
     expect(invalidDefinition).toMatchObject({ status: 400, body: { ok: false, error: 'invalid_macro_definition' } })
 
     const definition = {
-      schemaVersion: 4,
+      schemaVersion: 5,
       name: 'Portable incomplete draft',
       description: '',
       terminalLayout: [],
@@ -232,6 +253,11 @@ test('Macro Library uses the single text gateway and Load creates fresh independ
     expect(secondRecord.id).not.toBe(firstRecord.id)
     expect(server.libraryStore.read('macro-template', item.itemId).revision).toBe(1)
     expect(server.manager.terminalStructureRevision(controller.roomId)).toBe(beforeStructure)
+    const visible = await jsonRequest(server.url + '/api/library/items?kind=macro-template')
+    expect(visible.body).toMatchObject({
+      items: [{ itemId: item.itemId }],
+      invalidItems: [{ itemId: legacy.itemId, error: 'invalid_library_macro_definition' }],
+    })
 
     const unknown = await jsonRequest(server.url + '/api/templates/from-library', {
       method: 'POST', headers: controlJson(controller.grant), body: JSON.stringify({ itemId: item.itemId, expectedRevision: item.revision, roomId: controller.roomId }),
@@ -272,7 +298,7 @@ test('Library and from-Library Create recheck Room control at the canonical comm
     expect(server.libraryStore.list('note')).toEqual([])
 
     server.libraryStore.transactions.run = originalLibraryRun
-    const source = await createLibraryMacro(server, secondGrant, JSON.stringify({ schemaVersion: 4, name: 'Source', description: '', terminalLayout: [], body: [] }))
+    const source = await createLibraryMacro(server, secondGrant, JSON.stringify({ schemaVersion: 5, name: 'Source', description: '', terminalLayout: [], body: [] }))
     expect(source.status).toBe(201)
     const item = source.body.item as { itemId: string; revision: number }
     const third = server.manager.connectClient(first.roomId, () => {})

@@ -4,9 +4,9 @@ import { PROFILE_CATALOG_SUMMARY } from '../src/lib/parser/profileCatalogSummary
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { assertGeneratedId, assertRoomRouteToken, createGeneratedSuffix } from '../src/lib/generatedId'
 import { assertContentResourceKey } from '../src/lib/contentEditLease'
-import { assertLibraryItemKind, normalizeLibraryItemFields, type LibraryItemKind } from '../src/lib/library/libraryTypes'
-import type { FlowV2Node, MacroDefinitionV4 } from '../src/lib/macro/macroDefinitionTypes'
-import { parseAndValidateMacroDefinitionJson, validateMacroDefinitionV4, validateMacroTerminalLayout } from '../src/lib/macro/macroDefinitionValidation'
+import { assertLibraryItemKind, libraryItemSummary, normalizeLibraryItemFields, type InvalidLibraryItemSummary, type LibraryItemKind } from '../src/lib/library/libraryTypes'
+import type { FlowV2Node, MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
+import { parseAndValidateMacroDefinitionJson, validateMacroDefinitionV5, validateMacroTerminalLayout } from '../src/lib/macro/macroDefinitionValidation'
 import type { ClientMessage, ServerMessage } from '../src/lib/protocol'
 import { parseClientMessage } from '../src/lib/protocol'
 import {
@@ -35,7 +35,7 @@ export type ShellDeckServer = {
   manager: TerminalRoomManager
   contentEditLeases: ContentEditLeaseService
   libraryStore: LibraryStore
-  macroStore: MacroRecordStore<MacroDefinitionV4>
+  macroStore: MacroRecordStore<MacroDefinitionV5>
   macroRunner: MacroRunnerService
   userDataRoot: string
   stop(): Promise<void>
@@ -103,7 +103,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
   const notificationService = new NotificationService(userDataRoot, fetch, 10_000, notificationError)
   const libraryStore = new LibraryStore(userDataRoot, options.libraryStoreOptions)
-  const macroStore = new MacroRecordStore<MacroDefinitionV4>(userDataRoot, options.macroStoreOptions)
+  const macroStore = new MacroRecordStore<MacroDefinitionV5>(userDataRoot, options.macroStoreOptions)
   const macroRunStore = new MacroRunStore(userDataRoot)
   const macroRunner = new MacroRunnerService(manager, macroStore, macroRunStore, notificationService, agentEventStore)
   manager.setActiveRunProvider((roomId, roomGeneration) => macroRunner.hasActiveRun(roomId, roomGeneration))
@@ -226,7 +226,7 @@ async function handleHttp(
   ingestToken: string,
   notificationService: NotificationService,
   libraryStore: LibraryStore,
-  macroStore: MacroRecordStore<MacroDefinitionV4>,
+  macroStore: MacroRecordStore<MacroDefinitionV5>,
   macroRunner: MacroRunnerService,
 ): Promise<Response> {
   if (url.pathname === '/health') {
@@ -315,7 +315,7 @@ async function handleHttp(
       const scan = macroStore.scan()
       const invalidRecords: Array<{ recordId: string; error: 'invalid_macro_record' | 'invalid_macro_record_definition' }> = [...scan.invalidRecords]
       const templates = scan.records.flatMap((record) => {
-        const validated = validateMacroDefinitionV4(record.definition)
+        const validated = validateMacroDefinitionV5(record.definition)
         if (!validated.ok) {
           invalidRecords.push({ recordId: record.id, error: 'invalid_macro_record_definition' })
           return []
@@ -334,7 +334,7 @@ async function handleHttp(
     }
     if (req.method === 'POST') {
       const body = await exactObject(req, ['definition'])
-      const validation = validateMacroDefinitionV4(body.definition)
+      const validation = validateMacroDefinitionV5(body.definition)
       if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
       const template = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => {
         ticket.assertAuthorized()
@@ -355,8 +355,17 @@ async function handleHttp(
     if (req.method === 'GET') {
       const query = exactQuery(url, ['kind', 'q'], ['kind'])
       const kind = assertLibraryItemKind(query.get('kind'))
-      const items = libraryStore.list(kind, query.get('q') ?? '')
-      return json({ ok: true, items })
+      const scan = libraryStore.scan(kind, query.get('q') ?? '')
+      const invalidItems: InvalidLibraryItemSummary[] = [...scan.invalidItems]
+      const items = scan.records.flatMap((item) => {
+        if (kind === 'macro-template' && !parseAndValidateMacroDefinitionJson(item.content).ok) {
+          invalidItems.push({ itemId: item.itemId, error: 'invalid_library_macro_definition' })
+          return []
+        }
+        return [libraryItemSummary(item)]
+      })
+      invalidItems.sort((left, right) => left.itemId.localeCompare(right.itemId))
+      return json({ ok: true, items, invalidItems })
     }
     assertNoQuery(url)
     if (req.method === 'POST') {
@@ -380,7 +389,11 @@ async function handleHttp(
     assertNoQuery(url)
     const kind = assertLibraryItemKind(decodeURIComponent(libraryItemRoute[1]))
     const itemId = assertGeneratedId(decodeURIComponent(libraryItemRoute[2]), 'libraryItem')
-    if (req.method === 'GET') return json({ ok: true, item: libraryStore.read(kind, itemId) })
+    if (req.method === 'GET') {
+      const item = libraryStore.read(kind, itemId)
+      if (kind === 'macro-template' && !parseAndValidateMacroDefinitionJson(item.content).ok) throw new Error('invalid_library_macro_definition')
+      return json({ ok: true, item })
+    }
     if (req.method === 'PUT') {
       const body = await exactObject(req, ['title', 'content', 'description', 'tags', 'expectedRevision', 'editLeaseId'])
       const fields = normalizeLibraryItemFields({ title: body.title, content: body.content, description: body.description, tags: body.tags })
@@ -456,12 +469,12 @@ async function handleHttp(
     const templateId = assertGeneratedId(decodeURIComponent(templateRoute[1]), 'macroTemplate')
     if (req.method === 'GET') {
       const template = macroStore.read(templateId)
-      if (!validateMacroDefinitionV4(template.definition).ok) throw new Error('invalid_macro_record_definition')
+      if (!validateMacroDefinitionV5(template.definition).ok) throw new Error('invalid_macro_record_definition')
       return json({ ok: true, template })
     }
     if (req.method === 'PUT') {
       const body = await exactObject(req, ['expectedRevision', 'editLeaseId', 'definition'])
-      const validation = validateMacroDefinitionV4(body.definition)
+      const validation = validateMacroDefinitionV5(body.definition)
       if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
       const expectedRevision = assertPositiveRevision(body.expectedRevision)
       const editLeaseId = assertGeneratedId(body.editLeaseId, 'contentEditLease')

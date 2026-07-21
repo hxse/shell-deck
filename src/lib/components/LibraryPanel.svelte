@@ -5,7 +5,7 @@
   import type { TerminalRoomClient } from '../terminalRoomClient'
   import { LibraryClient } from '../library/libraryClient'
   import type { LibraryItem, LibraryItemFields, LibraryItemKind, LibraryItemSummary } from '../library/libraryTypes'
-  import { parseAndValidateMacroDefinitionJson, validateRunnableMacroDefinitionV4 } from '../macro/macroDefinitionValidation'
+  import { parseAndValidateMacroDefinitionJson, validateRunnableMacroDefinitionV5 } from '../macro/macroDefinitionValidation'
   import LineNumberedTextarea from './macro/LineNumberedTextarea.svelte'
 
   type LibraryTab = 'json-template' | 'prompt' | 'note'
@@ -79,6 +79,7 @@
   let pendingLibraryRecordChanges: SequencedContentRecordChange[] = []
   let statusText = $state('Library')
   let errorText = $state<string | null>(null)
+  let listProblem = $state<string | null>(null)
   let remoteNotice = $state<string | null>(null)
   let validationText = $state<string | null>(null)
   let copyLabel = $state('Copy')
@@ -186,9 +187,13 @@
     const requestedKind = kind
     const requestedSearch = searchText
     try {
-      const next = await api.list(requestedKind, requestedSearch)
+      const result = await api.list(requestedKind, requestedSearch)
       if (generation !== listGeneration || kind !== requestedKind || searchText !== requestedSearch) return { outcome: 'stale' }
+      const next = result.items
       items = next
+      listProblem = result.invalidItems.length === 0
+        ? null
+        : `Invalid Library items ignored: ${result.invalidItems.map((item) => `${item.itemId} (${item.error})`).join(', ')}`
       if (announce && !dirty && !editing && !operationPending) statusText = `${next.length} ${kindLabel(kind)} items`
       if (selectedItem && !next.some((item) => item.itemId === selectedItem?.itemId)) {
         if (dirty || editing || editLease || leaseLost || publishedCreateBufferPreserved || operationPending) remoteNotice = 'The selected item is no longer in the current saved result. The local draft was kept.'
@@ -501,11 +506,11 @@
     if (!draft || kind !== 'macro-template') return
     const result = parseAndValidateMacroDefinitionJson(draft.content)
     if (result.ok) {
-      const runnable = validateRunnableMacroDefinitionV4(result.value)
+      const runnable = validateRunnableMacroDefinitionV5(result.value)
       const unassigned = runnable.ok ? [] : runnable.issues.filter((issue) => issue.code === 'unassigned_terminal_reference' || issue.code === 'unassigned_artifact_reference')
       validationText = unassigned.length > 0
-        ? `Valid MacroDefinitionV4 · ${unassigned.length} unassigned reference${unassigned.length === 1 ? '' : 's'} (not runnable)\n${unassigned.map((issue) => issue.path).join('\n')}`
-        : 'Valid MacroDefinitionV4 · runnable'
+        ? `Valid MacroDefinitionV5 · ${unassigned.length} unassigned reference${unassigned.length === 1 ? '' : 's'} (not runnable)\n${unassigned.map((issue) => issue.path).join('\n')}`
+        : 'Valid MacroDefinitionV5 · runnable'
     } else validationText = formatMacroValidation(result)
     errorText = result.ok ? null : result.error.code
   }
@@ -823,7 +828,7 @@
   }
 
   function emptyMacroJson(): string {
-    return JSON.stringify({ schemaVersion: 4, name: 'Library Macro', description: '', terminalLayout: [], body: [] }, null, 2)
+    return JSON.stringify({ schemaVersion: 5, name: 'Library Macro', description: '', terminalLayout: [], body: [] }, null, 2)
   }
 
   function tabKind(tab: LibraryTab): LibraryItemKind { return tab === 'json-template' ? 'macro-template' : tab }
@@ -844,6 +849,7 @@
   </div>
 
   {#if errorText}<div class="prompt-error" role="alert" data-testid="library-error">{errorText}</div>{/if}
+  {#if listProblem}<div class="prompt-error" role="alert" data-testid="library-list-problem">{listProblem}</div>{/if}
   {#if remoteNotice}<div class="prompt-notice" role="status" data-testid="library-remote-notice">{remoteNotice}</div>{/if}
 
   <nav class="library-kind-tabs" data-testid="library-kind-tabs" aria-label="Library content kind">

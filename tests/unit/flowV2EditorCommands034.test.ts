@@ -9,9 +9,9 @@ import {
   resolveBodyPath,
   type BodyPath,
 } from '../../src/lib/macro/flowV2EditorCommands'
-import type { FlowV2IfBranch, FlowV2Node, MacroDefinitionV4 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { FlowV2IfBranch, FlowV2Node, MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
 
-test('V4 editor commands insert and move nodes through explicit body paths', () => {
+test('V5 editor commands insert and move nodes through explicit body paths', () => {
   const definition = macro()
   expect(insertNodeAtAnchor(definition, { kind: 'inside', parentPath: [], index: 1, slot: 'for', anchorNodeId: 'loop' }, finish('inside')).ok).toBe(true)
   const loopPath: BodyPath = [{ kind: 'for', nodeId: 'loop' }]
@@ -23,7 +23,7 @@ test('V4 editor commands insert and move nodes through explicit body paths', () 
   expect(resolveBodyPath(definition, loopPath)?.map((node) => node.id)).toEqual(['inside', 'send'])
 })
 
-test('V4 if branches and optional bodies are explicit current-schema mutations', () => {
+test('V5 if branches and optional bodies are explicit current-schema mutations', () => {
   const definition = macro()
   const branch: FlowV2IfBranch = { kind: 'elif', condition: condition('MAYBE'), body: [] }
   expect(insertElifBranchAfter(definition, { bodyPath: [], index: 1 }, 0, branch).reason).toBe('invalid_target')
@@ -43,9 +43,9 @@ test('control terminal bodies accept actions and reject nested flow controls', (
   expect(resolveBodyPath(definition, [{ kind: 'control', nodeId: 'done' }])?.map((node) => node.id)).toEqual(['before-finish'])
 })
 
-function macro(): MacroDefinitionV4 {
+function macro(): MacroDefinitionV5 {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: 'Editor commands',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],

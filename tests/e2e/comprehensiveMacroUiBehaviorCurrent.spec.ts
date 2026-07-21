@@ -32,7 +32,7 @@ async function clickWithDialog(
   await clickPromise
 }
 
-test('current .037 UI journey preserves the complex V4 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
+test('current UI journey preserves the complex V5 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
   test.setTimeout(600_000)
   page.setDefaultTimeout(10_000)
   page.setDefaultNavigationTimeout(15_000)
@@ -591,7 +591,7 @@ test('current .037 UI journey preserves the complex V4 Macro and exercises serve
     await page.getByTestId("macro-save-json").click()
     await expect(page.getByTestId("macro-json-error")).toContainText("Invalid JSON")
     const currentJson = await page.evaluate(() => navigator.clipboard.readText())
-    await page.getByTestId("macro-json-editor").fill(currentJson.replace("\"schemaVersion\": 4", "\"schemaVersion\": 3"))
+    await page.getByTestId("macro-json-editor").fill(currentJson.replace("\"schemaVersion\": 5", "\"schemaVersion\": 4"))
     await page.getByTestId("macro-save-json").click()
     await expect(page.getByTestId("macro-json-error")).toContainText("schemaVersion")
     await page.getByTestId("macro-cancel-json").click()

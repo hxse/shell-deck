@@ -12,7 +12,7 @@
   import { canMoveNodeToAnchor, cloneBodyPath, ensureElseForIfNode, findNodePosition, insertElifBranchAfter, isInsertionAnchorValid, insertNodeAtAnchor, moveNodeAtPosition, moveNodeToAnchor, removeElseFromIfNode, removeIfBranchAt, removeNodeAtPosition, resolveBodyPath, type BodyPath, type InsertionAnchor } from "../../macro/flowV2EditorCommands"
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from "../../macro/scopedTextTemplate"
   import { hasNonDefaultTextListItems, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
-  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, FlowV2StepArtifactSource, MacroDefinitionV4, MacroTerminalReference, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalEnding, TerminalInputDelivery, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, WaitNode } from "../../macro/macroDefinitionTypes"
+  import type { CaptureSourceConfig, FlowV2ArtifactSource, FlowV2Node, FlowV2StepArtifactSource, MacroDefinitionV5, MacroTerminalReference, MessageSpec, NotificationLevel, NotifyChannel, ParallelLane, ParallelLaneActionNode, ParallelLaneNode, ParallelLaneOutputNode, TerminalEnding, TerminalInputDelivery, SimpleTextMatchOp, TextFilterSpec, TextListItem, TextMatchCondition, WaitNode } from "../../macro/macroDefinitionTypes"
   import type { MacroDefinitionIssue, MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import { isCaptureKindAllowed, terminalChoiceForIndex, type CapabilityCaptureKind, type TerminalChoice } from "../../macro/macroTerminalChoices"
   import type { MacroInsertionPaletteMode } from "../../workspace/uiLayoutTypes"
@@ -35,12 +35,12 @@
     telegramProfileIds = [],
     telegramProfilesError = '',
   } = $props<{
-    draft: MacroDefinitionV4
+    draft: MacroDefinitionV5
     validation: MacroDefinitionValidation
     runnableValidation: MacroDefinitionValidation
-    updateDraft: (mutator: (template: MacroDefinitionV4) => void) => void
+    updateDraft: (mutator: (template: MacroDefinitionV5) => void) => void
     terminalChoices: () => TerminalChoice[]
-    adoptTerminalSelection: (template: MacroDefinitionV4, terminalIndex: number) => boolean
+    adoptTerminalSelection: (template: MacroDefinitionV5, terminalIndex: number) => boolean
     choiceFromIndex: (target: number) => string
     defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig
     defaultCondition: (source: FlowV2ArtifactSource) => TextMatchCondition
@@ -210,7 +210,7 @@
   }
 
   function defaultCaptureForReference(kind: CaptureSourceConfig["kind"], terminal: MacroTerminalReference): CaptureSourceConfig {
-    if (kind === "agent-event") return { kind, terminal, agent: { kind: "codex" }, captureMode: "result_only" }
+    if (kind === "agent-event") return { kind, terminal, agent: { kind: "codex" }, captureMode: "result_only", waitLimit: { kind: "unbounded" } }
     if (kind === "text-box") return { kind, terminal }
     return { kind, terminal, mode: "scrollback-tail", maxChars: 20000 }
   }
@@ -297,7 +297,7 @@
     const anchor = insertionAnchor
     let inserted = false
     let reason = "unknown"
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       const node = defaultNode(template, type)
       const result = insertNodeAtAnchor(template, anchor, node)
       inserted = result.ok
@@ -316,7 +316,7 @@
     const anchor = { ...insertionAnchor, parentPath: cloneBodyPath(insertionAnchor.parentPath) } as InsertionAnchor
     const nodeId = moveNodeId
     let moved = false
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       moved = moveNodeToAnchor(template, nodeId, anchor).ok
     })
     if (moved) cancelInsertion()
@@ -394,20 +394,20 @@
   }
 
   function moveNodeAt(bodyPath: BodyPath, index: number, offset: -1 | 1) {
-    updateDraft((template: MacroDefinitionV4) => { moveNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }, offset) })
+    updateDraft((template: MacroDefinitionV5) => { moveNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }, offset) })
   }
 
   function removeNodeAt(bodyPath: BodyPath, index: number, nodeId: string) {
     if (!confirm("Remove macro node " + nodeId + "?")) return
     const removedNode = resolveBodyPath(draft, bodyPath)?.[index]
     const removedNodeIds = removedNode ? allNodeIds([removedNode]) : [nodeId]
-    updateDraft((template: MacroDefinitionV4) => { removeNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    updateDraft((template: MacroDefinitionV5) => { removeNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
     clearCollapseStateForNodeIds(removedNodeIds)
   }
 
   function addElifAt(bodyPath: BodyPath, index: number, afterBranchIndex: number, nodeId: string) {
     let inserted = false
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       inserted = insertElifBranchAfter(template, { bodyPath: cloneBodyPath(bodyPath), index }, afterBranchIndex, { kind: "elif", condition: defaultCondition(unassignedArtifactSource()), body: [] }).ok
     })
     if (inserted) shiftIfBranchCollapseKeys(nodeId, afterBranchIndex + 1, 1)
@@ -415,14 +415,14 @@
   }
 
   function ensureElseAt(bodyPath: BodyPath, index: number) {
-    updateDraft((template: MacroDefinitionV4) => { ensureElseForIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    updateDraft((template: MacroDefinitionV5) => { ensureElseForIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
   }
 
   function removeElifAt(bodyPath: BodyPath, index: number, branchIndex: number, nodeId: string) {
     if (!confirm("Remove elif branch and its contents?")) return
     const node = resolveBodyPath(draft, bodyPath)?.[index]
     const removedNodeIds = node?.type === "if" ? allNodeIds(node.branches[branchIndex]?.body ?? []) : []
-    updateDraft((template: MacroDefinitionV4) => { removeIfBranchAt(template, { bodyPath: cloneBodyPath(bodyPath), index }, branchIndex) })
+    updateDraft((template: MacroDefinitionV5) => { removeIfBranchAt(template, { bodyPath: cloneBodyPath(bodyPath), index }, branchIndex) })
     clearCollapseStateForNodeIds(removedNodeIds)
     shiftIfBranchCollapseKeys(nodeId, branchIndex + 1, -1, branchIndex)
   }
@@ -431,13 +431,13 @@
     if (!confirm("Remove else branch and its contents?")) return
     const node = resolveBodyPath(draft, bodyPath)?.[index]
     const removedNodeIds = node?.type === "if" ? allNodeIds(node.else ?? []) : []
-    updateDraft((template: MacroDefinitionV4) => { removeElseFromIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
+    updateDraft((template: MacroDefinitionV5) => { removeElseFromIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
     clearCollapseStateForNodeIds(removedNodeIds)
     collapsedIfBranchKeys = collapsedIfBranchKeys.filter((key) => key !== ifBranchCollapseKey(nodeId, "else"))
   }
 
   function updateNode(nodeId: string, mutator: (node: FlowV2Node) => void) {
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       const node = findNode(template.body, nodeId)
       if (node) mutator(node)
     })
@@ -445,7 +445,7 @@
 
   function updateNodeTerminal(nodeId: string, terminal: MacroTerminalReference, mutator: (node: FlowV2Node) => void): boolean {
     let updated = false
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       if (terminal.kind === "terminal_index" && !adoptTerminalSelection(template, terminal.index)) return
       const node = findNode(template.body, nodeId)
       if (!node) return
@@ -536,7 +536,7 @@
     return artifactChoicesBeforeIn(draft, nodeId)
   }
 
-  function artifactChoicesBeforeIn(template: MacroDefinitionV4, nodeId: string): ArtifactChoice[] {
+  function artifactChoicesBeforeIn(template: MacroDefinitionV5, nodeId: string): ArtifactChoice[] {
     return collectArtifactChoicesBefore(template.body, nodeId, []).choices
   }
 
@@ -622,7 +622,7 @@
   }
 
   function addParallelLane(nodeId: string) {
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       const node = findNode(template.body, nodeId)
       if (node?.type !== "parallel") return
       const terminal: MacroTerminalReference = { kind: "unassigned" }
@@ -646,7 +646,7 @@
     })
   }
 
-  function defaultParallelLane(template: MacroDefinitionV4, rawId: string, terminal: MacroTerminalReference, existingLaneIds: string[] = []): ParallelLane {
+  function defaultParallelLane(template: MacroDefinitionV5, rawId: string, terminal: MacroTerminalReference, existingLaneIds: string[] = []): ParallelLane {
     const ids = allNodeIds(template.body)
     const id = uniqueKey(rawId, existingLaneIds)
     return { id, label: id, terminal, body: [{ id: uniqueKey(id + "_output", [...ids, id]), type: "output", source: { kind: "none" } }] }
@@ -661,7 +661,7 @@
     return uniqueKey("lane_" + ordinal, lanes.map((lane) => lane.id))
   }
 
-  function defaultNode(template: MacroDefinitionV4, type: FlowV2Node["type"]): FlowV2Node {
+  function defaultNode(template: MacroDefinitionV5, type: FlowV2Node["type"]): FlowV2Node {
     const terminal: MacroTerminalReference = { kind: "unassigned" }
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
     if (type === "send") return { id, type, terminal, message: { parts: [] }, delivery: "auto", ending: "cr" }
@@ -1113,6 +1113,17 @@
   {:else if node.capture.kind === "agent-event"}
     <label>Agent<select data-testid="capture-agent-kind" value={node.capture.agent.kind} onchange={() => onChange(keepCodexAgent(node.capture))}><option value="codex">codex</option></select></label>
     <label>Mode<select data-testid="capture-agent-mode" value={node.capture.captureMode ?? "result_only"} onchange={(event) => { if (node.capture.kind === "agent-event") onChange({ ...node.capture, captureMode: event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" }) }}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label>
+    <div class="agent-wait-limit">
+      <label class="checkbox-row agent-timeout-toggle">
+        <input data-testid="capture-agent-timeout-enabled" type="checkbox" checked={node.capture.waitLimit.kind === "timeout"} onchange={(event) => { if (node.capture.kind === "agent-event") onChange({ ...node.capture, waitLimit: event.currentTarget.checked ? { kind: "timeout", timeoutMs: 600000 } : { kind: "unbounded" } }) }} />
+        <span>Enable timeout</span>
+      </label>
+      {#if node.capture.waitLimit.kind === "timeout"}
+        <label class="agent-timeout-duration"><span>Timeout ms</span><input data-testid="capture-agent-timeout-ms" type="number" min="1" step="1" value={node.capture.waitLimit.timeoutMs} oninput={(event) => { if (node.capture.kind === "agent-event" && node.capture.waitLimit.kind === "timeout") onChange({ ...node.capture, waitLimit: { kind: "timeout", timeoutMs: Number(event.currentTarget.value) } }) }} /></label>
+      {:else}
+        <p class="hint agent-timeout-hint" data-testid="capture-agent-unbounded-hint">Wait until result or Stop</p>
+      {/if}
+    </div>
     <p class="hint">Codex hook fields only: UserPromptSubmit.prompt and Stop.last_assistant_message</p>
   {:else}
     <p class="hint">Captures this text tab as plain text.</p>

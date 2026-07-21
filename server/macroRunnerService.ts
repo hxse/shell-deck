@@ -1,20 +1,22 @@
 import type { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import type { AgentEvent, AgentEventMatch } from '../src/lib/agentEvents/agentEventTypes'
+import { performance } from 'node:perf_hooks'
 import { captureTerminalBuffer } from '../src/lib/capture/terminalBufferCapture'
 import { createGeneratedId } from '../src/lib/generatedId'
 import type {
   CaptureSourceConfig,
+  AgentEventWaitLimit,
   FlowV2ArtifactSource,
   FlowV2StepArtifactSource,
   FlowV2Node,
-  MacroDefinitionV4,
+  MacroDefinitionV5,
   MacroRecord,
   MessageSpec,
   ParallelLane,
   TemplatableScalarText,
   TextMatchCondition,
 } from '../src/lib/macro/macroDefinitionTypes'
-import { validateMacroDefinitionV4, validateRunnableMacroDefinitionV4, type MacroDefinitionIssue } from '../src/lib/macro/macroDefinitionValidation'
+import { validateMacroDefinitionV5, validateRunnableMacroDefinitionV5, type MacroDefinitionIssue } from '../src/lib/macro/macroDefinitionValidation'
 import { validateMacroRuntimeBinding } from '../src/lib/macro/macroRuntimeBinding'
 import type { FrozenTerminalBinding, MacroRunnerDelta, MacroRunnerSnapshot, MacroRunTrace, RunManifestV1 } from '../src/lib/macro/runnerTypes'
 import { renderScopedTemplate, renderTemplatableScalar, type TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
@@ -45,7 +47,7 @@ type LiveRun = {
   runtimeRevision: number
   publishedEventSeq: number
   publishTimer: ReturnType<typeof setTimeout> | null
-  definition: MacroDefinitionV4
+  definition: MacroDefinitionV5
   bindings: Map<number, FrozenTerminalBinding>
   status: MacroRunnerSnapshot['status']
   currentNodeId: string | null
@@ -61,6 +63,8 @@ type LiveRun = {
   consumedAgentEventIds: Set<string>
   terminalized: boolean
   cooperativeCheckpointCount: number
+  pausedStartedAtMs: number | null
+  accumulatedPausedMs: number
 }
 
 class FlowSignal extends Error { constructor(readonly signal: RunControlSignal) { super(signal) } }
@@ -82,7 +86,7 @@ export class MacroRunnerService {
 
   constructor(
     private readonly manager: TerminalRoomManager,
-    private readonly records: MacroRecordStore<MacroDefinitionV4>,
+    private readonly records: MacroRecordStore<MacroDefinitionV5>,
     private readonly runStore: MacroRunStore,
     private readonly notificationService: NotificationDispatcher,
     private readonly agentEvents: AgentEventStore,
@@ -128,9 +132,9 @@ export class MacroRunnerService {
 
   preflightStart(templateId: string): MacroStartPreflight {
     const record = this.records.read(templateId) as MacroRecord
-    const persistable = validateMacroDefinitionV4(record.definition)
+    const persistable = validateMacroDefinitionV5(record.definition)
     if (!persistable.ok) throw new Error('invalid_macro_definition')
-    const runnable = validateRunnableMacroDefinitionV4(persistable.value)
+    const runnable = validateRunnableMacroDefinitionV5(persistable.value)
     if (!runnable.ok) throw new MacroNotRunnableError(runnable.issues)
     return {
       recordId: record.id,
@@ -153,7 +157,7 @@ export class MacroRunnerService {
     const record = this.records.read(templateId) as MacroRecord
     if (record.id !== preflight.recordId || record.revision !== preflight.recordRevision) throw new Error('macro_revision_conflict')
     if (record.revision !== expectedMacroRevision) throw new Error('macro_revision_conflict')
-    const validated = validateRunnableMacroDefinitionV4(record.definition)
+    const validated = validateRunnableMacroDefinitionV5(record.definition)
     if (!validated.ok) throw new MacroNotRunnableError(validated.issues)
     if (macroDefinitionHash(validated.value) !== preflight.definitionHash) throw new Error('macro_revision_conflict')
     const definition = structuredClone(validated.value)
@@ -227,6 +231,8 @@ export class MacroRunnerService {
         consumedAgentEventIds: new Set(),
         terminalized: false,
         cooperativeCheckpointCount: 0,
+        pausedStartedAtMs: null,
+        accumulatedPausedMs: 0,
       }
       this.initializeAgentEventBaselines(live)
       this.runs.set(room.roomId, live)
@@ -246,7 +252,7 @@ export class MacroRunnerService {
     const run = this.activeRun(roomId)
     if (run.status !== 'running') throw new Error('run_not_running')
     this.appendEvent(run, 'run_paused')
-    run.status = 'paused'
+    this.enterPaused(run)
     return this.snapshot(roomId)
   }
 
@@ -254,7 +260,7 @@ export class MacroRunnerService {
     const run = this.activeRun(roomId)
     if (run.status !== 'paused') throw new Error('run_not_paused')
     this.appendEvent(run, 'run_resumed')
-    run.status = 'running'
+    this.leavePaused(run)
     for (const resolve of run.pauseWaiters.splice(0)) resolve()
     return this.snapshot(roomId)
   }
@@ -544,7 +550,7 @@ export class MacroRunnerService {
     const binding = this.binding(run, configuredTerminalIndex)
     const currentTerminalIndex = this.manager.indexMap(run.roomId).find((item) => item.terminalId === binding.terminalId)?.index ?? null
     if (capture.kind === 'agent-event') {
-      const captured = await this.waitForAgentEventCapture(run, stepId, binding, capture.captureMode)
+      const captured = await this.waitForAgentEventCapture(run, stepId, binding, capture.captureMode, capture.waitLimit)
       const rawArtifactRef = this.writeSupplementalArtifact(run, stepId, 'agent_event_raw', 'agent-event-raw', JSON.stringify(captured.raw, null, 2) + '\n', 'json')
       return {
         text: captured.text,
@@ -618,7 +624,7 @@ export class MacroRunnerService {
 
   private async pauseRun(run: LiveRun, reason: string, stepId: string): Promise<void> {
     if (run.status !== 'paused') {
-      run.status = 'paused'
+      this.enterPaused(run)
       this.appendEvent(run, 'run_paused', { reason, stepId })
     }
     await this.checkpoint(run)
@@ -680,6 +686,8 @@ export class MacroRunnerService {
         const match = this.agentEventMatch(run, binding, eventKind)
         run.agentEventBaselines.set(agentEventBaselineKey(target.stepId, eventKind), this.agentEvents.countMatching(match))
       }
+      const errorKind = 'agent.error' as const
+      run.agentEventBaselines.set(agentEventBaselineKey(target.stepId, errorKind), this.agentEvents.countMatching(this.agentEventMatch(run, binding, errorKind)))
     }
   }
 
@@ -700,21 +708,54 @@ export class MacroRunnerService {
     return targets
   }
 
-  private async waitForAgentEventCapture(run: LiveRun, stepId: string, binding: FrozenTerminalBinding, captureMode: 'result_only' | 'prompt_only' | 'prompt_and_result'): Promise<{ text: string; raw: unknown; events: AgentEvent[] }> {
-    const timeoutMs = positiveTimeout(process.env.SHELL_DECK_AGENT_EVENT_CAPTURE_TIMEOUT_MS, 600_000)
-    let remaining = timeoutMs
-    while (remaining > 0) {
+  private async waitForAgentEventCapture(run: LiveRun, stepId: string, binding: FrozenTerminalBinding, captureMode: 'result_only' | 'prompt_only' | 'prompt_and_result', waitLimit: AgentEventWaitLimit): Promise<{ text: string; raw: unknown; events: AgentEvent[] }> {
+    const startedAtMs = performance.now()
+    const pausedAtStartMs = this.totalPausedMs(run, startedAtMs)
+    while (true) {
       await this.checkpoint(run)
+      this.binding(run, binding.index)
+      const hookError = this.agentEvents.nextMatching(
+        this.agentEventMatch(run, binding, 'agent.error'),
+        run.agentEventBaselines.get(agentEventBaselineKey(stepId, 'agent.error')) ?? 0,
+        run.consumedAgentEventIds,
+      )
+      if (hookError) {
+        run.consumedAgentEventIds.add(hookError.eventId)
+        throw new Error('agent_event_hook_error:' + binding.terminalId)
+      }
       const captured = this.agentEventsForCapture(run, stepId, binding, captureMode)
       if (captured) {
         for (const event of captured.events) run.consumedAgentEventIds.add(event.eventId)
         return captured
       }
-      const slice = Math.min(100, remaining)
+      const remaining = waitLimit.kind === 'timeout'
+        ? waitLimit.timeoutMs - this.activeElapsedMs(run, startedAtMs, pausedAtStartMs)
+        : null
+      if (remaining !== null && remaining <= 0) throw new Error('agent_event_capture_timeout:' + binding.terminalId)
+      const slice = remaining === null ? 100 : Math.min(100, remaining)
       await abortableDelay(slice, run.abortController.signal)
-      remaining -= slice
     }
-    throw new Error('agent_event_not_ready:' + binding.terminalId)
+  }
+
+  private enterPaused(run: LiveRun): void {
+    run.status = 'paused'
+    run.pausedStartedAtMs ??= performance.now()
+  }
+
+  private leavePaused(run: LiveRun): void {
+    const now = performance.now()
+    if (run.pausedStartedAtMs !== null) run.accumulatedPausedMs += now - run.pausedStartedAtMs
+    run.pausedStartedAtMs = null
+    run.status = 'running'
+  }
+
+  private totalPausedMs(run: LiveRun, now = performance.now()): number {
+    return run.accumulatedPausedMs + (run.pausedStartedAtMs === null ? 0 : now - run.pausedStartedAtMs)
+  }
+
+  private activeElapsedMs(run: LiveRun, startedAtMs: number, pausedAtStartMs: number): number {
+    const now = performance.now()
+    return now - startedAtMs - (this.totalPausedMs(run, now) - pausedAtStartMs)
   }
 
   private agentEventsForCapture(run: LiveRun, stepId: string, binding: FrozenTerminalBinding, captureMode: 'result_only' | 'prompt_only' | 'prompt_and_result'): { text: string; raw: unknown; events: AgentEvent[] } | undefined {
@@ -736,11 +777,11 @@ export class MacroRunnerService {
     return undefined
   }
 
-  private agentEventMatch(run: LiveRun, binding: FrozenTerminalBinding, eventKind: 'agent.prompt_submitted' | 'agent.output'): AgentEventMatch {
+  private agentEventMatch(run: LiveRun, binding: FrozenTerminalBinding, eventKind: CaptureAgentEventKind): AgentEventMatch {
     return {
       serverInstanceId: this.manager.serverInstanceId, roomId: run.roomId, roomGeneration: run.roomGeneration,
       terminalId: binding.terminalId, launchId: binding.launchId, agentKind: 'codex', eventKind,
-      adapter: eventKind === 'agent.output' ? 'codex-stop-hook' : 'codex-user-prompt-submit-hook',
+      adapter: eventKind === 'agent.output' ? 'codex-stop-hook' : eventKind === 'agent.prompt_submitted' ? 'codex-user-prompt-submit-hook' : 'codex-hook-error',
     }
   }
 
@@ -896,19 +937,15 @@ function extractText(input: string, node: Extract<FlowV2Node, { type: 'extract_t
   return output
 }
 
+type CaptureAgentEventKind = 'agent.prompt_submitted' | 'agent.output' | 'agent.error'
+
 function agentEventKinds(captureMode: 'result_only' | 'prompt_only' | 'prompt_and_result'): Array<'agent.prompt_submitted' | 'agent.output'> {
   if (captureMode === 'prompt_only') return ['agent.prompt_submitted']
   if (captureMode === 'prompt_and_result') return ['agent.prompt_submitted', 'agent.output']
   return ['agent.output']
 }
 
-function agentEventBaselineKey(stepId: string, eventKind: 'agent.prompt_submitted' | 'agent.output'): string { return `${stepId}|${eventKind}` }
-
-function positiveTimeout(value: string | undefined, fallback: number): number {
-  if (value === undefined) return fallback
-  const parsed = Number(value)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
+function agentEventBaselineKey(stepId: string, eventKind: CaptureAgentEventKind): string { return `${stepId}|${eventKind}` }
 
 function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {

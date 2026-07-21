@@ -4,7 +4,7 @@
 
 每次成功启动都在 User Data Root 的 `runs/<runId>/` 建立 current-schema-only evidence：
 
-* `manifest.json` 保存 `RunManifestV1`，包含frozen runnable MacroDefinitionV4、canonical SHA-256 definition hash、MacroRecord id/revision、serverInstanceId、roomId、roomGeneration、terminalStructureRevision及frozen index/type/terminalId/launchId bindings。persistable但含unassigned的definition不能Start，因此不会产生manifest或`run_started`。
+* `manifest.json` 保存 `RunManifestV1`，包含frozen runnable MacroDefinitionV5、canonical SHA-256 definition hash、MacroRecord id/revision、serverInstanceId、roomId、roomGeneration、terminalStructureRevision及frozen index/type/terminalId/launchId bindings。persistable但含unassigned的definition不能Start，因此不会产生manifest或`run_started`。
 * `events/` 按100条一个segment保存最近的durable event tail；文件名是segment首个绝对`eventSeq`。每个event包含immutable Room provenance、monotonic absolute eventSeq、generated eventId、kind、timestamp与data。
 * V0固定最多保留最近1000条event，不提供配置。跨过上限时只删除最旧完整segment，因此steady retained window为901至1000条；旧event永久删除，不提供历史分页。
 * `summary.json`永久保留run开始/更新时间、firstAvailableEventSeq、lastEventSeq、totalEventCount、discardedEventCount与lastEventKind。eventSeq不因retention重新编号，Trace必须明确显示已删除数量。

@@ -548,6 +548,66 @@
   font-size: 12px;
 }
 
+.macro-panel .agent-wait-limit {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: 7px 12px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #d8e0e8;
+  border-radius: 5px;
+  background: #f8fafc;
+}
+
+.macro-panel .agent-timeout-toggle {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: #344454;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.macro-panel .agent-timeout-toggle input[type="checkbox"] {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+  accent-color: #2786d2;
+}
+
+.macro-panel .agent-timeout-toggle span {
+  line-height: 16px;
+}
+
+.macro-panel .agent-timeout-duration {
+  display: grid;
+  grid-template-columns: max-content minmax(72px, 120px);
+  align-items: center;
+  justify-content: end;
+  gap: 7px;
+  min-width: 0;
+}
+
+.macro-panel .agent-timeout-duration input {
+  width: 100%;
+}
+
+.macro-panel .agent-timeout-hint {
+  min-width: 0;
+  margin: 0;
+  line-height: 16px;
+  text-align: right;
+}
+
 .macro-panel .inline-actions button,
 .macro-panel .step-actions button,
 .macro-panel .macro-row button,

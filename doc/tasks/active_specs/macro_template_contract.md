@@ -1,8 +1,8 @@
-# Macro V4 Contract
+# Macro V5 Contract
 
 ## Definition、Record 与 exact references
 
-唯一current格式是`MacroDefinitionV4`：`schemaVersion`必须精确为`4`，并包含`name`、`description`、`terminalLayout`与`body`。`terminalLayout`只保存从1开始连续的terminal `index/type`；definition不保存record metadata、Room/server identity、cwd、terminalId、launchId、alias或旧configId。
+唯一current格式是`MacroDefinitionV5`：`schemaVersion`必须精确为`5`，并包含`name`、`description`、`terminalLayout`与`body`。`terminalLayout`只保存从1开始连续的terminal `index/type`；definition不保存record metadata、Room/server identity、cwd、terminalId、launchId、alias或旧configId。
 
 持久化envelope是`MacroRecord`：server生成`tmpl_` id、revision、createdAt、updatedAt，并把definition放在`definition`字段中。JSON editor、clipboard Copy与Library Macro JSON只处理definition，不处理record envelope。
 
@@ -16,14 +16,24 @@ type MacroTerminalReference =
 
 该字段名固定为`terminal`，用于root Send/Input/terminal-quiet Wait、Capture config与Parallel lane。lane内Action继承lane terminal。required artifact slot使用`StepArtifactSource | {kind:"unassigned"}`，只覆盖If/Elif condition、root/lane Extract及Send/Notify artifact message part。Message artifact的`source`必须存在。`Input.defaultSource`仍是optional assigned-only；Parallel Output的`{kind:"none"}`仍表示明确不输出，不等同unassigned。
 
-这是current-schema-only hard cut。V3、primitive `terminalIndex` persisted field、physical target、空stepId placeholder、missing artifact source、alias、migration、adapter、dual validator与自动转换均不存在；旧输入必须fail loudly。
+AgentEvent Capture还必须保存exact wait policy：
+
+```ts
+type AgentEventWaitLimit =
+  | { kind: "unbounded" }
+  | { kind: "timeout"; timeoutMs: number }
+```
+
+新建AgentEvent Capture默认unbounded。timeout branch要求positive integer毫秒并在到期时fail；其他Capture kind不得携带`waitLimit`。
+
+这是current-schema-only hard cut。V4及更早definition、primitive `terminalIndex` persisted field、physical target、空stepId placeholder、missing artifact source、missing waitLimit、alias、migration、adapter、dual validator与自动转换均不存在；旧输入必须fail loudly。
 
 ## 三层 Validation
 
 `src/lib/macro/macroDefinitionValidation.ts`是唯一validation gateway：
 
-1. `validateMacroDefinitionV4(input)`与`parseAndValidateMacroDefinitionJson(text)`检查可持久化的exact schema、Flow语义、assigned terminal layout/capability、assigned earlier artifact、template与regex。白名单slot中的exact`{kind:"unassigned"}`合法，不产生persistable issue。
-2. `validateRunnableMacroDefinitionV4(input)`在persistable基础上为每个未指派slot返回stable `unassigned_terminal_reference`或`unassigned_artifact_reference` path。它不读取Room、不改写definition。
+1. `validateMacroDefinitionV5(input)`与`parseAndValidateMacroDefinitionJson(text)`检查可持久化的exact schema、Flow语义、assigned terminal layout/capability、assigned earlier artifact、template与regex。白名单slot中的exact`{kind:"unassigned"}`合法，不产生persistable issue。
+2. `validateRunnableMacroDefinitionV5(input)`在persistable基础上为每个未指派slot返回stable `unassigned_terminal_reference`或`unassigned_artifact_reference` path。它不读取Room、不改写definition。
 3. live runtime validator只接收runnable definition，再检查当前Room的index/type、terminalId/launchId binding与readiness。
 
 assigned但missing/future/wrong artifact或assigned terminal缺layout/capability mismatch仍是invalid definition，不能自动降级为unassigned。Macro/JSON/Library Save使用第1层；Start严格按persistable→runnable→live Room执行。server Start对not-runnable返回`macro_not_runnable`及issues，零run安装、零terminal mutation、零`run_started`。
@@ -40,13 +50,13 @@ unassigned使用amber局部warning并明确“Save is allowed, Start requires as
 
 结构Add/Move只受body/branch/lane结构规则约束。If/Elif/Extract没有earlier artifact时仍必须插入，并以unassigned source成为可保存但不可运行的draft。结构变更令既有assigned source失效时保留错误引用并显示persistable issue，直到用户修复或显式改为Unassigned。
 
-JSON editor保持纯文本语义，不读取Room、不补引用。JSON Save使用V4 persistable gateway；合法unassigned必须原样round-trip。
+JSON editor保持纯文本语义，不读取Room、不补引用或wait policy。JSON Save使用V5 persistable gateway；合法unassigned与exact waitLimit必须原样round-trip。
 
 ## CRUD 与 editor lifecycle
 
 production surface只提供list/create/read/update/delete。Create/Update/Delete必须通过Room controller；既有record的Edit/Update/Delete还必须持有per-record content edit lease并匹配expected revision。Delete可从read-only selected record直接发起，但操作内部仍须acquire/takeover lease、重读current record并按expected revision删除。
 
-List逐record扫描并只为current V4生成summary。V3、invalid envelope或损坏JSON不读取、不迁移，只作为`invalidRecords` id/error诊断返回；它们不得令其他valid record从selector消失。Macro UI持续显示该诊断，显式Read invalid record仍fail loudly。清理旧文件采用明确删除，不提供legacy reader、migration或自动转换。
+List逐record扫描并只为current V5生成summary。V4及更早definition、invalid envelope或损坏JSON不读取、不迁移，只作为`invalidRecords` id/error诊断返回；它们不得令其他valid record从selector消失。Macro UI持续显示该诊断，显式Read invalid record仍fail loudly。清理旧文件采用明确删除，不提供legacy reader、migration或自动转换。
 
 New是browser-local draft，新Room默认不选Macro；New/editing期间selector与New保持可用，dirty切换走discard确认。selector首个`Select macro`空值option是可选的显式null selection：clean时清除selected/base/draft并回到`No macro selected`，dirty时遵守同一discard确认且拒绝时恢复native value；它不Delete/Save/Prepare或影响active run。New首次Create后必须按fresh record identity取得lease才继续编辑；竞争失败时保留submitted buffer、转read-only并进入独立published-Create preservation state，直到显式New/Select/Edit latest解决。selection、visual/JSON draft、dirty与editor tab不跨browser同步。成功Create/Save/Delete后的record是user-global saved state；generic `content_record_changed`在local operation pending期间按sequence排队，settle后才按record/revision replay并推进消费状态。相同或更旧revision是ack/stale event；更高revision与Delete必须更新saved-truth提示，但不得切换其他browser selector或覆盖submitted/dirty/editing/lease-lost/published-Create preserved draft。active run继续使用启动时冻结的record snapshot。
 

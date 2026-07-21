@@ -27,8 +27,8 @@ export const sourceInteractiveControlDigest035 = 'c0be373c0b0c28b1ac83084b4d7bda
 
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
-export const sourceInteractiveControlCount = 195
-export const sourceInteractiveControlDigest = '8002c90a04aa50f4f7a092451b2a3b4c803a64d02c99cc410498f21be148c976'
+export const sourceInteractiveControlCount = 199
+export const sourceInteractiveControlDigest = '278ac0156e82120cbe483e2fb764273d28b7c21b78661c5b9a299bbd5a8e2c63'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
@@ -325,7 +325,7 @@ const removedMacroControls034 = new Set([
   "capture-agent-mode",
 ])
 
-const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
+const macroRuntimeControls034: Array<readonly [string, UiControlEvidenceKind]> = [
   ...baseline031ARuntimeControlIds
     .filter(isCurrent034MacroControl)
     .map((key) => [key, macroEvidenceFor(key)] as const),
@@ -334,6 +334,8 @@ const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
   ["macro-prepare-terminals", "clicked"],
   ["macro-insertion-placement", "clicked"],
 ]
+
+const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [...macroRuntimeControls034]
 
 const libraryRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
   ['macro-save-to-library', 'clicked'],
@@ -362,6 +364,7 @@ const libraryRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = 
 
 export const workspaceRuntimeControlInventory034: UiControlInventoryEntry[] = workspaceRuntimeControls034.map(([key, evidence]) => ({ key, evidence }))
 export const workspaceRuntimeControlInventory: UiControlInventoryEntry[] = workspaceRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
+export const macroRuntimeControlInventory034: UiControlInventoryEntry[] = macroRuntimeControls034.map(([key, evidence]) => ({ key, evidence }))
 export const macroRuntimeControlInventory: UiControlInventoryEntry[] = macroRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
 export const libraryRuntimeControlInventory: UiControlInventoryEntry[] = libraryRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
 export const runtimeControlInventory: UiControlInventoryEntry[] = [...workspaceRuntimeControlInventory, ...macroRuntimeControlInventory, ...libraryRuntimeControlInventory]
@@ -392,12 +395,12 @@ export const attributedControlChanges: UiControlInventoryEntry[] = [
       spec: addedControlSpec(key),
     })),
 ]
-export const attributedRestorations034: UiControlInventoryEntry[] = macroRuntimeControls.map(([key, evidence]) => ({
+export const attributedRestorations034: UiControlInventoryEntry[] = macroRuntimeControls034.map(([key, evidence]) => ({
   key,
   evidence,
   changedBy: "20260627A.034",
   oldBehavior: ".033 intentionally had no production Macro surface while the Room/controller foundation was rebuilt.",
-  newBehavior: ".034 restores this control on MacroDefinitionV4 while preserving the .031A presentation and current Room/controller contracts.",
+  newBehavior: ".034 restores this control on MacroDefinitionV3 while preserving the .031A presentation and current Room/controller contracts.",
   spec: "20260627A.034/02_spec/01_contract.md — UI preservation, Macro workbench and explicit Prepare/Start",
 }))
 
@@ -501,5 +504,41 @@ export const codexControlExclusions = [
     key: 'parallel.capture.agent-mode',
     evidence: 'excluded',
     reason: 'Codex / agent-event UI is explicitly outside the fully offline .031B baseline.',
+  },
+  {
+    key: 'capture-agent-timeout-enabled',
+    evidence: 'excluded',
+    changedBy: '20260627A.038',
+    oldBehavior: '.037 had no explicit AgentEvent wait-limit control.',
+    newBehavior: '.038 defaults to unbounded and exposes an explicit timeout checkbox.',
+    spec: '20260627A.038/02_spec/01_contract.md — Visual editor and explicit AgentEvent wait limit',
+    reason: 'AgentEvent controls are covered by the isolated .038 UI journey, not the non-Codex .031B journey.',
+  },
+  {
+    key: 'capture-agent-timeout-ms',
+    evidence: 'excluded',
+    changedBy: '20260627A.038',
+    oldBehavior: '.037 exposed only the hidden fixed server timeout.',
+    newBehavior: '.038 writes an exact timeout duration only when the checkbox is enabled.',
+    spec: '20260627A.038/02_spec/01_contract.md — Visual editor and explicit AgentEvent wait limit',
+    reason: 'AgentEvent controls are covered by the isolated .038 UI journey, not the non-Codex .031B journey.',
+  },
+  {
+    key: 'parallel-capture-agent-timeout-enabled',
+    evidence: 'excluded',
+    changedBy: '20260627A.038',
+    oldBehavior: '.037 had no explicit Parallel AgentEvent wait-limit control.',
+    newBehavior: '.038 defaults Parallel AgentEvent Capture to unbounded and exposes an explicit timeout checkbox.',
+    spec: '20260627A.038/02_spec/01_contract.md — Visual editor and explicit AgentEvent wait limit',
+    reason: 'AgentEvent controls are covered by the isolated .038 UI journey, not the non-Codex .031B journey.',
+  },
+  {
+    key: 'parallel-capture-agent-timeout-ms',
+    evidence: 'excluded',
+    changedBy: '20260627A.038',
+    oldBehavior: '.037 exposed only the hidden fixed server timeout for Parallel AgentEvent Capture.',
+    newBehavior: '.038 writes an exact Parallel timeout duration only when the checkbox is enabled.',
+    spec: '20260627A.038/02_spec/01_contract.md — Visual editor and explicit AgentEvent wait limit',
+    reason: 'AgentEvent controls are covered by the isolated .038 UI journey, not the non-Codex .031B journey.',
   },
 ] satisfies UiControlInventoryEntry[]

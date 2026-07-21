@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { assertGeneratedId, createGeneratedId } from '../src/lib/generatedId'
-import type { MacroDefinitionV4 } from '../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunEvent, MacroRunEventWindow, MacroRunTrace, RunManifestV1 } from '../src/lib/macro/runnerTypes'
 import { EvidenceStore, retainedFirstEventSeq, type EvidenceRunSummary, type RunProvenance } from './evidenceStore'
 import { ensurePrivateDirectory, fsyncDirectory, initializeUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
@@ -214,7 +214,7 @@ export function canonicalJsonStringify(value: unknown): string {
   return '{' + keys.map((key) => JSON.stringify(key) + ':' + canonicalJsonStringify(record[key])).join(',') + '}'
 }
 
-export function macroDefinitionHash(definition: MacroDefinitionV4): string {
+export function macroDefinitionHash(definition: MacroDefinitionV5): string {
   return createHash('sha256').update(Buffer.from(canonicalJsonStringify(definition), 'utf8')).digest('hex')
 }
 

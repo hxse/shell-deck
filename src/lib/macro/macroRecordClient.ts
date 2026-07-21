@@ -1,7 +1,7 @@
 import type { ContentCommitLeaseOutcome, ContentEditLeaseGrant } from '../contentEditLease'
 import type { RoomControlGrant } from '../roomControl'
 import { ROOM_CONTROL_CLIENT_HEADER, ROOM_CONTROL_EPOCH_HEADER, ROOM_CONTROL_LEASE_HEADER } from '../roomControl'
-import type { MacroDefinitionV4, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
+import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
 
 export const CONTENT_EDIT_LEASE_HEADER = 'X-Shell-Deck-Content-Edit-Lease'
 
@@ -30,11 +30,11 @@ export class MacroRecordClient {
     return (await requestJson('/api/templates/' + encodeURIComponent(id))).template as MacroRecord
   }
 
-  async create(definition: MacroDefinitionV4): Promise<MacroRecord> {
+  async create(definition: MacroDefinitionV5): Promise<MacroRecord> {
     return (await requestJson('/api/templates', { method: 'POST', headers: this.controlHeaders(), body: JSON.stringify({ definition }) })).template as MacroRecord
   }
 
-  async update(record: MacroRecord, definition: MacroDefinitionV4, lease: ContentEditLeaseGrant): Promise<{ record: MacroRecord; leaseOutcome: ContentCommitLeaseOutcome }> {
+  async update(record: MacroRecord, definition: MacroDefinitionV5, lease: ContentEditLeaseGrant): Promise<{ record: MacroRecord; leaseOutcome: ContentCommitLeaseOutcome }> {
     const response = await requestJson('/api/templates/' + encodeURIComponent(record.id), {
       method: 'PUT',
       headers: this.controlHeaders(),

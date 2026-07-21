@@ -5,6 +5,7 @@ import { relative, resolve } from 'node:path'
 import { parse } from 'svelte/compiler'
 import {
   attributedBehaviorChanges,
+  codexControlExclusions,
   attributedControlChanges,
   attributedControlChanges035,
   attributedRestorations034,
@@ -12,6 +13,7 @@ import {
   baseline031ASourceInteractiveControlCount,
   baseline031ASourceInteractiveControlDigest,
   libraryRuntimeControlInventory,
+  macroRuntimeControlInventory034,
   macroRuntimeControlInventory,
   runtimeControlInventory,
   sourceInteractiveControlCount,
@@ -59,7 +61,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest035).toBe('c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584')
   })
 
-  test('.036 interactive source controls match its attributed current snapshot', () => {
+  test('.038 interactive source controls match its attributed current snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -85,7 +87,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.036'].includes(change?.changedBy ?? '')).toBe(true)
+      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.036', '20260627A.038'].includes(change?.changedBy ?? '')).toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
@@ -98,7 +100,7 @@ describe('.031B evolving UI source inventory', () => {
   })
 
   test('.034 attributes every restored current-schema Macro control without reviving removed product behavior', () => {
-    const runtimeKeys = macroRuntimeControlInventory.map(({ key }) => key)
+    const runtimeKeys = macroRuntimeControlInventory034.map(({ key }) => key)
     const attributedKeys = attributedRestorations034.map(({ key }) => key)
     expect(new Set(attributedKeys)).toEqual(new Set(runtimeKeys))
     expect(new Set(runtimeKeys).size).toBe(runtimeKeys.length)
@@ -107,6 +109,20 @@ describe('.031B evolving UI source inventory', () => {
     expect(runtimeKeys).not.toContain('macro-import')
     expect(runtimeKeys).not.toContain('macro-export')
     expect(runtimeKeys).not.toContain('capture-agent-kind')
+  })
+
+  test('.038 attributes its AgentEvent wait-limit controls without adding them to the non-Codex journey', () => {
+    const expected = [
+      'capture-agent-timeout-enabled',
+      'capture-agent-timeout-ms',
+      'parallel-capture-agent-timeout-enabled',
+      'parallel-capture-agent-timeout-ms',
+    ]
+    const current = macroRuntimeControlInventory.map(({ key }) => key)
+    for (const key of expected) {
+      expect(current).not.toContain(key)
+      expect(codexControlExclusions.find((entry) => entry.key === key)?.changedBy).toBe('20260627A.038')
+    }
   })
 
   test('.035 attributes removal of manual Home refresh without rewriting the .034 runtime snapshot', () => {

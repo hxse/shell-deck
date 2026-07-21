@@ -1,7 +1,7 @@
 import type { TerminalRuntimePosition } from '../protocol'
 import type {
   FlowV2Node,
-  MacroDefinitionV4,
+  MacroDefinitionV5,
   MacroTerminalLayoutItem,
 } from './macroDefinitionTypes'
 
@@ -9,13 +9,13 @@ export type AdoptRuntimeTerminalResult =
   | { ok: true }
   | { ok: false; reason: 'invalid_terminal_index' | 'invalid_macro_layout' | 'runtime_terminal_unavailable' }
 
-export function referencedTerminalIndexes(definition: MacroDefinitionV4): number[] {
+export function referencedTerminalIndexes(definition: MacroDefinitionV5): number[] {
   const indexes = new Set<number>()
   collectNodeTerminalIndexes(definition.body, indexes)
   return [...indexes].sort((left, right) => left - right)
 }
 
-export function reconcileVisualTerminalLayout(definition: MacroDefinitionV4): void {
+export function reconcileVisualTerminalLayout(definition: MacroDefinitionV5): void {
   const lastReferencedIndex = referencedTerminalIndexes(definition).at(-1) ?? 0
   if (definition.terminalLayout.length > lastReferencedIndex) {
     definition.terminalLayout = definition.terminalLayout.slice(0, lastReferencedIndex)
@@ -23,7 +23,7 @@ export function reconcileVisualTerminalLayout(definition: MacroDefinitionV4): vo
 }
 
 export function adoptRuntimeTerminal(
-  definition: MacroDefinitionV4,
+  definition: MacroDefinitionV5,
   terminalIndex: number,
   runtimePositions: TerminalRuntimePosition[] | null,
 ): AdoptRuntimeTerminalResult {

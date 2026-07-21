@@ -18,10 +18,11 @@ export type NotifyChannel =
   | { kind: 'telegram'; profileId: string }
 
 export type AgentEventCaptureMode = 'result_only' | 'prompt_only' | 'prompt_and_result'
+export type AgentEventWaitLimit = { kind: 'unbounded' } | { kind: 'timeout'; timeoutMs: number }
 export type CaptureSourceConfig =
   | { kind: 'terminal-buffer'; terminal: MacroTerminalReference; mode: 'scrollback-tail' | 'raw-stream-tail'; maxChars: number }
   | { kind: 'text-box'; terminal: MacroTerminalReference }
-  | { kind: 'agent-event'; agent: { kind: 'codex' }; terminal: MacroTerminalReference; captureMode: AgentEventCaptureMode }
+  | { kind: 'agent-event'; agent: { kind: 'codex' }; terminal: MacroTerminalReference; captureMode: AgentEventCaptureMode; waitLimit: AgentEventWaitLimit }
 export type ParallelCaptureSourceConfig =
   | Omit<Extract<CaptureSourceConfig, { kind: 'terminal-buffer' }>, 'terminal'>
   | Omit<Extract<CaptureSourceConfig, { kind: 'text-box' }>, 'terminal'>
@@ -89,8 +90,8 @@ export type FlowV2ControlNode =
   | FlowV2ControlTerminalNode
 export type FlowV2Node = FlowV2ActionNode | FlowV2ControlNode
 
-export type MacroDefinitionV4 = {
-  schemaVersion: 4
+export type MacroDefinitionV5 = {
+  schemaVersion: 5
   name: string
   description: string
   terminalLayout: MacroTerminalLayoutItem[]
@@ -102,7 +103,7 @@ export type MacroRecord = {
   revision: number
   createdAt: string
   updatedAt: string
-  definition: MacroDefinitionV4
+  definition: MacroDefinitionV5
 }
 
 export type MacroRecordSummary = {

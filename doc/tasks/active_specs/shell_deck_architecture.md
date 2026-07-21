@@ -28,7 +28,7 @@ Room runtime message只广播到同一Room。Room controller是process-local mem
 
 ## Macro 与 runner
 
-production Macro采用`MacroDefinitionV4`与`MacroRecord` envelope分层。definition只表达portable Flow、连续terminal index/type及exact assigned/unassigned logical references；record metadata由user-global store生成。Macro selection是单个browser的editor状态，新Room默认null selection，不改变Room terminal。
+production Macro采用`MacroDefinitionV5`与`MacroRecord` envelope分层。definition只表达portable Flow、连续terminal index/type及exact assigned/unassigned logical references；record metadata由user-global store生成。Macro selection是单个browser的editor状态，新Room默认null selection，不改变Room terminal。
 
 terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Library Load、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
 

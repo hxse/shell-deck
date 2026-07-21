@@ -14,7 +14,7 @@ import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } fr
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV4, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
@@ -136,7 +136,7 @@ test('Macro Create rechecks Room control inside the canonical record transaction
     }
 
     const pending = request(server.url, '/api/templates', grant, {
-      definition: { schemaVersion: 4, name: 'must not persist', description: '', terminalLayout: [], body: [] },
+      definition: { schemaVersion: 5, name: 'must not persist', description: '', terminalLayout: [], body: [] },
     })
     await entered.wait
     server.manager.disconnectClient(grant.clientId)
@@ -158,8 +158,8 @@ test('persistable unassigned references round-trip through Macro CRUD but Start 
   try {
     const room = server.manager.createRoom()
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV4 = {
-      schemaVersion: 4,
+    const definition: MacroDefinitionV5 = {
+      schemaVersion: 5,
       name: 'Unassigned draft',
       description: '',
       terminalLayout: [],
@@ -203,7 +203,7 @@ test('persistable unassigned references round-trip through Macro CRUD but Start 
     const activeRoom = server.manager.createRoom()
     const activeGrant = roomGrant(server.manager, activeRoom.roomId)
     const activeRecordResponse = await request(server.url, '/api/templates', activeGrant, {
-      definition: { schemaVersion: 4, name: 'active', description: '', terminalLayout: [], body: [{ id: 'wait', type: 'wait', mode: 'duration', durationMs: 5_000 }] },
+      definition: { schemaVersion: 5, name: 'active', description: '', terminalLayout: [], body: [{ id: 'wait', type: 'wait', mode: 'duration', durationMs: 5_000 }] },
     })
     const activeRecord = (activeRecordResponse.body as { template: MacroRecord }).template
     await request(server.url, `/api/rooms/${activeRoom.roomId}/runner/start`, activeGrant, {
@@ -309,8 +309,8 @@ test('input.defaultSource is exposed as editable live input without becoming per
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
     server.manager.setTextContent(room.roomId, text.terminalId, 'captured draft')
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV4 = {
-      schemaVersion: 4,
+    const definition: MacroDefinitionV5 = {
+      schemaVersion: 5,
       name: 'input default',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -346,8 +346,8 @@ test('Stop and Room Destroy cancel pending Input without terminal writes or dupl
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-cancel-034-'))
   const server = startShellDeckServer({ port: 0, dataRoot: root })
   try {
-    const definition: MacroDefinitionV4 = {
-      schemaVersion: 4,
+    const definition: MacroDefinitionV5 = {
+      schemaVersion: 5,
       name: 'cancel input',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -409,8 +409,8 @@ test('extract_text keeps the current negative index syntax and sends the selecte
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
     server.manager.setTextContent(room.roomId, text.terminalId, 'first\nlast')
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV4 = {
-      schemaVersion: 4,
+    const definition: MacroDefinitionV5 = {
+      schemaVersion: 5,
       name: 'negative select',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -449,13 +449,13 @@ test('durable Start never installs a run after controller loss or Room Destroy c
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-boundary-034-'))
   try {
     const manager = new TerminalRoomManager()
-    const records = new MacroRecordStore<MacroDefinitionV4>(root)
+    const records = new MacroRecordStore<MacroDefinitionV5>(root)
     const notification = new NotificationService(root)
     const agentEvents = new AgentEventStore(root)
 
     const lostRoom = manager.createRoom()
     const lostGrant = roomGrant(manager, lostRoom.roomId)
-    const lostRecord = await records.create({ schemaVersion: 4, name: 'lost control', description: '', terminalLayout: [], body: [] })
+    const lostRecord = await records.create({ schemaVersion: 5, name: 'lost control', description: '', terminalLayout: [], body: [] })
     const lostStore = new MacroRunStore(root)
     const append = lostStore.append.bind(lostStore)
     let revoked = false
@@ -479,7 +479,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
 
     const destroyedRoom = manager.createRoom()
     const destroyedGrant = roomGrant(manager, destroyedRoom.roomId)
-    const destroyedRecord = await records.create({ schemaVersion: 4, name: 'destroyed', description: '', terminalLayout: [], body: [] })
+    const destroyedRecord = await records.create({ schemaVersion: 5, name: 'destroyed', description: '', terminalLayout: [], body: [] })
     const destroyedStore = new MacroRunStore(root)
     const publish = destroyedStore.publishManifest.bind(destroyedStore)
     let destroying: Promise<void> | null = null
@@ -501,7 +501,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
 test('tight forever flow cooperatively yields so Stop can terminalize within a deadline', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-forever-yield-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV4>(root)
+  const records = new MacroRecordStore<MacroDefinitionV5>(root)
   const store = new MacroRunStore(root)
   const runner = new MacroRunnerService(manager, records, store, new NotificationService(root), new AgentEventStore(root))
   manager.addDestroyHook((roomId, roomGeneration) => runner.destroyRoom(roomId, roomGeneration))
@@ -509,7 +509,7 @@ test('tight forever flow cooperatively yields so Stop can terminalize within a d
     const room = manager.createRoom()
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 4,
+      schemaVersion: 5,
       name: 'cooperative forever',
       description: '',
       terminalLayout: [],
@@ -535,7 +535,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
     replayByteLimit: 8,
     backendFactory: (_kind, options) => new StreamingTerminalBackend(options),
   })
-  const records = new MacroRecordStore<MacroDefinitionV4>(root)
+  const records = new MacroRecordStore<MacroDefinitionV5>(root)
   const store = new MacroRunStore(root)
   const runner = new MacroRunnerService(manager, records, store, new NotificationService(root), new AgentEventStore(root))
   manager.addDestroyHook((roomId, roomGeneration) => runner.destroyRoom(roomId, roomGeneration))
@@ -544,7 +544,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
     manager.createTerminal(room.roomId, { backend: 'fake' })
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 4,
+      schemaVersion: 5,
       name: 'quiet activity revision',
       description: '',
       terminalLayout: [{ index: 1, type: 'shell' }],
@@ -566,7 +566,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
 test('Input submit append failure keeps the pending request retryable and never strands the structure lock', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-append-failure-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV4>(root)
+  const records = new MacroRecordStore<MacroDefinitionV5>(root)
   const store = new MacroRunStore(root)
   const originalAppend = store.append.bind(store)
   let failSubmitted = true
@@ -583,7 +583,7 @@ test('Input submit append failure keeps the pending request retryable and never 
     const text = manager.createTerminal(room.roomId, { backend: 'text' })
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 4,
+      schemaVersion: 5,
       name: 'retry input append',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -614,7 +614,7 @@ test('Input submit append failure keeps the pending request retryable and never 
 test('published runner events stay successful when summary maintenance fails after commit', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-maintenance-debt-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV4>(root)
+  const records = new MacroRecordStore<MacroDefinitionV5>(root)
   const failKinds = new Set<string>()
   let failSequence100 = true
   const evidence = new EvidenceStore(root, () => new Date().toISOString(), {
@@ -633,7 +633,7 @@ test('published runner events stay successful when summary maintenance fails aft
   try {
     const terminalRoom = manager.createRoom()
     const terminalGrant = roomGrant(manager, terminalRoom.roomId)
-    const terminalRecord = await records.create({ schemaVersion: 4, name: 'terminal debt', description: '', terminalLayout: [], body: [] })
+    const terminalRecord = await records.create({ schemaVersion: 5, name: 'terminal debt', description: '', terminalLayout: [], body: [] })
     failKinds.add('run_started')
     failKinds.add('run_completed')
     const terminalTicket = manager.admitControlledBearer(terminalGrant, terminalRoom.roomId)
@@ -647,7 +647,7 @@ test('published runner events stay successful when summary maintenance fails aft
     const checkpointRoom = manager.createRoom()
     const checkpointGrant = roomGrant(manager, checkpointRoom.roomId)
     const checkpointRecord = await records.create({
-      schemaVersion: 4,
+      schemaVersion: 5,
       name: 'checkpoint debt',
       description: '',
       terminalLayout: [],
@@ -664,7 +664,7 @@ test('published runner events stay successful when summary maintenance fails aft
     const inputTerminal = manager.createTerminal(inputRoom.roomId, { backend: 'text' })
     const inputGrant = roomGrant(manager, inputRoom.roomId)
     const inputRecord = await records.create({
-      schemaVersion: 4,
+      schemaVersion: 5,
       name: 'input debt',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -746,7 +746,7 @@ test('published Macro create/update/delete stay successful after record or lease
     const grant = roomGrant(server.manager, room.roomId)
     const broadcasts: ServerMessage[] = []
     server.manager.connectClient(room.roomId, (message) => broadcasts.push(message))
-    const definition: MacroDefinitionV4 = { schemaVersion: 4, name: 'published', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'published', description: '', terminalLayout: [], body: [] }
 
     const created = await request(server.url, '/api/templates', grant, { definition })
     expect(created.status).toBe(201)
@@ -801,9 +801,9 @@ test('published Macro create/update/delete stay successful after record or lease
   }
 })
 
-function runnableDefinition(second: string): MacroDefinitionV4 {
+function runnableDefinition(second: string): MacroDefinitionV5 {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: 'immutable run',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],

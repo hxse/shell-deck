@@ -7,7 +7,7 @@ test.afterEach(async ({ request }) => {
   await Promise.all(body.rooms.map((room) => request.delete('/api/rooms/' + encodeURIComponent(room.roomId), { data: { expectedRoomGeneration: room.roomGeneration } })))
 })
 
-test('V4 persists explicit Unassigned slots, never mutates them from terminal events, and only starts after explicit assignment', async ({ page, request }) => {
+test('V5 persists explicit Unassigned slots, never mutates them from terminal events, and only starts after explicit assignment', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -37,7 +37,7 @@ test('V4 persists explicit Unassigned slots, never mutates them from terminal ev
   await expect(page.getByTestId('macro-template-metadata')).not.toContainText('unsaved new macro')
   await closeTemplateDrawer(page)
   await page.getByTestId('macro-tab-json').click()
-  await expect(page.getByTestId('macro-json-preview')).toContainText('"schemaVersion": 4')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"schemaVersion": 5')
   await expect(page.getByTestId('macro-json-preview')).toContainText('"terminal": {')
   await expect(page.getByTestId('macro-json-preview')).toContainText('"kind": "unassigned"')
   await expect(page.getByTestId('macro-json-runnable-warning')).toContainText('assign 2 terminal or artifact references before Start')

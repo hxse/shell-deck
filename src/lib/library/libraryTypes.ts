@@ -18,6 +18,16 @@ export type LibraryItem = {
 
 export type LibraryItemSummary = Pick<LibraryItem, 'itemId' | 'kind' | 'revision' | 'title' | 'tags' | 'updatedAt'>
 
+export type InvalidLibraryItemSummary = {
+  itemId: string
+  error: 'invalid_library_item' | 'invalid_library_macro_definition'
+}
+
+export type LibraryItemListResult = {
+  items: LibraryItemSummary[]
+  invalidItems: InvalidLibraryItemSummary[]
+}
+
 export type LibraryItemFields = Pick<LibraryItem, 'title' | 'content' | 'description' | 'tags'>
 
 export function assertLibraryItemKind(value: unknown): LibraryItemKind {

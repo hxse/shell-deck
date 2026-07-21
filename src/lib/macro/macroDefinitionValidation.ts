@@ -3,7 +3,7 @@ import { isTerminalEnding } from './terminalEnding'
 import { isTerminalInputDelivery } from './terminalInputDelivery'
 import { cloneJsonValue } from '../jsonClone'
 import type {
-  MacroDefinitionV4,
+  MacroDefinitionV5,
   MacroTerminalLayoutItem,
   TerminalType,
 } from './macroDefinitionTypes'
@@ -34,14 +34,14 @@ export const MACRO_DEFINITION_ISSUE_CODES = [
 export type MacroDefinitionIssueCode = (typeof MACRO_DEFINITION_ISSUE_CODES)[number]
 export type MacroDefinitionIssue = { code: MacroDefinitionIssueCode; path: string; message: string }
 export type MacroDefinitionValidation =
-  | { ok: true; value: MacroDefinitionV4 }
+  | { ok: true; value: MacroDefinitionV5 }
   | { ok: false; issues: MacroDefinitionIssue[] }
 export type MacroTerminalLayoutValidation =
   | { ok: true; value: MacroTerminalLayoutItem[] }
   | { ok: false; issues: MacroDefinitionIssue[] }
 export type InvalidJsonError = { code: 'invalid_json'; offset: number; line: number; column: number; message: string }
 export type MacroDefinitionJsonValidation =
-  | { ok: true; value: MacroDefinitionV4 }
+  | { ok: true; value: MacroDefinitionV5 }
   | { ok: false; error: InvalidJsonError }
   | { ok: false; error: { code: 'invalid_macro_definition'; issues: MacroDefinitionIssue[] } }
 export type MacroTerminalLayoutJsonValidation =
@@ -86,11 +86,11 @@ export function validateMacroTerminalLayout(input: unknown, path = 'terminalLayo
   return issues.length === 0 ? { ok: true, value } : { ok: false, issues: finishIssues(issues) }
 }
 
-export function validateMacroDefinitionV4(input: unknown): MacroDefinitionValidation {
+export function validateMacroDefinitionV5(input: unknown): MacroDefinitionValidation {
   return validateMacroDefinition(input, 'persistable')
 }
 
-export function validateRunnableMacroDefinitionV4(input: unknown): MacroDefinitionValidation {
+export function validateRunnableMacroDefinitionV5(input: unknown): MacroDefinitionValidation {
   const persistable = validateMacroDefinition(input, 'persistable')
   return persistable.ok ? validateMacroDefinition(persistable.value, 'runnable') : persistable
 }
@@ -100,7 +100,7 @@ function validateMacroDefinition(input: unknown, mode: ValidationContext['mode']
   const definition = object(input, issues, '')
   if (!definition) return { ok: false, issues: finishIssues(issues) }
   exactKeys(definition, TOP_LEVEL_KEYS, issues, '')
-  if (definition.schemaVersion !== 4) add(issues, 'invalid_literal', 'schemaVersion', 'schemaVersion must be 4')
+  if (definition.schemaVersion !== 5) add(issues, 'invalid_literal', 'schemaVersion', 'schemaVersion must be 5')
   stringValue(definition.name, issues, 'name', { nonEmpty: true })
   stringValue(definition.description, issues, 'description')
   const layoutResult = validateMacroTerminalLayout(definition.terminalLayout)
@@ -109,13 +109,13 @@ function validateMacroDefinition(input: unknown, mode: ValidationContext['mode']
   const context: ValidationContext = { issues, layout, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0, templateScopeDepth: 0, mode }
   validateNodeList(definition.body, 'body', context, false, false)
   if (issues.length > 0) return { ok: false, issues: finishIssues(issues) }
-  return { ok: true, value: cloneJsonValue(input) as MacroDefinitionV4 }
+  return { ok: true, value: cloneJsonValue(input) as MacroDefinitionV5 }
 }
 
 export function parseAndValidateMacroDefinitionJson(text: string): MacroDefinitionJsonValidation {
   const parsed = parseJson(text)
   if (!parsed.ok) return parsed
-  const validated = validateMacroDefinitionV4(parsed.value)
+  const validated = validateMacroDefinitionV5(parsed.value)
   return validated.ok
     ? validated
     : { ok: false, error: { code: 'invalid_macro_definition', issues: validated.issues } }
@@ -247,7 +247,7 @@ function validateCaptureNode(node: RecordValue, path: string, context: Validatio
     exactKeys(capture, ['kind', ...inheritedKeys], context.issues, `${path}.capture`)
     validateTerminalSlot(capture.terminal, inherited, 'text-box', `${path}.capture.terminal`, context)
   } else if (capture.kind === 'agent-event') {
-    exactKeys(capture, ['kind', ...inheritedKeys, 'agent', 'captureMode'], context.issues, `${path}.capture`)
+    exactKeys(capture, ['kind', ...inheritedKeys, 'agent', 'captureMode', 'waitLimit'], context.issues, `${path}.capture`)
     validateTerminalSlot(capture.terminal, inherited, 'agent-event', `${path}.capture.terminal`, context)
     const agent = object(capture.agent, context.issues, `${path}.capture.agent`)
     if (agent) {
@@ -255,8 +255,19 @@ function validateCaptureNode(node: RecordValue, path: string, context: Validatio
       if (agent.kind !== 'codex') add(context.issues, 'invalid_literal', `${path}.capture.agent.kind`, 'agent kind must be codex')
     }
     literal(capture.captureMode, ['result_only', 'prompt_only', 'prompt_and_result'], context.issues, `${path}.capture.captureMode`, 'unsupported agent capture mode')
+    validateAgentEventWaitLimit(capture.waitLimit, `${path}.capture.waitLimit`, context)
   } else add(context.issues, 'invalid_literal', `${path}.capture.kind`, 'capture kind must be terminal-buffer, text-box or agent-event')
   if (typeof node.id === 'string') registerArtifact(context, node.id, 'captured_text')
+}
+
+function validateAgentEventWaitLimit(value: unknown, path: string, context: ValidationContext): void {
+  const waitLimit = object(value, context.issues, path)
+  if (!waitLimit) return
+  if (waitLimit.kind === 'unbounded') exactKeys(waitLimit, ['kind'], context.issues, path)
+  else if (waitLimit.kind === 'timeout') {
+    exactKeys(waitLimit, ['kind', 'timeoutMs'], context.issues, path)
+    positiveInteger(waitLimit.timeoutMs, context.issues, `${path}.timeoutMs`)
+  } else add(context.issues, 'invalid_literal', `${path}.kind`, 'waitLimit kind must be unbounded or timeout')
 }
 
 function validateExtract(node: RecordValue, path: string, context: ValidationContext): void {

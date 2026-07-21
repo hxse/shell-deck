@@ -37,18 +37,37 @@ export class LibraryStore {
   }
 
   list(kindValue: unknown, query = ''): LibraryItemSummary[] {
+    const result = this.scan(kindValue, query)
+    if (result.invalidItems.length > 0) throw new Error('invalid_library_item')
+    return result.records.map(libraryItemSummary)
+  }
+
+  scan(kindValue: unknown, query = ''): {
+    records: LibraryItem[]
+    invalidItems: Array<{ itemId: string; error: 'invalid_library_item' }>
+  } {
     const kind = assertLibraryItemKind(kindValue)
     const normalizedQuery = query.trim().toLowerCase()
     const records: LibraryItem[] = []
+    const invalidItems: Array<{ itemId: string; error: 'invalid_library_item' }> = []
     for (const entry of readdirSync(this.kindDirectory(kind), { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith('.json')) continue
       const itemId = entry.name.slice(0, -5)
-      records.push(this.read(kind, itemId))
+      try { records.push(this.read(kind, itemId)) }
+      catch (error) {
+        if (error instanceof Error && error.message.startsWith('library_item_not_found:')) continue
+        if (isInvalidLibraryItemData(error)) {
+          invalidItems.push({ itemId, error: 'invalid_library_item' })
+          continue
+        }
+        throw error
+      }
     }
-    return records
+    const filtered = records
       .filter((item) => !normalizedQuery || searchableText(item).toLowerCase().includes(normalizedQuery))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.itemId.localeCompare(right.itemId))
-      .map(libraryItemSummary)
+    invalidItems.sort((left, right) => left.itemId.localeCompare(right.itemId))
+    return { records: filtered, invalidItems }
   }
 
   read(kindValue: unknown, itemIdValue: unknown): LibraryItem {
@@ -140,4 +159,20 @@ function serialize(item: LibraryItem): string { return JSON.stringify(item, null
 
 function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === code
+}
+
+function isInvalidLibraryItemData(error: unknown): boolean {
+  if (error instanceof SyntaxError) return true
+  if (!(error instanceof Error)) return false
+  return error.message === 'invalid_library_item'
+    || error.message === 'invalid_library_item_fields'
+    || error.message === 'invalid_library_item_tags'
+    || error.message === 'invalid_library_item_revision'
+    || error.message === 'invalid_library_item_timestamp'
+    || error.message === 'invalid_library_item_normalization'
+    || error.message === 'library_item_kind_mismatch'
+    || error.message === 'library_item_id_mismatch'
+    || error.message === 'invalid_libraryItem_id'
+    || error.message === 'invalid_generated_id_suffix'
+    || error.message === 'invalid_library_item_path'
 }

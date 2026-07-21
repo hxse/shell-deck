@@ -13,7 +13,7 @@
     FlowV2ArtifactSource,
     FlowV2StepArtifactSource,
     FlowV2Node,
-    MacroDefinitionV4,
+    MacroDefinitionV5,
     MacroTerminalReference,
     MessageSpec,
     ParallelCaptureSourceConfig,
@@ -43,11 +43,11 @@
     templateScope = null,
     insertionPaletteMode,
   } = $props<{
-    draft: MacroDefinitionV4
+    draft: MacroDefinitionV5
     nodeId: string
-    updateDraft: (mutator: (template: MacroDefinitionV4) => void) => void
+    updateDraft: (mutator: (template: MacroDefinitionV5) => void) => void
     terminalChoices: () => TerminalChoice[]
-    adoptTerminalSelection: (template: MacroDefinitionV4, terminalIndex: number) => boolean
+    adoptTerminalSelection: (template: MacroDefinitionV5, terminalIndex: number) => boolean
     choiceFromIndex: (target: number) => string
     defaultCaptureSource: (kind: CaptureSourceConfig["kind"]) => CaptureSourceConfig
     outerArtifactChoices: ArtifactChoice[]
@@ -86,7 +86,7 @@
   })
 
   function updateParallel(mutator: (node: ParallelNode) => void) {
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       const node = findParallel(template.body, nodeId)
       if (node) mutator(node)
     })
@@ -228,7 +228,7 @@
   }
 
   function addLane() {
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       const node = findParallel(template.body, nodeId)
       if (!node) return
       const terminal: MacroTerminalReference = { kind: "unassigned" }
@@ -264,7 +264,7 @@
     }
     editNotice = ""
     let updated = false
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       if (terminal.kind === "terminal_index" && !adoptTerminalSelection(template, terminal.index)) return
       const node = findParallel(template.body, nodeId)
       const item = node?.lanes.find((candidate) => candidate.id === laneId)
@@ -289,7 +289,7 @@
 
   function addAction(laneId: string, type: LaneActionType, insertionIndex?: number): boolean {
     let added = false
-    updateDraft((template: MacroDefinitionV4) => {
+    updateDraft((template: MacroDefinitionV5) => {
       const node = findParallel(template.body, nodeId)
       const lane = node?.lanes.find((candidate) => candidate.id === laneId)
       if (!lane) return
@@ -427,7 +427,7 @@
     return lane.body.findIndex((item) => item.type === "output")
   }
 
-  function defaultLane(template: MacroDefinitionV4, rawId: string, terminal: MacroTerminalReference, existingLaneIds: string[] = []): ParallelLane {
+  function defaultLane(template: MacroDefinitionV5, rawId: string, terminal: MacroTerminalReference, existingLaneIds: string[] = []): ParallelLane {
     const ids = allNodeIds(template.body)
     const id = uniqueKey(rawId, existingLaneIds)
     return { id, label: id, terminal, body: [{ id: uniqueKey(id + "_output", [...ids, id]), type: "output", source: { kind: "none" } }] }
@@ -442,7 +442,7 @@
     return uniqueKey("lane_" + ordinal, lanes.map((lane) => lane.id))
   }
 
-  function defaultAction(template: MacroDefinitionV4, lane: ParallelLane, type: LaneActionType): ParallelLaneActionNode {
+  function defaultAction(template: MacroDefinitionV5, lane: ParallelLane, type: LaneActionType): ParallelLaneActionNode {
     const id = uniqueKey(type.replace(/[^A-Za-z0-9_]/g, "_"), allNodeIds(template.body))
     if (type === "send") return { id, type, message: { parts: [] }, delivery: "auto", ending: "cr" }
     if (type === "wait") return { id, type, mode: "duration", durationMs: 1500 }
@@ -650,6 +650,17 @@
         </div>
       {:else if item.capture.kind === "agent-event"}
         <div class="macro-row"><label>Agent<select data-testid="parallel-capture-agent-kind" value={item.capture.agent.kind} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.agent = { kind: event.currentTarget.value as "codex" } })}><option value="codex">codex</option></select></label><label>Mode<select data-testid="parallel-capture-agent-mode" value={item.capture.captureMode ?? "result_only"} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.captureMode = event.currentTarget.value as "result_only" | "prompt_only" | "prompt_and_result" })}><option value="result_only">result only</option><option value="prompt_only">prompt only</option><option value="prompt_and_result">prompt + result</option></select></label></div>
+        <div class="agent-wait-limit">
+          <label class="checkbox-row agent-timeout-toggle">
+            <input data-testid="parallel-capture-agent-timeout-enabled" type="checkbox" checked={item.capture.waitLimit.kind === "timeout"} onchange={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event") action.capture.waitLimit = event.currentTarget.checked ? { kind: "timeout", timeoutMs: 600000 } : { kind: "unbounded" } })} />
+            <span>Enable timeout</span>
+          </label>
+          {#if item.capture.waitLimit.kind === "timeout"}
+            <label class="agent-timeout-duration"><span>Timeout ms</span><input data-testid="parallel-capture-agent-timeout-ms" type="number" min="1" step="1" value={item.capture.waitLimit.timeoutMs} oninput={(event) => updateLaneAction(lane.id, item.id, (action) => { if (action.type === "capture-source" && action.capture.kind === "agent-event" && action.capture.waitLimit.kind === "timeout") action.capture.waitLimit = { kind: "timeout", timeoutMs: Number(event.currentTarget.value) } })} /></label>
+          {:else}
+            <p class="hint agent-timeout-hint" data-testid="parallel-capture-agent-unbounded-hint">Wait until result or Stop</p>
+          {/if}
+        </div>
       {:else}
         <p class="hint">Captures this text lane tab as plain text.</p>
       {/if}

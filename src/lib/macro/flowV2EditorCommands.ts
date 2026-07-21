@@ -1,4 +1,4 @@
-import type { FlowV2IfBranch, FlowV2Node, MacroDefinitionV4 } from './macroDefinitionTypes'
+import type { FlowV2IfBranch, FlowV2Node, MacroDefinitionV5 } from './macroDefinitionTypes'
 import { cloneJsonValue } from '../jsonClone'
 
 export type BodyPathSegment =
@@ -28,7 +28,7 @@ export function cloneBodyPath(path: BodyPath): BodyPath {
   return path.map((segment) => ({ ...segment }))
 }
 
-export function resolveBodyPath(template: MacroDefinitionV4, path: BodyPath): FlowV2Node[] | undefined {
+export function resolveBodyPath(template: MacroDefinitionV5, path: BodyPath): FlowV2Node[] | undefined {
   let body = template.body
   for (const segment of path) {
     const node = body.find((candidate) => candidate.id === segment.nodeId)
@@ -54,7 +54,7 @@ export function resolveBodyPath(template: MacroDefinitionV4, path: BodyPath): Fl
   return body
 }
 
-export function insertNodeAtAnchor(template: MacroDefinitionV4, anchor: InsertionAnchor, node: FlowV2Node): CommandResult {
+export function insertNodeAtAnchor(template: MacroDefinitionV5, anchor: InsertionAnchor, node: FlowV2Node): CommandResult {
   if (anchor.kind === "before" || anchor.kind === "after") {
     const body = resolveBodyPath(template, anchor.parentPath)
     if (!body) return { ok: false, reason: "body_not_found" }
@@ -80,7 +80,7 @@ export function insertNodeAtAnchor(template: MacroDefinitionV4, anchor: Insertio
   return { ok: true }
 }
 
-export function removeNodeAtPosition(template: MacroDefinitionV4, position: NodePosition): CommandResult {
+export function removeNodeAtPosition(template: MacroDefinitionV5, position: NodePosition): CommandResult {
   const body = resolveBodyPath(template, position.bodyPath)
   if (!body) return { ok: false, reason: "body_not_found" }
   if (position.index < 0 || position.index >= body.length) return { ok: false, reason: "out_of_bounds" }
@@ -88,7 +88,7 @@ export function removeNodeAtPosition(template: MacroDefinitionV4, position: Node
   return { ok: true }
 }
 
-export function moveNodeAtPosition(template: MacroDefinitionV4, position: NodePosition, offset: -1 | 1): CommandResult {
+export function moveNodeAtPosition(template: MacroDefinitionV5, position: NodePosition, offset: -1 | 1): CommandResult {
   const body = resolveBodyPath(template, position.bodyPath)
   if (!body) return { ok: false, reason: "body_not_found" }
   const targetIndex = position.index + offset
@@ -99,11 +99,11 @@ export function moveNodeAtPosition(template: MacroDefinitionV4, position: NodePo
   return { ok: true }
 }
 
-export function findNodePosition(template: MacroDefinitionV4, nodeId: string): NodePosition | undefined {
+export function findNodePosition(template: MacroDefinitionV5, nodeId: string): NodePosition | undefined {
   return findNodePositionInBody(template.body, nodeId, [])
 }
 
-export function canMoveNodeToAnchor(template: MacroDefinitionV4, nodeId: string, anchor: InsertionAnchor): boolean {
+export function canMoveNodeToAnchor(template: MacroDefinitionV5, nodeId: string, anchor: InsertionAnchor): boolean {
   const sourcePosition = findNodePosition(template, nodeId)
   const source = sourcePosition ? findNodeById(template, nodeId) : undefined
   if (!sourcePosition || !source) return false
@@ -117,11 +117,11 @@ export function canMoveNodeToAnchor(template: MacroDefinitionV4, nodeId: string,
   return true
 }
 
-export function isInsertionAnchorValid(template: MacroDefinitionV4, anchor: InsertionAnchor): boolean {
+export function isInsertionAnchorValid(template: MacroDefinitionV5, anchor: InsertionAnchor): boolean {
   return resolveInsertionTarget(template, anchor, false) !== undefined
 }
 
-export function moveNodeToAnchor(template: MacroDefinitionV4, nodeId: string, anchor: InsertionAnchor): CommandResult {
+export function moveNodeToAnchor(template: MacroDefinitionV5, nodeId: string, anchor: InsertionAnchor): CommandResult {
   const sourcePosition = findNodePosition(template, nodeId)
   if (!sourcePosition) return { ok: false, reason: "node_not_found" }
   const sourceBody = resolveBodyPath(template, sourcePosition.bodyPath)
@@ -144,7 +144,7 @@ export function moveNodeToAnchor(template: MacroDefinitionV4, nodeId: string, an
   return { ok: true }
 }
 
-export function insertElifBranchAfter(template: MacroDefinitionV4, position: NodePosition, afterBranchIndex: number, branch: FlowV2IfBranch): CommandResult {
+export function insertElifBranchAfter(template: MacroDefinitionV5, position: NodePosition, afterBranchIndex: number, branch: FlowV2IfBranch): CommandResult {
   const body = resolveBodyPath(template, position.bodyPath)
   if (!body) return { ok: false, reason: "body_not_found" }
   const node = body[position.index]
@@ -156,7 +156,7 @@ export function insertElifBranchAfter(template: MacroDefinitionV4, position: Nod
   return { ok: true }
 }
 
-export function removeIfBranchAt(template: MacroDefinitionV4, position: NodePosition, branchIndex: number): CommandResult {
+export function removeIfBranchAt(template: MacroDefinitionV5, position: NodePosition, branchIndex: number): CommandResult {
   const body = resolveBodyPath(template, position.bodyPath)
   if (!body) return { ok: false, reason: "body_not_found" }
   const node = body[position.index]
@@ -169,7 +169,7 @@ export function removeIfBranchAt(template: MacroDefinitionV4, position: NodePosi
   return { ok: true }
 }
 
-export function ensureElseForIfNode(template: MacroDefinitionV4, position: NodePosition): CommandResult {
+export function ensureElseForIfNode(template: MacroDefinitionV5, position: NodePosition): CommandResult {
   const body = resolveBodyPath(template, position.bodyPath)
   if (!body) return { ok: false, reason: "body_not_found" }
   const node = body[position.index]
@@ -179,7 +179,7 @@ export function ensureElseForIfNode(template: MacroDefinitionV4, position: NodeP
   return { ok: true }
 }
 
-export function removeElseFromIfNode(template: MacroDefinitionV4, position: NodePosition): CommandResult {
+export function removeElseFromIfNode(template: MacroDefinitionV5, position: NodePosition): CommandResult {
   const body = resolveBodyPath(template, position.bodyPath)
   if (!body) return { ok: false, reason: "body_not_found" }
   const node = body[position.index]
@@ -222,7 +222,7 @@ function findNodePositionInBody(nodes: FlowV2Node[], nodeId: string, bodyPath: B
   return undefined
 }
 
-function resolveInsertionTarget(template: MacroDefinitionV4, anchor: InsertionAnchor, createMissingBody: boolean): InsertionTarget | undefined {
+function resolveInsertionTarget(template: MacroDefinitionV5, anchor: InsertionAnchor, createMissingBody: boolean): InsertionTarget | undefined {
   if (anchor.kind === "before" || anchor.kind === "after") {
     const body = resolveBodyPath(template, anchor.parentPath)
     if (!body) return undefined
@@ -255,7 +255,7 @@ function insideAnchorBodyPath(node: FlowV2Node, parentPath: BodyPath, anchor: Ex
   return branch?.kind === "elif" ? [...cloneBodyPath(parentPath), { kind: "if-branch", nodeId: node.id, branchIndex }] : undefined
 }
 
-function cloneTemplateForCommandProbe(template: MacroDefinitionV4): MacroDefinitionV4 {
+function cloneTemplateForCommandProbe(template: MacroDefinitionV5): MacroDefinitionV5 {
   return cloneJsonValue(template)
 }
 
@@ -268,7 +268,7 @@ function sameBodyPath(left: BodyPath, right: BodyPath): boolean {
   })
 }
 
-function findNodeById(template: MacroDefinitionV4, nodeId: string): FlowV2Node | undefined {
+function findNodeById(template: MacroDefinitionV5, nodeId: string): FlowV2Node | undefined {
   const position = findNodePosition(template, nodeId)
   if (!position) return undefined
   return resolveBodyPath(template, position.bodyPath)?.[position.index]

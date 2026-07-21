@@ -6,8 +6,8 @@
   import type { TerminalRoomClient } from '../terminalRoomClient'
   import { LibraryClient } from '../library/libraryClient'
   import type { MacroInsertionPaletteMode } from '../workspace/uiLayoutTypes'
-  import type { MacroDefinitionV4, MacroRecord, MacroRecordSummary } from '../macro/macroDefinitionTypes'
-  import { parseAndValidateMacroDefinitionJson, parseAndValidateMacroTerminalLayoutFromDefinitionJson, validateMacroDefinitionV4, validateMacroTerminalLayout, validateRunnableMacroDefinitionV4 } from '../macro/macroDefinitionValidation'
+  import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from '../macro/macroDefinitionTypes'
+  import { parseAndValidateMacroDefinitionJson, parseAndValidateMacroTerminalLayoutFromDefinitionJson, validateMacroDefinitionV5, validateMacroTerminalLayout, validateRunnableMacroDefinitionV5 } from '../macro/macroDefinitionValidation'
   import { validateMacroRuntimeBinding } from '../macro/macroRuntimeBinding'
   import { MacroRecordClient } from '../macro/macroRecordClient'
   import { MacroRunnerClient } from '../macro/macroRunnerClient'
@@ -67,8 +67,8 @@
 
   let templates = $state<MacroRecordSummary[]>([])
   let selectedRecord = $state<MacroRecord | null>(null)
-  let baseDefinition = $state<MacroDefinitionV4 | null>(null)
-  let draft = $state<MacroDefinitionV4 | null>(null)
+  let baseDefinition = $state<MacroDefinitionV5 | null>(null)
+  let draft = $state<MacroDefinitionV5 | null>(null)
   let draftRevision = $state(0)
   let editorGeneration = $state(0)
   let contentEditing = $state(false)
@@ -113,8 +113,8 @@
   let saveToLibraryResetTimer: ReturnType<typeof setTimeout> | null = null
 
   const filteredTemplates = $derived(templates.filter((template) => `${template.name}\n${template.description}`.toLowerCase().includes(templateSearch.trim().toLowerCase())))
-  const portableValidation = $derived(validateMacroDefinitionV4(draft))
-  const runnableValidation = $derived(validateRunnableMacroDefinitionV4(draft))
+  const portableValidation = $derived(validateMacroDefinitionV5(draft))
+  const runnableValidation = $derived(validateRunnableMacroDefinitionV5(draft))
   const runtimeValidation = $derived(draft ? validateMacroRuntimeBinding(draft.terminalLayout, terminalPositions) : null)
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
   const statusText = $derived(runtimeValidation?.code ?? 'no_macro_selected')
@@ -196,8 +196,8 @@
     if (selectedRecord && contentEditing && editLease) markEditLeaseLost(null, 'room_control_lost')
   })
 
-  function emptyDefinition(): MacroDefinitionV4 {
-    return { schemaVersion: 4, name: 'New Macro', description: '', terminalLayout: [], body: [] }
+  function emptyDefinition(): MacroDefinitionV5 {
+    return { schemaVersion: 5, name: 'New Macro', description: '', terminalLayout: [], body: [] }
   }
 
   async function refreshTemplates(report = true): Promise<TemplateRefreshResult> {
@@ -387,7 +387,7 @@
     if (operationPending) { rejectMutation('operation_pending'); return }
     if (jsonEditing) { rejectMutation('finish_json_edit_before_library_save'); return }
     if (!draft) { rejectMutation('no_current_macro'); return }
-    const validation = validateMacroDefinitionV4(draft)
+    const validation = validateMacroDefinitionV5(draft)
     if (!validation.ok) {
       errorText = formatIssues(validation.issues)
       onMutationDenied('invalid_macro_definition')
@@ -494,7 +494,7 @@
     }
   }
 
-  function updateDraft(mutator: (definition: MacroDefinitionV4) => void) {
+  function updateDraft(mutator: (definition: MacroDefinitionV5) => void) {
     if (!canMutateShared) { rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected'); return }
     if (operationPending) { rejectMutation('operation_pending'); return }
     if (!draft) return
@@ -633,12 +633,12 @@
   }
 
   async function persistDefinition(
-    definition: MacroDefinitionV4,
+    definition: MacroDefinitionV5,
     token: number,
     revision: number,
     source: DefinitionOperationSource = 'visual',
   ): Promise<PersistedDefinition | null> {
-    const validation = validateMacroDefinitionV4(definition)
+    const validation = validateMacroDefinitionV5(definition)
     if (!validation.ok) throw new Error(formatIssues(validation.issues))
     const record = selectedRecord
     const updateResult = record
@@ -683,7 +683,7 @@
 
   function reconcilePublishedCreate(
     record: MacroRecord,
-    definition: MacroDefinitionV4,
+    definition: MacroDefinitionV5,
     token: number,
     revision: number,
     source: DefinitionOperationSource,

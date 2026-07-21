@@ -3,7 +3,7 @@ import { lstatSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { LibraryStore } from '../../server/libraryStore'
-import { publishPrivateFileAtomic, publishPrivateFileDelete } from '../../server/userDataRoot'
+import { publishPrivateFileAtomic, publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { createGeneratedId } from '../../src/lib/generatedId'
 import { assertLibraryItem } from '../../src/lib/library/libraryTypes'
 
@@ -44,6 +44,21 @@ test('LibraryStore search covers all fields and is stable by updatedAt then item
     expect(store.list('prompt', '  SIGNAL  ').map((item) => item.itemId)).toEqual([...expected, ids[0]])
     expect(store.list('prompt', '')).toHaveLength(3)
     expect(store.list('note', '')).toEqual([])
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('LibraryStore scan isolates malformed records without hiding valid records', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'shell-deck-library-scan-038-'))
+  const store = new LibraryStore(root)
+  try {
+    const valid = await store.create('macro-template', { title: 'Valid envelope', content: '{}', description: '', tags: [] })
+    const invalidId = createGeneratedId('libraryItem')
+    writePrivateFileAtomic(store.recordPath('macro-template', invalidId), '{')
+    expect(store.scan('macro-template')).toEqual({
+      records: [valid],
+      invalidItems: [{ itemId: invalidId, error: 'invalid_library_item' }],
+    })
+    expect(() => store.list('macro-template')).toThrow('invalid_library_item')
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

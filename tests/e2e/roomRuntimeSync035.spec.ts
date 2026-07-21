@@ -778,7 +778,7 @@ test('controller and content lease loss preserve the draft but keep Macro fields
 
 function sharedRuntimeDefinition() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: 'Shared runtime',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
@@ -800,7 +800,7 @@ function sharedRuntimeDefinition() {
 
 function completedRunDefinition() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: 'Completed run unlock',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
@@ -817,7 +817,7 @@ function completedRunDefinition() {
 
 function gapRepairDefinition() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: 'Gap repair retry',
     description: '',
     terminalLayout: [],
@@ -831,7 +831,7 @@ function gapRepairDefinition() {
 
 function runtimeInputGenerationDefinition() {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     name: 'Runtime input generation',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
