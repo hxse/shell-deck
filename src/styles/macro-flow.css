@@ -133,6 +133,19 @@
   box-shadow: 0 2px 5px color-mix(in srgb, var(--flow-depth-color) 12%, transparent);
 }
 
+.flow-node-editor.current-node,
+.parallel-lane-action.current-node {
+  outline: 3px solid #e58a08;
+  outline-offset: 2px;
+  background: #fff8e7;
+  box-shadow: 0 0 0 5px rgba(229, 138, 8, 0.16), 0 4px 12px rgba(106, 66, 9, 0.2);
+}
+
+.flow-node-editor.contains-current-node {
+  outline: 2px solid rgba(229, 138, 8, 0.72);
+  outline-offset: 2px;
+}
+
 .flow-branch-card {
   display: grid;
   gap: 6px;
@@ -372,6 +385,11 @@
   transform: translate(-50%, -100%);
 }
 
+.floating-insertion-palette.blocked {
+  pointer-events: none;
+  opacity: 0.72;
+}
+
 .floating-insertion-palette .step-palette {
   padding: 8px;
 }
@@ -438,6 +456,13 @@
   box-shadow: 0 -1px 0 #2563eb inset;
 }
 
+.parallel-tab-strip button.current-node {
+  border-color: #d98308;
+  background: #fff3d2;
+  color: #70420a;
+  box-shadow: inset 0 -3px 0 #e58a08;
+}
+
 .parallel-lane-card {
   display: grid;
   gap: 10px;
@@ -492,6 +517,25 @@
 
 .parallel-output-card .step-title small {
   color: #64748b;
+}
+
+.parallel-output-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.parallel-output-actions .checkbox-row {
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 1px solid #c8d3dd;
+  border-radius: 5px;
+  background: #f7f9fb;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.parallel-output-fields {
+  align-items: end;
 }
 
 .flow-node-editor {

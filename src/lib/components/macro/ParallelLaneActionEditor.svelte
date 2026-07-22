@@ -27,6 +27,7 @@
     templateScope,
     allowedCaptureKinds,
     captureAllowed,
+    isCurrent = false,
     onSetId,
     onToggle,
     onMove,
@@ -43,6 +44,7 @@
     templateScope: TextTemplateScope | null
     allowedCaptureKinds: CapabilityCaptureKind[]
     captureAllowed: boolean
+    isCurrent?: boolean
     onSetId: (nextId: string) => boolean
     onToggle: () => void
     onMove: (offset: -1 | 1) => void
@@ -75,7 +77,7 @@
   }
 </script>
 
-<article class="step-card parallel-lane-action" class:collapsed data-testid="parallel-lane-action" data-parallel-action-id={item.id} data-parallel-action-type={item.type}>
+<article class="step-card parallel-lane-action" class:collapsed class:current-node={isCurrent} data-testid="parallel-lane-action" data-parallel-action-id={item.id} data-parallel-action-type={item.type} data-current-node={isCurrent ? 'true' : undefined}>
   <div class="step-title node-title-row">
     <div class="node-title-cluster">
       <strong>{itemIndex + 1}. {item.type}</strong>

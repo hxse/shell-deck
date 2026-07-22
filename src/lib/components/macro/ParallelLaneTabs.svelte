@@ -52,6 +52,7 @@
     outerArtifactChoices,
     templateScope = null,
     insertionPaletteMode,
+    currentNodeId = null,
   } = $props<{
     draft: MacroDefinitionV5
     nodeId: string
@@ -62,6 +63,7 @@
     outerArtifactChoices: ArtifactChoice[]
     templateScope?: TextTemplateScope | null
     insertionPaletteMode: MacroInsertionPaletteMode
+    currentNodeId?: string | null
   }>()
 
   let selectedLaneId = $state('')
@@ -73,6 +75,7 @@
   let editNotice = $state('')
   const parallelNode = $derived(findParallel(draft.body, nodeId))
   const selectedLane = $derived(parallelNode?.lanes.find((lane) => lane.id === selectedLaneId) ?? parallelNode?.lanes[0])
+  const collectsAnyLaneText = $derived(Boolean(parallelNode?.lanes.some((lane) => laneOutput(lane)?.source.kind !== 'none')))
   const laneInsertionAnchored = $derived(insertionPaletteMode === 'anchored' && laneInsertionPosition !== null)
   const laneInsertionPaletteStyle = $derived(laneInsertionAnchored && laneInsertionPosition
     ? '--palette-x: ' + laneInsertionPosition.x + 'px; --palette-y: ' + laneInsertionPosition.y + 'px;'
@@ -234,6 +237,40 @@
       if (output) output.id = nextId
     })
     return true
+  }
+
+  function setLaneCollectsText(laneId: string, enabled: boolean): boolean {
+    const lane = parallelNode?.lanes.find((candidate) => candidate.id === laneId)
+    const output = lane ? laneOutput(lane) : undefined
+    if (!lane || !output) return false
+    if (!enabled) {
+      editNotice = ''
+      updateLane(laneId, (item) => {
+        const target = laneOutput(item)
+        if (target) target.source = { kind: 'none' }
+      })
+      return true
+    }
+    const choices = laneArtifactChoices(lane, output.id)
+    const source = choices.at(-1)?.source
+    if (!source) {
+      editNotice = 'Add Capture or Extract before collecting lane text.'
+      return false
+    }
+    editNotice = ''
+    updateLane(laneId, (item) => {
+      const target = laneOutput(item)
+      if (target) target.source = { ...source }
+    })
+    return true
+  }
+
+  function setLaneOutputSource(laneId: string, outputId: string, value: string): void {
+    editNotice = ''
+    updateLane(laneId, (lane) => {
+      const output = lane.body.find((candidate): candidate is ParallelLaneOutputNode => candidate.id === outputId && candidate.type === 'output')
+      if (output) output.source = parallelOutputSourceFromKey(value)
+    })
   }
 
   function addLane(): void {
@@ -439,6 +476,10 @@
     return lane.body.findIndex((item) => item.type === 'output')
   }
 
+  function laneOutput(lane: ParallelLane): ParallelLaneOutputNode | undefined {
+    return lane.body.find((item): item is ParallelLaneOutputNode => item.type === 'output')
+  }
+
   function findParallel(nodes: FlowV2Node[], id: string): ParallelNode | undefined {
     for (const node of nodes) {
       if (node.type === 'parallel' && node.id === id) return node
@@ -469,14 +510,16 @@
 {#if parallelNode}
   <section class="parallel-tabs-editor" data-testid="parallel-lane-tabs">
     <div class="macro-row">
-      <label>Separator<input data-testid="parallel-merge-separator" value={parallelNode.merge.separator} oninput={(event) => updateParallel((node) => { node.merge.separator = event.currentTarget.value })} /></label>
-      <label class="checkbox-row"><input type="checkbox" data-testid="parallel-include-empty-outputs" checked={parallelNode.merge.includeEmptyOutputs} onchange={(event) => updateParallel((node) => { node.merge.includeEmptyOutputs = event.currentTarget.checked })} />Include empty outputs</label>
       <label>On lane fail<select data-testid="parallel-on-lane-fail" value={parallelNode.onLaneFail} onchange={(event) => updateParallel((node) => { node.onLaneFail = event.currentTarget.value as 'pause' | 'fail' })}><option value="pause">pause</option><option value="fail">fail</option></select></label>
+      {#if collectsAnyLaneText}
+        <label>Separator<input data-testid="parallel-merge-separator" value={parallelNode.merge.separator} oninput={(event) => updateParallel((node) => { node.merge.separator = event.currentTarget.value })} /></label>
+        <label class="checkbox-row"><input type="checkbox" data-testid="parallel-include-empty-outputs" checked={parallelNode.merge.includeEmptyOutputs} onchange={(event) => updateParallel((node) => { node.merge.includeEmptyOutputs = event.currentTarget.checked })} />Include empty outputs</label>
+      {/if}
     </div>
 
     <div class="parallel-tab-strip" role="tablist">
       {#each parallelNode.lanes as lane}
-        <button type="button" class:active={selectedLane?.id === lane.id} data-testid="parallel-lane-tab" onclick={() => { selectedLaneId = lane.id; closeLaneInsertion(false) }}>{lane.label || lane.id}</button>
+        <button type="button" class:active={selectedLane?.id === lane.id} class:current-node={Boolean(currentNodeId && lane.body.some((item) => item.id === currentNodeId))} data-testid="parallel-lane-tab" data-current-node={currentNodeId && lane.body.some((item) => item.id === currentNodeId) ? 'true' : undefined} onclick={() => { selectedLaneId = lane.id; closeLaneInsertion(false) }}>{lane.label || lane.id}</button>
       {/each}
     </div>
 
@@ -529,6 +572,7 @@
               {templateScope}
               allowedCaptureKinds={laneCaptureKinds(selectedLane)}
               captureAllowed={item.type === 'capture-source' ? laneCaptureAllowed(selectedLane, item) : true}
+              isCurrent={currentNodeId === item.id}
               onSetId={(nextId) => setLaneActionId(selectedLane.id, item.id, nextId)}
               onToggle={() => toggleLaneActionCollapsed(item.id)}
               onMove={(offset) => moveAction(selectedLane.id, item.id, offset)}
@@ -547,10 +591,17 @@
 {#snippet OutputEditor(lane: ParallelLane, output: ParallelLaneOutputNode, itemIndex: number)}
   <article class="step-card parallel-output-card" data-testid="parallel-lane-output">
     <div class="step-title">
-      <span class="parallel-output-title"><strong>Output</strong><small>required final node</small></span>
-      <button type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, 'Insert before Output', event)}>Add before output</button>
+      <span class="parallel-output-title"><strong>Lane result</strong><small>{output.source.kind === 'none' ? 'no text collected' : 'collecting text'}</small></span>
+      <div class="inline-actions parallel-output-actions">
+        <label class="checkbox-row"><input type="checkbox" data-testid="parallel-collect-lane-text" checked={output.source.kind !== 'none'} onchange={(event) => { if (!setLaneCollectsText(lane.id, event.currentTarget.checked)) event.currentTarget.checked = false }} />Collect lane text</label>
+        <button type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, 'Insert lane action', event)}>Add action</button>
+      </div>
     </div>
-    <label>Output id<input data-testid="parallel-output-id-input" value={output.id} oninput={(event) => { if (!setLaneOutputId(lane.id, output.id, event.currentTarget.value)) event.currentTarget.value = output.id }} /></label>
-    <label>Source<select data-testid="parallel-output-source" value={parallelOutputSourceKey(output.source)} onchange={(event) => updateLane(lane.id, (item) => { const node = item.body.find((candidate): candidate is ParallelLaneOutputNode => candidate.id === output.id && candidate.type === 'output'); if (node) node.source = parallelOutputSourceFromKey(event.currentTarget.value) })}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+    {#if output.source.kind !== 'none'}
+      <div class="macro-row parallel-output-fields">
+        <label>Output id<input data-testid="parallel-output-id-input" value={output.id} oninput={(event) => { if (!setLaneOutputId(lane.id, output.id, event.currentTarget.value)) event.currentTarget.value = output.id }} /></label>
+        <label>Source<select data-testid="parallel-output-source" value={parallelOutputSourceKey(output.source)} onchange={(event) => setLaneOutputSource(lane.id, output.id, event.currentTarget.value)}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+      </div>
+    {/if}
   </article>
 {/snippet}

@@ -91,7 +91,7 @@
         <div class="inline-actions template-toolbar" data-testid="macro-template-actions">
           <button type="button" data-testid="macro-create" onclick={onCreateTemplate} disabled={locked} aria-disabled={!mutationAllowed || locked}>New</button>
           {#if selectedRecord && !contentEditing}<button type="button" data-testid="macro-edit" onclick={onBeginEdit} disabled={locked} aria-disabled={!mutationAllowed || locked}>Edit</button>{/if}
-          <button type="button" data-testid="macro-save" onclick={onSaveTemplate} disabled={!draft || !dirty} aria-disabled={!editable || !dirty}>Save</button>
+          <button type="button" data-testid="macro-save" onclick={onSaveTemplate} disabled={!draft || !dirty || locked} aria-disabled={!editable || !dirty}>Save</button>
           <button type="button" data-testid="macro-save-to-library" onclick={onSaveToLibrary} disabled={!draft || locked} aria-disabled={!mutationAllowed || !draft || locked}>{saveToLibraryLabel}</button>
           {#if contentEditing}<button type="button" data-testid="macro-cancel-edit" onclick={onCancelEdit} disabled={locked}>{selectedRecord ? dirty ? 'Cancel' : 'Done' : 'Discard'}</button>{/if}
           <button type="button" data-testid="macro-delete" onclick={onDeleteTemplate} disabled={!selectedRecord || locked} aria-disabled={!mutationAllowed || !selectedRecord || locked}>Delete</button>

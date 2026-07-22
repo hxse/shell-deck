@@ -58,6 +58,10 @@ test-038:
 test-039:
     bun run test:039
 
+test-001:
+    HISTFILE=/dev/null bun test tests/unit/macroDefinition034.test.ts tests/unit/runnerSnapshotMerge035.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/macroWorkbenchStyles009.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts
+
 debug-large-replay *args:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "real Room PTY" {{args}}
 

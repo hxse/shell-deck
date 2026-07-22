@@ -24,6 +24,11 @@ export type RunManifestV1 = {
 }
 
 export type MacroRunnerStatus = 'idle' | 'starting' | 'running' | 'paused' | 'waiting_input' | 'stopping' | 'completed' | 'failed' | 'stopped'
+
+export function isActiveMacroRunnerStatus(status: MacroRunnerStatus | null | undefined): boolean {
+  return status === 'starting' || status === 'running' || status === 'paused'
+    || status === 'waiting_input' || status === 'stopping'
+}
 export type MacroRunEvent = {
   schemaVersion: 1
   eventId: string

@@ -8,7 +8,7 @@
   import { createMacroRecordSession } from '../macro/macroRecordSession.svelte'
   import { createMacroRunnerSession } from '../macro/macroRunnerSession.svelte'
   import { validateMacroRuntimeBinding } from '../macro/macroRuntimeBinding'
-  import type { MacroRunnerSnapshot } from '../macro/runnerTypes'
+  import { isActiveMacroRunnerStatus, type MacroRunnerSnapshot } from '../macro/runnerTypes'
   import MacroEditorShell from './macro/MacroEditorShell.svelte'
   import MacroJsonView from './macro/MacroJsonView.svelte'
   import MacroTraceView from './macro/MacroTraceView.svelte'
@@ -91,6 +91,7 @@
   const jsonText = $derived(jsonSession.text)
   const jsonError = $derived(jsonSession.error)
   const runner = $derived(runnerSession.runner)
+  const runActive = $derived(isActiveMacroRunnerStatus(runner?.status))
   const traces = $derived(runnerSession.traces)
   const runnerInput = $derived(runnerSession.runnerInput)
   const runnerInputSyncing = $derived(runnerSession.runnerInputSyncing)
@@ -100,7 +101,7 @@
   const runtimeValidation = $derived(draft ? validateMacroRuntimeBinding(draft.terminalLayout, terminalPositions) : null)
   const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
   const statusText = $derived(runtimeValidation?.code ?? 'no_macro_selected')
-  const editorLocked = $derived(!canMutateShared || operationPending || (selectedRecord !== null && !contentEditing))
+  const editorLocked = $derived(runActive || !canMutateShared || operationPending || (selectedRecord !== null && !contentEditing))
   const prepareState = $derived(runnerSession.prepareState)
   const startState = $derived(runnerSession.startState)
   const displayedErrorText = $derived([recordSession.errorText, recordSession.templateListProblem].filter((value): value is string => Boolean(value)).join('\n') || null)
@@ -138,7 +139,6 @@
   const saveCurrentDraftToLibrary = recordSession.saveCurrentDraftToLibrary
   const cancelEdit = recordSession.cancelEdit
   const deleteTemplate = recordSession.deleteTemplate
-  const updateDraft = recordSession.updateDraft
   const startJsonBuffer = recordSession.startJsonBuffer
   const saveJson = recordSession.saveJson
   const prepareTerminals = runnerSession.prepareTerminals
@@ -147,6 +147,14 @@
   const refreshRunner = runnerSession.refreshRunner
   const refreshTraces = runnerSession.refreshTraces
   const controlRunner = runnerSession.controlRunner
+
+  function updateDraft(mutator: Parameters<typeof recordSession.updateDraft>[0]): void {
+    if (runActive) {
+      onMutationDenied('macro_run_active')
+      return
+    }
+    recordSession.updateDraft(mutator)
+  }
 
   function updateJsonText(value: string): void {
     jsonSession.update(value, operationPending)
@@ -163,7 +171,7 @@
     errorText={displayedErrorText} {macroView} {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing} {saveToLibraryLabel}
     prepareDisabled={prepareState.disabled} prepareDisabledReason={prepareState.reason}
     startDisabled={startState.disabled} startDisabledReason={startState.reason}
-    {jsonEditing} {operationPending}
+    {jsonEditing} {operationPending} {runActive}
     onTemplateSearchChange={(value) => { templateSearch = value }} onSelectTemplate={selectTemplate}
     onCreateTemplate={() => void createTemplate()} onBeginEdit={() => void beginEdit()} onSaveTemplate={() => void saveTemplate()}
     onSaveToLibrary={() => void saveCurrentDraftToLibrary()} onCancelEdit={() => void cancelEdit()} onDeleteTemplate={() => void deleteTemplate()} onUpdateDraft={updateDraft}
@@ -178,14 +186,16 @@
         {#if draft}
           <MacroEditorShell {draft} validation={portableValidation} {runnableValidation} runtimePositions={terminalPositions} {insertionPaletteMode}
             {telegramProfileIds} {telegramProfilesError} locked={editorLocked} editorKey={`${selectedRecord?.id ?? 'new'}:${editorGeneration}`}
-            lockedReason={!canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required'}
+            lockedReason={runActive ? 'macro_run_active' : !canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required'}
+            currentNodeId={runActive ? runner?.currentNodeId ?? null : null}
             {onMutationDenied} onUpdateDraft={updateDraft} />
         {:else}
           <p class="hint">Create or select a macro.</p>
         {/if}
       {/key}
     {:else if macroView === 'json'}
-      <MacroJsonView {draft} {runnableValidation} {jsonPreview} editing={jsonEditing} saving={operationPending} editText={jsonText} editError={jsonError} canEdit={canMutateShared && (selectedRecord === null || contentEditing)}
+      <MacroJsonView {draft} {runnableValidation} {jsonPreview} editing={jsonEditing} saving={operationPending} editText={jsonText} editError={jsonError} canEdit={!runActive && canMutateShared && (selectedRecord === null || contentEditing)}
+        readOnlyReason={runActive ? 'Active macro run · JSON editing is locked until the run finishes or stops.' : !canMutateShared ? 'Read-only · take Room control to edit this macro.' : selectedRecord !== null && !contentEditing ? 'Read-only · choose Edit to acquire the content lease.' : ''}
         {operationPending} onStartEdit={startJsonBuffer} onEditTextChange={updateJsonText} onSave={saveJson} onCancel={cancelJson}
         onCopyResult={(error) => { recordSession.setErrorText(error) }} />
     {:else}

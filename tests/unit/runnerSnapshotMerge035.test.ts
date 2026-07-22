@@ -89,7 +89,7 @@ test('browser notification delivery deduplicates one connection projection and r
     title: 'Done',
     message: 'One browser toast',
     createdAt: '2026-07-21T00:00:00.000Z',
-    channels: [{ kind: 'app', toast: true, sound: 'none' }],
+    channels: [{ kind: 'app', toast: true, sound: 'none', repeatCount: 1, repeatIntervalMs: 1000 }],
   }
 
   await delivery.deliver(message)
@@ -98,6 +98,36 @@ test('browser notification delivery deduplicates one connection projection and r
   delivery.clear()
   await delivery.deliver(message)
   expect(notices).toEqual(['One browser toast', 'One browser toast'])
+})
+
+test('browser notification delivery repeats App presentation on interval and clear cancels pending attempts', async () => {
+  const notices: string[] = []
+  const delivery = new RoomNotificationDelivery({
+    volume: () => 1,
+    notice: (text) => { notices.push(text) },
+  })
+  const message: MacroNotificationMessage = {
+    type: 'macro_notification',
+    roomId: ROOM_ID,
+    roomGeneration: ROOM_GENERATION,
+    notificationId: createGeneratedId('notification'),
+    runId: RUN_ID,
+    stepId: 'notify_repeat',
+    level: 'warning',
+    title: 'Repeat',
+    message: 'Repeated browser toast',
+    createdAt: '2026-07-22T00:00:00.000Z',
+    channels: [{ kind: 'app', toast: true, sound: 'none', repeatCount: 3, repeatIntervalMs: 250 }],
+  }
+
+  await delivery.deliver(message)
+  await delivery.deliver(message)
+  expect(notices).toEqual(['Repeated browser toast'])
+  await new Promise((resolve) => setTimeout(resolve, 275))
+  expect(notices).toEqual(['Repeated browser toast', 'Repeated browser toast'])
+  delivery.clear()
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(notices).toEqual(['Repeated browser toast', 'Repeated browser toast'])
 })
 
 function snapshot(events: MacroRunEvent[], overrides: Partial<MacroRunnerSnapshot> = {}): MacroRunnerSnapshot {

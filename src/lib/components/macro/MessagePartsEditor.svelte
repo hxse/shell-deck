@@ -1,7 +1,7 @@
 <script lang="ts">
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
   import MacroIconButton from "./MacroIconButton.svelte"
-  import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_TEMPLATE_TOKENS, LOOP_VALUE_TEMPLATE_TOKEN, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
+  import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
   import { messageTextPartValue, withMessagePartTemplateMode, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import type { FlowV2ArtifactSource, FlowV2StepArtifactSource, MessagePart, MessageSpec } from '../../macro/macroDefinitionTypes'
 
@@ -108,11 +108,10 @@
   }
 
   const loopTemplateInsertActions = [
-    { text: LOOP_INDEX_TEMPLATE_TOKEN, label: "Insert " + LOOP_INDEX_TEMPLATE_TOKEN, testId: "message-template-insert-index" },
-    { text: LOOP_KEY_TEMPLATE_TOKEN, label: "Insert " + LOOP_KEY_TEMPLATE_TOKEN, testId: "message-template-insert-key" },
-    { text: LOOP_VALUE_TEMPLATE_TOKEN, label: "Insert " + LOOP_VALUE_TEMPLATE_TOKEN, testId: "message-template-insert-value" },
+    { text: LOOP_INDEX_TEMPLATE_TOKEN, label: LOOP_INDEX_TEMPLATE_TOKEN, testId: "message-template-insert-index" },
+    { text: LOOP_KEY_TEMPLATE_TOKEN, label: LOOP_KEY_TEMPLATE_TOKEN, testId: "message-template-insert-key" },
+    { text: LOOP_VALUE_TEMPLATE_TOKEN, label: LOOP_VALUE_TEMPLATE_TOKEN, testId: "message-template-insert-value" },
   ]
-  const availableLoopTokens = LOOP_TEMPLATE_TOKENS.join(" · ")
 </script>
 
 <div class="message-parts-editor" data-testid={testId}>
@@ -142,12 +141,7 @@
             Use loop template
           </label>
         {/if}
-        {#if part.kind === "template" && templateScope}
-          <small class="template-source" data-testid="message-template-source">
-            Available: {availableLoopTokens} · from {templateScope.forStepId}
-            {#if templateScope.shadowedForStepId} · shadows {templateScope.shadowedForStepId}{/if}
-          </small>
-        {:else if part.kind === "template"}
+        {#if part.kind === "template" && !templateScope}
           <p class="template-scope-issue" data-testid="message-template-scope-issue">This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
         {/if}
         {#if templateSyntaxIssue(part)}
@@ -181,11 +175,6 @@
   .template-toggle-row {
     justify-self: start;
     font-size: 12px;
-  }
-
-  .template-source {
-    display: block;
-    color: #28516f;
   }
 
   .template-scope-issue {

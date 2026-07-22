@@ -161,6 +161,52 @@ test('MacroDefinitionV5 requires an exact AgentEvent waitLimit branch', () => {
   }
 })
 
+test('App Notify repeat count and interval are required exact bounded integers', () => {
+  const definition: MacroDefinitionV5 = {
+    schemaVersion: 5,
+    name: 'Repeated app notification',
+    description: '',
+    terminalLayout: [],
+    body: [{
+      id: 'notify',
+      type: 'notify',
+      level: 'warning',
+      title: 'Attention',
+      message: { parts: [{ kind: 'text', text: 'Review the terminal.' }] },
+      channels: [{ kind: 'app', toast: true, sound: 'alert', repeatCount: 3, repeatIntervalMs: 1000 }],
+      onFailure: 'continue',
+    }],
+  }
+  expect(validateMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
+
+  for (const field of ['repeatCount', 'repeatIntervalMs'] as const) {
+    const missing = structuredClone(definition) as unknown as { body: Array<{ channels: Array<Record<string, unknown>> }> }
+    delete missing.body[0].channels[0][field]
+    const result = validateMacroDefinitionV5(missing)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.issues).toContainEqual({
+      code: 'missing_field',
+      path: `body[0].channels[0].${field}`,
+      message: `${field} is required`,
+    })
+  }
+
+  for (const repeatCount of [0, 11, 1.5, Number.POSITIVE_INFINITY]) {
+    const invalid = structuredClone(definition)
+    const channel = invalid.body[0].type === 'notify' ? invalid.body[0].channels[0] : undefined
+    if (channel?.kind !== 'app') throw new Error('expected app channel')
+    channel.repeatCount = repeatCount
+    expect(validateMacroDefinitionV5(invalid).ok).toBe(false)
+  }
+  for (const repeatIntervalMs of [249, 60001, 500.5, Number.POSITIVE_INFINITY]) {
+    const invalid = structuredClone(definition)
+    const channel = invalid.body[0].type === 'notify' ? invalid.body[0].channels[0] : undefined
+    if (channel?.kind !== 'app') throw new Error('expected app channel')
+    channel.repeatIntervalMs = repeatIntervalMs
+    expect(validateMacroDefinitionV5(invalid).ok).toBe(false)
+  }
+})
+
 test('unassigned terminal and required artifact slots are persistable but never runnable', () => {
   const definition: MacroDefinitionV5 = {
     schemaVersion: 5,

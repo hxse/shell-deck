@@ -14,7 +14,7 @@ function sharedRuntimeDefinition() {
         level: 'info',
         title: 'Runtime notification',
         message: { parts: [{ kind: 'text', text: 'same Room broadcast' }] },
-        channels: [{ kind: 'app', toast: true, sound: 'none' }],
+        channels: [{ kind: 'app', toast: true, sound: 'none', repeatCount: 1, repeatIntervalMs: 1000 }],
         onFailure: 'continue',
       },
       { id: 'input', type: 'input', terminal: { kind: 'terminal_index', index: 1 }, prompt: 'Shared prompt', allowEmpty: false, delivery: 'direct', ending: 'none' },

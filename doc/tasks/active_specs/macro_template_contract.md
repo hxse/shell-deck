@@ -26,6 +26,8 @@ type AgentEventWaitLimit =
 
 新建AgentEvent Capture默认unbounded。timeout branch要求positive integer毫秒并在到期时fail；其他Capture kind不得携带`waitLimit`。
 
+App Notify channel的唯一current shape是`{kind:"app", toast:boolean, sound:NotificationSound, repeatCount:number, repeatIntervalMs:number}`。`repeatCount`表示包含首次呈现的总次数，必须是1到10的integer；`repeatIntervalMs`表示相邻呈现的间隔，必须是250到60000的integer。新建App channel默认3次、1000ms；两个字段始终required，缺失、fraction、越界或额外旧字段均fail loudly，不补默认、不迁移。
+
 这是current-schema-only hard cut。V4及更早definition、primitive `terminalIndex` persisted field、physical target、空stepId placeholder、missing artifact source、missing waitLimit、alias、migration、adapter、dual validator与自动转换均不存在；旧输入必须fail loudly。
 
 ## 三层 Validation
@@ -50,6 +52,10 @@ unassigned使用amber局部warning并明确“Save is allowed, Start requires as
 
 结构Add/Move只受body/branch/lane结构规则约束。If/Elif/Extract没有earlier artifact时仍必须插入，并以unassigned source成为可保存但不可运行的draft。结构变更令既有assigned source失效时保留错误引用并显示persistable issue，直到用户修复或显式改为Unassigned。
 
+For text-list不提供header级`Add item`；每个item以icon-only `Insert item above`/`Insert item below`在当前index或`index + 1`插入exact empty item，并继续保留Move/Remove。in-scope scalar Title/Prompt与Message text part启用`Use loop template`后只显示紧凑的exact `{{index}}`、`{{key}}`、`{{value}}`插入按钮，不显示`Available...from...`source提示。
+
+Parallel schema、validator与runner不因authoring简化而变化，每条lane仍有且仅有一个final Output。UI以`Collect lane text`映射现有`output.source`：unchecked写入`{kind:"none"}`并隐藏id/source；checked只在存在earlier lane-local Capture/Extract时选择最靠后的artifact，否则保持unchecked并提示。只有任一lane收集text时显示merge separator与include-empty controls，`onLaneFail`始终可见。
+
 JSON editor保持纯文本语义，不读取Room、不补引用或wait policy。JSON Save使用V5 persistable gateway；合法unassigned与exact waitLimit必须原样round-trip。
 
 ## CRUD 与 editor lifecycle
@@ -66,7 +72,7 @@ Macro panel visibility只是browser-local UI布局：组件保持常驻，隐藏
 
 Save要求persistable valid，不要求runnable或当前Room ready，不触发Prepare；成功后更新base revision、清dirty并保留当前Edit session/lease。Copy只把canonical pretty-printed definition写入clipboard；没有Duplicate、clone、copy-and-create、Import或Export。Macro toolbar另有明确的`Save to Library`跨domain action：它把当前persistable-valid visual draft创建为fresh Macro JSON Library item，不修改Macro record/selection/dirty，也不Prepare/Start；这不改变Copy的clipboard-only语义。
 
-JSON Edit以及Save/Create/Start等lock-sensitive pending operation期间editor/selector必须inert，统一draft mutation入口仍做defensive guard。异步response只有在operation/draft/controller/lease identity仍匹配时才能commit；dirty Start严格串行执行Save/Create → 必要时取得fresh record lease → 使用fresh saved revision Start。run终态释放terminal structure lock，Macro editability仍由Edit session决定。
+JSON Edit以及Save/Create/Start等lock-sensitive pending operation期间editor/selector必须inert，统一draft mutation入口仍做defensive guard。异步response只有在operation/draft/controller/lease identity仍匹配时才能commit；dirty Start严格串行执行Save/Create → 必要时取得fresh record lease → 使用fresh saved revision Start。runner处于`starting | running | paused | waiting_input | stopping`时selector、visual authoring与JSON Edit必须以明确read-only surface锁定，visual fieldset使用native disabled并由mutation gateway再次拒绝；终态`completed | failed | stopped`解除run lock，随后editability仍由controller/Edit session/lease决定。
 
 transient WebSocket reconnect以显式`connectionGeneration`触发saved-content reconciliation，不清dirty/preserved page-memory buffer或`beforeunload` guard。新连接ready后重读record list；只有clean readonly selection可安装revision单调不退后的server truth，protected buffer只显示changed/deleted notice。list/read continuation分别由generation、connection、record identity、editor state和minimum revision约束；旧response不能覆盖新truth，transport/5xx失败不能提前消费invalidation sequence，queue做有界重试并在focus/reconnect继续drain。Create已commit而controller/connection先变化时，若submitted identity仍匹配，必须关联fresh record identity并进入read-only published-Create preservation，禁止重复Create。
 
@@ -84,4 +90,8 @@ runner tight loop按固定budget执行macrotask cooperative yield并在yield后�
 
 active run属于live Room，不属于browser。server在WebSocket连接后立即发送一次包含最近durable tail的完整`runner_snapshot`；Start、step/current node、Pause/Resume、Waiting Input、input draft/submit、Stop和终态只广播state与新增event的`runner_delta`，rapid transition最多在25ms内合并。两者带Room-generation内单调`runtimeRevision`、冻结`runningMacro {recordId, recordRevision, definition}`、status/current node/error、runtime input和absolute event window metadata。client忽略旧revision并按eventSeq合并；发现gap时进入绑定Room/connection generation与本地token的single-flight HTTP完整snapshot repair，每批最多三次（立即、100ms、300ms），耗尽后保留pending并只由focus、reconnect或后续runner message继续，正常UI不polling。
 
+Run dock独立显示高对比status badge与current stage；stage从冻结`runningMacro.definition`把`currentNodeId`解析为`type · id`，Parallel action附带lane。browser-local visual draft中存在相同node id时，对root/nested node或Parallel lane action显示明显current-node边框；不存在时不猜测、不切换selection，Run dock仍显示冻结stage。
+
 `Editing/Viewing Macro`保持browser-local，`Running Macro`是同Room设备共享的只读冻结snapshot；收到run不得切换selector或覆盖draft。Input invocation/prompt/default/draft/revision保存在server内存，controller使用单一in-flight/latest-value coalescing更新，takeover后继续同一状态；draft正文不写Trace，server restart或Room Destroy不恢复。
+
+Notify action在server只执行一次、生成一个notification id并向每个当前Room client广播一条`macro_notification`；Telegram也始终只发送一次。browser对message去重一次后立即呈现第1次App toast/sound，再按App channel interval调度剩余次数；System browser notification始终一次。`toast:false`或`sound:none`分别关闭对应side effect，两者均关闭时不建立App timer。reconnect、Room切换、destroy或workspace dispose必须清除seen set并取消尚未触发的repeat timer；同一notification重放不能建立第二组timer。

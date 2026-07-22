@@ -147,7 +147,7 @@ test('Notify executes Telegram once and broadcasts one browser message to every 
         title: 'Done',
         message: { parts: [{ kind: 'text', text: 'one server execution' }] },
         channels: [
-          { kind: 'app', toast: true, sound: 'none' },
+          { kind: 'app', toast: true, sound: 'none', repeatCount: 3, repeatIntervalMs: 1000 },
           { kind: 'system' },
           { kind: 'telegram', profileId: 'default' },
         ],
@@ -173,7 +173,12 @@ test('Notify executes Telegram once and broadcasts one browser message to every 
     expect(firstNotifications).toHaveLength(1)
     expect(secondNotifications).toHaveLength(1)
     expect(firstNotifications[0]).toEqual(secondNotifications[0])
-    expect(firstNotifications[0]).toMatchObject({ channels: [{ kind: 'app' }, { kind: 'system' }] })
+    expect(firstNotifications[0]).toMatchObject({
+      channels: [
+        { kind: 'app', toast: true, sound: 'none', repeatCount: 3, repeatIntervalMs: 1000 },
+        { kind: 'system' },
+      ],
+    })
 
     const lateMessages: ServerMessage[] = []
     manager.connectClient(room.roomId, (message) => lateMessages.push(message))

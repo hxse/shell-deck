@@ -14,7 +14,7 @@ import {
 import type { MacroRecordSession } from './macroRecordSession.svelte'
 import { validateMacroRuntimeBinding } from './macroRuntimeBinding'
 import { MacroRunnerClient } from './macroRunnerClient'
-import type { MacroRunnerSnapshot, MacroRunTrace } from './runnerTypes'
+import { isActiveMacroRunnerStatus, type MacroRunnerSnapshot, type MacroRunTrace } from './runnerTypes'
 
 type MacroRunnerSessionOptions = {
   roomClient(): TerminalRoomClient | null
@@ -83,6 +83,9 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
     if (!draft) return { disabled: true, reason: 'No current macro' }
     if (!options.roomClient() || !options.canMutateShared()) {
       return { disabled: true, reason: 'Room control is required' }
+    }
+    if (isActiveMacroRunnerStatus(runner?.status)) {
+      return { disabled: true, reason: 'Wait for the active macro run to finish' }
     }
     if (options.record.operationPending || options.json.editing) {
       return { disabled: true, reason: 'Save or cancel the pending edit first' }

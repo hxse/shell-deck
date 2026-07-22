@@ -21,6 +21,7 @@ export class RoomNotificationDelivery {
   readonly #options: RoomNotificationDeliveryOptions
   readonly #seen = new Set<string>()
   readonly #seenOrder: string[] = []
+  readonly #repeatTimers = new Set<ReturnType<typeof setTimeout>>()
 
   constructor(options: RoomNotificationDeliveryOptions) {
     this.#options = options
@@ -35,8 +36,16 @@ export class RoomNotificationDelivery {
     const app = message.channels.find((channel) => channel.kind === 'app')
     const toast = app?.kind === 'app' && app.toast
     const options = { title: message.title, level: message.level, createdAt: message.createdAt, notificationId: message.notificationId, runId: message.runId, stepId: message.stepId }
-    if (toast) this.#options.notice(message.message || message.title, options)
-    if (app?.kind === 'app' && app.sound !== 'none') void this.playSound(app.sound, message.level)
+    if (app?.kind === 'app' && (toast || app.sound !== 'none')) {
+      this.#presentApp(message, app, options)
+      for (let attempt = 1; attempt < app.repeatCount; attempt += 1) {
+        const timer = setTimeout(() => {
+          this.#repeatTimers.delete(timer)
+          this.#presentApp(message, app, options)
+        }, attempt * app.repeatIntervalMs)
+        this.#repeatTimers.add(timer)
+      }
+    }
     if (message.channels.some((channel) => channel.kind === 'system')) {
       const status = await this.#showSystemNotification(message)
       if (status !== 'delivered' && !toast) this.#options.notice('System notification was not delivered.', { ...options, systemStatus: status })
@@ -66,8 +75,19 @@ export class RoomNotificationDelivery {
   }
 
   clear(): void {
+    for (const timer of this.#repeatTimers) clearTimeout(timer)
+    this.#repeatTimers.clear()
     this.#seen.clear()
     this.#seenOrder.splice(0)
+  }
+
+  #presentApp(
+    message: MacroNotificationMessage,
+    app: Extract<MacroNotificationMessage['channels'][number], { kind: 'app' }>,
+    options: RoomNotificationNoticeOptions,
+  ): void {
+    if (app.toast) this.#options.notice(message.message || message.title, options)
+    if (app.sound !== 'none') void this.playSound(app.sound, message.level)
   }
 
   async #showSystemNotification(message: MacroNotificationMessage): Promise<string> {

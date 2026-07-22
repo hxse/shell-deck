@@ -38,10 +38,14 @@ test('Macro and Library workbench computed styles retain the frozen visual contr
   const parallel = page.locator('[data-flow-node-type="parallel"]').first()
   await parallel.getByTestId('node-id-input').fill('parallel_root')
   await parallel.getByTestId('parallel-lane-id-input').fill('lane_a')
+  await parallel.getByTestId('parallel-lane-add-before-output').click()
+  await page.getByTestId('parallel-add-capture').click()
+  await parallel.getByTestId('parallel-action-id-input').fill('lane_capture')
+  await parallel.getByTestId('parallel-collect-lane-text').check()
   await parallel.getByTestId('parallel-output-id-input').fill('lane_output')
   await parallel.getByTestId('parallel-lane-add-before-output').click()
   await page.getByTestId('parallel-add-wait').click()
-  await parallel.getByTestId('parallel-action-id-input').fill('lane_wait')
+  await parallel.getByTestId('parallel-action-id-input').last().fill('lane_wait')
 
   const computed: Record<string, Record<string, string>> = {}
   computed.macroPanel = await styleValues(page.getByTestId('macro-panel'), ['display', 'font-size', 'overflow', 'min-width'])

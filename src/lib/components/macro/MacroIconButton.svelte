@@ -1,4 +1,6 @@
 <script lang="ts">
+  type IconKind = "collapse" | "expand" | "up" | "down" | "insert-above" | "insert-below" | "remove"
+
   let {
     kind,
     label: customLabel,
@@ -8,7 +10,7 @@
     testId,
     onClick,
   } = $props<{
-    kind: "collapse" | "expand" | "up" | "down" | "remove"
+    kind: IconKind
     label?: string
     disabled?: boolean
     active?: boolean
@@ -17,7 +19,17 @@
     onClick: () => void
   }>()
 
-  const label = $derived(customLabel ?? (kind === "collapse" ? "Collapse" : kind === "expand" ? "Expand" : kind === "up" ? "Up" : kind === "down" ? "Down" : "Remove"))
+  const label = $derived(customLabel ?? defaultLabel(kind))
+
+  function defaultLabel(value: IconKind): string {
+    if (value === "collapse") return "Collapse"
+    if (value === "expand") return "Expand"
+    if (value === "up") return "Up"
+    if (value === "down") return "Down"
+    if (value === "insert-above") return "Insert item above"
+    if (value === "insert-below") return "Insert item below"
+    return "Remove"
+  }
 </script>
 
 <button class="macro-icon-button" class:macro-remove-button={kind === "remove"} class:active type="button" data-testid={testId} title={label} aria-label={label} aria-expanded={expanded} {disabled} onclick={onClick}>
@@ -32,6 +44,14 @@
     {:else if kind === "down"}
       <path d="M8 3v10" />
       <path d="m4.5 9.5 3.5 3.5 3.5-3.5" />
+    {:else if kind === "insert-above"}
+      <path d="M3 11.5h10" />
+      <path d="M8 2.5v6" />
+      <path d="M5 5.5h6" />
+    {:else if kind === "insert-below"}
+      <path d="M3 4.5h10" />
+      <path d="M8 7.5v6" />
+      <path d="M5 10.5h6" />
     {:else}
       <path d="M3 6h18" />
       <path d="M8 6V4h8v2" />

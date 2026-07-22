@@ -25,7 +25,7 @@ describe('Macro flow visual editor extraction', () => {
     })
     expect(defaultFlowNode(template, 'notify')).toEqual({
       id: 'notify', type: 'notify', level: 'info', title: 'Macro notification', message: { parts: [] },
-      channels: [{ kind: 'app', toast: true, sound: 'success' }], onFailure: 'continue',
+      channels: [{ kind: 'app', toast: true, sound: 'success', repeatCount: 3, repeatIntervalMs: 1000 }], onFailure: 'continue',
     })
     expect(defaultFlowNode(template, 'input')).toEqual({
       id: 'input', type: 'input', terminal: { kind: 'unassigned' }, prompt: 'Input', allowEmpty: false, delivery: 'auto', ending: 'cr',

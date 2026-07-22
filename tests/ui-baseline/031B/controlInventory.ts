@@ -29,8 +29,8 @@ export const sourceInteractiveControlDigest038 = '278ac0156e82120cbe483e2fb76427
 
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
-export const sourceInteractiveControlCount = 199
-export const sourceInteractiveControlDigest = '6ad22bd572150c1a025f7b5221d991dfb9febd8da274bc71ba8be9c718cb7e61'
+export const sourceInteractiveControlCount = 203
+export const sourceInteractiveControlDigest = '0448611e51c092e27662683de60dff7512357c2bc3992d0c4ae5775da69d8b71'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
@@ -337,7 +337,18 @@ const macroRuntimeControls034: Array<readonly [string, UiControlEvidenceKind]> =
   ["macro-insertion-placement", "clicked"],
 ]
 
-const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [...macroRuntimeControls034]
+const macroControlsAdded001: Array<readonly [string, UiControlEvidenceKind]> = [
+  ['for-text-list-item-insert-above', 'clicked'],
+  ['for-text-list-item-insert-below', 'clicked'],
+  ['notify-app-repeat-count', 'edited'],
+  ['notify-app-repeat-interval-ms', 'edited'],
+  ['parallel-collect-lane-text', 'clicked'],
+]
+const macroControlIdsAdded001 = new Set(macroControlsAdded001.map(([key]) => key))
+const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
+  ...macroRuntimeControls034.filter(([key]) => key !== 'for-text-list-add'),
+  ...macroControlsAdded001,
+]
 
 const libraryRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
   ['macro-save-to-library', 'clicked'],
@@ -381,10 +392,10 @@ export const attributedControlChanges: UiControlInventoryEntry[] = [
     .map((key) => ({
       key,
       evidence: 'boundary' as const,
-      changedBy: '20260627A.032',
+      changedBy: removedControlTask(key),
       oldBehavior: '.031A exposed this control in the production workspace.',
-      newBehavior: removedBy032Behavior(key),
-      spec: '20260627A.032/02_spec/01_contract.md — Destructive cutover 与 UI preservation 边界',
+      newBehavior: removedControlBehavior(key),
+      spec: removedControlSpec(key),
     })),
   ...currentRuntimeControls
     .filter(([key]) => !baselineRuntimeControlIds.has(key))
@@ -442,6 +453,7 @@ function macroEvidenceFor(key: string): UiControlEvidenceKind {
 }
 
 function addedControlTask(key: string): string {
+  if (macroControlIdsAdded001.has(key)) return '20260722A.001'
   if (key === 'macro-save-to-library') return '20260627A.036'
   if (key.startsWith('library-')) return '20260627A.036'
   if (key === "take-control") return "20260627A.033"
@@ -450,6 +462,7 @@ function addedControlTask(key: string): string {
 }
 
 function addedControlOldBehavior(key: string): string {
+  if (macroControlIdsAdded001.has(key)) return '.010 did not expose this Macro authoring or notification control.'
   if (key === 'macro-save-to-library') return '.035 allowed clipboard Copy of Macro JSON but had no explicit Macro-to-Library create action.'
   if (key.startsWith('library-')) return '.035 had no production Library surface; .032 had removed the legacy Prompt schema during the current-schema cutover.'
   if (key === "take-control") return ".032 had no explicit controller handoff control."
@@ -458,6 +471,7 @@ function addedControlOldBehavior(key: string): string {
 }
 
 function addedControlNewBehavior(key: string): string {
+  if (macroControlIdsAdded001.has(key)) return '.001 exposes per-item insertion, App notification repetition, or optional Parallel lane text collection through an explicit control.'
   if (key === 'macro-save-to-library') return '.036 saves the current valid Macro draft as a fresh independent Macro JSON Library item without saving or switching the Macro.'
   if (key.startsWith('library-')) return '.036 restores the side-panel presentation with the current user-global Macro JSON, Prompt and Note Library contract.'
   if (key === "take-control") return ".033 adds explicit confirmed takeover for an observer."
@@ -466,6 +480,7 @@ function addedControlNewBehavior(key: string): string {
 }
 
 function addedControlSpec(key: string): string {
+  if (macroControlIdsAdded001.has(key)) return '20260722A.001/02_spec/01_contract.md — Macro authoring and notification interaction contract'
   if (key === 'macro-save-to-library') return '20260627A.036/02_spec/01_contract.md — Save current Macro draft to Library'
   if (key.startsWith('library-')) return '20260627A.036/02_spec/01_contract.md — Library UI精准重构边界与Library panel'
   if (key === "take-control") return "20260627A.033/02_spec/01_contract.md — Take Control与丢失控制"
@@ -473,7 +488,12 @@ function addedControlSpec(key: string): string {
   return "20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime"
 }
 
-function removedBy032Behavior(key: string): string {
+function removedControlTask(key: string): string {
+  return key === 'for-text-list-add' ? '20260722A.001' : '20260627A.032'
+}
+
+function removedControlBehavior(key: string): string {
+  if (key === 'for-text-list-add') return '.001 replaces the header-only append control with per-item insert-above and insert-below controls.'
   if (key === 'terminal-create-fake') return '.032 removes the fake-terminal production control; tests use real Shell and Text only.'
   if (key === 'terminal-alias-input') return '.032 removes terminal alias/rename from the current schema and UI.'
   if (key.startsWith('prompt-')) return '.032 intentionally removes the legacy Prompt panel; the user-content Library is restored by the later Library task.'
@@ -484,6 +504,11 @@ function removedBy032Behavior(key: string): string {
     || key.startsWith('for-') || key.startsWith('parallel-') || key.startsWith('flow-') || key.startsWith('run-')
   ) return '.032 intentionally has no production Macro V2 editor/runner surface; .034 must restore the current-schema Macro UI from the .031A presentation reference.'
   return '.032 temporarily omits this dependent workspace control while preserving the surviving Room/terminal interaction surface.'
+}
+
+function removedControlSpec(key: string): string {
+  if (key === 'for-text-list-add') return '20260722A.001/02_spec/01_contract.md — Text-list local insertion'
+  return '20260627A.032/02_spec/01_contract.md — Destructive cutover 与 UI preservation 边界'
 }
 
 export const codexControlExclusions = [

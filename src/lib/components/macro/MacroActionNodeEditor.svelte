@@ -176,6 +176,8 @@
         <div class="macro-row">
           <label class="checkbox-row"><input type="checkbox" data-testid="notify-app-toast" checked={appChannel.toast} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.toast = event.currentTarget.checked })} />Toast</label>
           <label>Sound<select data-testid="notify-app-sound" value={appChannel.sound} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.sound = event.currentTarget.value as 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert' })}><option value="success">success</option><option value="bell">bell</option><option value="chime">chime</option><option value="ping">ping</option><option value="pulse">pulse</option><option value="warning">warning</option><option value="alert">alert</option><option value="none">none</option></select></label>
+          <label>Repeat count<input type="number" min="1" max="10" step="1" data-testid="notify-app-repeat-count" value={appChannel.repeatCount} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatCount = Number(event.currentTarget.value) })} /></label>
+          <label>Interval ms<input type="number" min="250" max="60000" step="1" data-testid="notify-app-repeat-interval-ms" value={appChannel.repeatIntervalMs} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatIntervalMs = Number(event.currentTarget.value) })} /></label>
         </div>
       {/if}
     {/if}

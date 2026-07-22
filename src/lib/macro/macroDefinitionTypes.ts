@@ -13,7 +13,7 @@ export type NotificationFailureAction = 'continue' | 'pause' | 'fail'
 export type NotificationSound = 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert'
 
 export type NotifyChannel =
-  | { kind: 'app'; toast: boolean; sound: NotificationSound }
+  | { kind: 'app'; toast: boolean; sound: NotificationSound; repeatCount: number; repeatIntervalMs: number }
   | { kind: 'system' }
   | { kind: 'telegram'; profileId: string }
 

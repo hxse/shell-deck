@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from "svelte"
   import LineNumberedTextarea from "./LineNumberedTextarea.svelte"
-  import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_TEMPLATE_TOKENS, LOOP_VALUE_TEMPLATE_TOKEN, isScopedTemplateText, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
+  import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN, isScopedTemplateText, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
   import { templatableScalarValue, withScalarTemplateMode, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
   import type { TemplatableScalarText } from '../../macro/macroDefinitionTypes'
 
@@ -27,11 +27,10 @@
   const templateEnabled = $derived(isScopedTemplateText(value))
   const textValue = $derived(templatableScalarValue(value))
   const templateIssue = $derived(templateEnabled ? scopedTemplateSyntaxIssue(textValue) : null)
-  const availableLoopTokens = LOOP_TEMPLATE_TOKENS.join(" · ")
   const loopTemplateInsertActions = $derived([
-    { text: LOOP_INDEX_TEMPLATE_TOKEN, label: "Insert " + LOOP_INDEX_TEMPLATE_TOKEN, testId: testId ? testId + "-template-insert-index" : "scalar-template-insert-index" },
-    { text: LOOP_KEY_TEMPLATE_TOKEN, label: "Insert " + LOOP_KEY_TEMPLATE_TOKEN, testId: testId ? testId + "-template-insert-key" : "scalar-template-insert-key" },
-    { text: LOOP_VALUE_TEMPLATE_TOKEN, label: "Insert " + LOOP_VALUE_TEMPLATE_TOKEN, testId: testId ? testId + "-template-insert-value" : "scalar-template-insert-value" },
+    { text: LOOP_INDEX_TEMPLATE_TOKEN, label: LOOP_INDEX_TEMPLATE_TOKEN, testId: testId ? testId + "-template-insert-index" : "scalar-template-insert-index" },
+    { text: LOOP_KEY_TEMPLATE_TOKEN, label: LOOP_KEY_TEMPLATE_TOKEN, testId: testId ? testId + "-template-insert-key" : "scalar-template-insert-key" },
+    { text: LOOP_VALUE_TEMPLATE_TOKEN, label: LOOP_VALUE_TEMPLATE_TOKEN, testId: testId ? testId + "-template-insert-value" : "scalar-template-insert-value" },
   ])
 
   function updateText(text: string) {
@@ -82,21 +81,15 @@
       Use loop template
     </label>
   {/if}
-  {#if templateEnabled && templateScope}
+  {#if templateEnabled && templateScope && !multiline}
     <div class="template-tools" data-testid={testId ? testId + "-template-tools" : "scalar-template-tools"}>
-      <small>
-        Available: {availableLoopTokens} · from {templateScope.forStepId}
-        {#if templateScope.shadowedForStepId} · shadows {templateScope.shadowedForStepId}{/if}
-      </small>
-      {#if !multiline}
-        <div class="template-insert-actions">
-          {#each loopTemplateInsertActions as action}
-            <button type="button" data-testid={action.testId} onclick={() => insertTemplateToken(action.text)}>{action.label}</button>
-          {/each}
-        </div>
-      {/if}
+      <div class="template-insert-actions">
+        {#each loopTemplateInsertActions as action}
+          <button type="button" data-testid={action.testId} title={'Insert ' + action.text} onclick={() => insertTemplateToken(action.text)}>{action.label}</button>
+        {/each}
+      </div>
     </div>
-  {:else if templateEnabled}
+  {:else if templateEnabled && !templateScope}
     <p class="template-scope-issue" data-testid={testId ? testId + "-template-scope-issue" : "scalar-template-scope-issue"}>This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
   {/if}
   {#if templateIssue}
@@ -120,10 +113,10 @@
     display: flex;
     min-width: 0;
     flex-wrap: wrap;
-    gap: 6px 10px;
+    gap: 5px;
     align-items: center;
-    justify-content: space-between;
-    padding: 6px 8px;
+    justify-content: flex-end;
+    padding: 3px 4px;
     border: 1px solid #b8d5ec;
     border-radius: 6px;
     background: #f2f8fd;
@@ -139,8 +132,11 @@
   }
 
   .template-tools button {
-    min-height: 28px;
+    min-height: 20px;
+    padding: 1px 5px;
     flex: 0 0 auto;
+    font-size: 11px;
+    line-height: 1.2;
   }
 
   .template-scope-issue {

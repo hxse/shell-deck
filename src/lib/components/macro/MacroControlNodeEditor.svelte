@@ -51,7 +51,7 @@
     removeElseAt,
     setForRangeMode,
     textListItemEditorKey,
-    addTextListItem,
+    insertTextListItem,
     updateTextListItem,
     removeTextListItem,
     moveTextListItem,
@@ -63,6 +63,7 @@
     adoptTerminalSelection,
     choiceFromIndex,
     insertionPaletteMode,
+    currentNodeId = null,
   } = $props<{
     node: ControlEditorNode
     bodyPath: BodyPath
@@ -79,7 +80,7 @@
     removeElseAt: (bodyPath: BodyPath, index: number, nodeId: string) => void
     setForRangeMode: (nodeId: string, mode: 'count' | 'forever' | 'text-list') => boolean
     textListItemEditorKey: (nodeId: string, itemIndex: number) => string
-    addTextListItem: (nodeId: string) => void
+    insertTextListItem: (nodeId: string, insertionIndex: number) => void
     updateTextListItem: (nodeId: string, itemIndex: number, field: keyof TextListItem, value: string) => void
     removeTextListItem: (nodeId: string, itemIndex: number) => void
     moveTextListItem: (nodeId: string, itemIndex: number, offset: -1 | 1) => void
@@ -91,6 +92,7 @@
     adoptTerminalSelection: (template: MacroDefinitionV5, terminalIndex: number) => boolean
     choiceFromIndex: (target: number) => string
     insertionPaletteMode: MacroInsertionPaletteMode
+    currentNodeId?: string | null
   }>()
 
   function forBodyTemplateScope(
@@ -161,10 +163,10 @@
   <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={node.range.kind} onchange={(event) => { const previous = node.range.kind; const mode = event.currentTarget.value as 'count' | 'forever' | 'text-list'; if (!setForRangeMode(node.id, mode)) event.currentTarget.value = previous }}><option value="count">count</option><option value="forever">forever</option><option value="text-list">text-list</option></select></label>{#if node.range.kind === 'count'}<label>Count<input data-testid="for-range-count" type="number" value={node.range.count} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'for') item.range = { kind: 'count', count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
   {#if node.range.kind === 'text-list'}
     <div class="text-list-items" data-testid="for-text-list-items">
-      <div class="step-title"><strong>Items</strong><button type="button" data-testid="for-text-list-add" onclick={() => addTextListItem(node.id)}>Add item</button></div>
+      <div class="step-title"><strong>Items</strong></div>
       {#each node.range.items as item, itemIndex (textListItemEditorKey(node.id, itemIndex))}
         <div class="message-part-row text-list-item-card" data-testid="for-text-list-item-card">
-          <div class="step-title"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions"><MacroIconButton kind="up" disabled={itemIndex === 0} testId="for-text-list-item-up" onClick={() => moveTextListItem(node.id, itemIndex, -1)} /><MacroIconButton kind="down" disabled={itemIndex === node.range.items.length - 1} testId="for-text-list-item-down" onClick={() => moveTextListItem(node.id, itemIndex, 1)} /><MacroIconButton kind="remove" disabled={node.range.items.length <= 1} testId="for-text-list-item-remove" onClick={() => removeTextListItem(node.id, itemIndex)} /></div></div>
+          <div class="step-title"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions"><MacroIconButton kind="insert-above" testId="for-text-list-item-insert-above" onClick={() => insertTextListItem(node.id, itemIndex)} /><MacroIconButton kind="insert-below" testId="for-text-list-item-insert-below" onClick={() => insertTextListItem(node.id, itemIndex + 1)} /><MacroIconButton kind="up" disabled={itemIndex === 0} testId="for-text-list-item-up" onClick={() => moveTextListItem(node.id, itemIndex, -1)} /><MacroIconButton kind="down" disabled={itemIndex === node.range.items.length - 1} testId="for-text-list-item-down" onClick={() => moveTextListItem(node.id, itemIndex, 1)} /><MacroIconButton kind="remove" disabled={node.range.items.length <= 1} testId="for-text-list-item-remove" onClick={() => removeTextListItem(node.id, itemIndex)} /></div></div>
           <label>Key<input data-testid="for-text-list-key" value={item.key} oninput={(event) => updateTextListItem(node.id, itemIndex, 'key', event.currentTarget.value)} /></label>
           <label>Value<LineNumberedTextarea testId="for-text-list-value" value={item.value} maxRows={3} ariaLabel={'Text-list item ' + (itemIndex + 1) + ' value'} onInput={(value: string) => updateTextListItem(node.id, itemIndex, 'value', value)} /></label>
         </div>
@@ -173,7 +175,7 @@
   {/if}
   {@render renderNodeList(node.body, [...bodyPath, { kind: 'for', nodeId: node.id }], true, 'for body', false, forBodyTemplateScope(node, templateScope), depth + 1)}
 {:else if node.type === 'parallel'}
-  <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {adoptTerminalSelection} {choiceFromIndex} outerArtifactChoices={artifactChoices} {templateScope} {insertionPaletteMode} />
+  <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {adoptTerminalSelection} {choiceFromIndex} outerArtifactChoices={artifactChoices} {templateScope} {insertionPaletteMode} {currentNodeId} />
 {:else}
   <label>Reason<input data-testid="flow-control-reason" value={node.reason ?? ''} oninput={(event) => onUpdate((item: FlowV2Node) => { if ('reason' in item) item.reason = event.currentTarget.value || undefined })} /></label>
   {#if node.type === 'finish' || node.type === 'break' || node.type === 'continue'}

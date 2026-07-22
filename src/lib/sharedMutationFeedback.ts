@@ -15,6 +15,7 @@ const EXACT_MESSAGES: Record<string, string> = {
   content_revision_conflict: 'The saved record changed elsewhere. Reload it before saving again.',
   clipboard_write_failed: 'The browser could not write this content to the clipboard.',
   macro_revision_conflict: 'The saved Macro changed elsewhere. Reload it before starting or saving.',
+  macro_run_active: 'Macro editing is locked while the active run uses its frozen saved revision.',
   operation_pending: 'Wait for the current operation to finish.',
   runner_not_waiting_input: 'The Macro is no longer waiting for runtime input.',
   runner_input_invocation_mismatch: 'The active runtime input changed. Review the current prompt and try again.',

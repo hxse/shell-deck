@@ -52,7 +52,7 @@ export function defaultTextMatchCondition(source: FlowV2ArtifactSource): TextMat
 export function defaultNotifyChannel(kind: NotifyChannel['kind']): NotifyChannel {
   if (kind === 'telegram') return { kind, profileId: 'default' }
   if (kind === 'system') return { kind }
-  return { kind, toast: true, sound: 'success' }
+  return { kind, toast: true, sound: 'success', repeatCount: 3, repeatIntervalMs: 1000 }
 }
 
 export function defaultTextFilter(): TextFilterSpec {

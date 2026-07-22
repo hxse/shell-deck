@@ -59,6 +59,7 @@
     insertionPaletteMode,
     telegramProfileIds = [],
     telegramProfilesError = '',
+    currentNodeId = null,
   } = $props<{
     draft: MacroDefinitionV5
     updateDraft: (mutator: (template: MacroDefinitionV5) => void) => void
@@ -68,6 +69,7 @@
     insertionPaletteMode: MacroInsertionPaletteMode
     telegramProfileIds?: string[]
     telegramProfilesError?: string
+    currentNodeId?: string | null
   }>()
 
   let insertionAnchor = $state<InsertionAnchor | null>(null)
@@ -494,11 +496,12 @@
     return nodeId + ':' + (textListStructureVersions[nodeId] ?? 0) + ':' + itemIndex
   }
 
-  function addTextListItem(nodeId: string): void {
+  function insertTextListItem(nodeId: string, insertionIndex: number): void {
     let changed = false
     updateNode(nodeId, (node) => {
       if (node.type !== 'for' || node.range.kind !== 'text-list') return
-      node.range.items.push({ key: '', value: '' })
+      const targetIndex = Math.max(0, Math.min(insertionIndex, node.range.items.length))
+      node.range.items.splice(targetIndex, 0, { key: '', value: '' })
       changed = true
     })
     if (changed) bumpTextListStructureVersion(nodeId)
@@ -572,6 +575,10 @@
     return node.type === 'break' || node.type === 'continue' || node.type === 'finish'
   }
 
+  function parallelContainsCurrentNode(node: ParallelNode): boolean {
+    return Boolean(currentNodeId && node.lanes.some((lane) => lane.body.some((item) => item.id === currentNodeId)))
+  }
+
   function flowDepthColor(depth: number): string {
     return flowDepthColors[depth % flowDepthColors.length]
   }
@@ -601,7 +608,7 @@
       </div>
     {/if}
     {#each nodes as node, index (node.id)}
-      <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)} data-flow-node-id={node.id} data-flow-node-type={node.type} data-flow-node-depth={depth} data-flow-sibling={index > 0}>
+      <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)} class:current-node={currentNodeId === node.id} class:contains-current-node={node.type === 'parallel' && parallelContainsCurrentNode(node)} data-flow-node-id={node.id} data-flow-node-type={node.type} data-flow-node-depth={depth} data-flow-sibling={index > 0} data-current-node={currentNodeId === node.id ? 'true' : undefined}>
         <div class="step-title node-title-row" data-testid="node-menu">
           <div class="node-title-cluster">
             <strong>{index + 1}. {node.type}{#if node.type === 'for' && node.range.kind === 'text-list'} <small data-testid="for-text-list-summary">text-list · {LOOP_INDEX_TEMPLATE_TOKEN} · {LOOP_KEY_TEMPLATE_TOKEN} · {LOOP_VALUE_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
@@ -642,7 +649,7 @@
             {removeElseAt}
             {setForRangeMode}
             {textListItemEditorKey}
-            {addTextListItem}
+            {insertTextListItem}
             {updateTextListItem}
             {removeTextListItem}
             {moveTextListItem}
@@ -654,6 +661,7 @@
             {adoptTerminalSelection}
             {choiceFromIndex}
             {insertionPaletteMode}
+            {currentNodeId}
           />
         {/if}
       </article>
@@ -674,6 +682,7 @@
     flowItems={flowPaletteItems}
     {moveNodeId}
     movableNodeChoices={movableNodeChoices()}
+    blocked={insertionNotice.startsWith('Insertion failed:')}
     bind:paletteElement={insertionPaletteElement}
     onMoveNodeIdChange={(nodeId) => { moveNodeId = nodeId }}
     onInsert={insertFromPalette}

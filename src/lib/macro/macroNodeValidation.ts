@@ -95,9 +95,17 @@ function validateNotifyChannel(value: unknown, path: string, context: Validation
   const channel = object(value, context.issues, path)
   if (!channel) return
   if (channel.kind === 'app') {
-    exactKeys(channel, ['kind', 'toast', 'sound'], context.issues, path)
+    exactKeys(channel, ['kind', 'toast', 'sound', 'repeatCount', 'repeatIntervalMs'], context.issues, path)
     booleanValue(channel.toast, context.issues, `${path}.toast`)
     literal(channel.sound, ['none', 'bell', 'chime', 'ping', 'pulse', 'success', 'warning', 'alert'], context.issues, `${path}.sound`, 'unsupported notification sound')
+    const repeatCount = integerValue(channel.repeatCount, context.issues, `${path}.repeatCount`)
+    if (repeatCount !== undefined && (repeatCount < 1 || repeatCount > 10)) {
+      add(context.issues, 'invalid_range', `${path}.repeatCount`, 'repeatCount must be between 1 and 10')
+    }
+    const repeatIntervalMs = integerValue(channel.repeatIntervalMs, context.issues, `${path}.repeatIntervalMs`)
+    if (repeatIntervalMs !== undefined && (repeatIntervalMs < 250 || repeatIntervalMs > 60000)) {
+      add(context.issues, 'invalid_range', `${path}.repeatIntervalMs`, 'repeatIntervalMs must be between 250 and 60000')
+    }
   } else if (channel.kind === 'system') exactKeys(channel, ['kind'], context.issues, path)
   else if (channel.kind === 'telegram') {
     exactKeys(channel, ['kind', 'profileId'], context.issues, path)

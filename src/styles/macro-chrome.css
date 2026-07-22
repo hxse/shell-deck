@@ -114,7 +114,7 @@
   font-size: 12px;
 }
 
-.macro-run-status > div:first-child {
+.macro-run-status-line {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -128,6 +128,71 @@
 
 .macro-run-status span {
   color: #5d6c79;
+}
+
+.macro-run-summary {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.macro-run-status-badge {
+  min-width: 64px;
+  box-sizing: border-box;
+  padding: 3px 7px;
+  border: 1px solid #9eb1c2;
+  border-radius: 999px;
+  background: #edf2f6;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.macro-run-status[data-run-status="running"] .macro-run-status-badge,
+.macro-run-status[data-run-status="starting"] .macro-run-status-badge {
+  border-color: #3a8a64;
+  background: #e7f6ed;
+  color: #175d3b;
+}
+
+.macro-run-status[data-run-status="paused"] .macro-run-status-badge,
+.macro-run-status[data-run-status="waiting_input"] .macro-run-status-badge {
+  border-color: #d48816;
+  background: #fff2d4;
+  color: #744307;
+}
+
+.macro-current-stage {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 7px;
+  border: 2px solid #d98308;
+  border-radius: 5px;
+  background: #fff4d8;
+  color: #683d08;
+  box-shadow: 0 0 0 2px rgba(229, 138, 8, 0.12);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.macro-current-stage > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.macro-current-stage-label {
+  flex: 0 0 auto;
+  padding-right: 7px;
+  border-right: 1px solid rgba(116, 67, 7, 0.35);
+  color: #744307 !important;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .runner-input-line {
@@ -403,6 +468,10 @@
   gap: 5px;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.macro-run-status-dock .macro-run-summary {
+  min-width: 0;
 }
 
 .macro-run-status-dock .macro-run-status-line strong {

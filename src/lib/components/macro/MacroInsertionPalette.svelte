@@ -21,6 +21,7 @@
     flowItems,
     moveNodeId,
     movableNodeChoices,
+    blocked = false,
     paletteElement = $bindable<HTMLElement | null>(null),
     onMoveNodeIdChange,
     onInsert,
@@ -38,6 +39,7 @@
     flowItems: MacroPaletteItem[]
     moveNodeId: string
     movableNodeChoices: Array<{ id: string; type: FlowV2Node['type'] }>
+    blocked?: boolean
     paletteElement?: HTMLElement | null
     onMoveNodeIdChange: (nodeId: string) => void
     onInsert: (type: FlowV2Node['type']) => void
@@ -48,7 +50,7 @@
 
 <div class="macro-insertion-mode" class:anchored class:centered={!anchored} data-testid="macro-insertion-mode" data-placement-mode={insertionPaletteMode}>
   <button type="button" class="macro-insertion-scrim" data-testid="macro-insertion-cancel-scrim" aria-label="Cancel insertion" onclick={onCancel}></button>
-  <section bind:this={paletteElement} class="floating-insertion-palette" class:anchored class:above={position?.placement === 'above'} class:below={position?.placement === 'below'} {style} data-testid="macro-insertion-palette" aria-label="Insert macro node">
+  <section bind:this={paletteElement} class="floating-insertion-palette" class:anchored class:above={position?.placement === 'above'} class:below={position?.placement === 'below'} class:blocked {style} data-testid="macro-insertion-palette" aria-label="Insert macro node">
     <div class="palette-heading"><span>{summary}</span><small>choose node</small></div>
     <div class="step-palette" data-testid="macro-actions-palette">
       <div class="palette-heading"><span>Actions</span><small>do work</small></div>

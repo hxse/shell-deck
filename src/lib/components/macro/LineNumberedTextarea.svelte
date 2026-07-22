@@ -204,7 +204,7 @@
   {#if insertActions.length > 0}
     <div class="textarea-toolbar">
       {#each insertActions as action}
-        <button type="button" data-testid={action.testId} disabled={disabled} onclick={() => insertAtSelection(action)}>{action.label}</button>
+        <button class="template-token-button" type="button" data-testid={action.testId} title={'Insert ' + action.text} disabled={disabled} onclick={() => insertAtSelection(action)}>{action.label}</button>
       {/each}
     </div>
   {/if}
@@ -274,11 +274,13 @@
     background: #f5f8fa;
   }
 
-  .textarea-toolbar button {
+  .textarea-toolbar button.template-token-button {
     min-width: 0;
-    min-height: 26px;
-    padding: 2px 8px;
+    min-height: 20px;
+    padding: 1px 5px;
     overflow-wrap: anywhere;
+    font-size: 11px;
+    line-height: 1.2;
   }
 
   .line-number-list {

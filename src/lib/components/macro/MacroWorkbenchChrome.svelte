@@ -11,7 +11,7 @@
     errorText, macroView, runner, statusText, runnerInput, runnerInputSyncing = false, preparing = false,
     saveToLibraryLabel = 'Save to Library',
     prepareDisabled = false, prepareDisabledReason = '', startDisabled = false, startDisabledReason = '',
-    jsonEditing = false, operationPending = false,
+    jsonEditing = false, operationPending = false, runActive = false,
     onTemplateSearchChange, onSelectTemplate, onCreateTemplate, onBeginEdit, onSaveTemplate, onSaveToLibrary,
     onCancelEdit, onDeleteTemplate, onUpdateDraft, onResetWidth, onPrepare,
     onRunnerInputChange, onSubmitRunnerInput, onRefreshRunner, onMacroControl, onViewChange,
@@ -20,7 +20,7 @@
     templateSearch: string; dirty: boolean; contentEditing: boolean; mutationAllowed?: boolean; errorText: string | null; macroView: MacroView; runner: MacroRunnerSnapshot | null
     statusText: string; runnerInput: string; runnerInputSyncing?: boolean; preparing?: boolean; prepareDisabled?: boolean; prepareDisabledReason?: string
     saveToLibraryLabel?: string
-    startDisabled?: boolean; startDisabledReason?: string; jsonEditing?: boolean; operationPending?: boolean
+    startDisabled?: boolean; startDisabledReason?: string; jsonEditing?: boolean; operationPending?: boolean; runActive?: boolean
     onTemplateSearchChange: (value: string) => void; onSelectTemplate: (id: string) => Promise<boolean>; onCreateTemplate: () => void
     onBeginEdit: () => void; onSaveTemplate: () => void; onSaveToLibrary: () => void; onCancelEdit: () => void; onDeleteTemplate: () => void
     onUpdateDraft: (mutator: (definition: MacroDefinitionV5) => void) => void; onResetWidth?: () => void; onPrepare: () => void
@@ -33,7 +33,7 @@
   onTemplateSearchChange={onTemplateSearchChange} onSelectTemplate={onSelectTemplate} onCreateTemplate={onCreateTemplate}
   onBeginEdit={onBeginEdit} onSaveTemplate={onSaveTemplate} {saveToLibraryLabel} onSaveToLibrary={onSaveToLibrary}
   onCancelEdit={onCancelEdit} onDeleteTemplate={onDeleteTemplate}
-  onUpdateDraft={onUpdateDraft} onResetWidth={onResetWidth} locked={jsonEditing || operationPending} />
+  onUpdateDraft={onUpdateDraft} onResetWidth={onResetWidth} locked={jsonEditing || operationPending || runActive} />
 
 {#if errorText}<div class="macro-error" role="alert">{errorText}</div>{/if}
 

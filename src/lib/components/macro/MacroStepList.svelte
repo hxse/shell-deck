@@ -16,6 +16,7 @@
     insertionPaletteMode,
     telegramProfileIds = [],
     telegramProfilesError = '',
+    currentNodeId = null,
   } = $props<{
     draft: MacroDefinitionV5
     validation: MacroDefinitionValidation
@@ -27,6 +28,7 @@
     insertionPaletteMode: MacroInsertionPaletteMode
     telegramProfileIds?: string[]
     telegramProfilesError?: string
+    currentNodeId?: string | null
   }>()
 
   const runnableIssues = $derived(runnableValidation.ok
@@ -64,6 +66,7 @@
   {insertionPaletteMode}
   {telegramProfileIds}
   {telegramProfilesError}
+  {currentNodeId}
 />
 
 <style>

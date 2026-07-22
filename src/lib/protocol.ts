@@ -61,7 +61,7 @@ export type RoomSnapshot = {
 export type MacroNotificationLevel = 'info' | 'success' | 'warning' | 'error'
 export type MacroNotificationSound = 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert'
 export type MacroNotificationChannel =
-  | { kind: 'app'; toast: boolean; sound: MacroNotificationSound }
+  | { kind: 'app'; toast: boolean; sound: MacroNotificationSound; repeatCount: number; repeatIntervalMs: number }
   | { kind: 'system' }
 
 export type MacroNotificationMessage = {
