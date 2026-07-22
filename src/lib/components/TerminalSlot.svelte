@@ -54,7 +54,7 @@
         : appendBoundedTail(renderedTail, update.data)
       host.dataset.renderedTail = renderedTail
       host.dataset.renderedRevision = String(update.revision)
-      current.scrollToBottom()
+      if (update.kind === 'replace') current.scrollToBottom()
       if (update.kind === 'replace' && hydratingXterm === current) {
         hydratingXterm = null
         current.options.disableStdin = false
@@ -184,8 +184,9 @@
     if (cols === sentCols && rows === sentRows) return
     sentCols = cols
     sentRows = rows
+    const wasAtBottom = xterm.buffer.active.viewportY === xterm.buffer.active.baseY
     xterm.resize(cols, rows)
-    xterm.scrollToBottom()
+    if (wasAtBottom) xterm.scrollToBottom()
     if (!readOnly) client?.send({ type: 'terminal_resize', terminalId: terminal.terminalId, cols, rows })
   }
 

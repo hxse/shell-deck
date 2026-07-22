@@ -21,6 +21,54 @@ test('large live Room burst keeps browser replay and render work bounded', async
   expect(work.fitCount).toBeLessThan(25)
 })
 
+test('live Shell output and resize preserve a user-scrolled xterm viewport until they return to bottom', async ({ page, request }) => {
+  await openNewRoom(page, request)
+  const terminal = await createTerminal(page, 'fake')
+  const host = terminalHost(page, terminal.terminalId)
+  const historyBottomMarker = 'SD_SCROLL_HISTORY_BOTTOM_002'
+  const history = Array.from(
+    { length: 180 },
+    (_, index) => `SD_SCROLL_HISTORY_${String(index).padStart(3, '0')}\r`,
+  ).join('') + historyBottomMarker + '\r'
+
+  await sendTerminalMessages(page, [
+    { type: 'terminal_input', terminalId: terminal.terminalId, data: history },
+  ])
+  await expect(host).toHaveAttribute('data-rendered-tail', new RegExp(historyBottomMarker))
+  await expectParserIdle(host)
+  await expect.poll(() => terminalVisibleText(host)).toContain(historyBottomMarker)
+
+  await dragTerminalScrollbar(page, host, 'history')
+  await expect.poll(() => terminalVisibleText(host)).not.toContain(historyBottomMarker)
+  expect(await terminalVisibleText(host)).toContain('SD_SCROLL_HISTORY_')
+
+  const liveMarker = 'SD_SCROLL_LIVE_WHILE_REVIEWING_002'
+  await sendTerminalMessages(page, [
+    { type: 'terminal_input', terminalId: terminal.terminalId, data: liveMarker + '\r' },
+  ])
+  await expect(host).toHaveAttribute('data-rendered-tail', new RegExp(liveMarker))
+  await expectParserIdle(host)
+  expect(await terminalVisibleText(host)).not.toContain(liveMarker)
+  expect(await terminalVisibleText(host)).toContain('SD_SCROLL_HISTORY_')
+
+  const fitCount = (await renderCounters(host)).fitCount
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await expect.poll(async () => (await renderCounters(host)).fitCount).toBeGreaterThan(fitCount)
+  expect(await terminalVisibleText(host)).not.toContain(liveMarker)
+  expect(await terminalVisibleText(host)).toContain('SD_SCROLL_HISTORY_')
+
+  await dragTerminalScrollbar(page, host, 'bottom')
+  await expect.poll(() => terminalVisibleText(host)).toContain(liveMarker)
+
+  const resumedFollowMarker = 'SD_SCROLL_BOTTOM_FOLLOW_RESUMED_002'
+  await sendTerminalMessages(page, [
+    { type: 'terminal_input', terminalId: terminal.terminalId, data: resumedFollowMarker + '\r' },
+  ])
+  await expect(host).toHaveAttribute('data-rendered-tail', new RegExp(resumedFollowMarker))
+  await expectParserIdle(host)
+  await expect.poll(() => terminalVisibleText(host)).toContain(resumedFollowMarker)
+})
+
 test('visited terminal views survive Shell and Text tab switches without replaying long history', async ({ page, request }) => {
   await openNewRoom(page, request)
   const shell = await createTerminal(page, 'fake')
@@ -281,6 +329,33 @@ function terminalHost(page: Page, terminalId: string) {
 
 function terminalTab(page: Page, terminalId: string) {
   return page.locator(`[data-testid="terminal-tab"][data-terminal-id="${terminalId}"]`)
+}
+
+async function terminalVisibleText(host: ReturnType<typeof terminalHost>): Promise<string> {
+  return await host.locator('.xterm-rows').innerText()
+}
+
+async function dragTerminalScrollbar(
+  page: Page,
+  host: ReturnType<typeof terminalHost>,
+  destination: 'history' | 'bottom',
+): Promise<void> {
+  await host.hover()
+  const scrollbar = host.locator('.xterm-scrollable-element > .scrollbar.vertical')
+  const slider = scrollbar.locator('> .slider')
+  await expect(scrollbar).toHaveClass(/visible/)
+  const [scrollbarBox, sliderBox] = await Promise.all([scrollbar.boundingBox(), slider.boundingBox()])
+  if (!scrollbarBox || !sliderBox) throw new Error('terminal_scrollbar_geometry_missing')
+
+  const x = sliderBox.x + sliderBox.width / 2
+  const startY = sliderBox.y + sliderBox.height / 2
+  const targetY = destination === 'history'
+    ? scrollbarBox.y + scrollbarBox.height * 0.25
+    : scrollbarBox.y + scrollbarBox.height - 2
+  await page.mouse.move(x, startY)
+  await page.mouse.down()
+  await page.mouse.move(x, targetY, { steps: 5 })
+  await page.mouse.up()
 }
 
 async function terminalInputFrames(page: Page): Promise<string[]> {
