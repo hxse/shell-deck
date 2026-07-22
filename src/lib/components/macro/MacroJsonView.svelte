@@ -54,55 +54,37 @@
   }
 </script>
 
-<section class="macro-section macro-json-section" data-testid="macro-json-view" data-json-editing={editing}>
-  <div class="macro-section-title">
+<section class="macro-section macro-json-section flex min-h-full min-w-0 flex-col gap-2 overflow-hidden border-t border-base-300 bg-base-100 p-2" data-testid="macro-json-view" data-json-editing={editing}>
+  <div class="macro-section-title flex items-center justify-between gap-2">
     <h3>JSON</h3>
-    <div class="inline-actions">
-      <button type="button" data-testid="macro-json-copy" onclick={copyJson} disabled={!draft && !editing}>{copyLabel}</button>
+    <div class="inline-actions flex flex-wrap items-center justify-end gap-1">
+      <button class="btn btn-xs btn-ghost" type="button" data-testid="macro-json-copy" onclick={copyJson} disabled={!draft && !editing}>{copyLabel}</button>
       {#if editing}
-        <button type="button" data-testid="macro-save-json" onclick={onSave} disabled={saving || !canEdit} aria-disabled={saving || !canEdit}>{saving ? 'Saving…' : 'Save'}</button>
-        <button type="button" data-testid="macro-cancel-json" onclick={onCancel} disabled={saving}>Cancel</button>
+        <button class="btn btn-xs btn-success" type="button" data-testid="macro-save-json" onclick={onSave} disabled={saving || !canEdit} aria-disabled={saving || !canEdit}>{saving ? 'Saving…' : 'Save'}</button>
+        <button class="btn btn-xs btn-ghost" type="button" data-testid="macro-cancel-json" onclick={onCancel} disabled={saving}>Cancel</button>
       {:else}
-        <button type="button" data-testid="macro-edit-json" onclick={onStartEdit} disabled={!draft || operationPending || !canEdit} aria-disabled={!draft || operationPending || !canEdit} title={!canEdit ? readOnlyReason || 'Macro editing is unavailable' : operationPending ? 'Wait for the pending macro operation to finish' : undefined}>Edit</button>
+        <button class="btn btn-xs btn-outline" type="button" data-testid="macro-edit-json" onclick={onStartEdit} disabled={!draft || operationPending || !canEdit} aria-disabled={!draft || operationPending || !canEdit} title={!canEdit ? readOnlyReason || 'Macro editing is unavailable' : operationPending ? 'Wait for the pending macro operation to finish' : undefined}>Edit</button>
       {/if}
     </div>
   </div>
   {#if !canEdit && readOnlyReason}
-    <div class="macro-editor-lock-notice macro-json-lock-notice" data-testid="macro-json-lock-notice" role="status">{readOnlyReason}</div>
+    <div class="macro-editor-lock-notice macro-json-lock-notice alert alert-warning border-2 px-3 py-2 text-xs font-bold" data-testid="macro-json-lock-notice" role="status">{readOnlyReason}</div>
   {/if}
-  {#if editError}<div class="macro-json-error" role="alert" data-testid="macro-json-error">{editError}</div>{/if}
+  {#if editError}<div class="macro-json-error alert alert-error px-3 py-2 text-xs" role="alert" data-testid="macro-json-error">{editError}</div>{/if}
   {#if editing}
-    <p class="macro-json-edit-lock" data-testid="macro-json-edit-lock">Save or Cancel before leaving JSON or changing macros.</p>
-    <div class="macro-json-line-editor">
+    <p class="macro-json-edit-lock m-0 text-xs font-bold text-warning" data-testid="macro-json-edit-lock">Save or Cancel before leaving JSON or changing macros.</p>
+    <div class="macro-json-line-editor min-h-0 flex-1 overflow-hidden">
       <LineNumberedTextarea testId="macro-json-editor" value={editText} maxRows={30} ariaLabel="Macro JSON editor" disabled={saving || !canEdit} onInput={onEditTextChange} />
     </div>
   {:else if draft}
     {#if unassignedIssues.length > 0}
-      <div class="macro-json-runnable-warning" data-testid="macro-json-runnable-warning" role="status">
+      <div class="macro-json-runnable-warning alert alert-warning block px-3 py-2 text-xs leading-[1.35]" data-testid="macro-json-runnable-warning" role="status">
         Valid MacroDefinitionV5, but not runnable: assign {unassignedIssues.length} terminal or artifact reference{unassignedIssues.length === 1 ? '' : 's'} before Start.
         <ul>{#each unassignedIssues as issue}<li><code>{issue.path}</code></li>{/each}</ul>
       </div>
     {/if}
-    <pre data-testid="macro-json-preview">{jsonPreview}</pre>
+    <pre class="min-h-0 flex-1 overflow-auto" data-testid="macro-json-preview">{jsonPreview}</pre>
   {:else}
     <p class="empty-text">No macro selected.</p>
   {/if}
 </section>
-
-<style>
-  .macro-json-runnable-warning {
-    margin: 0 0 8px;
-    border: 1px solid #d79a35;
-    border-radius: 6px;
-    background: #fff9eb;
-    color: #725013;
-    padding: 7px 9px;
-    font-size: 12px;
-    line-height: 1.35;
-  }
-
-  .macro-json-runnable-warning ul {
-    margin: 4px 0 0;
-    padding-left: 18px;
-  }
-</style>

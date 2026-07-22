@@ -32,8 +32,8 @@
   }
 </script>
 
-<button class="macro-icon-button" class:macro-remove-button={kind === "remove"} class:active type="button" data-testid={testId} title={label} aria-label={label} aria-expanded={expanded} {disabled} onclick={onClick}>
-  <svg viewBox={kind === "remove" ? "0 0 24 24" : "0 0 16 16"} aria-hidden="true" focusable="false">
+<button class="macro-icon-button btn btn-square btn-xs !size-6 !min-h-6 !min-w-6 !p-0 leading-none disabled:opacity-60 [&.macro-remove-button:hover:not(:disabled)]:border-error [&.macro-remove-button:hover:not(:disabled)]:bg-error/10 [&.macro-remove-button:hover:not(:disabled)]:text-error" class:btn-primary={active} class:macro-remove-button={kind === "remove"} class:active type="button" data-testid={testId} title={label} aria-label={label} aria-expanded={expanded} {disabled} onclick={onClick}>
+  <svg class="block size-[15px] shrink-0 fill-none stroke-current stroke-[1.75] [stroke-linecap:round] [stroke-linejoin:round]" viewBox={kind === "remove" ? "0 0 24 24" : "0 0 16 16"} aria-hidden="true" focusable="false">
     {#if kind === "collapse"}
       <path d="m3.5 5.75 4.5 4.5 4.5-4.5" />
     {:else if kind === "expand"}

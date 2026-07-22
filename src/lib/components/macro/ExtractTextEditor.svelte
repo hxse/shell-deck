@@ -42,15 +42,15 @@
 
 {#if variant === 'root'}
   <label>Source
-    <select data-testid="extract-text-source" class:artifact-source-unassigned={node.source.kind === 'unassigned'} value={artifactSourceKey(node.source)} onchange={(event) => onUpdate((item: EditableExtractTextNode) => { item.source = artifactSourceFromKey(event.currentTarget.value) })}>
+    <select class="select select-xs w-full" class:select-warning={node.source.kind === 'unassigned'} data-testid="extract-text-source" class:artifact-source-unassigned={node.source.kind === 'unassigned'} value={artifactSourceKey(node.source)} onchange={(event) => onUpdate((item: EditableExtractTextNode) => { item.source = artifactSourceFromKey(event.currentTarget.value) })}>
       <option value="">Unassigned</option>
       {#each choices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}
     </select>
   </label>
-  {#if node.source.kind === 'unassigned'}<small class="artifact-source-warning" data-testid="extract-text-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
+  {#if node.source.kind === 'unassigned'}<small class="artifact-source-warning text-[11px] leading-snug text-warning" data-testid="extract-text-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
 {:else}
-  <label>Source<select data-testid="parallel-extract-source" class:artifact-source-unassigned={node.source.kind === 'unassigned'} value={artifactSourceKey(node.source)} onchange={(event) => onUpdate((item: EditableExtractTextNode) => { item.source = artifactSourceFromKey(event.currentTarget.value) })}><option value="">Unassigned</option>{#each choices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
-  {#if node.source.kind === 'unassigned'}<small class="artifact-source-warning" data-testid="parallel-extract-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
+  <label>Source<select class="select select-xs w-full" class:select-warning={node.source.kind === 'unassigned'} data-testid="parallel-extract-source" class:artifact-source-unassigned={node.source.kind === 'unassigned'} value={artifactSourceKey(node.source)} onchange={(event) => onUpdate((item: EditableExtractTextNode) => { item.source = artifactSourceFromKey(event.currentTarget.value) })}><option value="">Unassigned</option>{#each choices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+  {#if node.source.kind === 'unassigned'}<small class="artifact-source-warning text-[11px] leading-snug text-warning" data-testid="parallel-extract-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
 {/if}
 
 {#if variant === 'parallel'}
@@ -107,17 +107,3 @@
     <div class="macro-row"><label>Pattern<input data-testid="extract-text-regex-pattern" value={node.extract.pattern} oninput={(event) => onUpdate((item: EditableExtractTextNode) => { if (item.extract.kind === 'regex') item.extract.pattern = event.currentTarget.value })} /></label><label>Flags<input data-testid="extract-text-regex-flags" value={node.extract.flags ?? ''} oninput={(event) => onUpdate((item: EditableExtractTextNode) => { if (item.extract.kind === 'regex') item.extract.flags = event.currentTarget.value })} /></label><label>Group<input data-testid="extract-text-regex-group" value={groupInputValue(node.extract.group)} oninput={(event) => onUpdate((item: EditableExtractTextNode) => { if (item.extract.kind === 'regex') item.extract.group = groupFromInput(event.currentTarget.value) })} /></label></div>
   {/if}
 {/if}
-
-<style>
-  select.artifact-source-unassigned {
-    border-color: #d79a35;
-    background: #fff9eb;
-    color: #725013;
-  }
-
-  .artifact-source-warning {
-    color: #8a5b0a;
-    font-size: 11px;
-    line-height: 1.3;
-  }
-</style>

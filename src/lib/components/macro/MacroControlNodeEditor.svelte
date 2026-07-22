@@ -127,16 +127,16 @@
 
 {#if node.type === 'if'}
   {#each node.branches as branch, branchIndex}
-    <div class="flow-branch-card" class:collapsed={isIfBranchCollapsed(node.id, branchIndex)} data-testid="if-branch-section" data-flow-branch-kind={branch.kind} data-flow-branch-index={branchIndex}>
-      <div class="step-title flow-branch-title" data-testid="flow-branch-title">
-        <div class="flow-branch-label">
+    <div class="flow-branch-card grid min-w-0 gap-2 rounded-md border border-base-300 bg-base-200/40 p-2 [&.collapsed]:opacity-75" class:collapsed={isIfBranchCollapsed(node.id, branchIndex)} data-testid="if-branch-section" data-flow-branch-kind={branch.kind} data-flow-branch-index={branchIndex}>
+      <div class="step-title flow-branch-title flex min-w-0 flex-wrap items-center justify-between gap-2" data-testid="flow-branch-title">
+        <div class="flow-branch-label flex min-w-0 items-center gap-1.5">
           <strong>{branch.kind}</strong>
-          {#if isIfBranchCollapsed(node.id, branchIndex)}<span class="collapse-state-badge" data-testid="if-branch-collapsed-badge">Collapsed</span>{/if}
+          {#if isIfBranchCollapsed(node.id, branchIndex)}<span class="collapse-state-badge badge badge-ghost badge-sm text-[10px]" data-testid="if-branch-collapsed-badge">Collapsed</span>{/if}
         </div>
-        <div class="inline-actions flow-branch-actions" data-testid="flow-branch-actions">
+        <div class="inline-actions flow-branch-actions flex flex-wrap gap-1" data-testid="flow-branch-actions">
           <MacroIconButton kind={isIfBranchCollapsed(node.id, branchIndex) ? 'expand' : 'collapse'} active={isIfBranchCollapsed(node.id, branchIndex)} expanded={!isIfBranchCollapsed(node.id, branchIndex)} testId="if-branch-toggle" onClick={() => toggleIfBranchCollapsed(node.id, branchIndex)} />
-          <button type="button" data-testid="add-flow-elif" onclick={() => addElifAt(bodyPath, index, branchIndex, node.id)}>Add elif</button>
-          {#if !node.else}<button type="button" data-testid="add-flow-else" onclick={() => ensureElseAt(bodyPath, index)}>Add else</button>{/if}
+          <button class="btn btn-xs" type="button" data-testid="add-flow-elif" onclick={() => addElifAt(bodyPath, index, branchIndex, node.id)}>Add elif</button>
+          {#if !node.else}<button class="btn btn-xs" type="button" data-testid="add-flow-else" onclick={() => ensureElseAt(bodyPath, index)}>Add else</button>{/if}
           {#if branch.kind === 'elif'}<MacroIconButton kind="remove" testId="remove-flow-elif" onClick={() => removeElifAt(bodyPath, index, branchIndex, node.id)} />{/if}
         </div>
       </div>
@@ -145,13 +145,13 @@
     </div>
   {/each}
   {#if node.else}
-    <div class="flow-branch-card" class:collapsed={isIfBranchCollapsed(node.id, 'else')} data-testid="if-branch-section" data-flow-branch-kind="else">
-      <div class="step-title flow-branch-title" data-testid="flow-branch-title">
-        <div class="flow-branch-label">
+    <div class="flow-branch-card grid min-w-0 gap-2 rounded-md border border-base-300 bg-base-200/40 p-2 [&.collapsed]:opacity-75" class:collapsed={isIfBranchCollapsed(node.id, 'else')} data-testid="if-branch-section" data-flow-branch-kind="else">
+      <div class="step-title flow-branch-title flex min-w-0 flex-wrap items-center justify-between gap-2" data-testid="flow-branch-title">
+        <div class="flow-branch-label flex min-w-0 items-center gap-1.5">
           <strong>else</strong>
-          {#if isIfBranchCollapsed(node.id, 'else')}<span class="collapse-state-badge" data-testid="if-branch-collapsed-badge">Collapsed</span>{/if}
+          {#if isIfBranchCollapsed(node.id, 'else')}<span class="collapse-state-badge badge badge-ghost badge-sm text-[10px]" data-testid="if-branch-collapsed-badge">Collapsed</span>{/if}
         </div>
-        <div class="inline-actions flow-branch-actions" data-testid="flow-branch-actions">
+        <div class="inline-actions flow-branch-actions flex flex-wrap gap-1" data-testid="flow-branch-actions">
           <MacroIconButton kind={isIfBranchCollapsed(node.id, 'else') ? 'expand' : 'collapse'} active={isIfBranchCollapsed(node.id, 'else')} expanded={!isIfBranchCollapsed(node.id, 'else')} testId="if-branch-toggle" onClick={() => toggleIfBranchCollapsed(node.id, 'else')} />
           <MacroIconButton kind="remove" testId="remove-flow-else" onClick={() => removeElseAt(bodyPath, index, node.id)} />
         </div>
@@ -162,11 +162,11 @@
 {:else if node.type === 'for'}
   <div class="macro-row"><label>Mode<select data-testid="for-range-mode" value={node.range.kind} onchange={(event) => { const previous = node.range.kind; const mode = event.currentTarget.value as 'count' | 'forever' | 'text-list'; if (!setForRangeMode(node.id, mode)) event.currentTarget.value = previous }}><option value="count">count</option><option value="forever">forever</option><option value="text-list">text-list</option></select></label>{#if node.range.kind === 'count'}<label>Count<input data-testid="for-range-count" type="number" value={node.range.count} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'for') item.range = { kind: 'count', count: Number(event.currentTarget.value) } })} /></label>{/if}</div>
   {#if node.range.kind === 'text-list'}
-    <div class="text-list-items" data-testid="for-text-list-items">
-      <div class="step-title"><strong>Items</strong></div>
+    <div class="text-list-items grid min-w-0 gap-2" data-testid="for-text-list-items">
+      <div class="step-title flex min-w-0 items-center justify-between"><strong>Items</strong></div>
       {#each node.range.items as item, itemIndex (textListItemEditorKey(node.id, itemIndex))}
-        <div class="message-part-row text-list-item-card" data-testid="for-text-list-item-card">
-          <div class="step-title"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions"><MacroIconButton kind="insert-above" testId="for-text-list-item-insert-above" onClick={() => insertTextListItem(node.id, itemIndex)} /><MacroIconButton kind="insert-below" testId="for-text-list-item-insert-below" onClick={() => insertTextListItem(node.id, itemIndex + 1)} /><MacroIconButton kind="up" disabled={itemIndex === 0} testId="for-text-list-item-up" onClick={() => moveTextListItem(node.id, itemIndex, -1)} /><MacroIconButton kind="down" disabled={itemIndex === node.range.items.length - 1} testId="for-text-list-item-down" onClick={() => moveTextListItem(node.id, itemIndex, 1)} /><MacroIconButton kind="remove" disabled={node.range.items.length <= 1} testId="for-text-list-item-remove" onClick={() => removeTextListItem(node.id, itemIndex)} /></div></div>
+        <div class="message-part-row text-list-item-card card min-w-0 gap-2 border border-base-300 bg-base-100 p-2 shadow-sm" data-testid="for-text-list-item-card">
+          <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions flex flex-wrap gap-1"><MacroIconButton kind="insert-above" testId="for-text-list-item-insert-above" onClick={() => insertTextListItem(node.id, itemIndex)} /><MacroIconButton kind="insert-below" testId="for-text-list-item-insert-below" onClick={() => insertTextListItem(node.id, itemIndex + 1)} /><MacroIconButton kind="up" disabled={itemIndex === 0} testId="for-text-list-item-up" onClick={() => moveTextListItem(node.id, itemIndex, -1)} /><MacroIconButton kind="down" disabled={itemIndex === node.range.items.length - 1} testId="for-text-list-item-down" onClick={() => moveTextListItem(node.id, itemIndex, 1)} /><MacroIconButton kind="remove" disabled={node.range.items.length <= 1} testId="for-text-list-item-remove" onClick={() => removeTextListItem(node.id, itemIndex)} /></div></div>
           <label>Key<input data-testid="for-text-list-key" value={item.key} oninput={(event) => updateTextListItem(node.id, itemIndex, 'key', event.currentTarget.value)} /></label>
           <label>Value<LineNumberedTextarea testId="for-text-list-value" value={item.value} maxRows={3} ariaLabel={'Text-list item ' + (itemIndex + 1) + ' value'} onInput={(value: string) => updateTextListItem(node.id, itemIndex, 'value', value)} /></label>
         </div>
@@ -184,8 +184,8 @@
 {/if}
 
 {#snippet ConditionEditor(condition: TextMatchCondition, choices: ArtifactChoice[], onChange: (condition: TextMatchCondition) => void)}
-  <div class="condition-row">
-    <label>Source<select data-testid="condition-source" class:artifact-source-unassigned={condition.source.kind === 'unassigned'} value={artifactSourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: artifactSourceFromKey(event.currentTarget.value) })}><option value="">Unassigned</option>{#each choices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+  <div class="condition-row grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] gap-2">
+    <label>Source<select class="select select-xs w-full" class:select-warning={condition.source.kind === 'unassigned'} data-testid="condition-source" class:artifact-source-unassigned={condition.source.kind === 'unassigned'} value={artifactSourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: artifactSourceFromKey(event.currentTarget.value) })}><option value="">Unassigned</option>{#each choices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
     <label>Matcher<select data-testid="condition-matcher-kind" value={condition.matcher.kind} onchange={(event) => onChange({ ...condition, matcher: event.currentTarget.value === 'regex' ? { kind: 'regex', pattern: 'READY', flags: 'i' } : { kind: 'simple', op: 'contains', text: 'READY' } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
     {#if condition.matcher.kind === 'simple'}
       <label>Op<select data-testid="condition-simple-op" value={condition.matcher.op} onchange={(event) => onChange(setSimpleMatcherOp(condition, event.currentTarget.value as SimpleTextMatchOp))}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label>
@@ -196,35 +196,5 @@
     {/if}
     <label>Scope<select data-testid="condition-scope" value={condition.scope.kind === 'lines' ? 'lines:' + condition.scope.mode : 'whole'} onchange={(event) => { const value = event.currentTarget.value; onChange({ ...condition, scope: value === 'whole' ? { kind: 'whole' } : { kind: 'lines', mode: value.split(':')[1] as never, includeEmptyLines: false } }) }}><option value="whole">whole</option><option value="lines:first">lines.first</option><option value="lines:last">lines.last</option><option value="lines:any">lines.any</option><option value="lines:all">lines.all</option></select></label>
   </div>
-  {#if condition.source.kind === 'unassigned'}<small class="artifact-source-warning" data-testid="condition-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
+  {#if condition.source.kind === 'unassigned'}<small class="artifact-source-warning text-[11px] leading-snug text-warning" data-testid="condition-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
 {/snippet}
-
-<style>
-  select.artifact-source-unassigned {
-    border-color: #d79a35;
-    background: #fff9eb;
-    color: #725013;
-  }
-
-  .artifact-source-warning {
-    color: #8a5b0a;
-    font-size: 11px;
-    line-height: 1.3;
-  }
-
-  .text-list-items {
-    display: grid;
-    min-width: 0;
-    gap: 8px;
-  }
-
-  .text-list-item-card {
-    min-width: 0;
-    background: #fbfdff;
-  }
-
-  .text-list-item-card > .step-title {
-    flex-wrap: wrap;
-  }
-
-</style>

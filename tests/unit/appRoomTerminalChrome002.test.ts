@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { documentColorScheme } from '../../src/lib/theme'
 import {
@@ -59,7 +59,7 @@ test('TerminalSlot updates the existing xterm theme without a second theme catal
 test('framework owns migrated components and only runtime xterm geometry remains as a global bridge', () => {
   const framework = read('src/framework.css')
   const included = framework.match(/include:\s*([^;]+);/)?.[1].split(',').map((entry) => entry.trim())
-  expect(included).toEqual(['alert', 'badge', 'button', 'range', 'select', 'tab', 'textarea'])
+  expect(included).toEqual(['alert', 'badge', 'button', 'card', 'checkbox', 'fieldset', 'input', 'range', 'select', 'tab', 'textarea'])
   expect(framework.match(/\.terminal-host/g)).toHaveLength(2)
   expect(framework).not.toMatch(/#[0-9a-f]{3,8}\b/i)
 
@@ -75,38 +75,15 @@ test('framework owns migrated components and only runtime xterm geometry remains
   }
 })
 
-test('legacy CSS residue points only to the pending Macro and Library migration', () => {
+test('the successor workbench migration consumes every legacy CSS handoff', () => {
   expect(existsSync(resolve(projectRoot, 'src/styles/room.css'))).toBe(false)
   expect(existsSync(resolve(projectRoot, 'src/styles/workspace-panels.css'))).toBe(false)
   expect(existsSync(resolve(projectRoot, 'src/styles/workbench-responsive.css'))).toBe(false)
-  expect(read('src/styles.css')).not.toMatch(/room\.css|workspace-panels\.css/)
-  expect(read('src/styles/macro-workbench.css')).not.toMatch(/workspace-panels\.css|workbench-responsive\.css/)
-
-  const base = read('src/styles/base.css').trim()
-  expect(base.startsWith(':where(.macro-panel, .library-panel) button')).toBe(true)
-  expect(base.match(/\{/g)).toHaveLength(1)
-
-  const remainingLegacyCss = readdirSync(resolve(projectRoot, 'src/styles'))
-    .filter((name) => name.endsWith('.css'))
-    .map((name) => read('src/styles/' + name))
-    .join('\n')
-  for (const migratedSelector of [
-    '.room-', '.terminal-', '.text-box', '.settings-', '.notice', '.workspace-',
-    '.tab-', '.topbar', '.panel-resize', '.side-panel', '.macro-side-panel',
-    '.library-side-panel', '.switch-', '.drag-toggle',
+  expect(read('src/styles.css').trim()).toBe('')
+  for (const name of [
+    'base.css', 'terminal.css', 'macro-workbench.css', 'macro-chrome.css', 'macro-editor.css',
+    'macro-flow.css', 'macro-trace.css', 'library-workbench.css', 'workbench-shared.css',
   ]) {
-    expect(remainingLegacyCss).not.toContain(migratedSelector)
+    expect(existsSync(resolve(projectRoot, 'src/styles', name))).toBe(false)
   }
-  const terminal = read('src/styles/terminal.css')
-  expect(terminal).toContain('.macro-panel')
-  expect(terminal.match(/:where\(\.macro-panel, \.library-panel\) textarea/g)).toHaveLength(2)
-  expect(terminal.match(/:where\(\.macro-panel, \.library-panel\) select/g)).toHaveLength(2)
-  expect(terminal).not.toContain(':not(.textarea)')
-  expect(terminal).not.toContain(':not(.select)')
-
-  const macroChrome = read('src/styles/macro-chrome.css')
-  const shared = read('src/styles/workbench-shared.css')
-  expect(macroChrome).not.toMatch(/(?:^|\})\s*\.macro-workbench-shell\s*\{/)
-  expect(shared).not.toMatch(/(?:^|,)\s*\.macro-workbench-shell\s*(?:,|\{)/)
-  expect(remainingLegacyCss).not.toMatch(/(?:^|,)\s*\.inline-actions\s*(?:,|\{)/m)
 })

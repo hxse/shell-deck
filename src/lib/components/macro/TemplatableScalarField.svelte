@@ -55,7 +55,7 @@
   }
 </script>
 
-<div class="templatable-scalar-field" data-testid={testId ? testId + "-field" : undefined}>
+<div class="templatable-scalar-field grid min-w-0 gap-1.5" data-testid={testId ? testId + "-field" : undefined}>
   {#if multiline}
     <label>{label}
       <LineNumberedTextarea
@@ -68,11 +68,12 @@
       />
     </label>
   {:else}
-    <label>{label}<input bind:this={inputElement} data-testid={testId} value={textValue} oninput={(event) => updateText(event.currentTarget.value)} /></label>
+    <label>{label}<input class="input input-xs w-full" bind:this={inputElement} data-testid={testId} value={textValue} oninput={(event) => updateText(event.currentTarget.value)} /></label>
   {/if}
   {#if templateScope || templateEnabled}
-    <label class="checkbox-row template-toggle-row">
+    <label class="checkbox-row template-toggle-row flex w-fit cursor-pointer items-center gap-1.5 text-xs">
       <input
+        class="checkbox checkbox-xs"
         type="checkbox"
         data-testid={testId ? testId + "-template-toggle" : "scalar-template-toggle"}
         checked={templateEnabled}
@@ -82,70 +83,17 @@
     </label>
   {/if}
   {#if templateEnabled && templateScope && !multiline}
-    <div class="template-tools" data-testid={testId ? testId + "-template-tools" : "scalar-template-tools"}>
-      <div class="template-insert-actions">
+    <div class="template-tools flex min-w-0 flex-wrap items-center justify-end gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-1 text-primary" data-testid={testId ? testId + "-template-tools" : "scalar-template-tools"}>
+      <div class="template-insert-actions flex min-w-0 flex-wrap justify-end gap-1">
         {#each loopTemplateInsertActions as action}
-          <button type="button" data-testid={action.testId} title={'Insert ' + action.text} onclick={() => insertTemplateToken(action.text)}>{action.label}</button>
+          <button class="btn btn-primary btn-soft btn-xs !h-5 !min-h-5 px-1.5 !text-[11px] leading-tight" type="button" data-testid={action.testId} title={'Insert ' + action.text} onclick={() => insertTemplateToken(action.text)}>{action.label}</button>
         {/each}
       </div>
     </div>
   {:else if templateEnabled && !templateScope}
-    <p class="template-scope-issue" data-testid={testId ? testId + "-template-scope-issue" : "scalar-template-scope-issue"}>This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
+    <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid={testId ? testId + "-template-scope-issue" : "scalar-template-scope-issue"}>This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
   {/if}
   {#if templateIssue}
-    <p class="template-scope-issue" data-testid={testId ? testId + "-template-syntax-issue" : "scalar-template-syntax-issue"}>{templateIssue}</p>
+    <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid={testId ? testId + "-template-syntax-issue" : "scalar-template-syntax-issue"}>{templateIssue}</p>
   {/if}
 </div>
-
-<style>
-  .templatable-scalar-field {
-    display: grid;
-    min-width: 0;
-    gap: 6px;
-  }
-
-  .template-toggle-row {
-    justify-self: start;
-    font-size: 12px;
-  }
-
-  .template-tools {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    gap: 5px;
-    align-items: center;
-    justify-content: flex-end;
-    padding: 3px 4px;
-    border: 1px solid #b8d5ec;
-    border-radius: 6px;
-    background: #f2f8fd;
-    color: #28516f;
-  }
-
-  .template-insert-actions {
-    display: flex;
-    min-width: 0;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 5px;
-  }
-
-  .template-tools button {
-    min-height: 20px;
-    padding: 1px 5px;
-    flex: 0 0 auto;
-    font-size: 11px;
-    line-height: 1.2;
-  }
-
-  .template-scope-issue {
-    margin: 0;
-    padding: 6px 8px;
-    border: 1px solid #e7b2b2;
-    border-radius: 6px;
-    background: #fff4f4;
-    color: #8f2626;
-    font-size: 12px;
-  }
-</style>

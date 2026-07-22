@@ -3,7 +3,7 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 
 @plugin "daisyui" {
-  include: alert, badge, button, range, select, tab, textarea;
+  include: alert, badge, button, card, checkbox, fieldset, input, range, select, tab, textarea;
   themes:
     light --default,
     dark --prefersdark,

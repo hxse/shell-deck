@@ -108,8 +108,6 @@
     { type: 'break', label: 'break', testId: 'add-flow-break', loopOnly: true },
     { type: 'continue', label: 'continue', testId: 'add-flow-continue', loopOnly: true },
   ]
-  const flowDepthColors = ['#2786d2', '#14977e', '#ff8a00', '#cf4d6f']
-
   $effect(() => {
     const anchor = insertionAnchor
     if (!anchor) return
@@ -579,40 +577,46 @@
     return Boolean(currentNodeId && node.lanes.some((lane) => lane.body.some((item) => item.id === currentNodeId)))
   }
 
-  function flowDepthColor(depth: number): string {
-    return flowDepthColors[depth % flowDepthColors.length]
-  }
 </script>
 
 <svelte:window onkeydown={handleInsertionKeydown} onresize={handleInsertionResize} />
 
 {#if insertionNotice}
-  <p class="macro-insertion-notice" data-testid="macro-insertion-notice">{insertionNotice}</p>
+  <p class="macro-insertion-notice alert alert-warning rounded-none py-2 text-xs" data-testid="macro-insertion-notice">{insertionNotice}</p>
 {/if}
 {#if idEditNotice}
-  <p class="macro-insertion-notice" data-testid="macro-id-edit-notice">{idEditNotice}</p>
+  <p class="macro-insertion-notice alert alert-warning rounded-none py-2 text-xs" data-testid="macro-id-edit-notice">{idEditNotice}</p>
 {/if}
 
-<section class="macro-section">
-  <div class="macro-section-title"><h3>Flow V2 Body</h3></div>
-  <div class="step-list" data-testid="macro-step-list">
+<section class="macro-section grid min-w-0 gap-2 p-2">
+  <div class="macro-section-title flex min-w-0 items-center justify-between"><h3>Flow V2 Body</h3></div>
+  <div class="step-list grid min-w-0 gap-2" data-testid="macro-step-list">
     {@render NodeListEditor(draft.body, [], false, 'Root body', false, null, 0)}
   </div>
 </section>
 
 {#snippet NodeListEditor(nodes: FlowV2Node[], bodyPath: BodyPath, allowLoopControls: boolean, label: string, actionOnly: boolean, templateScope: TextTemplateScope | null, depth: number)}
-  <div class="flow-block" data-testid="flow-block" data-flow-body-label={label} data-flow-depth={depth} style={'--flow-depth-color: ' + flowDepthColor(depth)}>
+  <div
+    class="flow-block grid min-w-0 gap-2 border-l-4 pl-2"
+    class:border-l-primary={depth % 4 === 0}
+    class:border-l-secondary={depth % 4 === 1}
+    class:border-l-accent={depth % 4 === 2}
+    class:border-l-info={depth % 4 === 3}
+    data-testid="flow-block"
+    data-flow-body-label={label}
+    data-flow-depth={depth}
+  >
     {#if nodes.length === 0}
-      <div class="empty-flow-body" data-testid="empty-flow-body">
-        <button type="button" data-testid="empty-body-add" onclick={(event) => insertIntoEmptyBody(bodyPath, label, allowLoopControls, event, actionOnly)}>Add inside</button>
+      <div class="empty-flow-body rounded-md border border-dashed border-base-300 bg-base-200/40 p-2 text-center" data-testid="empty-flow-body">
+        <button class="btn btn-ghost btn-xs" type="button" data-testid="empty-body-add" onclick={(event) => insertIntoEmptyBody(bodyPath, label, allowLoopControls, event, actionOnly)}>Add inside</button>
       </div>
     {/if}
     {#each nodes as node, index (node.id)}
-      <article class="step-editor flow-node-editor" class:collapsed={isNodeCollapsed(node.id)} class:current-node={currentNodeId === node.id} class:contains-current-node={node.type === 'parallel' && parallelContainsCurrentNode(node)} data-flow-node-id={node.id} data-flow-node-type={node.type} data-flow-node-depth={depth} data-flow-sibling={index > 0} data-current-node={currentNodeId === node.id ? 'true' : undefined}>
-        <div class="step-title node-title-row" data-testid="node-menu">
-          <div class="node-title-cluster">
-            <strong>{index + 1}. {node.type}{#if node.type === 'for' && node.range.kind === 'text-list'} <small data-testid="for-text-list-summary">text-list · {LOOP_INDEX_TEMPLATE_TOKEN} · {LOOP_KEY_TEMPLATE_TOKEN} · {LOOP_VALUE_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
-            {#if isNodeCollapsed(node.id)}<span class="collapse-state-badge" data-testid="node-collapsed-badge">Collapsed</span>{/if}
+      <article class="step-editor flow-node-editor grid min-w-0 gap-2 rounded-md border border-base-300 bg-base-100 p-2 shadow-sm [&.collapsed>:not(.step-title)]:hidden" class:collapsed={isNodeCollapsed(node.id)} class:current-node={currentNodeId === node.id} class:contains-current-node={node.type === 'parallel' && parallelContainsCurrentNode(node)} class:outline={currentNodeId === node.id} class:outline-2={currentNodeId === node.id} class:outline-primary={currentNodeId === node.id} class:ring-1={node.type === 'parallel' && parallelContainsCurrentNode(node)} class:ring-primary={node.type === 'parallel' && parallelContainsCurrentNode(node)} data-flow-node-id={node.id} data-flow-node-type={node.type} data-flow-node-depth={depth} data-flow-sibling={index > 0} data-current-node={currentNodeId === node.id ? 'true' : undefined}>
+        <div class="step-title node-title-row flex min-w-0 flex-wrap items-center justify-between gap-2" data-testid="node-menu">
+          <div class="node-title-cluster flex min-w-0 flex-wrap items-center gap-1.5">
+            <strong>{index + 1}. {node.type}{#if node.type === 'for' && node.range.kind === 'text-list'} <small class="badge badge-info badge-outline badge-sm align-middle text-[10px] font-bold" data-testid="for-text-list-summary">text-list · {LOOP_INDEX_TEMPLATE_TOKEN} · {LOOP_KEY_TEMPLATE_TOKEN} · {LOOP_VALUE_TEMPLATE_TOKEN} · {node.range.items.length} items</small>{/if}</strong>
+            {#if isNodeCollapsed(node.id)}<span class="collapse-state-badge badge badge-ghost badge-sm text-[10px]" data-testid="node-collapsed-badge">Collapsed</span>{/if}
           </div>
           <NodeActionControls collapsed={isNodeCollapsed(node.id)} moveUpDisabled={index === 0} moveDownDisabled={index === nodes.length - 1} groupTestId="node-action-controls" toggleTestId="node-toggle-collapse" moveUpTestId="node-move-up" moveDownTestId="node-move-down" addBeforeTestId="node-add-before" addAfterTestId="node-add-after" removeTestId="node-remove" onToggle={() => toggleNodeCollapsed(node.id)} onMoveUp={() => moveNodeAt(bodyPath, index, -1)} onMoveDown={() => moveNodeAt(bodyPath, index, 1)} onAddBefore={(event) => openInsertion(beforeAnchor(bodyPath, index, node.id), 'Insert before: ' + node.id, allowLoopControls, event, actionOnly)} onAddAfter={(event) => openInsertion(afterAnchor(bodyPath, index, node.id), 'Insert after: ' + node.id, allowLoopControls, event, actionOnly)} onRemove={() => removeNodeAt(bodyPath, index, node.id)} />
         </div>
@@ -690,11 +694,3 @@
     onCancel={cancelInsertion}
   />
 {/if}
-
-<style>
-  [data-testid="for-text-list-summary"] {
-    color: #376b91;
-    font-size: 11px;
-    font-weight: 700;
-  }
-</style>

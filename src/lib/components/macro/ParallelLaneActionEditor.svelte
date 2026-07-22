@@ -77,11 +77,11 @@
   }
 </script>
 
-<article class="step-card parallel-lane-action" class:collapsed class:current-node={isCurrent} data-testid="parallel-lane-action" data-parallel-action-id={item.id} data-parallel-action-type={item.type} data-current-node={isCurrent ? 'true' : undefined}>
-  <div class="step-title node-title-row">
-    <div class="node-title-cluster">
+<article class="step-card parallel-lane-action card grid min-w-0 gap-2 border border-base-300 bg-base-100 p-2 shadow-sm [&.collapsed>:not(.step-title)]:hidden" class:collapsed class:current-node={isCurrent} class:outline={isCurrent} class:outline-2={isCurrent} class:outline-primary={isCurrent} data-testid="parallel-lane-action" data-parallel-action-id={item.id} data-parallel-action-type={item.type} data-current-node={isCurrent ? 'true' : undefined}>
+  <div class="step-title node-title-row flex min-w-0 flex-wrap items-center justify-between gap-2">
+    <div class="node-title-cluster flex min-w-0 flex-wrap items-center gap-1.5">
       <strong>{itemIndex + 1}. {item.type}</strong>
-      {#if collapsed}<span class="collapse-state-badge" data-testid="node-collapsed-badge">Collapsed</span>{/if}
+      {#if collapsed}<span class="collapse-state-badge badge badge-ghost badge-sm text-[10px]" data-testid="node-collapsed-badge">Collapsed</span>{/if}
     </div>
     <NodeActionControls collapsed={collapsed} moveUpDisabled={itemIndex === 0} {moveDownDisabled} groupTestId="parallel-node-action-controls" toggleTestId="parallel-node-toggle-collapse" moveUpTestId="parallel-node-move-up" moveDownTestId="parallel-node-move-down" addBeforeTestId="parallel-lane-add-before" addAfterTestId="parallel-lane-add-after" removeTestId="parallel-node-remove" onToggle={onToggle} onMoveUp={() => onMove(-1)} onMoveDown={() => onMove(1)} {onAddBefore} {onAddAfter} onRemove={onRemove} />
   </div>

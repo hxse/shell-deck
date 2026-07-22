@@ -508,7 +508,7 @@
 <svelte:window onkeydown={handleLaneInsertionKeydown} onresize={handleLaneInsertionResize} />
 
 {#if parallelNode}
-  <section class="parallel-tabs-editor" data-testid="parallel-lane-tabs">
+  <section class="parallel-tabs-editor grid min-w-0 gap-2.5" data-testid="parallel-lane-tabs">
     <div class="macro-row">
       <label>On lane fail<select data-testid="parallel-on-lane-fail" value={parallelNode.onLaneFail} onchange={(event) => updateParallel((node) => { node.onLaneFail = event.currentTarget.value as 'pause' | 'fail' })}><option value="pause">pause</option><option value="fail">fail</option></select></label>
       {#if collectsAnyLaneText}
@@ -517,19 +517,19 @@
       {/if}
     </div>
 
-    <div class="parallel-tab-strip" role="tablist">
+    <div class="parallel-tab-strip tabs tabs-box flex min-w-0 flex-wrap items-center gap-1 overflow-x-auto p-1" role="tablist">
       {#each parallelNode.lanes as lane}
-        <button type="button" class:active={selectedLane?.id === lane.id} class:current-node={Boolean(currentNodeId && lane.body.some((item) => item.id === currentNodeId))} data-testid="parallel-lane-tab" data-current-node={currentNodeId && lane.body.some((item) => item.id === currentNodeId) ? 'true' : undefined} onclick={() => { selectedLaneId = lane.id; closeLaneInsertion(false) }}>{lane.label || lane.id}</button>
+        <button class="tab tab-sm h-7 min-h-7 border border-transparent px-2 text-xs [&.current-node]:border-primary [&.current-node]:ring-1 [&.current-node]:ring-primary" type="button" class:tab-active={selectedLane?.id === lane.id} class:active={selectedLane?.id === lane.id} class:current-node={Boolean(currentNodeId && lane.body.some((item) => item.id === currentNodeId))} data-testid="parallel-lane-tab" data-current-node={currentNodeId && lane.body.some((item) => item.id === currentNodeId) ? 'true' : undefined} onclick={() => { selectedLaneId = lane.id; closeLaneInsertion(false) }}>{lane.label || lane.id}</button>
       {/each}
     </div>
 
     {#if selectedLane}
-      <div class="parallel-lane-card active-lane" data-testid="parallel-lane-editor">
-        <div class="step-title">
+      <div class="parallel-lane-card active-lane card grid min-w-0 gap-2 border border-primary/40 bg-base-200/30 p-2" data-testid="parallel-lane-editor">
+        <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2">
           <strong>{selectedLane.label || selectedLane.id}</strong>
-          <div class="inline-actions parallel-lane-controls">
-            <button type="button" data-testid="parallel-add-lane" onclick={addLane}>Add lane</button>
-            <button type="button" data-testid="parallel-remove-lane" disabled={parallelNode.lanes.length <= 1} onclick={() => removeLane(selectedLane.id)}>Remove lane</button>
+          <div class="inline-actions parallel-lane-controls flex flex-wrap gap-1">
+            <button class="btn btn-xs" type="button" data-testid="parallel-add-lane" onclick={addLane}>Add lane</button>
+            <button class="btn btn-error btn-soft btn-xs" type="button" data-testid="parallel-remove-lane" disabled={parallelNode.lanes.length <= 1} onclick={() => removeLane(selectedLane.id)}>Remove lane</button>
           </div>
         </div>
         <div class="macro-row">
@@ -538,23 +538,23 @@
           <label>Lane tab<MacroTerminalSelect testId="parallel-lane-terminal" reference={selectedLane.terminal} expectedType={expectedTerminalTypeAt(selectedLane.terminal)} choices={terminalChoices()} disabledValues={unavailableLaneTerminalValues(selectedLane.id)} onChange={(terminal) => setLaneTerminalReference(selectedLane.id, terminal)} /></label>
         </div>
         {#if editNotice}
-          <p class="macro-insertion-notice" data-testid="parallel-id-edit-notice">{editNotice}</p>
+          <p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="parallel-id-edit-notice">{editNotice}</p>
         {/if}
 
         {#if laneInsertion?.laneId === selectedLane.id}
-          <div class="macro-insertion-mode" class:anchored={laneInsertionAnchored} class:centered={!laneInsertionAnchored} data-testid="parallel-lane-insertion-mode" data-placement-mode={insertionPaletteMode}>
-            <button type="button" class="macro-insertion-scrim" data-testid="parallel-lane-insertion-cancel-scrim" aria-label="Cancel parallel lane insertion" onclick={cancelLaneInsertion}></button>
-            <section bind:this={laneInsertionPaletteElement} class="floating-insertion-palette" class:anchored={laneInsertionAnchored} class:above={laneInsertionPosition?.placement === 'above'} class:below={laneInsertionPosition?.placement === 'below'} style={laneInsertionPaletteStyle} data-testid="parallel-lane-action-palette" aria-label="Insert parallel lane action">
-              <div class="palette-heading"><span>{laneInsertion.summary}</span><small>choose action</small></div>
-              <div class="step-palette">
-                <div class="palette-heading"><span>Actions</span><small>do lane work</small></div>
-                <div class="step-actions">
+          <div class="macro-insertion-mode fixed inset-0 z-[80] bg-neutral/10 [&.centered]:grid [&.centered]:place-items-center [&.centered]:p-4" class:anchored={laneInsertionAnchored} class:centered={!laneInsertionAnchored} data-testid="parallel-lane-insertion-mode" data-placement-mode={insertionPaletteMode}>
+            <button type="button" class="macro-insertion-scrim fixed inset-0 !size-full !min-h-0 cursor-default !rounded-none !border-0 !bg-transparent !p-0" data-testid="parallel-lane-insertion-cancel-scrim" aria-label="Cancel parallel lane insertion" onclick={cancelLaneInsertion}></button>
+            <section bind:this={laneInsertionPaletteElement} class="floating-insertion-palette relative z-[81] grid w-[min(360px,calc(100vw-32px))] max-h-[min(var(--palette-max-height,560px),calc(100vh-24px))] gap-2.5 overflow-auto rounded-box border border-base-300 bg-base-100 p-3 shadow-2xl [&.anchored]:fixed [&.anchored]:top-[var(--palette-y)] [&.anchored]:left-[var(--palette-x)] [&.anchored]:-translate-x-1/2 [&.anchored.above]:-translate-y-full" class:anchored={laneInsertionAnchored} class:above={laneInsertionPosition?.placement === 'above'} class:below={laneInsertionPosition?.placement === 'below'} style={laneInsertionPaletteStyle} data-testid="parallel-lane-action-palette" aria-label="Insert parallel lane action">
+              <div class="palette-heading flex min-w-0 items-baseline justify-between gap-2"><span class="font-bold">{laneInsertion.summary}</span><small class="text-base-content/55">choose action</small></div>
+              <div class="step-palette grid gap-2 rounded-md border border-base-300 bg-base-200/40 p-2">
+                <div class="palette-heading flex min-w-0 items-baseline justify-between gap-2"><span class="font-bold">Actions</span><small class="text-base-content/55">do lane work</small></div>
+                <div class="step-actions grid grid-cols-3 gap-1.5 [@media(max-width:760px)]:grid-cols-2">
                   {#each laneActionPaletteItemsFor(selectedLane) as item}
-                    <button type="button" data-testid={item.testId} title={item.type} onclick={() => insertLaneAction(item.type)}><span class="tool-label">{item.label}</span></button>
+                    <button class="btn btn-sm min-h-8" type="button" data-testid={item.testId} title={item.type} onclick={() => insertLaneAction(item.type)}><span class="tool-label">{item.label}</span></button>
                   {/each}
                 </div>
               </div>
-              <button type="button" data-testid="parallel-lane-insertion-cancel" onclick={cancelLaneInsertion}>Cancel</button>
+              <button class="btn btn-ghost btn-xs justify-self-end" type="button" data-testid="parallel-lane-insertion-cancel" onclick={cancelLaneInsertion}>Cancel</button>
             </section>
           </div>
         {/if}
@@ -589,12 +589,12 @@
 {/if}
 
 {#snippet OutputEditor(lane: ParallelLane, output: ParallelLaneOutputNode, itemIndex: number)}
-  <article class="step-card parallel-output-card" data-testid="parallel-lane-output">
-    <div class="step-title">
-      <span class="parallel-output-title"><strong>Lane result</strong><small>{output.source.kind === 'none' ? 'no text collected' : 'collecting text'}</small></span>
-      <div class="inline-actions parallel-output-actions">
-        <label class="checkbox-row"><input type="checkbox" data-testid="parallel-collect-lane-text" checked={output.source.kind !== 'none'} onchange={(event) => { if (!setLaneCollectsText(lane.id, event.currentTarget.checked)) event.currentTarget.checked = false }} />Collect lane text</label>
-        <button type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, 'Insert lane action', event)}>Add action</button>
+  <article class="step-card parallel-output-card card grid min-w-0 gap-2 border border-secondary/40 bg-secondary/5 p-2" data-testid="parallel-lane-output">
+    <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2">
+      <span class="parallel-output-title flex min-w-0 items-baseline gap-1.5"><strong>Lane result</strong><small class="text-base-content/55">{output.source.kind === 'none' ? 'no text collected' : 'collecting text'}</small></span>
+      <div class="inline-actions parallel-output-actions flex min-w-0 flex-wrap items-center gap-1.5">
+        <label class="checkbox-row flex w-fit cursor-pointer items-center gap-1.5"><input class="checkbox checkbox-xs" type="checkbox" data-testid="parallel-collect-lane-text" checked={output.source.kind !== 'none'} onchange={(event) => { if (!setLaneCollectsText(lane.id, event.currentTarget.checked)) event.currentTarget.checked = false }} />Collect lane text</label>
+        <button class="btn btn-xs" type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, 'Insert lane action', event)}>Add action</button>
       </div>
     </div>
     {#if output.source.kind !== 'none'}

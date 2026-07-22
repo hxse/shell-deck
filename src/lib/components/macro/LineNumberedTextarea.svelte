@@ -194,7 +194,7 @@
 </script>
 
 <div
-  class="line-numbered-textarea"
+  class="line-numbered-textarea grid min-w-0 max-w-full grid-cols-[36px_minmax(0,1fr)] overflow-hidden rounded-md border border-base-300 bg-base-100 [--line-number-height:1.45em] [&.without-line-numbers]:grid-cols-1"
   class:without-line-numbers={!showLineNumbers}
   data-testid={testId ? testId + "-line-editor" : undefined}
   data-adaptive-textarea="true"
@@ -202,15 +202,15 @@
   data-manual-height={temporaryManualHeight === null ? undefined : temporaryManualHeight}
 >
   {#if insertActions.length > 0}
-    <div class="textarea-toolbar">
+    <div class="textarea-toolbar col-[1/-1] flex min-w-0 flex-wrap justify-end gap-1 border-b border-base-300 bg-base-200/60 px-1.5 py-1">
       {#each insertActions as action}
-        <button class="template-token-button" type="button" data-testid={action.testId} title={'Insert ' + action.text} disabled={disabled} onclick={() => insertAtSelection(action)}>{action.label}</button>
+        <button class="template-token-button btn btn-xs !h-5 !min-h-5 min-w-0 px-1.5 !text-[11px] leading-tight [overflow-wrap:anywhere]" type="button" data-testid={action.testId} title={'Insert ' + action.text} disabled={disabled} onclick={() => insertAtSelection(action)}>{action.label}</button>
       {/each}
     </div>
   {/if}
   {#if showLineNumbers}
-    <div class="line-number-gutter" aria-hidden="true" data-testid={testId ? testId + "-line-numbers" : undefined}>
-      <div class="line-number-list" style={`transform: translateY(-${scrollTop}px)`}>
+    <div class="line-number-gutter relative min-w-0 select-none overflow-hidden border-r border-base-300 bg-base-200/70 font-mono text-base-content/50 text-[var(--line-number-font-size,12px)] leading-[var(--line-number-height)]" aria-hidden="true" data-testid={testId ? testId + "-line-numbers" : undefined}>
+      <div class="line-number-list absolute top-[7px] right-[7px] left-1 text-right will-change-transform [&>div]:h-[var(--line-number-height)]" style={`transform: translateY(-${scrollTop}px)`}>
         {#each Array.from({ length: lineCount }) as _, index}
           <div>{index + 1}</div>
         {/each}
@@ -218,6 +218,7 @@
     </div>
   {/if}
   <textarea
+    class="textarea w-full min-w-0 min-h-0 resize-y !rounded-none !border-0 bg-transparent font-mono leading-[var(--line-number-height)] [scrollbar-gutter:stable] focus:outline-2 focus:-outline-offset-2 focus:outline-primary/30 disabled:cursor-not-allowed disabled:bg-base-200/80 disabled:text-base-content/45 read-only:cursor-not-allowed read-only:bg-base-200/80 read-only:text-base-content/55"
     bind:this={textareaElement}
     data-testid={testId}
     aria-label={ariaLabel}
@@ -231,86 +232,3 @@
     onscroll={handleScroll}
   ></textarea>
 </div>
-
-<style>
-  .line-numbered-textarea {
-    --line-number-height: 1.45em;
-    display: grid;
-    grid-template-columns: 36px minmax(0, 1fr);
-    min-width: 0;
-    max-width: 100%;
-    border: 1px solid #c8d3dd;
-    border-radius: 6px;
-    background: #ffffff;
-    overflow: hidden;
-  }
-
-  .line-numbered-textarea.without-line-numbers {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .line-number-gutter {
-    position: relative;
-    min-width: 0;
-    overflow: hidden;
-    border-right: 1px solid #d8e0e8;
-    background: #f5f7f9;
-    color: #7a8793;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: var(--line-number-font-size, 12px);
-    line-height: var(--line-number-height);
-    user-select: none;
-  }
-
-  .textarea-toolbar {
-    display: flex;
-    grid-column: 1 / -1;
-    min-width: 0;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 5px;
-    padding: 5px 6px;
-    border-bottom: 1px solid #d8e0e8;
-    background: #f5f8fa;
-  }
-
-  .textarea-toolbar button.template-token-button {
-    min-width: 0;
-    min-height: 20px;
-    padding: 1px 5px;
-    overflow-wrap: anywhere;
-    font-size: 11px;
-    line-height: 1.2;
-  }
-
-  .line-number-list {
-    position: absolute;
-    top: 7px;
-    right: 7px;
-    left: 4px;
-    text-align: right;
-    will-change: transform;
-  }
-
-  .line-number-list div {
-    height: var(--line-number-height);
-  }
-
-  .line-numbered-textarea textarea {
-    width: 100%;
-    min-width: 0;
-    min-height: 0;
-    border: 0 !important;
-    border-radius: 0;
-    background: transparent;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    line-height: var(--line-number-height);
-    scrollbar-gutter: stable;
-    resize: vertical;
-  }
-
-  .line-numbered-textarea textarea:focus {
-    outline: 2px solid rgba(23, 105, 170, 0.25);
-    outline-offset: -2px;
-  }
-</style>

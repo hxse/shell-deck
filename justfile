@@ -59,8 +59,8 @@ test-039:
     bun run test:039
 
 test-001:
-    HISTFILE=/dev/null bun test tests/unit/macroDefinition034.test.ts tests/unit/runnerSnapshotMerge035.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/macroWorkbenchStyles009.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts
+    HISTFILE=/dev/null bun test tests/unit/macroDefinition034.test.ts tests/unit/runnerSnapshotMerge035.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts
 
 test-002:
     HISTFILE=/dev/null bun test tests/unit/terminalParserWritePump.test.ts tests/unit/terminalViewState.test.ts
@@ -69,14 +69,18 @@ test-002:
 test-20260722b-001:
     bun run test:theme-foundation
     HISTFILE=/dev/null bun test tests/unit/browserSettings032.test.ts tests/unit/uiBehaviorInventory031B.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/themeFoundation001.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/themeFoundation001.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts
 
 test-20260722b-002:
-    HISTFILE=/dev/null bun test tests/unit/appRoomTerminalChrome002.test.ts tests/unit/themeFoundation001.test.ts tests/unit/terminalFont.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/macroWorkbenchStyles009.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/themeFoundation001.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts --grep-invert "visited terminal views survive Shell and Text tab switches"
+    HISTFILE=/dev/null bun test tests/unit/appRoomTerminalChrome002.test.ts tests/unit/themeFoundation001.test.ts tests/unit/terminalFont.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/workbenchThemeMigration003.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/themeFoundation001.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts --grep-invert "visited terminal views survive Shell and Text tab switches"
 
 test-20260722b-002-chrome:
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts
+
+test-20260722b-003:
+    HISTFILE=/dev/null bun test tests/unit/uiStructureBaseline003.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/themeFoundation001.test.ts tests/unit/appRoomTerminalChrome002.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/librarySession005.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/libraryWorkbench036.navigation.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts tests/e2e/libraryWorkbench036.reconnect.spec.ts
 
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"

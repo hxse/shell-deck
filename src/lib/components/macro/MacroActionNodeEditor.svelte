@@ -163,7 +163,7 @@
   </div>
   <TemplatableScalarField label="Title" value={node.title} onChange={(value) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.title = value })} {templateScope} testId="notify-title" />
   <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.message = message })} choices={artifactChoices} {templateScope} />
-  <div class="message-part-row" data-testid="notify-channels">
+  <div class="message-part-row card" data-testid="notify-channels">
     <div class="step-title"><strong>Channels</strong></div>
     <div class="macro-row">
       <label class="checkbox-row"><input type="checkbox" data-testid="notify-channel-app" checked={Boolean(notifyChannel('app'))} onchange={(event) => setNotifyChannelEnabled('app', event.currentTarget.checked)} />app</label>
@@ -185,7 +185,7 @@
       {@const telegramChannel = notifyChannel('telegram')}
       {#if telegramChannel?.kind === 'telegram'}
         <label>Telegram profile<select data-testid="notify-telegram-profile" value={telegramChannel.profileId} onchange={(event) => updateNotifyChannel('telegram', (channel) => { if (channel.kind === 'telegram') channel.profileId = event.currentTarget.value })}>{#each telegramProfileChoices(telegramChannel.profileId) as profileId}<option value={profileId}>{profileId}</option>{/each}</select></label>
-        {#if telegramProfilesError}<p class="macro-insertion-notice" data-testid="notify-telegram-profile-status">Telegram profiles unavailable: {telegramProfilesError}</p>{/if}
+        {#if telegramProfilesError}<p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="notify-telegram-profile-status">Telegram profiles unavailable: {telegramProfilesError}</p>{/if}
       {/if}
     {/if}
   </div>

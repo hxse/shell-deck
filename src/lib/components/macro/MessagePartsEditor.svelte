@@ -114,16 +114,16 @@
   ]
 </script>
 
-<div class="message-parts-editor" data-testid={testId}>
-  <div class="inline-actions">
-    <button type="button" data-testid="message-add-text" onclick={addTextPart}>Add Text</button>
-    <button type="button" data-testid="message-add-source" title="Add source artifact" onclick={addArtifactPart}>Add Source</button>
+<div class="message-parts-editor grid min-w-0 gap-2" data-testid={testId}>
+  <div class="inline-actions flex flex-wrap justify-end gap-1.5">
+    <button class="btn btn-xs" type="button" data-testid="message-add-text" onclick={addTextPart}>Add Text</button>
+    <button class="btn btn-xs" type="button" data-testid="message-add-source" title="Add source artifact" onclick={addArtifactPart}>Add Source</button>
   </div>
   {#each message.parts as part, partIndex (structureVersion + ":" + partIndex)}
-    <div class="message-part-row" data-testid="message-part-row">
-      <div class="step-title">
+    <div class="message-part-row card min-w-0 gap-2 border border-base-300 bg-base-100 p-2 shadow-sm" data-testid="message-part-row">
+      <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2">
         <strong>{partIndex + 1}. {part.kind}</strong>
-        <div class="inline-actions">
+        <div class="inline-actions flex flex-wrap gap-1">
           <MacroIconButton kind="up" disabled={partIndex === 0} testId="message-part-up" onClick={() => movePart(partIndex, -1)} />
           <MacroIconButton kind="down" disabled={partIndex === message.parts.length - 1} testId="message-part-down" onClick={() => movePart(partIndex, 1)} />
           <MacroIconButton kind="remove" testId="message-part-remove" onClick={() => removePart(partIndex)} />
@@ -131,8 +131,9 @@
       </div>
       {#if isTextConsumerPart(part)}
         {#if templateScope || part.kind === "template"}
-          <label class="checkbox-row template-toggle-row">
+          <label class="checkbox-row template-toggle-row flex w-fit cursor-pointer items-center gap-1.5 text-xs">
             <input
+              class="checkbox checkbox-xs"
               type="checkbox"
               data-testid="message-template-toggle"
               checked={part.kind === "template"}
@@ -142,10 +143,10 @@
           </label>
         {/if}
         {#if part.kind === "template" && !templateScope}
-          <p class="template-scope-issue" data-testid="message-template-scope-issue">This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
+          <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid="message-template-scope-issue">This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
         {/if}
         {#if templateSyntaxIssue(part)}
-          <p class="template-scope-issue" data-testid="message-template-syntax-issue">{templateSyntaxIssue(part)}</p>
+          <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid="message-template-syntax-issue">{templateSyntaxIssue(part)}</p>
         {/if}
         <label>Text
           <LineNumberedTextarea
@@ -159,36 +160,14 @@
         </label>
       {:else}
         <label>Source artifact
-          <select data-testid="message-source-part" value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(partIndex, event.currentTarget.value)}>
+          <select class="select select-xs w-full" class:select-warning={part.source.kind === 'unassigned'} data-testid="message-source-part" value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(partIndex, event.currentTarget.value)}>
             <option value="">Unassigned</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
           </select>
         </label>
         {#if part.source.kind === 'unassigned'}
-          <small class="artifact-source-warning" data-testid="message-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>
+          <small class="artifact-source-warning text-[11px] text-warning" data-testid="message-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>
         {/if}
       {/if}
     </div>
   {/each}
 </div>
-
-<style>
-  .template-toggle-row {
-    justify-self: start;
-    font-size: 12px;
-  }
-
-  .template-scope-issue {
-    margin: 0;
-    padding: 6px 8px;
-    border: 1px solid #e7b2b2;
-    border-radius: 6px;
-    background: #fff4f4;
-    color: #8f2626;
-    font-size: 12px;
-  }
-
-  .artifact-source-warning {
-    color: #8a5b0a;
-    font-size: 11px;
-  }
-</style>

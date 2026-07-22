@@ -46,18 +46,16 @@ test('framework CSS registers the canonical catalog with one default and one pre
   expect(entries.filter((entry) => entry.includes('--prefersdark'))).toEqual(['dark --prefersdark'])
 })
 
-test('main applies the loaded theme before mount and imports framework before legacy CSS', () => {
+test('main applies the loaded theme before mount and imports framework before the empty migration entry', () => {
   const source = readFileSync(resolve(import.meta.dir, '../../src/main.ts'), 'utf8')
   expect(source.indexOf("import './framework.css'")).toBeLessThan(source.indexOf("import './styles.css'"))
   expect(source.indexOf('applyDocumentTheme(loadedSettings.settings.theme)')).toBeLessThan(source.indexOf('mount(App'))
 })
 
-test('remaining legacy form rules are scoped to pending Macro and Library surfaces', () => {
-  const css = readFileSync(resolve(import.meta.dir, '../../src/styles/terminal.css'), 'utf8')
-  expect(css.match(/:where\(\.macro-panel, \.library-panel\) select/g)).toHaveLength(2)
-  expect(css.match(/:where\(\.macro-panel, \.library-panel\) textarea/g)).toHaveLength(2)
-  expect(css).not.toMatch(/(?:^|,)\s*select\s*(?:,|\{)/m)
-  expect(css).not.toMatch(/(?:^|,)\s*textarea\s*(?:,|\{)/m)
+test('the completed workbench migration leaves no legacy CSS handoff', () => {
+  expect(readFileSync(resolve(import.meta.dir, '../../src/styles.css'), 'utf8').trim()).toBe('')
+  expect(() => readFileSync(resolve(import.meta.dir, '../../src/styles/base.css'), 'utf8')).toThrow()
+  expect(() => readFileSync(resolve(import.meta.dir, '../../src/styles/terminal.css'), 'utf8')).toThrow()
 })
 
 test('document application owns explicit and system root attributes', () => {

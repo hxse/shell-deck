@@ -54,11 +54,11 @@
 
 {#if !captureAllowed}
   {#if variant === 'root'}
-    <p class="macro-insertion-notice" data-testid="capture-kind-invalid">Capture kind {capture.kind} is not valid for this source tab.</p>
-    {#if allowedKinds[0]}<button type="button" data-testid="capture-kind-repair" onclick={() => onKindChange(allowedKinds[0])}>Use {allowedKinds[0]}</button>{/if}
+    <p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="capture-kind-invalid">Capture kind {capture.kind} is not valid for this source tab.</p>
+    {#if allowedKinds[0]}<button class="btn btn-warning btn-soft btn-xs" type="button" data-testid="capture-kind-repair" onclick={() => onKindChange(allowedKinds[0])}>Use {allowedKinds[0]}</button>{/if}
   {:else}
-    <p class="macro-insertion-notice" data-testid="parallel-capture-kind-invalid">Capture kind {capture.kind} is not valid for this lane tab.</p>
-    {#if allowedKinds[0]}<button type="button" data-testid="parallel-capture-kind-repair" onclick={() => onKindChange(allowedKinds[0])}>Use {allowedKinds[0]}</button>{/if}
+    <p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="parallel-capture-kind-invalid">Capture kind {capture.kind} is not valid for this lane tab.</p>
+    {#if allowedKinds[0]}<button class="btn btn-warning btn-soft btn-xs" type="button" data-testid="parallel-capture-kind-repair" onclick={() => onKindChange(allowedKinds[0])}>Use {allowedKinds[0]}</button>{/if}
   {/if}
 {:else if capture.kind === 'terminal-buffer'}
   {#if variant === 'root'}

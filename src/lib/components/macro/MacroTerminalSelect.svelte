@@ -41,8 +41,11 @@
   }
 </script>
 
-<span class="terminal-reference-field">
+<span class="terminal-reference-field grid gap-1">
   <select
+    class="select select-xs w-full"
+    class:select-warning={state.status === 'unassigned'}
+    class:select-error={state.status !== 'selected' && state.status !== 'unassigned'}
     data-testid={testId}
     data-terminal-select-status={state.status}
     value={state.value}
@@ -60,31 +63,6 @@
     {/each}
   </select>
   {#if state.status === 'unassigned'}
-    <small class="terminal-target-warning-text" data-testid={`${testId}-warning`}>Target is unassigned. Save is allowed, but Start requires a compatible terminal selection.{choices.length === 0 ? ' Create a compatible terminal, then select it.' : ''}</small>
+    <small class="terminal-target-warning-text text-[11px] leading-snug text-warning" data-testid={`${testId}-warning`}>Target is unassigned. Save is allowed, but Start requires a compatible terminal selection.{choices.length === 0 ? ' Create a compatible terminal, then select it.' : ''}</small>
   {/if}
 </span>
-
-<style>
-  select.terminal-target-invalid {
-    border-color: #cf7182;
-    background: #fff7f8;
-    color: #782c3b;
-  }
-
-  .terminal-reference-field {
-    display: grid;
-    gap: 4px;
-  }
-
-  select.terminal-target-warning {
-    border-color: #d79a35;
-    background: #fff9eb;
-    color: #725013;
-  }
-
-  .terminal-target-warning-text {
-    color: #8a5b0a;
-    font-size: 11px;
-    line-height: 1.3;
-  }
-</style>

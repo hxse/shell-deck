@@ -1,7 +1,0 @@
-:where(.macro-panel, .library-panel) button {
-  border: 1px solid #b8c2cc;
-  border-radius: 6px;
-  background: #ffffff;
-  color: #202428;
-  padding: 6px 10px;
-}

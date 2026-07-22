@@ -17,13 +17,13 @@
   const showHelp = $derived(helpHovered || helpFocused)
 </script>
 
-<div class="input-delivery-field macro-field-typography">
-  <div class="input-delivery-label">
+<div class="input-delivery-field macro-field-typography grid min-w-0 gap-1">
+  <div class="input-delivery-label flex items-center gap-1">
     <label for={selectId}>Input delivery</label>
-    <span class="input-delivery-help-anchor">
+    <span class="input-delivery-help-anchor relative inline-flex">
       <button
         type="button"
-        class="input-delivery-help"
+        class="input-delivery-help btn btn-circle btn-ghost btn-xs !size-[18px] !min-h-[18px] cursor-help !p-0 text-[11px]"
         data-testid={testId + "-help"}
         aria-label="Input delivery help"
         aria-describedby={showHelp ? tooltipId : undefined}
@@ -33,74 +33,13 @@
         onblur={() => helpFocused = false}
       >?</button>
       {#if showHelp}
-        <span id={tooltipId} class="input-delivery-tooltip" role="tooltip">{helpText}</span>
+        <span id={tooltipId} class="input-delivery-tooltip absolute top-[calc(100%+6px)] left-0 z-20 w-[min(320px,70vw)] rounded-box border border-neutral-content/30 bg-neutral px-2.5 py-2 text-xs leading-snug font-normal text-neutral-content shadow-lg" role="tooltip">{helpText}</span>
       {/if}
     </span>
   </div>
-  <select id={selectId} data-testid={testId} {value} onchange={(event) => onChange(event.currentTarget.value as TerminalInputDelivery)}>
+  <select class="select select-xs w-full" id={selectId} data-testid={testId} {value} onchange={(event) => onChange(event.currentTarget.value as TerminalInputDelivery)}>
     <option value="auto">Auto (recommended)</option>
     <option value="direct">Direct bytes</option>
     <option value="bracketed-paste">Bracketed paste</option>
   </select>
 </div>
-
-<style>
-  .input-delivery-field {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-  }
-
-  .input-delivery-label {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-
-  .input-delivery-label label {
-    display: inline;
-  }
-
-  .input-delivery-help-anchor {
-    position: relative;
-    display: inline-flex;
-  }
-
-  .input-delivery-help {
-    display: inline-grid;
-    width: 17px;
-    height: 17px;
-    place-items: center;
-    padding: 0;
-    border: 1px solid #9aa8b5;
-    border-radius: 999px;
-    background: #f4f7fa;
-    color: #3d4a57;
-    font: inherit;
-    font-size: 11px;
-    line-height: 1;
-    cursor: help;
-  }
-
-  .input-delivery-help:focus-visible {
-    outline: 2px solid #1769aa;
-    outline-offset: 2px;
-  }
-
-  .input-delivery-tooltip {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 6px);
-    left: 0;
-    width: min(320px, 70vw);
-    padding: 7px 9px;
-    border: 1px solid #9aa8b5;
-    border-radius: 5px;
-    background: #18222c;
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 1.4;
-    box-shadow: 0 4px 12px rgb(24 34 44 / 20%);
-  }
-</style>
