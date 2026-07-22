@@ -29,8 +29,8 @@ export const sourceInteractiveControlDigest038 = '278ac0156e82120cbe483e2fb76427
 
 // A later task updates only these current-workspace values, never the historical
 // constants above. A mismatch must be paired with attributed behavior changes.
-export const sourceInteractiveControlCount = 203
-export const sourceInteractiveControlDigest = '0448611e51c092e27662683de60dff7512357c2bc3992d0c4ae5775da69d8b71'
+export const sourceInteractiveControlCount = 204
+export const sourceInteractiveControlDigest = 'db3ecd85c4f1e5520d39df83b2ffd578d80d58e937a378063afea285931abaf2'
 
 export const baseline031ARuntimeControlIds = [
   // Workspace, settings, notices, panels, terminals.
@@ -314,7 +314,12 @@ const workspaceRuntimeControls034 = [
   ["text-box-copy", "clicked"],
 ] as const satisfies ReadonlyArray<readonly [string, UiControlEvidenceKind]>
 
-const workspaceRuntimeControls = workspaceRuntimeControls034.filter(([key]) => key !== "home-refresh")
+const workspaceRuntimeControls = workspaceRuntimeControls034.reduce<Array<readonly [string, UiControlEvidenceKind]>>((controls, [key, evidence]) => {
+  if (key === 'home-refresh') return controls
+  if (key === 'tab-drag-toggle') controls.push(['theme-select', 'edited'])
+  controls.push([key, evidence])
+  return controls
+}, [])
 
 const removedMacroControls034 = new Set([
   "macro-insertion-placement-toggle",
@@ -453,6 +458,7 @@ function macroEvidenceFor(key: string): UiControlEvidenceKind {
 }
 
 function addedControlTask(key: string): string {
+  if (key === 'theme-select') return '20260722B.001'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001'
   if (key === 'macro-save-to-library') return '20260627A.036'
   if (key.startsWith('library-')) return '20260627A.036'
@@ -462,6 +468,7 @@ function addedControlTask(key: string): string {
 }
 
 function addedControlOldBehavior(key: string): string {
+  if (key === 'theme-select') return '20260722A.001 had no browser-local UI theme preference control.'
   if (macroControlIdsAdded001.has(key)) return '.010 did not expose this Macro authoring or notification control.'
   if (key === 'macro-save-to-library') return '.035 allowed clipboard Copy of Macro JSON but had no explicit Macro-to-Library create action.'
   if (key.startsWith('library-')) return '.035 had no production Library surface; .032 had removed the legacy Prompt schema during the current-schema cutover.'
@@ -471,6 +478,7 @@ function addedControlOldBehavior(key: string): string {
 }
 
 function addedControlNewBehavior(key: string): string {
+  if (key === 'theme-select') return '.001 adds the only Theme selector with system plus all 35 registered daisyUI themes.'
   if (macroControlIdsAdded001.has(key)) return '.001 exposes per-item insertion, App notification repetition, or optional Parallel lane text collection through an explicit control.'
   if (key === 'macro-save-to-library') return '.036 saves the current valid Macro draft as a fresh independent Macro JSON Library item without saving or switching the Macro.'
   if (key.startsWith('library-')) return '.036 restores the side-panel presentation with the current user-global Macro JSON, Prompt and Note Library contract.'
@@ -480,6 +488,7 @@ function addedControlNewBehavior(key: string): string {
 }
 
 function addedControlSpec(key: string): string {
+  if (key === 'theme-select') return '20260722B.001/02_spec/01_contract.md — Settings control'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001/02_spec/01_contract.md — Macro authoring and notification interaction contract'
   if (key === 'macro-save-to-library') return '20260627A.036/02_spec/01_contract.md — Save current Macro draft to Library'
   if (key.startsWith('library-')) return '20260627A.036/02_spec/01_contract.md — Library UI精准重构边界与Library panel'

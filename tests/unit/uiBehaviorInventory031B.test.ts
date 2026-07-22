@@ -78,7 +78,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest038).toBe('278ac0156e82120cbe483e2fb764273d28b7c21b78661c5b9a299bbd5a8e2c63')
   })
 
-  test('20260722A.001 interactive source controls match the current path-only snapshot', () => {
+  test('20260722B.001 interactive source controls match the current path-only snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -104,7 +104,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.036', '20260627A.038', '20260722A.001'].includes(change?.changedBy ?? '')).toBe(true)
+      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.036', '20260627A.038', '20260722A.001', '20260722B.001'].includes(change?.changedBy ?? '')).toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
@@ -120,6 +120,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(changes.get('notify-app-repeat-count')?.changedBy).toBe('20260722A.001')
     expect(changes.get('notify-app-repeat-interval-ms')?.changedBy).toBe('20260722A.001')
     expect(changes.get('parallel-collect-lane-text')?.changedBy).toBe('20260722A.001')
+    expect(changes.get('theme-select')?.changedBy).toBe('20260722B.001')
   })
 
   test('.034 attributes every restored current-schema Macro control without reviving removed product behavior', () => {

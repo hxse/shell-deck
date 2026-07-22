@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext, type Locator, type Page } from 'play
 import { workspaceRuntimeControlInventory } from '../ui-baseline/031B/controlInventory'
 
 const ROOM_URL = /\/room_[1-9A-HJ-NP-Za-km-z]{22}$/
-const SETTINGS_KEY = 'shell-deck:settings:v2'
+const SETTINGS_KEY = 'shell-deck:settings:v3'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -132,6 +132,8 @@ test('current .036 UI journey preserves Room interactions and exercises automati
 
     await second.getByTestId('settings-button').click()
     await expect(second.getByTestId('settings-popover')).toBeVisible()
+    await second.getByTestId('theme-select').selectOption('light')
+    covered.add('theme-select')
     await expect(second.getByTestId('tab-drag-toggle')).toBeEnabled()
     if (await second.getByTestId('tab-drag-toggle').getAttribute('aria-pressed') !== 'true') {
       await second.getByTestId('tab-drag-toggle').click()

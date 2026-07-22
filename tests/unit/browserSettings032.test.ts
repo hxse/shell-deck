@@ -1,29 +1,99 @@
 import { expect, test } from 'bun:test'
 import { BROWSER_SETTINGS_KEY, DEFAULT_BROWSER_SETTINGS, loadBrowserSettings, saveBrowserSettings } from '../../src/lib/browserSettings'
+import {
+  createThemeBootstrapScript,
+  injectThemeBootstrap,
+  THEME_BOOTSTRAP_PLACEHOLDER,
+} from '../../src/lib/themeBootstrap'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 test('browser settings persist only current UI preferences in one versioned value', () => {
   const values = new Map<string, string>()
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } }
   const initial = loadBrowserSettings(storage)
   expect(Object.hasOwn(initial.settings, 'autoPrepareTerminals')).toBe(false)
-  saveBrowserSettings({ ...initial.settings, terminalDragEnabled: true }, storage)
-  expect(JSON.parse(values.get(BROWSER_SETTINGS_KEY)!)).toMatchObject({ schemaVersion: 2, terminalDragEnabled: true })
+  saveBrowserSettings({ ...initial.settings, theme: 'nord', terminalDragEnabled: true }, storage)
+  expect(JSON.parse(values.get(BROWSER_SETTINGS_KEY)!)).toMatchObject({ schemaVersion: 3, theme: 'nord', terminalDragEnabled: true })
   expect(loadBrowserSettings(storage).reset).toBe(false)
 })
 
-test('invalid or old browser schemas reset instead of aliasing fields', () => {
-  const storage = { getItem: () => JSON.stringify({ ...DEFAULT_BROWSER_SETTINGS, schemaVersion: 1, autoPrepareTerminals: true }) }
-  expect(loadBrowserSettings(storage)).toEqual({ settings: DEFAULT_BROWSER_SETTINGS, reset: true })
+test('invalid current-key values reset instead of filling, dropping or aliasing fields', () => {
+  const { theme: _theme, ...settingsWithoutTheme } = DEFAULT_BROWSER_SETTINGS
+  const invalidValues = [
+    { ...settingsWithoutTheme, schemaVersion: 2 },
+    { ...DEFAULT_BROWSER_SETTINGS, theme: undefined },
+    { ...DEFAULT_BROWSER_SETTINGS, theme: 'Dark' },
+    { ...DEFAULT_BROWSER_SETTINGS, themeName: 'dark' },
+  ]
+  for (const value of invalidValues) {
+    const storage = { getItem: () => JSON.stringify(value) }
+    expect(loadBrowserSettings(storage)).toEqual({ settings: DEFAULT_BROWSER_SETTINGS, reset: true })
+  }
 })
 
-test('unrelated historical keys are not read, removed or converted', () => {
+test('v2 and unrelated historical keys are not read, removed or converted', () => {
   const reads: string[] = []
   const storage = {
     getItem(key: string) {
       reads.push(key)
+      if (key === 'shell-deck:settings:v2') return JSON.stringify({ schemaVersion: 2, theme: 'dark' })
       return key === 'shell-deck:tab-drag-enabled' ? 'true' : null
     },
   }
   expect(loadBrowserSettings(storage)).toEqual({ settings: DEFAULT_BROWSER_SETTINGS, reset: false })
   expect(reads).toEqual([BROWSER_SETTINGS_KEY])
 })
+
+test('default settings are returned as independent deep clones', () => {
+  const first = loadBrowserSettings({ getItem: () => null }).settings
+  const second = loadBrowserSettings({ getItem: () => null }).settings
+  first.panels.macro.widthPx = 999
+  first.library.filter = 'changed'
+  expect(second).toEqual(DEFAULT_BROWSER_SETTINGS)
+  expect(second).not.toBe(DEFAULT_BROWSER_SETTINGS)
+  expect(second.panels).not.toBe(DEFAULT_BROWSER_SETTINGS.panels)
+})
+
+test('saver rejects non-exact v3 settings', () => {
+  const writes: string[] = []
+  const storage = { setItem: (_key: string, value: string) => { writes.push(value) } }
+  expect(() => saveBrowserSettings({ ...DEFAULT_BROWSER_SETTINGS, theme: 'unknown' } as never, storage)).toThrow('invalid_browser_settings')
+  expect(() => saveBrowserSettings({ ...DEFAULT_BROWSER_SETTINGS, extra: true } as never, storage)).toThrow('invalid_browser_settings')
+  expect(writes).toEqual([])
+})
+
+test('the generated synchronous head bootstrap shares the exact browser-settings truth', () => {
+  const html = readFileSync(resolve(import.meta.dir, '../../index.html'), 'utf8')
+  expect(html.indexOf(THEME_BOOTSTRAP_PLACEHOLDER)).toBeGreaterThan(html.indexOf('<head>'))
+  expect(html.indexOf(THEME_BOOTSTRAP_PLACEHOLDER)).toBeLessThan(html.indexOf('<title>'))
+  const transformed = injectThemeBootstrap(html)
+  expect(transformed).not.toContain(THEME_BOOTSTRAP_PLACEHOLDER)
+  expect(transformed).toContain('<script data-shell-deck-theme-bootstrap>(() => {')
+
+  const explicit = runThemeBootstrap(JSON.stringify({ ...structuredClone(DEFAULT_BROWSER_SETTINGS), theme: 'synthwave' }), false)
+  expect(explicit.get('data-theme')).toBe('synthwave')
+  expect(explicit.get('data-theme-color-scheme')).toBe('dark')
+
+  const system = runThemeBootstrap(null, true)
+  expect(system.has('data-theme')).toBe(false)
+  expect(system.get('data-theme-color-scheme')).toBe('dark')
+
+  const invalid = runThemeBootstrap(JSON.stringify({ ...structuredClone(DEFAULT_BROWSER_SETTINGS), theme: 'synthwave', extra: true }), false)
+  expect(invalid.has('data-theme')).toBe(false)
+  expect(invalid.get('data-theme-color-scheme')).toBe('light')
+})
+
+function runThemeBootstrap(rawSettings: string | null, prefersDark: boolean): Map<string, string> {
+  const attributes = new Map<string, string>()
+  const root = {
+    setAttribute(name: string, value: string) { attributes.set(name, value) },
+    removeAttribute(name: string) { attributes.delete(name) },
+  }
+  const bootstrap = new Function('window', 'document', createThemeBootstrapScript())
+  bootstrap({
+    localStorage: { getItem: () => rawSettings },
+    matchMedia: () => ({ matches: prefersDark }),
+  }, { documentElement: root })
+  return attributes
+}

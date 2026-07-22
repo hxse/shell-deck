@@ -67,10 +67,10 @@ describe('Macro workbench style decomposition', () => {
     }).toEqual({
       ruleCount: 516,
       repeatedRuleCount: 43,
-      inventoryHash: 'b8ff5d3f87a3d0dbac78dce72a6f24453739cb0a921597b7cd70938038073075',
+      inventoryHash: 'a9ffea96b80a2cf4f9bf9c9fa069f49807eedeaa520c85db2535d976d2bbb1e1',
       repeatedRuleOrderHash: 'c91aa7a29eae6d4717f427e189f5c6606610475056fc3fcb46c276d28b0be789',
       semanticRuleCount: 637,
-      semanticInventoryHash: 'f44c2bdbf2c8e4d53b013ea85c0e2f25871ad7afd3486c5d291c753fa6789ce0',
+      semanticInventoryHash: '3a3ab88c2d18536fa656d70b5c384dc877c80c5493cd84dcdea600eceacd5a79',
       repeatedCascadePropertyCount: 164,
       repeatedCascadePropertyOrderHash: 'ecef3815d9e846981db30971c9ba220c2c206447a5eab135db3ef6a383068cfb',
     })

@@ -1,11 +1,13 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
+import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vite'
+import { injectThemeBootstrap } from './src/lib/themeBootstrap'
 
 const backendOrigin = process.env.SHELL_DECK_DEV_BACKEND_ORIGIN ?? 'http://127.0.0.1:5177'
 const devHost = process.env.SHELL_DECK_DEV_HOST ?? '127.0.0.1'
 
 export default defineConfig({
-  plugins: [roomRouteBridge(), svelte()],
+  plugins: [themeHeadBootstrap(), roomRouteBridge(), tailwindcss(), svelte()],
   build: {
     rollupOptions: {
       output: {
@@ -34,6 +36,14 @@ export default defineConfig({
     port: 5173,
   },
 })
+
+function themeHeadBootstrap() {
+  return {
+    name: 'shell-deck-theme-head-bootstrap',
+    enforce: 'pre' as const,
+    transformIndexHtml: injectThemeBootstrap,
+  }
+}
 
 function roomRouteBridge() {
   return {

@@ -1,18 +1,21 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
-  import { loadBrowserSettings, saveBrowserSettings, type BrowserSettings } from './lib/browserSettings'
+  import { onDestroy, onMount, untrack } from 'svelte'
+  import { loadBrowserSettings, saveBrowserSettings, type BrowserSettings, type LoadedBrowserSettings } from './lib/browserSettings'
   import RoomHome from './lib/components/RoomHome.svelte'
   import NoticeStack, { type NoticeItem } from './lib/components/workspace/NoticeStack.svelte'
   import WorkspaceShell from './lib/components/workspace/WorkspaceShell.svelte'
   import type { RoomNotificationNoticeOptions } from './lib/roomNotificationDelivery'
   import { createRoomWorkspaceState } from './lib/roomWorkspaceState.svelte'
   import { isRoomControlFeedback, sharedMutationFeedback } from './lib/sharedMutationFeedback'
+  import { isThemePreference, observeDocumentTheme, THEME_PREFERENCES, themePreferenceLabel } from './lib/theme'
+
+  let { initialBrowserSettings }: { initialBrowserSettings?: LoadedBrowserSettings } = $props()
 
   const initialPath = window.location.pathname
   const initialRoomId = initialPath === '/' ? '' : decodeURIComponent(initialPath.slice(1))
   let isHome = $state(initialPath === '/')
   let roomId = $state(initialRoomId)
-  const loadedSettings = loadBrowserSettings()
+  const loadedSettings = untrack(() => initialBrowserSettings ?? loadBrowserSettings())
 
   let settings = $state<BrowserSettings>(loadedSettings.settings)
   let noticeSeq = 0
@@ -28,6 +31,8 @@
   $effect(() => {
     try { saveBrowserSettings(settings) } catch {}
   })
+
+  $effect(() => observeDocumentTheme(settings.theme))
 
   const workspace = initialRoomId ? createRoomWorkspaceState({
     roomId: initialRoomId,
@@ -146,6 +151,21 @@
       <button class="popover-dismiss-layer settings-dismiss-layer" type="button" data-testid="settings-dismiss-layer" aria-label="Close settings" onclick={() => { settingsOpen = false }}></button>
       <section class="settings-popover" data-testid="settings-popover">
         <div class="settings-popover-head"><strong>Settings</strong><button type="button" data-testid="settings-close" onclick={() => { settingsOpen = false }}>Close</button></div>
+        <label class="grid gap-1 text-xs font-semibold text-base-content">
+          <span>Theme</span>
+          <select
+            class="select select-sm w-full"
+            data-testid="theme-select"
+            value={settings.theme}
+            onchange={(event) => {
+              if (isThemePreference(event.currentTarget.value)) updateSettings({ theme: event.currentTarget.value })
+            }}
+          >
+            {#each THEME_PREFERENCES as theme}
+              <option value={theme}>{themePreferenceLabel(theme)}</option>
+            {/each}
+          </select>
+        </label>
         <button
           type="button"
           class="drag-toggle settings-drag-toggle"

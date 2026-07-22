@@ -241,15 +241,14 @@
 .settings-drag-toggle {
   width: 100%;
 }
-
-
+/* The framework-owned Theme select is the only staged-migration exception. */
 textarea,
-select {
+select:not(.select) {
   font: inherit;
 }
 
 textarea,
-select,
+select:not(.select),
 .macro-panel input {
   border: 1px solid #b8c2cc;
   border-radius: 5px;

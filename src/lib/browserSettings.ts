@@ -1,7 +1,10 @@
-export const BROWSER_SETTINGS_KEY = 'shell-deck:settings:v2'
+import { THEME_PREFERENCES, type ThemePreference } from './theme'
+
+export const BROWSER_SETTINGS_KEY = 'shell-deck:settings:v3'
 
 export type BrowserSettings = {
-  schemaVersion: 2
+  schemaVersion: 3
+  theme: ThemePreference
   panels: {
     macro: { visible: boolean; widthPx: number }
     library: { visible: boolean; widthPx: number }
@@ -13,7 +16,8 @@ export type BrowserSettings = {
 }
 
 export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
-  schemaVersion: 2,
+  schemaVersion: 3,
+  theme: 'system',
   panels: {
     macro: { visible: true, widthPx: 760 },
     library: { visible: false, widthPx: 380 },
@@ -24,7 +28,9 @@ export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
   library: { selectedTab: 'json-template', filter: '' },
 }
 
-export function loadBrowserSettings(storage: Pick<Storage, 'getItem'> = window.localStorage): { settings: BrowserSettings; reset: boolean } {
+export type LoadedBrowserSettings = { settings: BrowserSettings; reset: boolean }
+
+export function loadBrowserSettings(storage: Pick<Storage, 'getItem'> = window.localStorage): LoadedBrowserSettings {
   const raw = storage.getItem(BROWSER_SETTINGS_KEY)
   if (raw === null) return { settings: structuredClone(DEFAULT_BROWSER_SETTINGS), reset: false }
   try {
@@ -42,25 +48,39 @@ export function saveBrowserSettings(settings: BrowserSettings, storage: Pick<Sto
 }
 
 export function isBrowserSettings(value: unknown): value is BrowserSettings {
-  if (!isRecord(value) || value.schemaVersion !== 2 || !isRecord(value.panels) || !isRecord(value.library)) return false
-  if (!hasExactKeys(value, ['schemaVersion', 'panels', 'macroInsertionPlacement', 'terminalDragEnabled', 'notificationVolume', 'library'])) return false
+  return isBrowserSettingsValue(value, THEME_PREFERENCES)
+}
+
+// Keep this validator self-contained: Vite serializes the same function into the
+// parser-blocking head bootstrap, so first paint and the application loader cannot
+// drift onto different browser-settings schemas.
+export function isBrowserSettingsValue(value: unknown, themePreferences: readonly string[]): boolean {
+  function isRecord(candidate: unknown): candidate is Record<string, unknown> {
+    return Boolean(candidate) && typeof candidate === 'object' && !Array.isArray(candidate)
+  }
+
+  function hasExactKeys(candidate: Record<string, unknown>, keys: string[]): boolean {
+    return Object.keys(candidate).sort().join(',') === [...keys].sort().join(',')
+  }
+
+  function isPanel(candidate: unknown): boolean {
+    return isRecord(candidate)
+      && hasExactKeys(candidate, ['visible', 'widthPx'])
+      && typeof candidate.visible === 'boolean'
+      && typeof candidate.widthPx === 'number'
+      && Number.isFinite(candidate.widthPx)
+      && candidate.widthPx >= 220
+      && candidate.widthPx <= 1200
+  }
+
+  if (!isRecord(value) || value.schemaVersion !== 3 || !isRecord(value.panels) || !isRecord(value.library)) return false
+  if (!hasExactKeys(value, ['schemaVersion', 'theme', 'panels', 'macroInsertionPlacement', 'terminalDragEnabled', 'notificationVolume', 'library'])) return false
+  if (typeof value.theme !== 'string' || !themePreferences.includes(value.theme)) return false
   if (!hasExactKeys(value.panels, ['macro', 'library']) || !hasExactKeys(value.library, ['selectedTab', 'filter'])) return false
   if (!isPanel(value.panels.macro) || !isPanel(value.panels.library)) return false
   if (value.macroInsertionPlacement !== 'anchored' && value.macroInsertionPlacement !== 'center') return false
   if (typeof value.terminalDragEnabled !== 'boolean') return false
   if (typeof value.notificationVolume !== 'number' || !Number.isFinite(value.notificationVolume) || value.notificationVolume < 0 || value.notificationVolume > 10) return false
-  if (!['json-template', 'prompt', 'note'].includes(String(value.library.selectedTab)) || typeof value.library.filter !== 'string') return false
+  if (typeof value.library.selectedTab !== 'string' || !['json-template', 'prompt', 'note'].includes(value.library.selectedTab) || typeof value.library.filter !== 'string') return false
   return true
-}
-
-function isPanel(value: unknown): boolean {
-  return isRecord(value) && hasExactKeys(value, ['visible', 'widthPx']) && typeof value.visible === 'boolean' && typeof value.widthPx === 'number' && Number.isFinite(value.widthPx) && value.widthPx >= 220 && value.widthPx <= 1200
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function hasExactKeys(value: Record<string, unknown>, keys: string[]): boolean {
-  return Object.keys(value).sort().join(',') === [...keys].sort().join(',')
 }

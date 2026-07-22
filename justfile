@@ -66,6 +66,11 @@ test-002:
     HISTFILE=/dev/null bun test tests/unit/terminalParserWritePump.test.ts tests/unit/terminalViewState.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts
 
+test-20260722b-001:
+    bun run test:theme-foundation
+    HISTFILE=/dev/null bun test tests/unit/browserSettings032.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/themeFoundation001.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts
+
 debug-large-replay *args:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "real Room PTY" {{args}}
 
