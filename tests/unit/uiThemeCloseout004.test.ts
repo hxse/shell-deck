@@ -1,0 +1,151 @@
+import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
+import {
+  registeredThemeIds,
+  scanAppCss,
+  scanProductionColorText,
+  scanUiStyleResidue,
+} from '../../scripts/checkUiStyleResidue'
+import { DAISY_UI_THEME_IDS, THEME_PREFERENCES } from '../../src/lib/theme'
+import {
+  collectSvelteFiles,
+  structureFingerprint,
+  type StructureFingerprint,
+} from '../ui-baseline/20260722A.002/structureInventory'
+
+const projectRoot = resolve(import.meta.dir, '../..')
+const structureBaseline = JSON.parse(readFileSync(
+  resolve(projectRoot, 'tests/ui-baseline/20260722A.002/structureFingerprint.json'),
+  'utf8',
+)) as {
+  revision: string
+  files: Record<string, { count: number; digest: string; entryDigests?: string[] }>
+}
+
+describe('20260722B.004 UI theme migration closeout', () => {
+  test('the repeatable residue Gate accepts the production tree', () => {
+    expect(scanUiStyleResidue(projectRoot)).toEqual([])
+  })
+
+  test('the residue helpers report concrete fixed-color and compatibility CSS owners', () => {
+    const colorIssues = scanProductionColorText('src/example.svelte', '<div class="bg-[#fff] hover:bg-[red]" style="color: rgb(1, 2, 3)"></div>')
+    expect(colorIssues.map(({ file, line, reason }) => ({ file, line, reason }))).toEqual([
+      { file: 'src/example.svelte', line: 1, reason: 'hard-coded hex UI color is forbidden' },
+      { file: 'src/example.svelte', line: 1, reason: 'hard-coded functional UI color is forbidden' },
+      { file: 'src/example.svelte', line: 1, reason: 'Tailwind arbitrary UI color utility is forbidden' },
+    ])
+
+    const appCss = readFileSync(resolve(projectRoot, 'src/app.css'), 'utf8')
+    const compatibilityIssues = scanAppCss(`${appCss}\n.legacy-panel { color: red; }\n`)
+    expect(compatibilityIssues).toContainEqual(expect.objectContaining({
+      file: 'src/app.css',
+      reason: 'CSS block is outside the app.css allowlist: .legacy-panel',
+    }))
+    expect(scanAppCss(`${appCss}\n:root { --legacy-color: red; }\n`)).toContainEqual(expect.objectContaining({
+      file: 'src/app.css',
+      reason: ':root may only declare --shell-deck-terminal-font-family; found --legacy-color',
+    }))
+    expect(scanAppCss(`${appCss}\n.terminal-host > .xterm { position: absolute; background: red; }\n`)).toContainEqual(expect.objectContaining({
+      file: 'src/app.css',
+      reason: '.terminal-host > .xterm uses non-structural property background',
+    }))
+    expect(scanAppCss(`${appCss}\n@import "legacy.css";\n`)).toContainEqual(expect.objectContaining({
+      file: 'src/app.css',
+      reason: expect.stringContaining('framework imports must match the app.css allowlist'),
+    }))
+  })
+
+  test('CSS registration, strict preference values and Settings options share one catalog', () => {
+    const appCss = readFileSync(resolve(projectRoot, 'src/app.css'), 'utf8')
+    expect(registeredThemeIds(appCss)).toEqual([...DAISY_UI_THEME_IDS])
+    expect(new Set(DAISY_UI_THEME_IDS).size).toBe(35)
+    expect(THEME_PREFERENCES).toEqual(['system', ...DAISY_UI_THEME_IDS])
+    expect(THEME_PREFERENCES).toHaveLength(36)
+  })
+
+  test('final structure has the exact four-element Theme delta from the parent revision', () => {
+    const files = collectSvelteFiles(resolve(projectRoot, 'src')).sort()
+    const current = Object.fromEntries(files.map((path) => [
+      relative(projectRoot, path).split('\\').join('/'),
+      structureFingerprint(projectRoot, path),
+    ]))
+    expect(structureBaseline.revision).toBe('wylwysvyyrvy')
+    expect(Object.keys(current).sort()).toEqual(Object.keys(structureBaseline.files).sort())
+
+    for (const [path, expected] of Object.entries(structureBaseline.files)) {
+      if (path === 'src/App.svelte') continue
+      expect({ count: current[path].count, digest: current[path].digest }).toEqual({
+        count: expected.count,
+        digest: expected.digest,
+      })
+    }
+
+    const appBaseline = structureBaseline.files['src/App.svelte']
+    expect(appBaseline.entryDigests).toHaveLength(41)
+    const appDelta = structureDelta(appBaseline.entryDigests ?? [], current['src/App.svelte'])
+    expect(appDelta.removed).toEqual([])
+    expect(appDelta.added).toEqual([
+      'src/App.svelte::RegularElement:label::',
+      'src/App.svelte::RegularElement:span::',
+      'src/App.svelte::RegularElement:select::data-testid="theme-select"|value={settings.theme}|onchange={(event) => { if (isThemePreference(event.currentTarget.value)) updateSettings({ theme: event.currentTarget.value }) }}',
+      'src/App.svelte::RegularElement:option::value={theme}',
+    ])
+    expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
+    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(839)
+
+    const app = readFileSync(resolve(projectRoot, 'src/App.svelte'), 'utf8')
+    expect(app.match(/data-testid="theme-select"/g)).toHaveLength(1)
+    expect(app).toContain('{#each THEME_PREFERENCES as theme}')
+    expect(app).not.toMatch(/data-testid="[^"]*theme[^"]*button"/i)
+    expect(app).not.toMatch(/<button[^>]*>\s*Theme\s*<\/button>/i)
+
+    const terminal = readFileSync(resolve(projectRoot, 'src/lib/components/TerminalSlot.svelte'), 'utf8')
+    for (const attribute of [
+      'data-terminal-instance-id',
+      'data-terminal-color-scheme',
+      'data-terminal-base-y',
+      'data-terminal-viewport-y',
+      'data-terminal-cursor-x',
+      'data-terminal-cursor-y',
+      'data-terminal-selection',
+    ]) {
+      expect(terminal).not.toContain(attribute)
+    }
+    expect(terminal).toContain('shell-deck-terminal-test-state-request')
+  })
+})
+
+function structureDelta(baseline: string[], current: StructureFingerprint): { removed: string[]; added: string[] } {
+  const matrix = Array.from(
+    { length: baseline.length + 1 },
+    () => Array<number>(current.entryDigests.length + 1).fill(0),
+  )
+  for (let baselineIndex = baseline.length - 1; baselineIndex >= 0; baselineIndex -= 1) {
+    for (let currentIndex = current.entryDigests.length - 1; currentIndex >= 0; currentIndex -= 1) {
+      matrix[baselineIndex][currentIndex] = baseline[baselineIndex] === current.entryDigests[currentIndex]
+        ? matrix[baselineIndex + 1][currentIndex + 1] + 1
+        : Math.max(matrix[baselineIndex + 1][currentIndex], matrix[baselineIndex][currentIndex + 1])
+    }
+  }
+
+  const removed: string[] = []
+  const added: string[] = []
+  let baselineIndex = 0
+  let currentIndex = 0
+  while (baselineIndex < baseline.length && currentIndex < current.entryDigests.length) {
+    if (baseline[baselineIndex] === current.entryDigests[currentIndex]) {
+      baselineIndex += 1
+      currentIndex += 1
+    } else if (matrix[baselineIndex + 1][currentIndex] >= matrix[baselineIndex][currentIndex + 1]) {
+      removed.push(baseline[baselineIndex])
+      baselineIndex += 1
+    } else {
+      added.push(current.entries[currentIndex])
+      currentIndex += 1
+    }
+  }
+  removed.push(...baseline.slice(baselineIndex))
+  added.push(...current.entries.slice(currentIndex))
+  return { removed, added }
+}

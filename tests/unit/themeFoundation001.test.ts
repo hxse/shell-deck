@@ -30,8 +30,8 @@ test('theme catalog exposes exactly 35 daisyUI themes and 36 strict preferences'
   for (const value of ['Dark', 'SYSTEM', 'auto', 'system ', '', null, 1]) expect(isThemePreference(value)).toBe(false)
 })
 
-test('framework CSS registers the canonical catalog with one default and one prefers-dark theme', () => {
-  const css = readFileSync(resolve(import.meta.dir, '../../src/framework.css'), 'utf8')
+test('the final app CSS registers the canonical catalog with one default and one prefers-dark theme', () => {
+  const css = readFileSync(resolve(import.meta.dir, '../../src/app.css'), 'utf8')
   expect(css).toContain('@import "tailwindcss/theme.css" layer(theme);')
   expect(css).toContain('@import "tailwindcss/utilities.css" layer(utilities);')
   expect(css).not.toContain('@import "tailwindcss";')
@@ -46,16 +46,16 @@ test('framework CSS registers the canonical catalog with one default and one pre
   expect(entries.filter((entry) => entry.includes('--prefersdark'))).toEqual(['dark --prefersdark'])
 })
 
-test('main applies the loaded theme before mount and imports framework before the empty migration entry', () => {
+test('main applies the loaded theme before mount and imports the single final CSS entry', () => {
   const source = readFileSync(resolve(import.meta.dir, '../../src/main.ts'), 'utf8')
-  expect(source.indexOf("import './framework.css'")).toBeLessThan(source.indexOf("import './styles.css'"))
+  expect(source.match(/import ['"].*\.css['"]/g)).toEqual(["import './app.css'"])
   expect(source.indexOf('applyDocumentTheme(loadedSettings.settings.theme)')).toBeLessThan(source.indexOf('mount(App'))
 })
 
-test('the completed workbench migration leaves no legacy CSS handoff', () => {
-  expect(readFileSync(resolve(import.meta.dir, '../../src/styles.css'), 'utf8').trim()).toBe('')
-  expect(() => readFileSync(resolve(import.meta.dir, '../../src/styles/base.css'), 'utf8')).toThrow()
-  expect(() => readFileSync(resolve(import.meta.dir, '../../src/styles/terminal.css'), 'utf8')).toThrow()
+test('the completed migration keeps the framework entry free of presentation compatibility layers', () => {
+  const css = readFileSync(resolve(import.meta.dir, '../../src/app.css'), 'utf8')
+  expect(css).not.toContain('@apply')
+  expect(css).not.toMatch(/@layer\s+[\w,-]+\s*\{/)
 })
 
 test('document application owns explicit and system root attributes', () => {

@@ -29,6 +29,8 @@ terminal view采用lazy retained lifecycle。未访问terminal不mount、不解�
 
 Shell xterm采用native follow-output语义：新建及authoritative replace hydration完成后定位到底部；用户位于底部时live append继续follow，用户通过wheel或scrollbar离开底部后，live append不得强制改变其历史viewport，主动回到底部后自然恢复follow。host/grid resize必须先判断resize前是否位于底部，只有原本位于底部时才显式恢复bottom；不得因fit、panel resize、tab activation或controller/observer变化打断历史回顾。viewport只属于当前browser中的xterm instance，不新增Room消息、偏好设置或持久化状态。
 
+xterm继续加载package-owned vendor CSS，project只在唯一`src/app.css`中保留generated subtree的最小position/size/overflow bridge。browser Theme以effective light/dark选择两套完整ANSI palette，并原位赋给既有`xterm.options.theme`；explicit Theme或`system` media变化不得重建instance、清buffer、改变viewport/selection/cursor或中断后续PTY output。terminal chrome颜色来自daisyUI semantic token，不写入Room/terminal protocol。
+
 Room与每个terminal分别维护单调roomRevision/terminalRevision；Text另有textRevision，每次PTY output或Text正文变化另推进outputActivityRevision。quiet判断使用activity revision，不能比较已截断replay的长度。terminal structure lock acquire/release都推进roomRevision。browser对完整Room snapshot与index map分别维护channel watermark：同一channel只有首次或revision严格更新时才能覆盖Room级字段；两种companion message可各自消费同一revision，terminal-specific event不冒充Room projection watermark。equal/older delayed snapshot不得重写structure lock。terminal-specific event按launchId + terminalRevision合并，只有accepted terminal snapshot才能派生readiness/position，跨HTTP/WebSocket的延迟snapshot不得回滚新真值。
 
 Text browser每个terminal串行一个full-state write，后续输入coalesce为latest value并带local edit generation。只有前进的textRevision和匹配正文才能确认在途echo；确认时若generation已变化，即使最终文字与旧值相同也要重发latest。旧own-echo不能覆盖较新输入，observer只消费server revision。
@@ -49,7 +51,7 @@ Start把index/type解析为terminalId/launchId后冻结routing。active run期�
 
 ## Single-controller
 
-同一Room任一时刻只有一个controller。fresh generation中第一个完成WebSocket握手的client自动取得控制；其余连接是observer。observer继续接收snapshot/output/replay，可以选择terminal、滚动、复制和修改browser-local Settings，但Shell input、Text edit、terminal create/close/reset/reorder/resize等shared mutation同时由UI readonly和server统一guard拒绝。
+同一Room任一时刻只有一个controller。fresh generation中第一个完成WebSocket握手的client自动取得控制；其余连接是observer。observer继续接收snapshot/output/replay，可以选择terminal、滚动、复制和修改包括Theme在内的browser-local Settings，但Shell input、Text edit、terminal create/close/reset/reorder/resize等shared mutation同时由UI readonly和server统一guard拒绝。Theme change不要求controller，也不发送Room mutation。
 
 顶栏显示`Control: This device`、`Read-only · Take control`或`Reconnecting · Read-only`。Take Control使用确认时看到的controlEpoch，成功后旧owner立即收到`room_control_lost`；release、disconnect或30秒TTL到期只进入available，不自动提升普通observer。若同一browser tab在reload或短暂重连前就是controller，它可在5秒窗口内保存非secret session intent，并仅在server已广播available时自动执行正常epoch-bound acquire；它不保存grant、不自动takeover，也不能抢走另一个live controller。owner server每10秒用WebSocket ping/pong续期，browser timer不承担authority。
 

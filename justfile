@@ -14,7 +14,10 @@ stop *args:
 dev *args:
     bun run scripts/dev.ts {{args}}
 
-check: check-ts check-svelte
+check: ui-style-residue check-ts check-svelte
+
+ui-style-residue:
+    bun run scripts/checkUiStyleResidue.ts
 
 check-ts:
     bun x tsc --noEmit
@@ -81,6 +84,11 @@ test-20260722b-002-chrome:
 test-20260722b-003:
     HISTFILE=/dev/null bun test tests/unit/uiStructureBaseline003.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/themeFoundation001.test.ts tests/unit/appRoomTerminalChrome002.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/librarySession005.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/libraryWorkbench036.navigation.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts tests/e2e/libraryWorkbench036.reconnect.spec.ts
+
+test-20260722b-004:
+    just ui-style-residue
+    HISTFILE=/dev/null bun test tests/unit/uiThemeCloseout004.test.ts tests/unit/themeFoundation001.test.ts tests/unit/appRoomTerminalChrome002.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/terminalFont.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/currentTestJourneyInventory010.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/uiThemeCloseout004.spec.ts tests/e2e/themeFoundation001.spec.ts tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts
 
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"

@@ -80,7 +80,7 @@
   {#if variant === 'root'}
     <div class="agent-wait-limit">
       <label class="checkbox-row agent-timeout-toggle">
-        <input data-testid="capture-agent-timeout-enabled" type="checkbox" checked={capture.waitLimit.kind === 'timeout'} onchange={(event) => changeCapture({ ...capture, waitLimit: event.currentTarget.checked ? { kind: 'timeout', timeoutMs: 600000 } : { kind: 'unbounded' } })} />
+        <input class="!size-3.5 !min-h-3.5" data-testid="capture-agent-timeout-enabled" type="checkbox" checked={capture.waitLimit.kind === 'timeout'} onchange={(event) => changeCapture({ ...capture, waitLimit: event.currentTarget.checked ? { kind: 'timeout', timeoutMs: 600000 } : { kind: 'unbounded' } })} />
         <span>Enable timeout</span>
       </label>
       {#if capture.waitLimit.kind === 'timeout'}
@@ -92,7 +92,7 @@
   {:else}
     <div class="agent-wait-limit">
       <label class="checkbox-row agent-timeout-toggle">
-        <input data-testid="parallel-capture-agent-timeout-enabled" type="checkbox" checked={capture.waitLimit.kind === 'timeout'} onchange={(event) => changeCapture({ ...capture, waitLimit: event.currentTarget.checked ? { kind: 'timeout', timeoutMs: 600000 } : { kind: 'unbounded' } })} />
+        <input class="!size-3.5 !min-h-3.5" data-testid="parallel-capture-agent-timeout-enabled" type="checkbox" checked={capture.waitLimit.kind === 'timeout'} onchange={(event) => changeCapture({ ...capture, waitLimit: event.currentTarget.checked ? { kind: 'timeout', timeoutMs: 600000 } : { kind: 'unbounded' } })} />
         <span>Enable timeout</span>
       </label>
       {#if capture.waitLimit.kind === 'timeout'}

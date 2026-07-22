@@ -2,8 +2,7 @@ import { mount } from 'svelte'
 import App from './App.svelte'
 import { loadBrowserSettings } from './lib/browserSettings'
 import { applyDocumentTheme } from './lib/theme'
-import './framework.css'
-import './styles.css'
+import './app.css'
 
 const loadedSettings = loadBrowserSettings()
 applyDocumentTheme(loadedSettings.settings.theme)

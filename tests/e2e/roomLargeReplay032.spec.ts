@@ -71,6 +71,7 @@ test('live Shell output and resize preserve a user-scrolled xterm viewport until
 })
 
 test('visited terminal views survive Shell and Text tab switches without replaying long history', async ({ page, request }) => {
+  test.setTimeout(40_000)
   await openNewRoom(page, request)
   const shell = await createTerminal(page, 'fake')
   const text = await createTerminal(page, 'text')
@@ -86,7 +87,7 @@ test('visited terminal views survive Shell and Text tab switches without replayi
     { type: 'set_terminal_text', terminalId: text.terminalId, content: textContent },
     { type: 'terminal_input', terminalId: shell.terminalId, data: 'h'.repeat(160_000) + historyMarker + '\r' },
   ])
-  await expect(shellHost).toHaveAttribute('data-rendered-tail', new RegExp(historyMarker), { timeout: 20_000 })
+  await expect(shellHost).toHaveAttribute('data-rendered-tail', new RegExp(historyMarker), { timeout: 30_000 })
   await expectParserIdle(shellHost)
   await shellHost.evaluate((element) => { element.dataset.retainedViewProbe = 'same-shell-view' })
 

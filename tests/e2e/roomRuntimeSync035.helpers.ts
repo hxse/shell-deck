@@ -94,6 +94,7 @@ function deferred<T>() {
 }
 
 async function openTemplateDrawer(page: import('playwright/test').Page) {
+  if (await page.getByTestId('macro-insertion-cancel-scrim').count() > 0) await page.getByTestId('macro-insertion-cancel-scrim').click()
   if (await page.getByTestId('macro-template-drawer-body').count() === 0) await page.getByTestId('macro-template-drawer').click()
   await expect(page.getByTestId('macro-template-drawer-body')).toBeVisible()
 }

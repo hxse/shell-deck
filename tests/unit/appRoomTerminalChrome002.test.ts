@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { documentColorScheme } from '../../src/lib/theme'
 import {
@@ -56,8 +56,8 @@ test('TerminalSlot updates the existing xterm theme without a second theme catal
   expect(source).not.toContain("theme: { background: '#111316'")
 })
 
-test('framework owns migrated components and only runtime xterm geometry remains as a global bridge', () => {
-  const framework = read('src/framework.css')
+test('the final app entry owns framework registration and only runtime xterm geometry remains as a global bridge', () => {
+  const framework = read('src/app.css')
   const included = framework.match(/include:\s*([^;]+);/)?.[1].split(',').map((entry) => entry.trim())
   expect(included).toEqual(['alert', 'badge', 'button', 'card', 'checkbox', 'fieldset', 'input', 'range', 'select', 'tab', 'textarea'])
   expect(framework.match(/\.terminal-host/g)).toHaveLength(2)
@@ -72,18 +72,5 @@ test('framework owns migrated components and only runtime xterm geometry remains
     'src/lib/components/workspace/NoticeStack.svelte',
   ]) {
     expect(read(component)).not.toMatch(/#[0-9a-f]{3,8}\b/i)
-  }
-})
-
-test('the successor workbench migration consumes every legacy CSS handoff', () => {
-  expect(existsSync(resolve(projectRoot, 'src/styles/room.css'))).toBe(false)
-  expect(existsSync(resolve(projectRoot, 'src/styles/workspace-panels.css'))).toBe(false)
-  expect(existsSync(resolve(projectRoot, 'src/styles/workbench-responsive.css'))).toBe(false)
-  expect(read('src/styles.css').trim()).toBe('')
-  for (const name of [
-    'base.css', 'terminal.css', 'macro-workbench.css', 'macro-chrome.css', 'macro-editor.css',
-    'macro-flow.css', 'macro-trace.css', 'library-workbench.css', 'workbench-shared.css',
-  ]) {
-    expect(existsSync(resolve(projectRoot, 'src/styles', name))).toBe(false)
   }
 })

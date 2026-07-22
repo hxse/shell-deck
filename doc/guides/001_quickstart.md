@@ -43,6 +43,10 @@ Room 内可创建：
 
 Terminal tab与正文header显示同一条单行label：连续index、runtime terminalId、Shell实时cwd、kind、status；Text省略cwd。没有alias/rename。开启Settings中的drag toggle后可拖拽；index随UI顺序变化，terminalId、launch和kind跟随terminal object，cwd随Shell执行`cd`实时更新。
 
+## Theme
+
+在任一Room打开`Settings → Theme`即可选择`system`或35个daisyUI内置theme。Theme属于当前browser的本地presentation setting：observer也可修改，刷新后保留，并同时覆盖Home、Room、terminal、Macro、Library与notice；它不会写入Room、server或saved record，也不会跨设备同步。`system`实时跟随OS light/dark，选择explicit theme后不再随OS变化。
+
 ## Codex hook
 
 `just codex` 只支持从 shell-deck 创建的 Shell 内运行，因为该 Shell 已注入完整 Room/terminal/launch ingest context。普通外部 terminal 调用会在启动 Codex 前返回：
@@ -77,7 +81,7 @@ Start要求Macro已经Save，先通过runnable completeness（所有terminal/art
 
 Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Save/Delete后的record会同步，但不会切换其他browser的selector。Start后Room另有只读Running Macro；status、current step、Pause/Resume/Stop以及Input Action的prompt/draft/submit都由server主动同步到同Room设备。关闭所有页面不会停止run，重新进入原Room URL会立即得到当前live snapshot。
 
-Notify Action在server只执行一次：Telegram只发送一次；当时在线的同Room browser各自收到App/System通知，后进入的browser不补弹历史通知，但仍可在Trace查看event。
+Notify Action在server只执行一次并向当时在线的同Room browser各广播一条message；Telegram与System notification都只呈现一次。每个browser去重后，App channel按`repeatCount`与`repeatIntervalMs`重复toast/sound；reconnect、Room切换或workspace dispose会取消尚未触发的剩余重复。后进入的browser不补弹历史通知，但仍可在Trace查看event。
 
 ## Library
 

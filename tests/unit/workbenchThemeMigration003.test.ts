@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { parse } from 'svelte/compiler'
 
@@ -14,19 +14,6 @@ const workbenchSources = [
     .filter((name) => name.endsWith('.svelte'))
     .sort()
     .map((name) => resolve(macroRoot, name)),
-]
-
-const legacyStyles = [
-  'base.css',
-  'terminal.css',
-  'macro-workbench.css',
-  'macro-chrome.css',
-  'macro-editor.css',
-  'macro-flow.css',
-  'macro-trace.css',
-  'library-workbench.css',
-  'workbench-responsive.css',
-  'workbench-shared.css',
 ]
 
 const formerlyLocalStyleOwners = [
@@ -56,11 +43,7 @@ describe('20260722B.003 Macro and Library theme migration', () => {
     })
   })
 
-  test('the old workbench cascade and its mixed-file handoff are absent', () => {
-    expect(readFileSync(resolve(projectRoot, 'src/styles.css'), 'utf8').trim()).toBe('')
-    for (const name of legacyStyles) {
-      expect(existsSync(resolve(projectRoot, 'src/styles', name))).toBe(false)
-    }
+  test('workbench presentation has no component-local stylesheet owner', () => {
     for (const name of formerlyLocalStyleOwners) {
       expect(readFileSync(resolve(macroRoot, name), 'utf8')).not.toContain('<style')
     }
@@ -82,7 +65,7 @@ describe('20260722B.003 Macro and Library theme migration', () => {
   })
 
   test('the focused daisyUI component set covers the migrated controls', () => {
-    const css = readFileSync(resolve(projectRoot, 'src/framework.css'), 'utf8')
+    const css = readFileSync(resolve(projectRoot, 'src/app.css'), 'utf8')
     const included = css.match(/include:\s*([^;]+);/)?.[1]
       .split(',')
       .map((entry) => entry.trim()) ?? []

@@ -36,6 +36,12 @@ runner把manifest、append-only events和artifacts持久化为只读Trace eviden
 
 正常runner UI不polling。连接/重连收到完整、revisioned runner snapshot，后续状态由server push；Running Macro是Room共享的冻结只读配置，不覆盖各browser本地正在查看或编辑的Macro。runtime input draft也由server内存持有并在single-controller takeover后继续。
 
+## UI presentation
+
+current presentation由Tailwind CSS 4与daisyUI 5提供，`src/app.css`是唯一project-authored CSS source；component没有`<style>`，xterm vendor stylesheet保持package-owned。Theme preference是browser settings v3中的local-only exact value，只在Room既有Settings提供入口，但覆盖同browser的Home与全部Room surface。Theme application不建立server API、Room message或跨browser同步。
+
+除Theme select这一项已登记结构增量外，framework迁移不拥有DOM hierarchy、control位置、panel/layout或业务interaction变化。`just ui-style-residue`与111-case theme/viewport matrix冻结source owner、semantic state和responsive contract，具体见`ui_theme_contract.md`。
+
 ## 启动与安全
 
 所有入口通过 `justfile`。`just start` 先构建 production assets；`just dev` 使用 Vite HMR 并把 API/Room WebSocket 交给 Bun server。`.032` 不暴露尚未接入 runner 的 mock/real parser server mode。默认只绑定 `127.0.0.1`；非本地 bind 必须显式设置 `SHELL_DECK_ALLOW_LAN=1`，当前没有认证。
