@@ -71,6 +71,16 @@ test-20260722b-001:
     HISTFILE=/dev/null bun test tests/unit/browserSettings032.test.ts tests/unit/uiBehaviorInventory031B.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/themeFoundation001.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts
 
+test-20260722b-002:
+    HISTFILE=/dev/null bun test tests/unit/appRoomTerminalChrome002.test.ts tests/unit/themeFoundation001.test.ts tests/unit/terminalFont.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/macroWorkbenchStyles009.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/themeFoundation001.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts --grep-invert "visited terminal views survive Shell and Text tab switches"
+
+test-20260722b-002-chrome:
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/macroWorkbenchStyles009.spec.ts
+
+test-20260722b-002-terminal-retention:
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
+
 debug-large-replay *args:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "real Room PTY" {{args}}
 

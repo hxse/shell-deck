@@ -1,10 +1,3 @@
-.workspace-side-panel .macro-panel,
-.workspace-side-panel .run-log-panel,
-.workspace-side-panel .prompt-panel {
-  width: 100%;
-  box-sizing: border-box;
-}
-
 .template-toolbar,
 .prompt-toolbar-actions {
   justify-content: flex-start;
@@ -65,7 +58,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.macro-workbench-shell,
 .macro-workbench-shell > *,
 .macro-workbench-shell .run-log-panel,
 .run-log-section,

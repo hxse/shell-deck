@@ -65,14 +65,14 @@ describe('Macro workbench style decomposition', () => {
       repeatedCascadePropertyCount: [...cascadeProperties.values()].filter((values) => values.length > 1).length,
       repeatedCascadePropertyOrderHash: sha256(repeatedCascadePropertyOrder),
     }).toEqual({
-      ruleCount: 516,
-      repeatedRuleCount: 43,
-      inventoryHash: 'a9ffea96b80a2cf4f9bf9c9fa069f49807eedeaa520c85db2535d976d2bbb1e1',
-      repeatedRuleOrderHash: 'c91aa7a29eae6d4717f427e189f5c6606610475056fc3fcb46c276d28b0be789',
-      semanticRuleCount: 637,
-      semanticInventoryHash: '3a3ab88c2d18536fa656d70b5c384dc877c80c5493cd84dcdea600eceacd5a79',
-      repeatedCascadePropertyCount: 164,
-      repeatedCascadePropertyOrderHash: 'ecef3815d9e846981db30971c9ba220c2c206447a5eab135db3ef6a383068cfb',
+      ruleCount: 376,
+      repeatedRuleCount: 39,
+      inventoryHash: '2da562a3c33942d23b329dce3100b1eaa74c9bba889035794ccf8d5d7f924bb3',
+      repeatedRuleOrderHash: 'f5c0c9a5ad6b99c61674f8b168dfb977eae9bf38aaf2aed9109bf27639f405cc',
+      semanticRuleCount: 488,
+      semanticInventoryHash: 'de4c13074b343ffa0c3a2a6ce3c30a8c28de1fc203a0ff1f9d7b1c908c675bd3',
+      repeatedCascadePropertyCount: 134,
+      repeatedCascadePropertyOrderHash: '40342ca2d6b352101db588b6371d240914db63ea11e4c6381ff973ab9d716311',
     })
     expect(cascadeProperties.get('.run-list button\nfont-size')).toEqual(['12px', '13px'])
     expect(cascadeProperties.get('.macro-run-status-dock .macro-run-controls\ngrid-template-columns')).toEqual([
@@ -91,7 +91,6 @@ describe('Macro workbench style decomposition', () => {
       'macro-flow.css',
       'macro-trace.css',
       'library-workbench.css',
-      'workbench-responsive.css',
       'workbench-shared.css',
     ]) {
       expect(existsSync(resolve(projectRoot, 'src/styles', name))).toBe(true)

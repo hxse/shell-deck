@@ -7,9 +7,21 @@
   import { TerminalParserWritePump } from '../terminalParserWritePump'
   import { TERMINAL_FONT_FAMILY, TERMINAL_FONT_WEIGHT, TERMINAL_FONT_WEIGHT_BOLD } from '../terminalFont'
   import type { TerminalRoomClient } from '../terminalRoomClient'
+  import { documentColorScheme, observeDocumentColorScheme, type EffectiveColorScheme } from '../theme'
+  import { xtermThemeForColorScheme } from '../terminal/xtermTheme'
 
   const RENDERED_TAIL_CODE_UNIT_LIMIT = 8192
   const DEBUG_COUNTER_LIMIT = 999_999_999
+
+  type TerminalTestState = {
+    instanceId: number
+    colorScheme: EffectiveColorScheme
+    baseY: number
+    viewportY: number
+    cursorX: number
+    cursorY: number
+    selection: string
+  }
 
   let { terminal, client, active = true, readOnly = false, onMutationDenied = () => {} } = $props<{
     terminal: TerminalViewSnapshot
@@ -34,6 +46,9 @@
   let sentCols = 0
   let sentRows = 0
   let appliedReadOnly = false
+  let colorScheme = $state<EffectiveColorScheme>(documentColorScheme())
+  let stopObservingColorScheme: (() => void) | null = null
+  let terminalInstanceSequence = 0
 
   const parserPump = new TerminalParserWritePump({
     onChunkWrite: (_data, _update, target) => {
@@ -64,6 +79,8 @@
 
   onMount(() => {
     mounted = true
+    host.addEventListener('shell-deck-terminal-test-state-request', handleTerminalTestStateRequest)
+    stopObservingColorScheme = observeDocumentColorScheme(applyTerminalTheme)
     resizeObserver = new ResizeObserver(() => fitToHost())
     resizeObserver.observe(host)
     applyRenderUpdate(terminal.renderUpdate)
@@ -104,6 +121,9 @@
     mounted = false
     parserPump.setTarget(null)
     resizeObserver?.disconnect()
+    host?.removeEventListener('shell-deck-terminal-test-state-request', handleTerminalTestStateRequest)
+    stopObservingColorScheme?.()
+    stopObservingColorScheme = null
     hydratingXterm = null
     xterm?.dispose()
   })
@@ -144,7 +164,7 @@
       // A replacement is historical server replay, not fresh PTY output.
       // Terminal queries inside that history must not produce new input.
       disableStdin: true,
-      theme: { background: '#111316', foreground: '#e6edf3' },
+      theme: xtermThemeForColorScheme(colorScheme),
       fontFamily: TERMINAL_FONT_FAMILY,
       fontWeight: TERMINAL_FONT_WEIGHT,
       fontWeightBold: TERMINAL_FONT_WEIGHT_BOLD,
@@ -152,6 +172,7 @@
       lineHeight: 1.2,
     })
     xterm = next
+    terminalInstanceSequence += 1
     hydratingXterm = next
     next.open(host)
     const terminalId = terminal.terminalId
@@ -162,6 +183,11 @@
     parserPump.setTarget(next)
     fitToHost()
     writeToParser(update)
+  }
+
+  function applyTerminalTheme(nextColorScheme: EffectiveColorScheme) {
+    colorScheme = nextColorScheme
+    if (xterm) xterm.options.theme = xtermThemeForColorScheme(nextColorScheme)
   }
 
   function writeToParser(update: TerminalRenderUpdate) {
@@ -188,6 +214,22 @@
     xterm.resize(cols, rows)
     if (wasAtBottom) xterm.scrollToBottom()
     if (!readOnly) client?.send({ type: 'terminal_resize', terminalId: terminal.terminalId, cols, rows })
+  }
+
+  function handleTerminalTestStateRequest(event: Event) {
+    const accept = (event as CustomEvent<{ accept?: (state: TerminalTestState) => void }>).detail?.accept
+    const current = xterm
+    if (!current || typeof accept !== 'function') return
+    const buffer = current.buffer.active
+    accept({
+      instanceId: terminalInstanceSequence,
+      colorScheme,
+      baseY: buffer.baseY,
+      viewportY: buffer.viewportY,
+      cursorX: buffer.cursorX,
+      cursorY: buffer.cursorY,
+      selection: current.hasSelection() ? current.getSelection().slice(0, 1024) : '',
+    })
   }
 
   function measureCellSize() {
@@ -229,12 +271,12 @@
   }
 </script>
 
-<section class="terminal-pane" class:shared-read-only={readOnly} data-testid="terminal-pane" data-terminal-id={terminal.terminalId} data-shared-read-only={readOnly}>
-  <div class="terminal-meta">
-    <code class="terminal-meta-label" title={terminalLabel}>{terminalLabel}</code>
+<section class="terminal-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-base-300 bg-base-100 shadow-sm data-[shared-read-only=true]:ring-1 data-[shared-read-only=true]:ring-inset data-[shared-read-only=true]:ring-warning/60" class:shared-read-only={readOnly} data-testid="terminal-pane" data-terminal-id={terminal.terminalId} data-shared-read-only={readOnly}>
+  <div class="terminal-meta box-border flex min-h-[30px] items-center justify-between gap-2 border-b border-base-300 bg-base-100 px-2 py-[3px]">
+    <code class="terminal-meta-label block min-w-0 flex-1 select-text overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-[1.35] text-base-content/70" title={terminalLabel}>{terminalLabel}</code>
   </div>
   <div
-    class="terminal-host"
+    class="terminal-host relative box-border min-h-0 flex-1 overflow-hidden bg-base-300 p-1.5"
     data-testid="terminal-host"
     data-rendered-tail=""
     data-rendered-revision="0"

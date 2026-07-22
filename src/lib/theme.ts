@@ -79,6 +79,8 @@ type ThemeObservationOptions = {
   matchMedia?: MatchMedia
 }
 
+type EffectiveThemeRoot = Pick<HTMLElement, 'getAttribute'>
+
 export function isThemePreference(value: unknown): value is ThemePreference {
   return typeof value === 'string' && themePreferences.has(value)
 }
@@ -125,4 +127,24 @@ export function observeDocumentTheme(
   applySystemTheme()
   media.addEventListener('change', applySystemTheme)
   return () => media.removeEventListener('change', applySystemTheme)
+}
+
+export function documentColorScheme(root: EffectiveThemeRoot = document.documentElement): EffectiveColorScheme {
+  return root.getAttribute('data-theme-color-scheme') === 'dark' ? 'dark' : 'light'
+}
+
+export function observeDocumentColorScheme(
+  listener: (colorScheme: EffectiveColorScheme) => void,
+  root: HTMLElement = document.documentElement,
+): () => void {
+  let current = documentColorScheme(root)
+  listener(current)
+  const observer = new MutationObserver(() => {
+    const next = documentColorScheme(root)
+    if (next === current) return
+    current = next
+    listener(next)
+  })
+  observer.observe(root, { attributes: true, attributeFilter: ['data-theme-color-scheme'] })
+  return () => observer.disconnect()
 }

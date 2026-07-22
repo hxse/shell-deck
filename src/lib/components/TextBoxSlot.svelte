@@ -97,24 +97,24 @@
   }
 </script>
 
-<section class="terminal-pane text-box-pane" class:shared-read-only={readOnly} data-testid="text-box-pane" data-terminal-id={terminal.terminalId} data-shared-read-only={readOnly}>
-  <div class="terminal-meta text-box-meta">
-    <code class="terminal-meta-label" title={terminalLabel}>{terminalLabel}</code>
-    <div class="inline-actions">
-      <button type="button" data-testid="text-box-copy" onclick={copyContent}>{copyStatus}</button>
+<section class="terminal-pane text-box-pane flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border border-base-300 bg-base-100 shadow-sm data-[shared-read-only=true]:ring-1 data-[shared-read-only=true]:ring-inset data-[shared-read-only=true]:ring-warning/60" class:shared-read-only={readOnly} data-testid="text-box-pane" data-terminal-id={terminal.terminalId} data-shared-read-only={readOnly}>
+  <div class="terminal-meta text-box-meta box-border flex min-h-[30px] items-center justify-between gap-2 border-b border-base-300 bg-base-100 px-2 py-[3px]">
+    <code class="terminal-meta-label block min-w-0 flex-1 select-text overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-[1.35] text-base-content/70" title={terminalLabel}>{terminalLabel}</code>
+    <div class="inline-actions flex shrink-0 items-center gap-2">
+      <button class="btn btn-xs btn-ghost !h-[23px] !min-h-[23px]" type="button" data-testid="text-box-copy" onclick={copyContent}>{copyStatus}</button>
     </div>
   </div>
-  <div class="text-box-editor-shell" style={"--text-line-number-width: " + (lineNumberDigits + 2) + "ch"}>
-    <div class="text-box-line-number-gutter" aria-hidden="true" data-testid="text-box-line-numbers">
-      <div class="text-box-line-number-list" data-testid="text-box-line-number-list" style={"transform: translateY(-" + editorScrollTop + "px)"}>
+  <div class="text-box-editor-shell grid min-h-0 flex-1 grid-cols-[var(--text-line-number-width)_minmax(0,1fr)] overflow-hidden bg-base-100" style={"--text-line-number-width: " + (lineNumberDigits + 2) + "ch"}>
+    <div class="text-box-line-number-gutter relative min-w-0 overflow-hidden border-r border-base-300 bg-base-200 font-[var(--shell-deck-terminal-font-family)] text-[13px] leading-[1.45] text-base-content/50 select-none" aria-hidden="true" data-testid="text-box-line-numbers">
+      <div class="text-box-line-number-list absolute top-3 right-2 left-1 text-right will-change-transform" data-testid="text-box-line-number-list" style={"transform: translateY(-" + editorScrollTop + "px)"}>
         {#each Array.from({ length: lineCount }) as _, index}
-          <div>{index + 1}</div>
+          <div class="h-[1.45em]">{index + 1}</div>
         {/each}
       </div>
     </div>
     <textarea
       bind:this={editorElement}
-      class="text-box-editor"
+      class="text-box-editor textarea h-full min-h-0 w-full resize-none overflow-auto !rounded-none !border-0 bg-base-100 p-3 font-[var(--shell-deck-terminal-font-family)] text-[13px] leading-[1.45] text-base-content outline-none focus:shadow-[inset_0_0_0_2px_var(--color-primary)] read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/50"
       data-testid="text-box-editor"
       spellcheck="false"
       wrap="off"

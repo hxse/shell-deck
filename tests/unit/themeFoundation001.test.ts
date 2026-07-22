@@ -36,7 +36,8 @@ test('framework CSS registers the canonical catalog with one default and one pre
   expect(css).toContain('@import "tailwindcss/utilities.css" layer(utilities);')
   expect(css).not.toContain('@import "tailwindcss";')
   expect(css).not.toContain('preflight.css')
-  expect(css).toContain('include: select;')
+  const includedComponents = css.match(/include:\s*([^;]+);/)?.[1].split(',').map((entry) => entry.trim()) ?? []
+  expect(includedComponents).toContain('select')
   const configured = css.match(/themes:\s*([\s\S]*?);/)?.[1]
   if (!configured) throw new Error('daisyui_theme_config_missing')
   const entries = configured.split(',').map((entry) => entry.trim())
@@ -51,10 +52,12 @@ test('main applies the loaded theme before mount and imports framework before le
   expect(source.indexOf('applyDocumentTheme(loadedSettings.settings.theme)')).toBeLessThan(source.indexOf('mount(App'))
 })
 
-test('legacy generic select rules exempt the framework-owned Theme control', () => {
+test('remaining legacy form rules are scoped to pending Macro and Library surfaces', () => {
   const css = readFileSync(resolve(import.meta.dir, '../../src/styles/terminal.css'), 'utf8')
-  expect(css.match(/select:not\(\.select\)/g)).toHaveLength(2)
+  expect(css.match(/:where\(\.macro-panel, \.library-panel\) select/g)).toHaveLength(2)
+  expect(css.match(/:where\(\.macro-panel, \.library-panel\) textarea/g)).toHaveLength(2)
   expect(css).not.toMatch(/(?:^|,)\s*select\s*(?:,|\{)/m)
+  expect(css).not.toMatch(/(?:^|,)\s*textarea\s*(?:,|\{)/m)
 })
 
 test('document application owns explicit and system root attributes', () => {

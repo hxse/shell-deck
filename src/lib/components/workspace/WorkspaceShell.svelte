@@ -81,15 +81,15 @@
   }
 </script>
 
-<section class="workspace-shell room-workspace" data-testid="workspace-shell">
-  <div class="terminal-room" data-testid="terminal-room">
+<section class="workspace-shell room-workspace flex min-h-0 flex-1 gap-0 overflow-hidden bg-base-200 p-0 [@media(max-width:980px)]:flex-col" data-testid="workspace-shell">
+  <div class="terminal-room flex min-h-0 min-w-0 flex-[1_1_auto] flex-col overflow-hidden [@media(min-width:981px)_and_(max-width:1100px)]:min-w-[240px]" data-testid="terminal-room">
     <TerminalTabBar {terminals} {activeTerminalId} {draggingTerminalId} {tabDragEnabled} {sharedReadOnly}
       onSelect={onSelectTerminal} onClose={onCloseTerminal} onStartDrag={onStartTabDrag} onDrop={onDropOnTab}
       onDragEnd={onTabDragEnd} onTabKeydown={onTabKeydown} {onMutationDenied} />
-    <div class="terminal-stage">
+    <div class="terminal-stage flex min-h-0 min-w-0 flex-1 overflow-hidden p-3 [@media(max-width:640px)]:p-2">
       {#each retainedTerminals as terminal (terminal.terminalId)}
         <div
-          class="terminal-view-slot"
+          class="terminal-view-slot flex min-h-0 min-w-0 flex-1 overflow-hidden [&[hidden]]:hidden"
           data-testid="terminal-view-slot"
           data-terminal-id={terminal.terminalId}
           hidden={terminal.terminalId !== visibleTerminalId}
@@ -102,24 +102,24 @@
           {/if}
         </div>
       {/each}
-      {#if !activeTerminal}<div class="empty-terminal-room" data-testid="empty-terminal-room">Create a Shell or Text terminal to begin.</div>{/if}
+      {#if !activeTerminal}<div class="empty-terminal-room grid h-full flex-1 place-items-center rounded-field border border-dashed border-base-content/30 bg-base-100 text-base-content/60" data-testid="empty-terminal-room">Create a Shell or Text terminal to begin.</div>{/if}
     </div>
   </div>
 
-  <section class="workspace-side-panel macro-side-panel" data-testid="macro-side-panel"
+  <section class="workspace-side-panel macro-side-panel relative flex min-h-0 min-w-[360px] max-w-[85vw] shrink-0 border-l border-base-300 bg-base-200 [&_.macro-panel]:box-border [&_.macro-panel]:w-full [&_.macro-panel]:max-h-none [&_.macro-panel]:overflow-visible [&_.prompt-panel]:box-border [&_.prompt-panel]:w-full [&_.run-log-panel]:box-border [&_.run-log-panel]:w-full [@media(min-width:981px)_and_(max-width:1100px)]:flex-[0_1_auto] [@media(max-width:1260px)]:min-w-[420px] [@media(max-width:980px)]:!w-auto [@media(max-width:980px)]:min-h-[260px] [@media(max-width:980px)]:border-t [@media(max-width:980px)]:border-l-0" data-testid="macro-side-panel"
     style={`width: ${macroWidthPx}px;${macroVisible ? '' : ' display: none;'}`} hidden={!macroVisible}>
-    <button class="panel-resize-handle" type="button" data-testid="macro-resize-handle" aria-label="Resize Macro panel" onpointerdown={beginResize}></button>
-    <div class="side-panel-scroll macro-workbench-shell">
+    <button class="panel-resize-handle relative box-border w-1.5 flex-[0_0_6px] touch-none cursor-col-resize rounded-none border-0 bg-transparent p-0 before:absolute before:inset-y-2 before:left-0.5 before:w-0.5 before:rounded-full before:bg-base-content/20 before:transition-[background-color,box-shadow] before:content-[''] hover:before:bg-primary/60 focus-visible:before:bg-primary/60 focus-visible:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] active:before:bg-primary active:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_24%,transparent)] [@media(max-width:980px)]:hidden" type="button" data-testid="macro-resize-handle" aria-label="Resize Macro panel" onpointerdown={beginResize}></button>
+    <div class="side-panel-scroll macro-workbench-shell box-border flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-2.5 overflow-hidden p-2.5">
       <MacroPanel bind:this={macroPanel} roomClient={client} {canMutateShared} {terminalStructureRevision} {terminalPositions} {terminalStructureLocked}
         {runnerSnapshot} {contentRecordChanges} {contentEditLeaseChanges} {connectionGeneration} {insertionPaletteMode} {onRoomSnapshot} {onMutationDenied}
         onDirtyChange={onMacroDirtyChange} onResetWidth={() => onMacroWidthChange(760)} />
     </div>
   </section>
 
-  <section class="workspace-side-panel prompt-side-panel library-side-panel" data-testid="library-side-panel"
+  <section class="workspace-side-panel prompt-side-panel library-side-panel relative flex min-h-0 min-w-[280px] max-w-[85vw] shrink-0 border-l border-base-300 bg-base-200 [&_.macro-panel]:box-border [&_.macro-panel]:w-full [&_.macro-panel]:max-h-none [&_.macro-panel]:overflow-visible [&_.prompt-panel]:box-border [&_.prompt-panel]:w-full [&_.run-log-panel]:box-border [&_.run-log-panel]:w-full [@media(min-width:981px)_and_(max-width:1100px)]:min-w-[240px] [@media(min-width:981px)_and_(max-width:1100px)]:flex-[0_1_auto] [@media(max-width:980px)]:!w-auto [@media(max-width:980px)]:max-w-none [@media(max-width:980px)]:min-h-[260px] [@media(max-width:980px)]:border-t [@media(max-width:980px)]:border-l-0" data-testid="library-side-panel"
     style={`width: ${libraryWidthPx}px;${libraryVisible ? '' : ' display: none;'}`} hidden={!libraryVisible}>
-    <button class="panel-resize-handle" type="button" data-testid="library-resize-handle" aria-label="Resize Library panel" onpointerdown={beginLibraryResize}></button>
-    <div class="side-panel-scroll">
+    <button class="panel-resize-handle relative box-border w-1.5 flex-[0_0_6px] touch-none cursor-col-resize rounded-none border-0 bg-transparent p-0 before:absolute before:inset-y-2 before:left-0.5 before:w-0.5 before:rounded-full before:bg-base-content/20 before:transition-[background-color,box-shadow] before:content-[''] hover:before:bg-primary/60 focus-visible:before:bg-primary/60 focus-visible:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] active:before:bg-primary active:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_24%,transparent)] [@media(max-width:980px)]:hidden" type="button" data-testid="library-resize-handle" aria-label="Resize Library panel" onpointerdown={beginLibraryResize}></button>
+    <div class="side-panel-scroll grid min-h-0 min-w-0 flex-1 content-start gap-2.5 overflow-auto p-2.5">
       <LibraryPanel roomClient={client} {canMutateShared} selectedTab={librarySelectedTab} filter={libraryFilter}
         {contentRecordChanges} contentLeaseChanges={contentEditLeaseChanges} {connectionGeneration} onPreferenceChange={onLibraryPreferenceChange}
         onDirtyChange={onLibraryDirtyChange} onLoadIntoMacro={loadLibraryMacro} {onMutationDenied}

@@ -3,7 +3,7 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 
 @plugin "daisyui" {
-  include: select;
+  include: alert, badge, button, range, select, tab, textarea;
   themes:
     light --default,
     dark --prefersdark,
@@ -40,4 +40,38 @@
     caramellatte,
     abyss,
     silk;
+}
+
+@layer base {
+  :root {
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--color-base-content);
+    background: var(--color-base-200);
+    --shell-deck-terminal-font-family: "Maple Mono NF CN", "Maple Mono NF", "Maple Mono CN", "Maple Mono", "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  body {
+    margin: 0;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  /* xterm creates this subtree at runtime, so utilities cannot live on its nodes. */
+  .terminal-host > .xterm {
+    position: absolute;
+    inset: 8px;
+    width: calc(100% - 16px) !important;
+    height: calc(100% - 16px) !important;
+  }
+
+  .terminal-host .xterm-viewport {
+    overflow-y: hidden;
+  }
 }

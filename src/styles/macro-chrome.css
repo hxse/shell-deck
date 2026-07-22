@@ -216,18 +216,6 @@
   background: #ffffff;
 }
 
-.macro-side-panel {
-  min-width: 360px;
-  max-width: 85vw;
-}
-
-.macro-workbench-shell {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
 .macro-workbench-shell .macro-panel {
   min-width: 0;
   min-height: 0;
@@ -390,12 +378,6 @@
   font-weight: 900;
   letter-spacing: 0;
   text-transform: uppercase;
-}
-
-@media (max-width: 1260px) {
-  .macro-side-panel {
-    min-width: 420px;
-  }
 }
 
 .macro-panel {

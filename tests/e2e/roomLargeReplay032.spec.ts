@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from 'playwright/test'
 import { DEFAULT_TERMINAL_PARSER_CHUNK_CODE_UNIT_LIMIT } from '../../src/lib/terminalParserWritePump'
+import { XTERM_DARK_THEME, XTERM_LIGHT_THEME } from '../../src/lib/terminal/xtermTheme'
 
 const REAL_PTY_BURST_BYTES = 37_174_834
 
@@ -212,11 +213,14 @@ test('historical terminal queries stay inert on real page hydration and later ta
   await host.click()
   await page.keyboard.type("printf '\\033[c\\033[6n\\033]10;?\\033\\\\\\033]11;?\\033\\\\'")
   await page.keyboard.press('Enter')
+  const palette = await page.locator('html').getAttribute('data-theme-color-scheme') === 'dark' ? XTERM_DARK_THEME : XTERM_LIGHT_THEME
+  const foregroundResponse = `\u001b]10;${xtermOscRgb(String(palette.foreground))}\u001b\\`
+  const backgroundResponse = `\u001b]11;${xtermOscRgb(String(palette.background))}\u001b\\`
   await expect.poll(() => terminalInputFrames(page).then((frames) => ({
     deviceAttributes: frames.includes('\u001b[?1;2c'),
     cursorPosition: frames.some((frame) => /^\u001b\[\d+;\d+R$/.test(frame)),
-    foreground: frames.includes('\u001b]10;rgb:e6e6/eded/f3f3\u001b\\'),
-    background: frames.includes('\u001b]11;rgb:1111/1313/1616\u001b\\'),
+    foreground: frames.includes(foregroundResponse),
+    background: frames.includes(backgroundResponse),
   }))).toEqual({ deviceAttributes: true, cursorPosition: true, foreground: true, background: true })
 
   await page.keyboard.press('Control+C')
@@ -388,6 +392,12 @@ function parserWork(counters: Awaited<ReturnType<typeof renderCounters>>) {
     enqueuedCodeUnits: counters.enqueuedCodeUnits,
     parserConsumedCodeUnits: counters.parserConsumedCodeUnits,
   }
+}
+
+function xtermOscRgb(color: string): string {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color)
+  if (!match) throw new Error('xterm_palette_color_invalid:' + color)
+  return `rgb:${match[1]}${match[1]}/${match[2]}${match[2]}/${match[3]}${match[3]}`.toLowerCase()
 }
 
 async function installHeartbeat(page: Page): Promise<void> {

@@ -165,11 +165,6 @@
   line-height: 1.45;
 }
 
-.library-side-panel {
-  min-width: 280px;
-  max-width: 85vw;
-}
-
 .library-kind-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

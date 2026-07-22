@@ -97,25 +97,25 @@
   }
 </script>
 
-<main class="room-home" data-testid="room-home">
-  <header class="room-home-header">
-    <div><h1>shell-deck</h1><p>Live Rooms in this server process</p></div>
-    <div class="actions">
-      <span data-testid="room-capacity">{rooms.length} / {maxLiveRooms}</span>
+<main class="room-home box-border min-h-screen bg-base-200 p-7 text-base-content [@media(max-width:680px)]:p-4" data-testid="room-home">
+  <header class="room-home-header mx-auto mb-[18px] flex max-w-[980px] items-center justify-between gap-5 [@media(max-width:680px)]:flex-col [@media(max-width:680px)]:items-start">
+    <div><h1 class="m-0 text-2xl font-bold">shell-deck</h1><p class="mt-1 mb-0 text-base-content/60">Live Rooms in this server process</p></div>
+    <div class="actions flex flex-wrap items-center gap-1.5">
+      <span class="badge badge-sm badge-outline" data-testid="room-capacity">{rooms.length} / {maxLiveRooms}</span>
 
-      <button type="button" data-testid="new-room" onclick={() => void newRoom()} disabled={rooms.length >= maxLiveRooms}>New Room</button>
+      <button class="btn btn-sm btn-primary" type="button" data-testid="new-room" onclick={() => void newRoom()} disabled={rooms.length >= maxLiveRooms}>New Room</button>
     </div>
   </header>
   {#if rooms.length === 0}
-    <section class="room-home-empty" data-testid="room-home-empty"><p>No live Rooms.</p><button type="button" data-testid="new-room-empty" onclick={() => void newRoom()}>New Room</button></section>
+    <section class="room-home-empty mx-auto max-w-[980px] rounded-box border border-dashed border-base-content/30 bg-base-100 p-[52px] text-center text-base-content/60" data-testid="room-home-empty"><p>No live Rooms.</p><button class="btn btn-sm btn-primary" type="button" data-testid="new-room-empty" onclick={() => void newRoom()}>New Room</button></section>
   {:else}
-    <ul class="room-list" data-testid="room-list">
+    <ul class="room-list mx-auto grid max-w-[980px] list-none gap-[9px] p-0" data-testid="room-list">
       {#each rooms as room (room.roomId)}
-        <li>
-          <button class="room-open" type="button" data-testid="room-open" onclick={() => window.location.assign('/' + room.roomId)}>
-            <code>{room.roomId}</code><span>{room.terminalCount} terminals · {room.connectedClientCount} connections{room.hasActiveRun ? ' · running' : ''}</span>
+        <li class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 [@media(max-width:680px)]:grid-cols-1">
+          <button class="room-open btn btn-sm h-auto min-w-0 justify-between gap-4 border-base-300 px-3.5 py-3 text-left [@media(max-width:680px)]:flex-col [@media(max-width:680px)]:items-start" type="button" data-testid="room-open" onclick={() => window.location.assign('/' + room.roomId)}>
+            <code class="overflow-hidden text-ellipsis text-primary">{room.roomId}</code><span class="shrink-0 text-xs text-base-content/60">{room.terminalCount} terminals · {room.connectedClientCount} connections{room.hasActiveRun ? ' · running' : ''}</span>
           </button>
-          <button class="room-destroy" type="button" data-testid="room-destroy" onclick={() => void destroyRoom(room)}>Destroy</button>
+          <button class="room-destroy btn btn-sm btn-error btn-outline" type="button" data-testid="room-destroy" onclick={() => void destroyRoom(room)}>Destroy</button>
         </li>
       {/each}
     </ul>

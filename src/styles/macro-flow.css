@@ -1,10 +1,10 @@
-.inline-actions,
+:where(.macro-panel) .inline-actions,
 .step-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
 
-.inline-actions button,
+:where(.macro-panel) .inline-actions button,
 .step-actions button,
 .macro-row button,
 .condition-row button,
@@ -550,12 +550,12 @@
   font-size: 13px;
 }
 
-.inline-actions,
+:where(.macro-panel) .inline-actions,
 .step-actions {
   gap: 4px;
 }
 
-.inline-actions button,
+:where(.macro-panel) .inline-actions button,
 .step-actions button,
 .macro-row button,
 .condition-row button,
