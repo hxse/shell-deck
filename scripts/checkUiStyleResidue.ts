@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
-import { DAISY_UI_THEME_IDS } from '../src/lib/theme'
+import { DAISY_UI_THEME_IDS, DARK_DAISY_UI_THEME_IDS } from '../src/lib/theme'
 
 export type UiStyleResidueIssue = {
   file: string
@@ -15,6 +15,9 @@ const ALLOWED_CSS_IMPORTS = new Map([
 ])
 const ALLOWED_APP_BLOCKS = new Set([
   '@plugin "daisyui"',
+  darkThemeSelector(),
+  '@media (prefers-color-scheme: dark)',
+  ':root:not([data-theme])',
   ':root',
   '.terminal-host > .xterm',
   '.terminal-host .xterm-screen',
@@ -23,6 +26,7 @@ const ALLOWED_APP_BLOCKS = new Set([
 const ALLOWED_XTERM_PROPERTIES = new Set([
   'position', 'inset', 'top', 'right', 'bottom', 'left', 'width', 'height', 'overflow', 'overflow-x', 'overflow-y',
 ])
+const DARK_THEME_BASE_300_VALUE = 'color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100))'
 
 export function scanUiStyleResidue(projectRoot = resolve(import.meta.dir, '..')): UiStyleResidueIssue[] {
   const issues: UiStyleResidueIssue[] = []
@@ -120,6 +124,45 @@ export function scanAppCss(source: string): UiStyleResidueIssue[] {
     }
   }
 
+  const explicitDarkCandidates = blocks.filter((block) => block.owner.startsWith(':where(') && block.owner.includes('[data-theme='))
+  const explicitDarkBlocks = explicitDarkCandidates.filter((block) => block.owner === darkThemeSelector())
+  if (explicitDarkBlocks.length !== 1) {
+    issues.push({
+      file,
+      line: lineOf(source, explicitDarkCandidates[1]?.index ?? explicitDarkCandidates[0]?.index ?? 0),
+      reason: `explicit dark theme token owner must appear exactly once; found ${explicitDarkBlocks.length}`,
+    })
+  }
+  const configuredDarkThemes = registeredDarkThemeOverrideIds(source)
+  if (configuredDarkThemes.join('\n') !== DARK_DAISY_UI_THEME_IDS.join('\n')) {
+    issues.push({
+      file,
+      line: lineOf(source, explicitDarkCandidates[0]?.index ?? 0),
+      reason: `explicit dark theme token owner drifts from the canonical catalog: ${configuredDarkThemes.join(', ') || 'none'}`,
+    })
+  }
+  if (new Set(configuredDarkThemes).size !== configuredDarkThemes.length) {
+    issues.push({ file, line: lineOf(source, explicitDarkCandidates[0]?.index ?? 0), reason: 'explicit dark theme token owner contains duplicates' })
+  }
+  for (const block of explicitDarkBlocks) {
+    issues.push(...scanDarkThemeTokenBlock(file, source, block, 'explicit dark theme'))
+  }
+
+  const darkMediaBlocks = blocks.filter((block) => block.owner === '@media (prefers-color-scheme: dark)')
+  if (darkMediaBlocks.length !== 1) {
+    issues.push({ file, line: lineOf(source, darkMediaBlocks[1]?.index ?? darkMediaBlocks[0]?.index ?? 0), reason: `system dark media owner must appear exactly once; found ${darkMediaBlocks.length}` })
+  }
+  const systemDarkBlocks = blocks.filter((block) => block.owner === ':root:not([data-theme])')
+  if (systemDarkBlocks.length !== 1) {
+    issues.push({ file, line: lineOf(source, systemDarkBlocks[1]?.index ?? systemDarkBlocks[0]?.index ?? 0), reason: `system dark theme token owner must appear exactly once; found ${systemDarkBlocks.length}` })
+  }
+  for (const block of systemDarkBlocks) {
+    if (block.parentOwner !== '@media (prefers-color-scheme: dark)') {
+      issues.push({ file, line: lineOf(source, block.index), reason: 'system dark theme token owner must be nested under prefers-color-scheme: dark' })
+    }
+    issues.push(...scanDarkThemeTokenBlock(file, source, block, 'system dark theme'))
+  }
+
   const rootBlocks = blocks.filter((block) => block.owner === ':root')
   if (rootBlocks.length === 0) {
     issues.push({ file, line: 1, reason: 'terminal font token owner is missing' })
@@ -193,6 +236,11 @@ export function registeredThemeIds(source: string): string[] {
   return configured.split(',').map((entry) => entry.trim().split(/\s+/)[0]).filter(Boolean)
 }
 
+export function registeredDarkThemeOverrideIds(source: string): string[] {
+  const owner = cssBlocks(source).find((block) => block.owner.startsWith(':where(') && block.owner.includes('[data-theme='))?.owner ?? ''
+  return [...owner.matchAll(/\[data-theme=["']([^"']+)["']\]/g)].map((match) => match[1])
+}
+
 function collectSourceFiles(directory: string): string[] {
   if (!existsSync(directory)) return []
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -205,13 +253,44 @@ function collectSourceFiles(directory: string): string[] {
 }
 
 function declarationNames(body: string): string[] {
-  return [...body.matchAll(/(?:^|;)\s*(--[\w-]+|[a-z][\w-]*)\s*:/gm)].map((match) => match[1])
+  return cssDeclarations(body).map(([name]) => name)
 }
 
-function cssBlocks(source: string): Array<{ owner: string; index: number; body: string }> {
+function cssDeclarations(body: string): Array<[name: string, value: string]> {
+  return [...body.matchAll(/(?:^|;)\s*(--[\w-]+|[a-z][\w-]*)\s*:\s*([^;]+)(?=;|$)/gm)]
+    .map((match) => [match[1], match[2].trim()])
+}
+
+function scanDarkThemeTokenBlock(
+  file: string,
+  source: string,
+  block: { index: number; body: string },
+  label: string,
+): UiStyleResidueIssue[] {
+  const declarations = cssDeclarations(block.body)
+  const properties = declarations.map(([name]) => name)
+  const values = new Map(declarations)
+  const issues: UiStyleResidueIssue[] = []
+  if (properties.join(',') !== '--color-base-300,--depth') {
+    issues.push({ file, line: lineOf(source, block.index), reason: `${label} token properties must be --color-base-300, --depth; found ${properties.join(', ') || 'none'}` })
+  }
+  if (values.get('--color-base-300') !== DARK_THEME_BASE_300_VALUE) {
+    issues.push({ file, line: lineOf(source, block.index), reason: `${label} --color-base-300 must be ${DARK_THEME_BASE_300_VALUE}` })
+  }
+  if (values.get('--depth') !== '1') {
+    issues.push({ file, line: lineOf(source, block.index), reason: `${label} --depth must be 1` })
+  }
+  return issues
+}
+
+function darkThemeSelector(): string {
+  return `:where(${DARK_DAISY_UI_THEME_IDS.map((theme) => `[data-theme="${theme}"]`).join(', ')})`
+}
+
+function cssBlocks(source: string): Array<{ owner: string; index: number; body: string; parentOwner?: string }> {
   const structuralSource = maskCssCommentsAndStructuralStringCharacters(source)
-  const openBlocks: Array<{ owner: string; index: number; bodyStart: number }> = []
-  const blocks: Array<{ owner: string; index: number; body: string }> = []
+  const openBlocks: Array<{ owner: string; index: number; bodyStart: number; parentOwner?: string }> = []
+  const blocks: Array<{ owner: string; index: number; body: string; parentOwner?: string }> = []
 
   for (let index = 0; index < structuralSource.length; index += 1) {
     const character = structuralSource[index]
@@ -221,10 +300,10 @@ function cssBlocks(source: string): Array<{ owner: string; index: number; body: 
       const ownerSource = structuralSource.slice(boundary + 1, index)
       const ownerOffset = ownerSource.search(/\S/)
       const ownerIndex = boundary + 1 + Math.max(0, ownerOffset)
-      openBlocks.push({ owner: ownerSource.trim(), index: ownerIndex, bodyStart: index + 1 })
+      openBlocks.push({ owner: ownerSource.trim(), index: ownerIndex, bodyStart: index + 1, parentOwner: openBlocks.at(-1)?.owner })
     } else if (character === '}') {
       const open = openBlocks.pop()
-      if (open) blocks.push({ owner: open.owner, index: open.index, body: source.slice(open.bodyStart, index) })
+      if (open) blocks.push({ owner: open.owner, index: open.index, body: source.slice(open.bodyStart, index), parentOwner: open.parentOwner })
     }
   }
 
@@ -302,5 +381,5 @@ if (import.meta.main) {
     console.error(`ui-style-residue: ${issues.length} violation(s)`)
     process.exit(1)
   }
-  console.log(`ui-style-residue: clean; src/app.css is the only project CSS source and ${DAISY_UI_THEME_IDS.length} themes are registered`)
+  console.log(`ui-style-residue: clean; src/app.css is the only project CSS source, ${DAISY_UI_THEME_IDS.length} themes are registered, and ${DARK_DAISY_UI_THEME_IDS.length} dark overrides are exact`)
 }

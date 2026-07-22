@@ -45,7 +45,7 @@ Terminal tab与正文header显示同一条单行label：连续index、runtime te
 
 ## Theme
 
-在任一Room打开`Settings → Theme`即可选择`system`或35个daisyUI内置theme。Theme属于当前browser的本地presentation setting：observer也可修改，刷新后保留，并同时覆盖Home、Room、terminal、Macro、Library与notice；它不会写入Room、server或saved record，也不会跨设备同步。`system`实时跟随OS light/dark，选择explicit theme后不再随OS变化。
+在任一Room打开`Settings → Theme`即可选择`system`或35个daisyUI内置theme。新browser默认选择`business`；已有合法Theme选择不会因默认值变化而被覆盖。Theme属于当前browser的本地presentation setting：observer也可修改，刷新后保留，并同时覆盖Home、Room、terminal、Macro、Library与notice；它不会写入Room、server或saved record，也不会跨设备同步。`system`仍实时跟随OS light/dark，选择explicit theme后不再随OS变化。所有暗色theme的表单、panel、tab与divider使用统一增强的semantic border contrast。
 
 ## Codex hook
 

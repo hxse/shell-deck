@@ -101,8 +101,8 @@ test('Theme selector applies all browser-local lifecycle contracts without Room 
   await page.goto(room.url)
   await expect(page).toHaveURL(ROOM_URL)
   await expect(page.getByTestId('room-control-status')).toHaveText('Control: This device')
-  await expect(page.locator('html')).not.toHaveAttribute('data-theme')
-  await expect(page.locator('html')).toHaveAttribute('data-theme-color-scheme', 'light')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'business')
+  await expect(page.locator('html')).toHaveAttribute('data-theme-color-scheme', 'dark')
   await expect(page.getByRole('button', { name: /^Theme$/ })).toHaveCount(0)
 
   await page.getByTestId('settings-button').click()
@@ -114,14 +114,14 @@ test('Theme selector applies all browser-local lifecycle contracts without Room 
   expect(await select.evaluate((element) => element.closest('label')?.previousElementSibling?.classList.contains('settings-popover-head'))).toBe(true)
   expect(await select.evaluate((element) => element.closest('label')?.nextElementSibling?.getAttribute('data-testid'))).toBe('tab-drag-toggle')
 
-  const systemBase = await themeBaseColor(page)
-  const systemSelectBackground = await select.evaluate((element) => getComputedStyle(element).backgroundColor)
+  const initialBase = await themeBaseColor(page)
+  const initialSelectBackground = await select.evaluate((element) => getComputedStyle(element).backgroundColor)
   const transportBeforeExplicit = { requests: nonGetRequests.length, frames: sentFrames.length }
   await select.selectOption('synthwave')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'synthwave')
   await expect(page.locator('html')).toHaveAttribute('data-theme-color-scheme', 'dark')
-  await expect.poll(() => themeBaseColor(page)).not.toBe(systemBase)
-  await expect.poll(() => select.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(systemSelectBackground)
+  await expect.poll(() => themeBaseColor(page)).not.toBe(initialBase)
+  await expect.poll(() => select.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(initialSelectBackground)
   await expect.poll(async () => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? 'null')?.theme, SETTINGS_KEY)).toBe('synthwave')
   await expectLocalOnly(nonGetRequests, sentFrames, transportBeforeExplicit)
 

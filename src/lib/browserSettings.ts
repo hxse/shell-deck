@@ -17,7 +17,7 @@ export type BrowserSettings = {
 
 export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
   schemaVersion: 3,
-  theme: 'system',
+  theme: 'business',
   panels: {
     macro: { visible: true, widthPx: 760 },
     library: { visible: false, widthPx: 380 },

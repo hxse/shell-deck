@@ -154,7 +154,7 @@
         <label class="grid gap-1 text-xs font-semibold text-base-content">
           <span>Theme</span>
           <select
-            class="select select-sm w-full"
+            class="select select-sm w-full border-base-300"
             data-testid="theme-select"
             value={settings.theme}
             onchange={(event) => {

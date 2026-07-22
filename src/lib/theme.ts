@@ -38,12 +38,7 @@ export const DAISY_UI_THEME_IDS = [
 
 export const THEME_PREFERENCES = ['system', ...DAISY_UI_THEME_IDS] as const
 
-export type DaisyUiThemeId = typeof DAISY_UI_THEME_IDS[number]
-export type ThemePreference = typeof THEME_PREFERENCES[number]
-export type EffectiveColorScheme = 'light' | 'dark'
-
-const themePreferences = new Set<string>(THEME_PREFERENCES)
-const darkThemeIds = new Set<DaisyUiThemeId>([
+export const DARK_DAISY_UI_THEME_IDS = [
   'dark',
   'synthwave',
   'halloween',
@@ -58,7 +53,14 @@ const darkThemeIds = new Set<DaisyUiThemeId>([
   'dim',
   'sunset',
   'abyss',
-])
+] as const satisfies readonly DaisyUiThemeId[]
+
+export type DaisyUiThemeId = typeof DAISY_UI_THEME_IDS[number]
+export type ThemePreference = typeof THEME_PREFERENCES[number]
+export type EffectiveColorScheme = 'light' | 'dark'
+
+const themePreferences = new Set<string>(THEME_PREFERENCES)
+const darkThemeIds = new Set<DaisyUiThemeId>(DARK_DAISY_UI_THEME_IDS)
 
 type ThemeRoot = Pick<HTMLElement, 'removeAttribute' | 'setAttribute'>
 type ThemeChangeListener = () => void

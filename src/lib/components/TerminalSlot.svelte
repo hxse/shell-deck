@@ -276,7 +276,7 @@
     <code class="terminal-meta-label block min-w-0 flex-1 select-text overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-[1.35] text-base-content/70" title={terminalLabel}>{terminalLabel}</code>
   </div>
   <div
-    class="terminal-host relative box-border min-h-0 flex-1 overflow-hidden bg-base-300 p-1.5"
+    class="terminal-host relative box-border min-h-0 flex-1 overflow-hidden bg-base-200 p-1.5"
     data-testid="terminal-host"
     data-rendered-tail=""
     data-rendered-revision="0"

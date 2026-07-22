@@ -13,6 +13,7 @@ test('browser settings persist only current UI preferences in one versioned valu
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value) } }
   const initial = loadBrowserSettings(storage)
   expect(Object.hasOwn(initial.settings, 'autoPrepareTerminals')).toBe(false)
+  expect(initial.settings.theme).toBe('business')
   saveBrowserSettings({ ...initial.settings, theme: 'nord', terminalDragEnabled: true }, storage)
   expect(JSON.parse(values.get(BROWSER_SETTINGS_KEY)!)).toMatchObject({ schemaVersion: 3, theme: 'nord', terminalDragEnabled: true })
   expect(loadBrowserSettings(storage).reset).toBe(false)
@@ -75,13 +76,17 @@ test('the generated synchronous head bootstrap shares the exact browser-settings
   expect(explicit.get('data-theme')).toBe('synthwave')
   expect(explicit.get('data-theme-color-scheme')).toBe('dark')
 
-  const system = runThemeBootstrap(null, true)
+  const missing = runThemeBootstrap(null, false)
+  expect(missing.get('data-theme')).toBe('business')
+  expect(missing.get('data-theme-color-scheme')).toBe('dark')
+
+  const system = runThemeBootstrap(JSON.stringify({ ...structuredClone(DEFAULT_BROWSER_SETTINGS), theme: 'system' }), true)
   expect(system.has('data-theme')).toBe(false)
   expect(system.get('data-theme-color-scheme')).toBe('dark')
 
   const invalid = runThemeBootstrap(JSON.stringify({ ...structuredClone(DEFAULT_BROWSER_SETTINGS), theme: 'synthwave', extra: true }), false)
-  expect(invalid.has('data-theme')).toBe(false)
-  expect(invalid.get('data-theme-color-scheme')).toBe('light')
+  expect(invalid.get('data-theme')).toBe('business')
+  expect(invalid.get('data-theme-color-scheme')).toBe('dark')
 })
 
 function runThemeBootstrap(rawSettings: string | null, prefersDark: boolean): Map<string, string> {

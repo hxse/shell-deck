@@ -137,10 +137,10 @@
 
   <section class="prompt-section prompt-toolbar library-toolbar card grid gap-2 border border-base-300 bg-base-100 p-2" data-testid="library-toolbar" aria-busy={operationPending}>
     <label>Search
-      <input class="input input-xs w-full" data-testid="library-search" value={searchText} oninput={(event) => updateSearch(event.currentTarget.value)} placeholder="title, description, tags, content" />
+      <input class="input input-xs w-full border-base-300" data-testid="library-search" value={searchText} oninput={(event) => updateSearch(event.currentTarget.value)} placeholder="title, description, tags, content" />
     </label>
     <label>{kindLabel(kind)}
-      <select class="select select-xs w-full" data-testid="library-selector" value={selectedKey} aria-disabled={operationPending} onchange={(event) => void selectByKey(event.currentTarget.value)}>
+      <select class="select select-xs w-full border-base-300" data-testid="library-selector" value={selectedKey} aria-disabled={operationPending} onchange={(event) => void selectByKey(event.currentTarget.value)}>
         <option value="">{items.length === 0 ? 'No items found' : 'Select item'}</option>
         {#each items as item (item.kind + ':' + item.itemId)}
           <option data-testid="library-list-item" value={item.kind + ':' + item.itemId}>{item.title}{item.tags.length ? ' · ' + item.tags.join(', ') : ''}</option>
@@ -163,13 +163,13 @@
     <div class="prompt-section-title flex items-center justify-between gap-2"><h3 class="m-0 text-[13px] font-bold">{editing ? 'Edit' : 'View'}</h3>{#if dirty}<span class="badge badge-warning badge-sm" data-testid="library-dirty">unsaved</span>{/if}</div>
     {#if draft}
       <label>Title
-        <input class="input input-xs w-full read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-title" value={draft.title} readonly={editorReadOnly} oninput={(event) => updateDraft('title', event.currentTarget.value)} />
+        <input class="input input-xs w-full border-base-300 read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-title" value={draft.title} readonly={editorReadOnly} oninput={(event) => updateDraft('title', event.currentTarget.value)} />
       </label>
       <label>Description
-        <input class="input input-xs w-full read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-description" value={draft.description} readonly={editorReadOnly} oninput={(event) => updateDraft('description', event.currentTarget.value)} />
+        <input class="input input-xs w-full border-base-300 read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-description" value={draft.description} readonly={editorReadOnly} oninput={(event) => updateDraft('description', event.currentTarget.value)} />
       </label>
       <label>Tags
-        <input class="input input-xs w-full read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-tags" value={draft.tags.join(', ')} readonly={editorReadOnly} oninput={(event) => setTags(event.currentTarget.value)} placeholder="review, reusable" />
+        <input class="input input-xs w-full border-base-300 read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-tags" value={draft.tags.join(', ')} readonly={editorReadOnly} oninput={(event) => setTags(event.currentTarget.value)} placeholder="review, reusable" />
       </label>
       <div class="library-content-label text-[11px] font-semibold">Content</div>
       <div class:library-json-editor={kind === 'macro-template'}>
