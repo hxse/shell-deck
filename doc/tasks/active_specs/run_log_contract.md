@@ -20,6 +20,8 @@ Start按manifest publish → `run_started` append → 无await安装in-memory ru
 
 runner cursor、run snapshot、Pause/Resume waiters、pending input、frozen routing map与active structure lock都只存在于当前server process。Pause/Resume是同一live run中的精确运行时暂停/恢复；server restart、Room Destroy或generation变化后返回`run_not_active`，绝不从manifest、event、artifact或Trace恢复runner。
 
+production ownership保持单一：`MacroRunnerService`是HTTP/server consumer唯一public facade；internal lifecycle唯一持有Room-to-`LiveRun` registry，interaction只原地操作该对象，publication唯一持有Room-local runtime revision并通过live getter读取current run。internal module不得缓存、序列化或复制pending input、pause waiter、timer、artifact或parallel progress。
+
 Running、Paused、Waiting input与Stopping期间，Room terminal structure由active-run lock冻结；lock acquire与release都是authoritative Room state change并推进roomRevision。Room Home的generation-bound Destroy仍可用，并会停止run、记录终态或留下可解释的interrupted evidence。
 
 runner必须在tight loop内定期让出macrotask并在yield后复核abort/pause。Input submit的durable event先于pending resolver清除和Running状态发布；append失败保持waiting input可重试。每个run最多一个terminal event，终态后不得继续追加step event。

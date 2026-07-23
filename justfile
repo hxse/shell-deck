@@ -126,6 +126,19 @@ test-20260723c-001:
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
+test-20260723c-002:
+    HISTFILE=/dev/null bun test tests/unit/macroRunnerDecomposition002.test.ts
+    HISTFILE=/dev/null bun test tests/unit/macroRunnerExecution007.test.ts
+    HISTFILE=/dev/null bun test tests/unit/runnerSnapshotMerge035.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.prepare.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.execution.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.lifecycle.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.terminal.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
+    HISTFILE=/dev/null bun test tests/integration/roomRuntimeSync035.test.ts
+    HISTFILE=/dev/null bun test tests/integration/agentEventWaitLimit038.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.runner.spec.ts tests/e2e/roomRuntimeSync035.runtime-input.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
 
