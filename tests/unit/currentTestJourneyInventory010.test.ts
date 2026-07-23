@@ -61,16 +61,16 @@ test('current journeys preserve every attributed case, assertion and forced gate
   const inventory = journeyFiles.flatMap(readCaseInventory).sort((left, right) => left.title.localeCompare(right.title))
   const aggregate = createHash('sha256').update(JSON.stringify(inventory)).digest('hex')
 
-  expect(inventory).toHaveLength(50)
-  expect(new Set(inventory.map(({ title }) => title)).size).toBe(50)
-  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(644)
+  expect(inventory).toHaveLength(51)
+  expect(new Set(inventory.map(({ title }) => title)).size).toBe(51)
+  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(657)
   expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(27)
   expect(inventory.reduce((total, item) => total + item.waits, 0)).toBe(20)
-  expect(aggregate).toBe('a3034e50e266b5e01ef95d35820cd8f56b7f235d9adc7ae491a2107c11726dc1')
+  expect(aggregate).toBe('259d3b4b8eeee5b5027229c9961319dc4d3d11a2c4e512ac8571e218dc4e275a')
 
   expect(roomFiles.flatMap(readCaseInventory)).toHaveLength(14)
   expect(libraryFiles.flatMap(readCaseInventory)).toHaveLength(11)
-  expect(macroFiles.flatMap(readCaseInventory)).toHaveLength(10)
+  expect(macroFiles.flatMap(readCaseInventory)).toHaveLength(11)
   expect(runtimeFiles.flatMap(readCaseInventory)).toHaveLength(15)
 
   const source = journeyFiles.map(readProjectFile).join('\n')

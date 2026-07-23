@@ -28,6 +28,8 @@ server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade
 
 长期user content不属于Room。saved Macro/Library record另由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
 
+前端saved-content实现保持两个domain factory各自唯一拥有Svelte rune state与public assembly：Macro和Library分别装配本域MutationWorkflow及RemoteSyncCoordinator，后者只通过live snapshot/commit ports协调transport、lease transaction、invalidation queue和retry，不缓存第二份record/draft/lease，也不建立带feature flag的generic content session。
+
 ## Macro 与 runner
 
 production Macro采用`MacroDefinitionV5`与`MacroRecord` envelope分层。definition只表达portable Flow、连续terminal index/type及exact assigned/unassigned logical references；record metadata由user-global store生成。Macro selection是单个browser的editor状态，新Room默认null selection，不改变Room terminal。
@@ -43,6 +45,8 @@ runner把manifest、append-only events和artifacts持久化为只读Trace eviden
 current presentation由Tailwind CSS 4与daisyUI 5提供，`src/app.css`是唯一project-authored CSS source；component没有`<style>`，xterm vendor stylesheet保持package-owned。Theme preference是browser settings v3中的local-only exact value，只在Room既有Settings提供入口，但覆盖同browser的Home与全部Room surface。Theme application不建立server API、Room message或跨browser同步。
 
 除Theme select这一项已登记结构增量外，framework迁移不拥有DOM hierarchy、control位置、panel/layout或业务interaction变化。`just ui-style-residue`与111-case theme/viewport matrix冻结source owner、semantic state和responsive contract，具体见`ui_theme_contract.md`。
+
+Macro visual editor中，`MacroInsertionPaletteLifecycle`是viewport placement、mount focus、Escape和trigger focus restoration的唯一实现。Flow tree与Parallel lane controller分别拥有本域collapse/ID/structure mutation，但只读取live draft并调用既有`updateDraft`；两个Svelte parent继续拥有DOM、render snippet、palette domain state与selected-lane wiring，因此controller拆分不改变component hierarchy、control order或mutation gateway。
 
 ## 启动与安全
 

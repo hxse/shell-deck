@@ -1,53 +1,37 @@
 <script lang="ts">
-  import { tick } from 'svelte'
   import type {
     FlowV2ActionNode,
     FlowV2Node,
     MacroDefinitionV5,
     MacroTerminalReference,
     ParallelNode,
-    TextListItem,
   } from '../../macro/macroDefinitionTypes'
   import { artifactChoicesBefore } from '../../macro/macroArtifactChoices'
-  import {
-    allMacroNodeIds,
-    defaultCaptureSource,
-    defaultFlowNode,
-    defaultTextMatchCondition,
-    unassignedArtifactSource,
-  } from '../../macro/macroEditorDefaults'
+  import { defaultFlowNode } from '../../macro/macroEditorDefaults'
   import {
     canMoveNodeToAnchor,
     cloneBodyPath,
-    ensureElseForIfNode,
     findNodePosition,
-    insertElifBranchAfter,
     isInsertionAnchorValid,
     insertNodeAtAnchor,
-    moveNodeAtPosition,
     moveNodeToAnchor,
-    removeElseFromIfNode,
-    removeIfBranchAt,
-    removeNodeAtPosition,
-    resolveBodyPath,
     type BodyPath,
     type InsertionAnchor,
   } from '../../macro/flowV2EditorCommands'
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from '../../macro/scopedTextTemplate'
-  import { hasNonDefaultTextListItems, type TextTemplateScope } from '../../macro/scopedTextTemplateEditor'
+  import type { TextTemplateScope } from '../../macro/scopedTextTemplateEditor'
   import type { TerminalChoice } from '../../macro/macroTerminalChoices'
   import type { MacroInsertionPaletteMode } from '../../workspace/uiLayoutTypes'
   import MacroActionNodeEditor from './MacroActionNodeEditor.svelte'
   import MacroControlNodeEditor from './MacroControlNodeEditor.svelte'
-  import MacroInsertionPalette, { type MacroPaletteItem } from './MacroInsertionPalette.svelte'
+  import MacroInsertionPalette, {
+    MacroInsertionPaletteLifecycle,
+    type InsertionPalettePosition,
+    type MacroPaletteItem,
+  } from './MacroInsertionPalette.svelte'
   import NodeActionControls from './NodeActionControls.svelte'
+  import { createMacroFlowTreeController } from './macroFlowTreeController.svelte'
 
-  type InsertionPalettePosition = {
-    x: number
-    y: number
-    placement: 'above' | 'below'
-    maxHeight?: number
-  }
   type EditableActionNode = Exclude<FlowV2ActionNode, ParallelNode>
 
   let {
@@ -77,14 +61,35 @@
   let insertionAllowsLoopControls = $state(false)
   let insertionPosition = $state<InsertionPalettePosition | null>(null)
   let insertionActionOnly = $state(false)
-  let insertionTriggerElement = $state<HTMLElement | null>(null)
   let insertionPaletteElement = $state<HTMLElement | null>(null)
   let insertionNotice = $state('')
   let moveNodeId = $state('')
-  let collapsedNodeIds = $state<string[]>([])
-  let collapsedIfBranchKeys = $state<string[]>([])
-  let idEditNotice = $state('')
-  let textListStructureVersions = $state<Record<string, number>>({})
+  const insertionPaletteLifecycle = new MacroInsertionPaletteLifecycle()
+  const tree = createMacroFlowTreeController({
+    draft: () => draft,
+    updateDraft: (mutator) => updateDraft(mutator),
+    setInsertionNotice: (notice) => { insertionNotice = notice },
+  })
+  const idEditNotice = $derived(tree.idEditNotice)
+  const isNodeCollapsed = tree.isNodeCollapsed
+  const toggleNodeCollapsed = tree.toggleNodeCollapsed
+  const isIfBranchCollapsed = tree.isIfBranchCollapsed
+  const toggleIfBranchCollapsed = tree.toggleIfBranchCollapsed
+  const moveNodeAt = tree.moveNodeAt
+  const removeNodeAt = tree.removeNodeAt
+  const addElifAt = tree.addElifAt
+  const ensureElseAt = tree.ensureElseAt
+  const removeElifAt = tree.removeElifAt
+  const removeElseAt = tree.removeElseAt
+  const updateNode = tree.updateNode
+  const setNodeId = tree.setNodeId
+  const findNode = tree.findNode
+  const setForRangeMode = tree.setForRangeMode
+  const textListItemEditorKey = tree.textListItemEditorKey
+  const insertTextListItem = tree.insertTextListItem
+  const updateTextListItem = tree.updateTextListItem
+  const removeTextListItem = tree.removeTextListItem
+  const moveTextListItem = tree.moveTextListItem
 
   const insertionPaletteAnchored = $derived(insertionPaletteMode === 'anchored' && insertionPosition !== null)
   const insertionPaletteStyle = $derived(insertionPaletteAnchored && insertionPosition
@@ -131,73 +136,24 @@
     event?: MouseEvent,
     actionOnly = false,
   ): void {
-    const target = event?.currentTarget
-    insertionTriggerElement = target instanceof HTMLElement ? target : null
     insertionNotice = ''
     insertionAnchor = { ...anchor, parentPath: cloneBodyPath(anchor.parentPath) }
     insertionSummary = summary
     insertionAllowsLoopControls = allowLoopControls
     insertionActionOnly = actionOnly
-    insertionPosition = insertionPaletteMode === 'anchored' ? positionInsertionPalette(event) : null
+    insertionPosition = insertionPaletteLifecycle.open(event, insertionPaletteMode)
     moveNodeId = ''
     void settleInsertionPalette(true)
   }
 
-  function positionInsertionPalette(event?: MouseEvent): InsertionPalettePosition | null {
-    const target = event?.currentTarget
-    if (!(target instanceof HTMLElement)) return null
-    const rect = target.getBoundingClientRect()
-    const margin = 12
-    const gap = 8
-    const estimatedHalfWidth = 180
-    const estimatedHeight = Math.min(360, Math.max(0, window.innerHeight - margin * 2))
-    const preferred = rect.top > window.innerHeight / 2 ? 'above' : 'below'
-    const aboveSpace = Math.max(0, rect.top - gap - margin)
-    const belowSpace = Math.max(0, window.innerHeight - rect.bottom - gap - margin)
-    const placement = preferred === 'above'
-      ? aboveSpace >= Math.min(estimatedHeight, belowSpace) ? 'above' : 'below'
-      : belowSpace >= Math.min(estimatedHeight, aboveSpace) ? 'below' : 'above'
-    const availableHeight = placement === 'above' ? aboveSpace : belowSpace
-    const maxHeight = Math.max(0, availableHeight)
-    const x = clamp(rect.left + rect.width / 2, margin + estimatedHalfWidth, window.innerWidth - margin - estimatedHalfWidth)
-    const y = placement === 'above' ? rect.top - gap : rect.bottom + gap
-    return { x, y, placement, maxHeight }
-  }
-
   async function settleInsertionPalette(shouldFocus: boolean): Promise<void> {
-    await tick()
-    clampInsertionPaletteToViewport()
-    if (shouldFocus) focusInsertionPalette()
-  }
-
-  function clampInsertionPaletteToViewport(): void {
-    if (!insertionPaletteAnchored || !insertionPosition || !insertionPaletteElement || !insertionTriggerElement) return
-    const triggerRect = insertionTriggerElement.getBoundingClientRect()
-    const margin = 12
-    const gap = 8
-    const width = insertionPaletteElement.offsetWidth
-    const height = insertionPaletteElement.offsetHeight
-    if (width <= 0 || height <= 0) return
-    const preferred = triggerRect.top > window.innerHeight / 2 ? 'above' : 'below'
-    const aboveSpace = Math.max(0, triggerRect.top - gap - margin)
-    const belowSpace = Math.max(0, window.innerHeight - triggerRect.bottom - gap - margin)
-    const placement = preferred === 'above'
-      ? aboveSpace >= Math.min(height, belowSpace) ? 'above' : 'below'
-      : belowSpace >= Math.min(height, aboveSpace) ? 'below' : 'above'
-    const availableHeight = placement === 'above' ? aboveSpace : belowSpace
-    const maxHeight = Math.max(0, availableHeight)
-    const effectiveHeight = maxHeight > 0 ? Math.min(height, maxHeight) : height
-    const x = clamp(triggerRect.left + triggerRect.width / 2, margin + width / 2, window.innerWidth - margin - width / 2)
-    const rawY = placement === 'above' ? triggerRect.top - gap : triggerRect.bottom + gap
-    const y = placement === 'above'
-      ? clamp(rawY, margin + effectiveHeight, window.innerHeight - margin)
-      : clamp(rawY, margin, window.innerHeight - margin)
-    insertionPosition = { x, y, placement, maxHeight }
-  }
-
-  function focusInsertionPalette(): void {
-    const focusable = insertionPaletteElement?.querySelector<HTMLElement>('button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])')
-    focusable?.focus()
+    await insertionPaletteLifecycle.settle(
+      () => insertionPaletteMode,
+      () => insertionPosition,
+      () => insertionPaletteElement,
+      (position) => { insertionPosition = position },
+      shouldFocus,
+    )
   }
 
   function handleInsertionResize(): void {
@@ -205,25 +161,19 @@
   }
 
   function handleInsertionKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape' && insertionAnchor) cancelInsertion()
-  }
-
-  function clamp(value: number, min: number, max: number): number {
-    if (max < min) return min
-    return Math.max(min, Math.min(max, value))
+    insertionPaletteLifecycle.handleKeydown(event, insertionAnchor !== null, cancelInsertion)
   }
 
   function closeInsertion(restoreFocus: boolean): void {
-    const trigger = insertionTriggerElement
-    insertionAnchor = null
-    insertionSummary = ''
-    insertionAllowsLoopControls = false
-    insertionActionOnly = false
-    insertionPosition = null
-    insertionTriggerElement = null
-    insertionPaletteElement = null
-    moveNodeId = ''
-    if (restoreFocus && trigger) void tick().then(() => trigger.focus())
+    insertionPaletteLifecycle.close(() => {
+      insertionAnchor = null
+      insertionSummary = ''
+      insertionAllowsLoopControls = false
+      insertionActionOnly = false
+      insertionPosition = null
+      insertionPaletteElement = null
+      moveNodeId = ''
+    }, restoreFocus)
   }
 
   function cancelInsertion(): void {
@@ -261,49 +211,6 @@
     if (!anchor) return []
     return allNodeChoices(draft.body)
       .filter((choice) => (!insertionActionOnly || isActionType(choice.type)) && canMoveNodeToAnchor(draft, choice.id, anchor))
-  }
-
-  function isNodeCollapsed(nodeId: string): boolean {
-    return collapsedNodeIds.includes(nodeId)
-  }
-
-  function toggleNodeCollapsed(nodeId: string): void {
-    collapsedNodeIds = isNodeCollapsed(nodeId)
-      ? collapsedNodeIds.filter((id) => id !== nodeId)
-      : [...collapsedNodeIds, nodeId]
-  }
-
-  function ifBranchCollapseKey(nodeId: string, branch: number | 'else'): string {
-    return nodeId + ':branch:' + branch
-  }
-
-  function isIfBranchCollapsed(nodeId: string, branch: number | 'else'): boolean {
-    return collapsedIfBranchKeys.includes(ifBranchCollapseKey(nodeId, branch))
-  }
-
-  function toggleIfBranchCollapsed(nodeId: string, branch: number | 'else'): void {
-    const key = ifBranchCollapseKey(nodeId, branch)
-    collapsedIfBranchKeys = collapsedIfBranchKeys.includes(key)
-      ? collapsedIfBranchKeys.filter((item) => item !== key)
-      : [...collapsedIfBranchKeys, key]
-  }
-
-  function shiftIfBranchCollapseKeys(
-    nodeId: string,
-    fromIndex: number,
-    offset: -1 | 1,
-    removedIndex?: number,
-  ): void {
-    const prefix = nodeId + ':branch:'
-    collapsedIfBranchKeys = collapsedIfBranchKeys.flatMap((key) => {
-      if (!key.startsWith(prefix)) return [key]
-      const suffix = key.slice(prefix.length)
-      if (suffix === 'else') return [key]
-      const branchIndex = Number(suffix)
-      if (!Number.isInteger(branchIndex)) return [key]
-      if (removedIndex === branchIndex) return []
-      return [branchIndex >= fromIndex ? prefix + (branchIndex + offset) : key]
-    })
   }
 
   function beforeAnchor(bodyPath: BodyPath, index: number, anchorNodeId?: string): InsertionAnchor {
@@ -349,61 +256,6 @@
     return { kind: 'before', parentPath: cloneBodyPath(bodyPath), index: 0 }
   }
 
-  function moveNodeAt(bodyPath: BodyPath, index: number, offset: -1 | 1): void {
-    updateDraft((template: MacroDefinitionV5) => { moveNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }, offset) })
-  }
-
-  function removeNodeAt(bodyPath: BodyPath, index: number, nodeId: string): void {
-    if (!confirm('Remove macro node ' + nodeId + '?')) return
-    const removedNode = resolveBodyPath(draft, bodyPath)?.[index]
-    const removedNodeIds = removedNode ? allMacroNodeIds([removedNode]) : [nodeId]
-    updateDraft((template: MacroDefinitionV5) => { removeNodeAtPosition(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
-    clearCollapseStateForNodeIds(removedNodeIds)
-  }
-
-  function addElifAt(bodyPath: BodyPath, index: number, afterBranchIndex: number, nodeId: string): void {
-    let inserted = false
-    updateDraft((template: MacroDefinitionV5) => {
-      inserted = insertElifBranchAfter(
-        template,
-        { bodyPath: cloneBodyPath(bodyPath), index },
-        afterBranchIndex,
-        { kind: 'elif', condition: defaultTextMatchCondition(unassignedArtifactSource()), body: [] },
-      ).ok
-    })
-    if (inserted) shiftIfBranchCollapseKeys(nodeId, afterBranchIndex + 1, 1)
-    else insertionNotice = 'Add elif failed.'
-  }
-
-  function ensureElseAt(bodyPath: BodyPath, index: number): void {
-    updateDraft((template: MacroDefinitionV5) => { ensureElseForIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
-  }
-
-  function removeElifAt(bodyPath: BodyPath, index: number, branchIndex: number, nodeId: string): void {
-    if (!confirm('Remove elif branch and its contents?')) return
-    const node = resolveBodyPath(draft, bodyPath)?.[index]
-    const removedNodeIds = node?.type === 'if' ? allMacroNodeIds(node.branches[branchIndex]?.body ?? []) : []
-    updateDraft((template: MacroDefinitionV5) => { removeIfBranchAt(template, { bodyPath: cloneBodyPath(bodyPath), index }, branchIndex) })
-    clearCollapseStateForNodeIds(removedNodeIds)
-    shiftIfBranchCollapseKeys(nodeId, branchIndex + 1, -1, branchIndex)
-  }
-
-  function removeElseAt(bodyPath: BodyPath, index: number, nodeId: string): void {
-    if (!confirm('Remove else branch and its contents?')) return
-    const node = resolveBodyPath(draft, bodyPath)?.[index]
-    const removedNodeIds = node?.type === 'if' ? allMacroNodeIds(node.else ?? []) : []
-    updateDraft((template: MacroDefinitionV5) => { removeElseFromIfNode(template, { bodyPath: cloneBodyPath(bodyPath), index }) })
-    clearCollapseStateForNodeIds(removedNodeIds)
-    collapsedIfBranchKeys = collapsedIfBranchKeys.filter((key) => key !== ifBranchCollapseKey(nodeId, 'else'))
-  }
-
-  function updateNode(nodeId: string, mutator: (node: FlowV2Node) => void): void {
-    updateDraft((template: MacroDefinitionV5) => {
-      const node = findNode(template.body, nodeId)
-      if (node) mutator(node)
-    })
-  }
-
   function updateNodeTerminal(
     nodeId: string,
     terminal: MacroTerminalReference,
@@ -420,125 +272,8 @@
     return updated
   }
 
-  function setNodeId(oldId: string, nextId: string): boolean {
-    if (nextId !== oldId && allMacroNodeIds(draft.body).includes(nextId)) {
-      idEditNotice = 'Duplicate node id blocked: ' + nextId
-      return false
-    }
-    idEditNotice = ''
-    updateNode(oldId, (node) => { node.id = nextId })
-    collapsedNodeIds = collapsedNodeIds.map((id) => id === oldId ? nextId : id)
-    const prefix = oldId + ':branch:'
-    collapsedIfBranchKeys = collapsedIfBranchKeys.map((key) => key.startsWith(prefix) ? nextId + ':branch:' + key.slice(prefix.length) : key)
-    return true
-  }
-
-  function clearCollapseStateForNodeIds(nodeIds: string[]): void {
-    if (nodeIds.length === 0) return
-    const removed = new Set(nodeIds)
-    collapsedNodeIds = collapsedNodeIds.filter((id) => !removed.has(id))
-    collapsedIfBranchKeys = collapsedIfBranchKeys.filter((key) => !nodeIds.some((nodeId) => key.startsWith(nodeId + ':branch:')))
-  }
-
-  function findNode(nodes: FlowV2Node[], nodeId: string): FlowV2Node | undefined {
-    for (const node of nodes) {
-      if (node.id === nodeId) return node
-      if (node.type === 'if') {
-        for (const branch of node.branches) {
-          const found = findNode(branch.body, nodeId)
-          if (found) return found
-        }
-        if (node.else) {
-          const found = findNode(node.else, nodeId)
-          if (found) return found
-        }
-      }
-      if (node.type === 'for') {
-        const found = findNode(node.body, nodeId)
-        if (found) return found
-      }
-      if (isControlTerminalNode(node) && node.body) {
-        const found = findNode(node.body, nodeId)
-        if (found) return found
-      }
-    }
-  }
-
   function expectedTerminalTypeAt(reference: MacroTerminalReference): 'shell' | 'text' | undefined {
     return reference.kind === 'terminal_index' ? draft.terminalLayout[reference.index - 1]?.type : undefined
-  }
-
-  function setForRangeMode(nodeId: string, mode: 'count' | 'forever' | 'text-list'): boolean {
-    const current = findNode(draft.body, nodeId)
-    if (current?.type !== 'for') return false
-    if (current.range.kind === 'text-list' && mode !== 'text-list' && hasNonDefaultTextListItems(current.range.items)) {
-      if (!confirm('Switching from text-list will discard its items. Continue?')) return false
-    }
-    updateNode(nodeId, (node) => {
-      if (node.type !== 'for') return
-      if (mode === 'text-list') node.range = { kind: 'text-list', items: [{ key: '', value: '' }] }
-      else if (mode === 'forever') node.range = { kind: 'forever' }
-      else node.range = { kind: 'count', count: 1 }
-    })
-    return true
-  }
-
-  function bumpTextListStructureVersion(nodeId: string): void {
-    textListStructureVersions = {
-      ...textListStructureVersions,
-      [nodeId]: (textListStructureVersions[nodeId] ?? 0) + 1,
-    }
-  }
-
-  function textListItemEditorKey(nodeId: string, itemIndex: number): string {
-    return nodeId + ':' + (textListStructureVersions[nodeId] ?? 0) + ':' + itemIndex
-  }
-
-  function insertTextListItem(nodeId: string, insertionIndex: number): void {
-    let changed = false
-    updateNode(nodeId, (node) => {
-      if (node.type !== 'for' || node.range.kind !== 'text-list') return
-      const targetIndex = Math.max(0, Math.min(insertionIndex, node.range.items.length))
-      node.range.items.splice(targetIndex, 0, { key: '', value: '' })
-      changed = true
-    })
-    if (changed) bumpTextListStructureVersion(nodeId)
-  }
-
-  function updateTextListItem(
-    nodeId: string,
-    itemIndex: number,
-    field: keyof TextListItem,
-    value: string,
-  ): void {
-    updateNode(nodeId, (node) => {
-      if (node.type === 'for' && node.range.kind === 'text-list' && node.range.items[itemIndex]) {
-        node.range.items[itemIndex][field] = value
-      }
-    })
-  }
-
-  function removeTextListItem(nodeId: string, itemIndex: number): void {
-    let changed = false
-    updateNode(nodeId, (node) => {
-      if (node.type !== 'for' || node.range.kind !== 'text-list' || node.range.items.length <= 1) return
-      node.range.items.splice(itemIndex, 1)
-      changed = true
-    })
-    if (changed) bumpTextListStructureVersion(nodeId)
-  }
-
-  function moveTextListItem(nodeId: string, itemIndex: number, offset: -1 | 1): void {
-    let changed = false
-    updateNode(nodeId, (node) => {
-      if (node.type !== 'for' || node.range.kind !== 'text-list') return
-      const target = itemIndex + offset
-      if (target < 0 || target >= node.range.items.length) return
-      const [item] = node.range.items.splice(itemIndex, 1)
-      node.range.items.splice(target, 0, item)
-      changed = true
-    })
-    if (changed) bumpTextListStructureVersion(nodeId)
   }
 
   function allNodeChoices(nodes: FlowV2Node[]): Array<{ id: string; type: FlowV2Node['type'] }> {

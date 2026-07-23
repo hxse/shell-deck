@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
   artifactChoicesBefore,
   artifactSourceFromKey,
@@ -17,6 +19,36 @@ import {
 import type { FlowV2Node, MacroDefinitionV5, ParallelLane } from '../../src/lib/macro/macroDefinitionTypes'
 
 describe('Macro flow visual editor extraction', () => {
+  test('palette lifecycle and editor controllers have one owner without draft duplication', () => {
+    const sourceRoot = resolve(import.meta.dir, '../../src')
+    const componentRoot = resolve(sourceRoot, 'lib/components/macro')
+    const palette = readFileSync(resolve(componentRoot, 'MacroInsertionPalette.svelte'), 'utf8')
+    const flow = readFileSync(resolve(componentRoot, 'MacroFlowNodeList.svelte'), 'utf8')
+    const lanes = readFileSync(resolve(componentRoot, 'ParallelLaneTabs.svelte'), 'utf8')
+    const tree = readFileSync(resolve(componentRoot, 'macroFlowTreeController.svelte.ts'), 'utf8')
+    const laneController = readFileSync(resolve(componentRoot, 'parallelLaneEditorController.svelte.ts'), 'utf8')
+    const productionConsumers = sourceFiles(sourceRoot)
+      .filter((path) => !path.endsWith('/MacroFlowNodeList.svelte') && !path.endsWith('/ParallelLaneTabs.svelte'))
+      .filter((path) => /from ['"][^'"]*(?:macroFlowTreeController|parallelLaneEditorController)\.svelte['"]/.test(
+        readFileSync(path, 'utf8'),
+      ))
+
+    expect(productionConsumers).toEqual([])
+    expect(flow).toContain('createMacroFlowTreeController')
+    expect(lanes).toContain('createParallelLaneEditorController')
+    expect(flow).toContain('new MacroInsertionPaletteLifecycle')
+    expect(lanes).toContain('new MacroInsertionPaletteLifecycle')
+    expect(flow + lanes).not.toContain('estimatedHalfWidth')
+    expect(palette.match(/estimatedHalfWidth/g)).toHaveLength(3)
+    expect((palette + flow + lanes).match(/getBoundingClientRect\(\)/g)).toHaveLength(2)
+    expect(flow + lanes).not.toContain("event.key === 'Escape'")
+    expect(flow + lanes).not.toContain("querySelector<HTMLElement>")
+    expect(tree + laneController).not.toMatch(/\$state\s*<\s*MacroDefinition|\$state\s*\(\s*options\.draft/)
+    expect(tree + laneController).not.toMatch(/\blet\s+draft\b/)
+    expect(tree).toContain('options.updateDraft')
+    expect(laneController).toContain('options.updateDraft')
+  })
+
   test('default factory preserves the exact current node emitted by every root palette action', () => {
     const template = definition([{ id: 'send', type: 'wait', mode: 'duration', durationMs: 1 }])
 
@@ -145,6 +177,14 @@ describe('Macro flow visual editor extraction', () => {
     expect(artifactSourceFromKey('')).toEqual({ kind: 'unassigned' })
   })
 })
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name)
+    if (entry.isDirectory()) return sourceFiles(path)
+    return /\.(?:ts|svelte)$/.test(entry.name) ? [path] : []
+  })
+}
 
 function definition(body: FlowV2Node[]): MacroDefinitionV5 {
   return { schemaVersion: 5, name: 'Test', description: '', terminalLayout: [], body }

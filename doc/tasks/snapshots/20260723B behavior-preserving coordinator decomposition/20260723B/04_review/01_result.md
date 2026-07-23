@@ -1,26 +1,39 @@
-# Pre-Implementation Review
+# Implementation Review
 
 ## 审阅结论
 
-四项用户finding均经current tree复核成立。style Gate scanner已在前置`20260723A`直接收口并通过其formal Gate；其余三项涉及四个独立ownership domain，不应揉成一个change。`20260723B`采用root blueprint加四个串行child的结构，符合三星task要求。
+用户报告的四项finding均成立且已修复。style Gate scanner在前置`20260723A`change内完成模块化；`20260723B.001-.004`依次收口Terminal Room、Macro record、Library record与Macro visual editor ownership，所有change保持串行且最终`conflict=false`。
 
-## P2 Findings
+## 实现结果
 
-* Terminal manager仍同时拥有control plane、terminal mutation与backend/cwd/broadcast coordination，前次拆分未达到薄facade目标。
-* Macro与Library session仍是近千行闭包；必须各自保留唯一rune owner，但把async workflow/remote decision从state commit中分离。
-* flow与lane editor重复维护palette lifecycle；统一owner必须位于既有palette component，不能新增第三份shared controller真值。
+* `checkUiStyleResidue.ts`由527行降至78行facade/CLI，Svelte semantics、Macro presentation、app CSS及共享issue/helper拥有独立模块。
+* `TerminalRoomManager`由1158行降至485行，继续唯一创建Room/client registry并保留公开API；control和backend coordinator只通过ports操作同一state。
+* Macro record factory由926行降至691行、Library factory由983行降至767行；两者继续分别唯一拥有rune state，且各自装配domain-specific MutationWorkflow与RemoteSyncCoordinator。
+* `MacroFlowNodeList.svelte`由696行降至431行、`ParallelLaneTabs.svelte`由607行降至254行；palette lifecycle统一由`MacroInsertionPaletteLifecycle`拥有，tree/lane controller不缓存draft并只走既有`updateDraft`。
+* protocol、schema、controller/lease/retry语义、DOM/control order、presentation与公开consumer surface均未改变。
 
-## 方案审阅
+## Findings and Solutions
 
-* `.001`只用ports访问同一Room state，禁止shadow registry。
-* `.002/.003`明确分开，不建立`GenericContentSession`。
-* `.004`先统一palette lifecycle，再抽域controller；DOM和mutation gateway列为hard Gate。
-* 每个child独立change并串行验证，自动rebase冲突时停止。
+没有未解决P1/P2。每个finding都在独立正式task或明确前置change内修复，active specs已经同步最终ownership truth。
+
+受限sandbox不允许部分PTY、loopback port和esbuild IPC；对应Gate在允许项目既有本机能力的环境中执行并通过，不属于实现例外。
 
 ## 需要用户拍板
 
-无。用户已明确要求修复并切换对应工作区/change。
+无。
 
-## 当前Gate
+## Close Gate
 
-Formal Document Gate：通过。Code/Test Close Gate等待`.001-.004`实施完成后回填。
+整链Close Gate：通过。
+
+* `just check`：style residue clean，TypeScript与Svelte 0 error / 0 warning。
+* production build：214 modules transformed。
+* `just test-unit`：6 theme foundation、199 core unit、53 integration全部通过。
+* `just test-e2e`：67/67通过。
+* `.001-.004`各自focused Gate与structure/module-boundary oracle全部通过。
+* `just diff-check`：通过。
+* `20260723A`及`20260723B`root/child change最终均为`conflict=false`。
+
+## 残余风险
+
+无阻断风险。剩余较长文件分别对应单个显式state machine或唯一state owner；继续按行数机械拆分会削弱transaction、identity或recursive mutation boundary，不属于本链目标。

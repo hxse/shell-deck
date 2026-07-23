@@ -1,3 +1,122 @@
+<script module lang="ts">
+  import { tick } from 'svelte'
+  import type { MacroInsertionPaletteMode as PaletteMode } from '../../workspace/uiLayoutTypes'
+
+  export type InsertionPalettePosition = {
+    x: number
+    y: number
+    placement: 'above' | 'below'
+    maxHeight?: number
+  }
+
+  export class MacroInsertionPaletteLifecycle {
+    #triggerElement: HTMLElement | null = null
+
+    open(event: MouseEvent | undefined, mode: PaletteMode): InsertionPalettePosition | null {
+      const target = event?.currentTarget
+      this.#triggerElement = target instanceof HTMLElement ? target : null
+      return mode === 'anchored' ? this.#initialPosition() : null
+    }
+
+    async settle(
+      mode: () => PaletteMode,
+      position: () => InsertionPalettePosition | null,
+      paletteElement: () => HTMLElement | null,
+      setPosition: (position: InsertionPalettePosition) => void,
+      shouldFocus: boolean,
+    ): Promise<void> {
+      await tick()
+      const element = paletteElement()
+      if (mode() === 'anchored' && position() && element && this.#triggerElement) {
+        const measured = this.#measuredPosition(element)
+        if (measured) setPosition(measured)
+      }
+      if (shouldFocus) {
+        const focusable = element?.querySelector<HTMLElement>(
+          'button:not([disabled]), select:not([disabled]), input:not([disabled]), textarea:not([disabled])',
+        )
+        focusable?.focus()
+      }
+    }
+
+    close(clear: () => void, restoreFocus: boolean): void {
+      const trigger = this.#triggerElement
+      this.#triggerElement = null
+      clear()
+      if (restoreFocus && trigger) void tick().then(() => trigger.focus())
+    }
+
+    handleKeydown(event: KeyboardEvent, isOpen: boolean, cancel: () => void): void {
+      if (event.key === 'Escape' && isOpen) cancel()
+    }
+
+    #initialPosition(): InsertionPalettePosition | null {
+      if (!this.#triggerElement) return null
+      const rect = this.#triggerElement.getBoundingClientRect()
+      const margin = 12
+      const gap = 8
+      const estimatedHalfWidth = 180
+      const estimatedHeight = Math.min(360, Math.max(0, window.innerHeight - margin * 2))
+      const placement = choosePlacement(rect, estimatedHeight, margin, gap)
+      const availableHeight = placement === 'above'
+        ? Math.max(0, rect.top - gap - margin)
+        : Math.max(0, window.innerHeight - rect.bottom - gap - margin)
+      const x = clamp(
+        rect.left + rect.width / 2,
+        margin + estimatedHalfWidth,
+        window.innerWidth - margin - estimatedHalfWidth,
+      )
+      const y = placement === 'above' ? rect.top - gap : rect.bottom + gap
+      return { x, y, placement, maxHeight: Math.max(0, availableHeight) }
+    }
+
+    #measuredPosition(paletteElement: HTMLElement): InsertionPalettePosition | null {
+      if (!this.#triggerElement) return null
+      const triggerRect = this.#triggerElement.getBoundingClientRect()
+      const margin = 12
+      const gap = 8
+      const width = paletteElement.offsetWidth
+      const height = paletteElement.offsetHeight
+      if (width <= 0 || height <= 0) return null
+      const placement = choosePlacement(triggerRect, height, margin, gap)
+      const availableHeight = placement === 'above'
+        ? Math.max(0, triggerRect.top - gap - margin)
+        : Math.max(0, window.innerHeight - triggerRect.bottom - gap - margin)
+      const maxHeight = Math.max(0, availableHeight)
+      const effectiveHeight = maxHeight > 0 ? Math.min(height, maxHeight) : height
+      const x = clamp(
+        triggerRect.left + triggerRect.width / 2,
+        margin + width / 2,
+        window.innerWidth - margin - width / 2,
+      )
+      const rawY = placement === 'above' ? triggerRect.top - gap : triggerRect.bottom + gap
+      const y = placement === 'above'
+        ? clamp(rawY, margin + effectiveHeight, window.innerHeight - margin)
+        : clamp(rawY, margin, window.innerHeight - margin)
+      return { x, y, placement, maxHeight }
+    }
+  }
+
+  function choosePlacement(
+    rect: DOMRect,
+    desiredHeight: number,
+    margin: number,
+    gap: number,
+  ): 'above' | 'below' {
+    const preferred = rect.top > window.innerHeight / 2 ? 'above' : 'below'
+    const aboveSpace = Math.max(0, rect.top - gap - margin)
+    const belowSpace = Math.max(0, window.innerHeight - rect.bottom - gap - margin)
+    return preferred === 'above'
+      ? aboveSpace >= Math.min(desiredHeight, belowSpace) ? 'above' : 'below'
+      : belowSpace >= Math.min(desiredHeight, aboveSpace) ? 'below' : 'above'
+  }
+
+  function clamp(value: number, min: number, max: number): number {
+    if (max < min) return min
+    return Math.max(min, Math.min(max, value))
+  }
+</script>
+
 <script lang="ts">
   import type { FlowV2Node } from '../../macro/macroDefinitionTypes'
   import type { MacroInsertionPaletteMode } from '../../workspace/uiLayoutTypes'
