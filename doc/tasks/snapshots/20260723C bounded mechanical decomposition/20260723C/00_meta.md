@@ -24,8 +24,8 @@
 
 * 不增加功能，不改变current schema，不增加兼容层、alias、migration或feature flag abstraction。
 * 不重新设计persistence、runner、controller、workspace、Macro、Library、validation或UI。
-* 不删除、放宽、合并或改写测试断言来让重构通过。
-* 不保留已经退出current Playwright discovery的historical test source；`.014`删除该退役文件及专用hash/豁免逻辑，独立control inventory baseline继续保留。
+* 不删除、放宽、合并或改写current行为/coverage断言来让重构通过；唯一删除的是已退出discovery、只由raw-byte hash引用且可从`jj`恢复的退役source及hash-only oracle。
+* 不保留已经退出current Playwright discovery的historical test source；`.013`删除该退役文件及专用hash oracle，独立control inventory baseline继续保留。
 * 本轮只建立task/change/document stack，不修改production、test、script、package或justfile代码。
 
 ## 本轮停止线

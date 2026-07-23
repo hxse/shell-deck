@@ -23,4 +23,4 @@
 
 ## 整链停止线
 
-只有`.001-.013`全部实现且所有受控文件小于等于400行，`.014`才删除退役historical source及专用hash逻辑、接入零豁免全项目Gate并运行全栈Close Gate。若必须改变公开契约、current测试语义或建立第二份state才能达标，root保持未完成并回到对应child重审，不通过豁免绕过。
+只有`.001-.013`全部实现、`.013`已删除退役historical source/hash-only oracle且所有authored code小于等于400行，`.014`才接入零豁免全项目Gate并运行全栈Close Gate。若必须改变公开契约、current测试语义或建立第二份state才能达标，root保持未完成并回到对应child重审，不通过豁免绕过。

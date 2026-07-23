@@ -4,7 +4,7 @@
 
 `20260723C`只改变源码与测试的文件组织。允许新增internal module、移动函数/type/test case、收窄consumer、删除不再执行且可由jj历史恢复的退役test source，以及增加静态file-size Gate；不允许增加产品语义、改变public consumer或把current测试迁就为更弱的oracle。
 
-最终仓库不存在超过400行的project-authored code source，也不存在path、digest、目录、generated或historical豁免。`tests/e2e/comprehensiveUiBehavior031B.historical.ts`已经退出current Playwright discovery，由`.014`删除；`.031B` control inventory baseline独立保留。
+最终仓库不存在超过400行的project-authored code source，也不存在path、digest、fixture、generated名称或historical豁免。`tests/e2e/comprehensiveUiBehavior031B.historical.ts`已经退出current Playwright discovery，由`.013`删除；`.031B` control inventory baseline独立保留。VCS metadata、dependency、runtime cache与build/test output不属于project-authored source，由scanner的明确directory classification跳过。
 
 ## 任务规范
 
@@ -33,8 +33,8 @@
 10. `.010`：Macro action/control validation及对应大unit test。
 11. `.011`：Parallel lane pure policy/commands与stateful controller。
 12. `.012`：Macro Flow insertion controller与recursive presentation。
-13. `.013`：mutable Macro/Room E2E及control inventory拆分。
-14. `.014`：删除退役historical source及专用hash逻辑，建立零豁免全项目400行Gate，完成完整验证与root closeout。
+13. `.013`：mutable Macro/Room E2E及control inventory拆分，并删除退役historical source与hash-only oracle。
+14. `.014`：建立零豁免、覆盖全项目authored code类型的400行Gate，完成完整验证与root closeout。
 
 child必须串行实现。后一个child不得复制前一个child尚未稳定的state或用adapter绕过其public facade。
 
@@ -66,7 +66,7 @@ Room E2E的existing test body可以按case移动到多个`.spec.ts`，test title
 
 ### 退役historical source
 
-`.031B` historical journey不属于current Playwright contract，不通过拆分或改名继续留在source tree。`.014`删除该文件、raw-byte hash断言和file-size专用分支；jj历史承担旧源码追溯，结构化control inventory baseline继续承担当前需要的历史对照。
+`.031B` historical journey不属于current Playwright contract，不通过拆分或改名继续留在source tree。`.013`删除该文件与raw-byte hash断言；`.014`不再建立file-size专用分支。jj历史承担旧源码追溯，结构化control inventory baseline继续承担当前需要的历史对照。
 
 ## 测试
 

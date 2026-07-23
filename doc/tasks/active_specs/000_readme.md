@@ -1,6 +1,6 @@
 # Active Specs
 
-本目录记录已经落地的current-schema implementation truth。当前真值对应`.032`的multi-Room/user-level storage、`.033`的single-controller/content edit lease、`.034`的Macro editor/Prepare/runner、`.035`的server-authoritative Room runtime sync与统一mutation feedback、`.036`的Library、`.037`的MacroDefinitionV4 assigned/unassigned reference、`.038`的MacroDefinitionV5 explicit AgentEvent wait limit、`.039`的retained terminal tab views、`20260722B`的Tailwind/daisyUI与browser-local Theme system、`20260722C`的`business`默认Theme、`20260723A`的native daisyUI control surface contract，以及`20260723B`的behavior-preserving coordinator ownership。
+本目录记录已经落地的current-schema implementation truth。当前真值对应`.032`的multi-Room/user-level storage、`.033`的single-controller/content edit lease、`.034`的Macro editor/Prepare/runner、`.035`的server-authoritative Room runtime sync与统一mutation feedback、`.036`的Library、`.037`的MacroDefinitionV4 assigned/unassigned reference、`.038`的MacroDefinitionV5 explicit AgentEvent wait limit、`.039`的retained terminal tab views、`20260722B`的Tailwind/daisyUI与browser-local Theme system、`20260722C`的`business`默认Theme、`20260723A`的native daisyUI control surface contract、`20260723B`的behavior-preserving coordinator ownership，以及`20260723C`的bounded mechanical ownership与默认400行Gate。
 
 当前文件：
 

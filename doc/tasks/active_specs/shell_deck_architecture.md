@@ -54,6 +54,12 @@ Macro visual editor中，`MacroInsertionPaletteLifecycle`是viewport placement�
 
 test evidence同样遵守400行边界。current comprehensive Macro仍只有一个top-level Playwright journey与同一page/context lifetime，ordered `test.step`实现按authoring/flow/runtime helper归属，state只由facade显式传入；Room large replay六个case与saved-content七个case按scenario拆为可自动发现的spec，case title/body/timeout/fault保持。`tests/ui-baseline/031B/controlInventory.ts`是稳定re-export facade，historical/current/evidence模块分别持有原array truth。inventory Gate把declared helper AST重新归属到原journey，并冻结case hash、expect/route/wait、step order、forced settings及runtime export value/order。已退出Playwright discovery且只由raw-byte hash引用的`comprehensiveUiBehavior031B.historical.ts`不再保存在current tree；需要时从`jj`历史恢复，结构化`.031B` control inventory baseline继续保留。
 
+## Source boundary Gate
+
+`just check`首先运行唯一`just file-size` scanner，再顺序运行UI style residue、TypeScript与Svelte检查。scanner从repo root递归发现project-authored code，覆盖root config/entry、JS/TS variants、Svelte、CSS、HTML、native C/C++、shell/Nix及其他显式source extension；`justfile`、`package.json`与`tsconfig.json`等extensionless/exact config同样进入。VCS metadata、dependency、runtime cache与build/test output不是authored source，按明确directory set跳过；不按业务path、digest、fixture、generated名称或historical名称豁免任何authored code。
+
+每个被发现的regular source最多400 logical lines；400合法、401失败，CRLF与末尾换行按logical line精确计数。invalid UTF-8、unreadable path、symlink、非regular entry或枚举失败都阻断，不能静默跳过。scanner及其unit自身在同一发现范围内，当前没有任何file exception。
+
 ## 启动与安全
 
 所有入口通过 `justfile`。`just start` 先构建 production assets；`just dev` 使用 Vite HMR 并把 API/Room WebSocket 交给 Bun server。`.032` 不暴露尚未接入 runner 的 mock/real parser server mode。默认只绑定 `127.0.0.1`；非本地 bind 必须显式设置 `SHELL_DECK_ALLOW_LAN=1`，当前没有认证。

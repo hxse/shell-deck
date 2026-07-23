@@ -14,7 +14,10 @@ stop *args:
 dev *args:
     bun run scripts/dev.ts {{args}}
 
-check: ui-style-residue check-ts check-svelte
+check: file-size ui-style-residue check-ts check-svelte
+
+file-size:
+    bun run scripts/checkFileSize.ts
 
 ui-style-residue:
     bun run scripts/checkUiStyleResidue.ts
@@ -218,6 +221,10 @@ test-20260723c-012:
 test-20260723c-013:
     HISTFILE=/dev/null bun test tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.stream.spec.ts tests/e2e/roomLargeReplay032.retention.spec.ts tests/e2e/roomLargeReplay032.lifecycle.spec.ts tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts
+
+test-20260723c-014:
+    just file-size
+    HISTFILE=/dev/null bun test tests/unit/fileSizeGate014.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
 
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"
