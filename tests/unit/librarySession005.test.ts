@@ -3,8 +3,10 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ContentEditLeaseGrant } from '../../src/lib/contentEditLease'
 import { LibraryInvalidationQueue, type SequencedContentRecordChange } from '../../src/lib/library/libraryInvalidationQueue'
+import { LibraryListCoordinator } from '../../src/lib/library/libraryListCoordinator'
+import type { LibraryMutationWorkflow } from '../../src/lib/library/libraryMutationWorkflow'
 import { LibraryNavigationCoordinator, type CurrentLibraryOperationState, type LibraryOperationIdentity } from '../../src/lib/library/libraryNavigationCoordinator'
-import type { LibraryItem, LibraryItemFields } from '../../src/lib/library/libraryTypes'
+import type { LibraryItem, LibraryItemFields, LibraryItemListResult } from '../../src/lib/library/libraryTypes'
 
 describe('Library session coordinators', () => {
   test('navigation shares one generation and checks draft, selection, controller, and released lease identity', () => {
@@ -62,42 +64,226 @@ describe('Library session coordinators', () => {
     expect(queue.nextRetryDelay()).toBe(100)
   })
 
+  test('list coordinator rejects an older generation without caching list state', async () => {
+    const first = deferred<LibraryItemListResult>()
+    const second = deferred<LibraryItemListResult>()
+    const requests = [first, second]
+    let query = 'first'
+    const outcomes: string[] = []
+    const coordinator = new LibraryListCoordinator({
+      mutations: {
+        list: async () => await requests.shift()!.promise,
+      } as unknown as LibraryMutationWorkflow,
+      kind: () => 'prompt',
+      searchText: () => query,
+      commitSearch: (value) => { query = value },
+      commitList: (outcome) => {
+        outcomes.push(outcome.kind)
+        return outcome.kind === 'applied'
+          ? { outcome: 'applied', records: outcome.result.items }
+          : { outcome: outcome.kind }
+      },
+    })
+
+    const older = coordinator.reload(false)
+    query = 'second'
+    const newer = coordinator.reload(false)
+    second.resolve(listResult('second'))
+    expect(await newer).toEqual({ outcome: 'applied', records: [] })
+    first.resolve(listResult('first'))
+    expect(await older).toEqual({ outcome: 'stale' })
+    expect(outcomes).toEqual(['applied', 'stale'])
+    coordinator.dispose()
+  })
+
   test('factory remains the sole rune owner and production assembly point', () => {
     const sourceRoot = resolve(import.meta.dir, '../../src')
     const libraryRoot = resolve(sourceRoot, 'lib/library')
-    const sessionSource = readFileSync(resolve(libraryRoot, 'librarySession.svelte.ts'), 'utf8')
-    const mutationSource = readFileSync(resolve(libraryRoot, 'libraryMutationWorkflow.ts'), 'utf8')
-    const remoteSyncSource = readFileSync(resolve(libraryRoot, 'libraryRemoteSyncCoordinator.ts'), 'utf8')
-    const directConsumers = sourceFiles(sourceRoot)
-      .filter((path) => !path.endsWith('/librarySession.svelte.ts'))
-      .filter((path) => /from ['"][^'"]*(?:libraryMutationWorkflow|libraryRemoteSyncCoordinator)['"]/.test(
-        readFileSync(path, 'utf8'),
-      ))
+    const names = [
+      'librarySession.svelte.ts',
+      'libraryMutationWorkflow.ts',
+      'libraryRemoteSyncCoordinator.ts',
+      'libraryNavigationCoordinator.ts',
+      'libraryListCoordinator.ts',
+      'libraryEditOrchestrator.ts',
+    ] as const
+    const sources = Object.fromEntries(names.map((name) => [
+      name,
+      readFileSync(resolve(libraryRoot, name), 'utf8'),
+    ])) as Record<(typeof names)[number], string>
+    const files = readdirSync(libraryRoot).filter((file) => file.endsWith('.ts'))
+    const sessionSource = sources['librarySession.svelte.ts']
+    const listSource = sources['libraryListCoordinator.ts']
+    const editSource = sources['libraryEditOrchestrator.ts']
 
-    expect(directConsumers).toEqual([])
+    expect(consumers(libraryRoot, files, 'libraryListCoordinator')).toEqual([
+      'libraryEditOrchestrator.ts',
+      'librarySession.svelte.ts',
+    ])
+    expect(consumers(libraryRoot, files, 'libraryEditOrchestrator')).toEqual([
+      'librarySession.svelte.ts',
+    ])
+    expect(consumers(libraryRoot, files, 'libraryMutationWorkflow')).toEqual([
+      'libraryEditOrchestrator.ts',
+      'libraryListCoordinator.ts',
+      'librarySession.svelte.ts',
+    ])
+    expect(consumers(libraryRoot, files, 'libraryNavigationCoordinator')).toEqual([
+      'libraryEditOrchestrator.ts',
+      'librarySession.svelte.ts',
+    ])
+    expect(consumers(libraryRoot, files, 'libraryRemoteSyncCoordinator')).toEqual([
+      'libraryListCoordinator.ts',
+      'librarySession.svelte.ts',
+    ])
     expect(sessionSource).toContain('new LibraryNavigationCoordinator')
     expect(sessionSource).toContain('new LibraryMutationWorkflow')
     expect(sessionSource).toContain('new LibraryRemoteSyncCoordinator')
+    expect(sessionSource).toContain('new LibraryListCoordinator')
+    expect(sessionSource).toContain('new LibraryEditOrchestrator')
     expect(sessionSource).toContain('export function createLibrarySession')
-    expect(sessionSource).toContain('$state')
-    expect(mutationSource).not.toContain('$state')
-    expect(mutationSource).not.toContain('$effect')
-    expect(remoteSyncSource).not.toContain('$state')
-    expect(remoteSyncSource).not.toContain('$effect')
+    expect(runeNames(sessionSource)).toEqual([
+      'kind',
+      'searchText',
+      'items',
+      'selectedItem',
+      'draft',
+      'editing',
+      'editLease',
+      'leaseView',
+      'leaseLost',
+      'publishedCreateBufferPreserved',
+      'dirty',
+      'draftRevision',
+      'operationPending',
+      'statusText',
+      'errorText',
+      'listProblem',
+      'remoteNotice',
+    ])
+    expect(sessionSource.match(/\$effect\(/g)).toHaveLength(4)
+    for (const coordinator of Object.values(sources).slice(1)) {
+      expect(coordinator).not.toMatch(/\$(?:state|derived|effect)\b/)
+    }
+    expect(listSource).not.toMatch(/#(?:items|selectedItem|draft|editLease|leaseView)\s*=/)
+    expect(editSource).not.toMatch(/#(?:items|selectedItem|draft|editLease|leaseView)\s*=/)
     expect(sessionSource).not.toContain('new LibraryClient')
     expect(sessionSource).not.toContain('new LibraryInvalidationQueue')
     expect(sessionSource).not.toContain('async function handleRemoteContent')
-    expect(mutationSource + remoteSyncSource).not.toContain('macroRecordSession')
-    expect(mutationSource + remoteSyncSource).not.toContain('GenericContentSession')
+    expect(sessionSource).not.toContain('async function changeKind')
+    expect(sessionSource).not.toContain('async function saveItem')
+    expect(Object.values(sources).join('\n')).not.toContain('GenericContentSession')
+    expect(listSource + editSource).not.toContain('macroRecordSession')
+
+    for (const source of [...Object.values(sources), readFileSync(import.meta.path, 'utf8')]) {
+      expect(source.trimEnd().split('\n').length).toBeLessThanOrEqual(400)
+    }
+  })
+
+  test('freezes list generation, edit outcomes, and the public return surface', () => {
+    const libraryRoot = resolve(import.meta.dir, '../../src/lib/library')
+    const session = readFileSync(resolve(libraryRoot, 'librarySession.svelte.ts'), 'utf8')
+    const list = readFileSync(resolve(libraryRoot, 'libraryListCoordinator.ts'), 'utf8')
+    const edit = readFileSync(resolve(libraryRoot, 'libraryEditOrchestrator.ts'), 'utf8')
+    const returned = session.slice(session.lastIndexOf('  return {'))
+
+    expectOrdered(methodSource(list, '  updateSearch(', '  cancelScheduledSearch('), [
+      'this.#options.commitSearch(value)',
+      'this.cancelScheduledSearch()',
+      'setTimeout(',
+      'void this.reload(false)',
+      '}, 180)',
+    ])
+    expectOrdered(methodSource(list, '  async reload(', '\n  }\n}'), [
+      'const generation = ++this.#generation',
+      'const requestKind = this.#options.kind()',
+      'const requestQuery = this.#options.searchText()',
+      'this.#options.mutations.list(requestKind, requestQuery)',
+      'generation === this.#generation',
+      'requestKind === this.#options.kind()',
+      'requestQuery === this.#options.searchText()',
+      'this.#options.commitList(',
+    ])
+    expectOrdered(methodSource(edit, '  async saveItem(', '  async cancelEdit('), [
+      'this.#requireNoPendingOperation()',
+      'this.#requireSharedMutation()',
+      'cloneLibraryFields(draft)',
+      'parseAndValidateMacroDefinitionJson(fields.content)',
+      'const operation = options.beginOperation()',
+      'options.mutations.persist(',
+      '() => options.canCommitLibraryOperation(operation)',
+      'options.commitPersistOutcome(committed, operation)',
+      'options.list.reload(false, false)',
+      'options.completeSave(operation)',
+      'options.endOperation(operation)',
+    ])
+    for (const outcome of [
+      "'change_kind'",
+      "'select_item'",
+      "'new_item'",
+      "'begin_edit'",
+      "'discard_preserved'",
+      "'discard_preserved_missing'",
+      "'cancel_edit'",
+      "'remove_item'",
+      "'load_into_macro'",
+    ]) {
+      expect(edit).toContain(outcome)
+    }
+    for (const member of [
+      'kind', 'searchText', 'items', 'selectedItem', 'selectedKey', 'draft', 'editing',
+      'editLease', 'leaseView', 'leaseLost', 'publishedCreateBufferPreserved', 'dirty',
+      'operationPending', 'statusText', 'errorText', 'listProblem', 'remoteNotice',
+      'mount', 'changeKind', 'updateSearch', 'selectByKey', 'newItem', 'beginEdit',
+      'saveItem', 'cancelEdit', 'removeItem', 'refreshLibrary', 'loadIntoMacro',
+      'updateDraft', 'setTags', 'deny', 'setErrorText',
+    ]) {
+      expect(returned).toContain(member)
+    }
   })
 })
 
-function sourceFiles(directory: string): string[] {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const path = resolve(directory, entry.name)
-    if (entry.isDirectory()) return sourceFiles(path)
-    return /\.(?:ts|svelte)$/.test(entry.name) ? [path] : []
+function consumers(root: string, files: string[], moduleName: string): string[] {
+  const pattern = new RegExp(`from ['"]\\./${moduleName}['"]`)
+  return files.filter((file) => pattern.test(readFileSync(resolve(root, file), 'utf8'))).sort()
+}
+
+function runeNames(source: string): string[] {
+  return source.split('\n').flatMap((line) => {
+    const match = line.match(/^\s*let (\w+) = \$state(?:<.*>)?\(/)
+    return match ? [match[1]] : []
   })
+}
+
+function methodSource(source: string, start: string, end: string): string {
+  const startIndex = source.indexOf(start)
+  const endIndex = source.indexOf(end, startIndex + start.length)
+  expect(startIndex, `missing method start: ${start}`).toBeGreaterThanOrEqual(0)
+  expect(endIndex, `missing method end: ${end}`).toBeGreaterThan(startIndex)
+  return source.slice(startIndex, endIndex)
+}
+
+function expectOrdered(source: string, needles: string[]): void {
+  let offset = 0
+  for (const needle of needles) {
+    const index = source.indexOf(needle, offset)
+    expect(index, `${needle} must remain after the previous phase`).toBeGreaterThanOrEqual(offset)
+    offset = index + needle.length
+  }
+}
+
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve(value: T): void
+} {
+  let resolvePromise!: (value: T) => void
+  const promise = new Promise<T>((resolveValue) => { resolvePromise = resolveValue })
+  return { promise, resolve: resolvePromise }
+}
+
+function listResult(query: string): LibraryItemListResult {
+  void query
+  return { items: [], invalidItems: [] }
 }
 
 function fields(content: string): LibraryItemFields {

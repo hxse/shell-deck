@@ -83,6 +83,34 @@ export function libraryItemSummary(item: LibraryItem): LibraryItemSummary {
   }
 }
 
+export function cloneLibraryFields(item: LibraryItemFields): LibraryItemFields {
+  return {
+    title: item.title,
+    content: item.content,
+    description: item.description,
+    tags: [...item.tags],
+  }
+}
+
+export function cloneLibraryItem(item: LibraryItem): LibraryItem {
+  return {
+    schemaVersion: item.schemaVersion,
+    itemId: item.itemId,
+    kind: item.kind,
+    revision: item.revision,
+    ...cloneLibraryFields(item),
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  }
+}
+
+export function sameLibraryFields(left: LibraryItemFields, right: LibraryItemFields): boolean {
+  return left.title === right.title
+    && left.content === right.content
+    && left.description === right.description
+    && JSON.stringify(left.tags) === JSON.stringify(right.tags)
+}
+
 function assertExactKeys(value: Record<string, unknown>, keys: string[], error: string): void {
   if (Object.keys(value).sort().join(',') !== [...keys].sort().join(',')) throw new Error(error)
 }
