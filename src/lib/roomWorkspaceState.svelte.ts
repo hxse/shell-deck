@@ -13,6 +13,8 @@ import { RoomRevisionGate } from './roomRevisionGate'
 import { RunnerRepairCoordinator } from './runnerRepairCoordinator'
 import { TerminalRoomClient } from './terminalRoomClient'
 import { applyTerminalStateProjection, TerminalViewStateStore, type TerminalViewSnapshot } from './terminalViewState'
+import { RoomWorkspaceMessageCoordinator } from './roomWorkspaceMessageCoordinator'
+import { RoomWorkspaceReconnectCoordinator } from './roomWorkspaceReconnectCoordinator'
 
 type RoomWorkspaceStateOptions = {
   roomId: string
@@ -24,13 +26,6 @@ type RoomWorkspaceStateOptions = {
   enterHome(): void
 }
 
-type RoomSummary = {
-  roomId: string
-  roomGeneration: string
-}
-
-const ROOM_CONTROL_RECLAIM_WINDOW_MS = 5_000
-
 export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
   const roomId = options.roomId
   const terminalViews = new TerminalViewStateStore()
@@ -39,9 +34,6 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
   let connected = $state(false)
   let connectionGeneration = $state(0)
   let reconnectNonce = $state(0)
-  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  let controlReclaimTimer: ReturnType<typeof setTimeout> | null = null
-  let controlReclaimPending = isReloadNavigation() && rememberedRoomControl(roomId)
   let roomGeneration = $state('')
   let controlView = $state<RoomControlView | null>(null)
   let controlPending = $state(false)
@@ -51,9 +43,7 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
   let terminalPositions = $state<TerminalRuntimePosition[] | null>(null)
   let terminalStructureLocked = $state(false)
   let runnerSnapshot = $state<MacroRunnerSnapshot | null>(null)
-  let contentChangeSequence = 0
   let contentRecordChanges = $state<Array<ContentRecordChangedMessage & { sequence: number }>>([])
-  let contentLeaseChangeSequence = 0
   let contentEditLeaseChanges = $state<Array<ContentEditLeaseChangedMessage & { sequence: number }>>([])
   let activeTerminalId = $state<string | null>(null)
   let draggingTerminalId = $state<string | null>(null)
@@ -69,10 +59,54 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     volume: options.notificationVolume,
     notice: options.notificationNotice,
   })
+  const reconnect = new RoomWorkspaceReconnectCoordinator({
+    roomId,
+    identity: () => ({ active, connected, roomId, roomGeneration, controlView, controlPending, client }),
+    setConnected: (value) => { connected = value },
+    setControlView: (value) => { controlView = value },
+    setControlPending: (value) => { controlPending = value },
+    advanceConnectionGeneration: () => { connectionGeneration += 1 },
+    requestReconnect: () => { reconnectNonce += 1 },
+    resumeRunnerRepair: () => { runnerRepair.resume() },
+    enterHome: enterHomeWithoutRootRequest,
+    notice: options.notice,
+  })
+  const messageCoordinator = new RoomWorkspaceMessageCoordinator({
+    roomGeneration: () => roomGeneration,
+    setRoomGeneration: (value) => { roomGeneration = value },
+    setControlView: (value) => { controlView = value },
+    acceptControlView: (value) => { reconnect.handleControlView(value) },
+    acceptControlLost: () => { reconnect.handleControlLost() },
+    setActiveTerminalId: (value) => { activeTerminalId = value },
+    resetRoomRevision: () => { roomRevisionGate.reset() },
+    applyRoomSnapshot,
+    observeRoomRevision,
+    upsertTerminal,
+    appendTerminalReplay,
+    replaceTerminalReplay,
+    applyTerminalIndexMap,
+    applyTerminalState,
+    applyTerminalCwd,
+    appendContentRecordChange: (message, sequence) => {
+      contentRecordChanges = [...contentRecordChanges.slice(-199), { ...message, sequence }]
+    },
+    appendContentEditLeaseChange: (message, sequence) => {
+      contentEditLeaseChanges = [...contentEditLeaseChanges.slice(-199), { ...message, sequence }]
+    },
+    mutationNotice: options.mutationNotice,
+    runnerRepairPending: () => runnerRepair.pending,
+    runnerRepairRoomGeneration: () => runnerRepair.roomGeneration,
+    clearRunnerRepair: () => { runnerRepair.clear() },
+    resumeRunnerRepair: () => { runnerRepair.resume() },
+    installRunnerSnapshot: (message) => { runnerRepair.installFull(message.snapshot) },
+    applyRunnerDelta: (message) => { runnerRepair.handleDelta(message.delta) },
+    deliverNotification: (message) => { void notificationDelivery.deliver(message) },
+    enterHome: enterHomeWithoutRootRequest,
+  })
 
   $effect(() => {
     if (!active) return
-    if (controlReclaimPending) armControlReclaim()
+    if (reconnect.controlReclaimPending) reconnect.armControlReclaim()
     const refresh = () => { runnerRepair.resume() }
     const visibility = () => {
       if (document.visibilityState === 'visible') runnerRepair.resume()
@@ -82,8 +116,7 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     return () => {
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', visibility)
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
+      reconnect.dispose()
       runnerRepair.dispose()
     }
   })
@@ -107,15 +140,9 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     controlPending = false
     const connection = new TerminalRoomClient({
       roomId,
-      onOpen: () => {
-        connected = true
-        connectionGeneration += 1
-        if (reconnectTimer) clearTimeout(reconnectTimer)
-        reconnectTimer = null
-        runnerRepair.resume()
-      },
-      onClose: (event) => { void handleConnectionClose(event) },
-      onMessage: handleMessage,
+      onOpen: () => { reconnect.handleOpen() },
+      onClose: (event) => { void reconnect.handleClose(event) },
+      onMessage: (message) => { messageCoordinator.handle(message) },
     })
     client = connection
     return () => connection.close()
@@ -125,84 +152,6 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     if (terminals.length === 0) activeTerminalId = null
     else if (!activeTerminalId || !terminals.some((terminal) => terminal.terminalId === activeTerminalId)) activeTerminalId = terminals[0].terminalId
   })
-
-  function handleMessage(message: ServerMessage) {
-    if (message.type === 'client_registered') {
-      if (runnerRepair.pending && runnerRepair.roomGeneration !== message.roomGeneration) runnerRepair.clear()
-      roomGeneration = message.roomGeneration
-      roomRevisionGate.reset()
-      runnerRepair.resume()
-    }
-    if ('roomGeneration' in message && roomGeneration && message.roomGeneration !== roomGeneration) return
-    if (message.type === 'room_control') {
-      controlView = message.view
-      if (message.view.mode === 'controller') {
-        rememberRoomControl(roomId, true)
-        clearControlReclaim()
-      } else if (message.view.mode === 'available' && controlReclaimPending) {
-        void reclaimControlAfterReconnect(message.view.controlEpoch)
-      } else if (!controlReclaimPending) rememberRoomControl(roomId, false)
-    }
-    if (message.type === 'room_control_lost') {
-      rememberRoomControl(roomId, false)
-      clearControlReclaim()
-      controlView = { mode: 'observer', controlEpoch: message.controlEpoch, expiresAt: new Date().toISOString() }
-      options.mutationNotice('room_control_lost')
-    }
-    if (message.type === 'room_snapshot') applyRoomSnapshot(message)
-    if (message.type === 'terminal_snapshot') {
-      observeRoomRevision(message.roomRevision)
-      upsertTerminal(message)
-    }
-    if (message.type === 'terminal_created') activeTerminalId = message.terminalId
-    if (message.type === 'pty_output') {
-      observeRoomRevision(message.roomRevision)
-      appendTerminalReplay(message)
-    }
-    if (message.type === 'terminal_replay') {
-      observeRoomRevision(message.roomRevision)
-      replaceTerminalReplay(message)
-    }
-    if (message.type === 'terminal_index_map') {
-      if (!roomRevisionGate.acceptIndexMap(message.roomRevision)) return
-      terminalStructureRevision = message.terminalStructureRevision
-      terminalPositions = message.terminalPositions
-      terminalStructureLocked = message.terminalStructureLocked
-      terminals = terminals.map((terminal) => {
-        const mapped = message.items.find((item) => item.terminalId === terminal.terminalId)
-        return mapped ? { ...terminal, terminalIndex: mapped.index, visualOrder: mapped.index } : terminal
-      }).sort((left, right) => left.terminalIndex - right.terminalIndex)
-    }
-    if (message.type === 'terminal_error') options.mutationNotice(message.reason, message.terminalId ? message.terminalId + ': ' : '')
-    if (message.type === 'input_rejected') options.mutationNotice(message.reason, message.terminalId + ': ')
-    if (message.type === 'runner_snapshot' && (!roomGeneration || message.snapshot.roomGeneration === roomGeneration)) {
-      runnerRepair.installFull(message.snapshot)
-      if (runnerRepair.pending) runnerRepair.resume()
-    }
-    if (message.type === 'runner_delta' && (!roomGeneration || message.delta.roomGeneration === roomGeneration)) {
-      runnerRepair.handleDelta(message.delta)
-    }
-    if (message.type === 'content_record_changed') {
-      contentRecordChanges = [...contentRecordChanges.slice(-199), { ...message, sequence: ++contentChangeSequence }]
-    }
-    if (message.type === 'content_edit_lease_changed') {
-      contentEditLeaseChanges = [...contentEditLeaseChanges.slice(-199), { ...message, sequence: ++contentLeaseChangeSequence }]
-    }
-    if (message.type === 'macro_notification') void notificationDelivery.deliver(message)
-    if (message.type === 'terminal_state') {
-      observeRoomRevision(message.roomRevision)
-      const applied = applyTerminalStateProjection(terminalViews, terminals, terminalPositions, message)
-      terminals = applied.terminals
-      terminalPositions = applied.positions
-    }
-    if (message.type === 'terminal_cwd') {
-      observeRoomRevision(message.roomRevision)
-      terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
-        ? terminalViews.patch(terminal, message, { cwd: message.cwd })
-        : terminal)
-    }
-    if (message.type === 'room_destroyed') enterHomeWithoutRootRequest()
-  }
 
   function enterHomeWithoutRootRequest() {
     if (!active) return
@@ -223,38 +172,6 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     contentEditLeaseChanges = []
     activeTerminalId = null
     dispose()
-  }
-
-  async function handleConnectionClose(event?: CloseEvent) {
-    if (active && controlView?.mode === 'controller' && client?.canMutateShared) armControlReclaim()
-    connected = false
-    controlView = null
-    controlPending = false
-    if (!active) return
-    const closedRoomId = roomId
-    const closedGeneration = roomGeneration
-    if (event?.code === 4001 || event?.reason === 'room_destroyed') {
-      enterHomeWithoutRootRequest()
-      return
-    }
-    try {
-      const response = await fetch('/api/rooms')
-      const body = await response.json() as { ok: boolean; rooms?: RoomSummary[] }
-      if (!response.ok || !body.ok || !active) return
-      const stillLive = (body.rooms ?? []).some((room) => room.roomId === closedRoomId && (!closedGeneration || room.roomGeneration === closedGeneration))
-      if (!stillLive) enterHomeWithoutRootRequest()
-      else scheduleReconnect(closedRoomId)
-    } catch {
-      scheduleReconnect(closedRoomId)
-    }
-  }
-
-  function scheduleReconnect(expectedRoomId: string) {
-    if (!active || roomId !== expectedRoomId || reconnectTimer) return
-    reconnectTimer = setTimeout(() => {
-      reconnectTimer = null
-      if (active && roomId === expectedRoomId) reconnectNonce += 1
-    }, 750)
   }
 
   function createShell() {
@@ -280,8 +197,7 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
         ? await connection.acquireControl(view.controlEpoch)
         : await connection.takeOverControl(view.controlEpoch)
       controlView = result.view
-      rememberRoomControl(roomId, true)
-      clearControlReclaim()
+      reconnect.markControlOwned()
       options.clearControlFeedback()
     } catch (error) {
       options.mutationNotice(messageOf(error))
@@ -290,39 +206,29 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     }
   }
 
-  async function reclaimControlAfterReconnect(expectedControlEpoch: number) {
-    const connection = client
-    if (!controlReclaimPending || !connection || !connected || controlPending || controlView?.mode !== 'available') return
-    clearControlReclaim()
-    controlPending = true
-    try {
-      const result = await connection.acquireControl(expectedControlEpoch)
-      controlView = result.view
-      rememberRoomControl(roomId, true)
-    } catch (error) {
-      rememberRoomControl(roomId, false)
-      const reason = messageOf(error)
-      if (reason !== 'room_control_held' && reason !== 'room_control_epoch_conflict') options.notice(reason)
-    } finally {
-      controlPending = false
-    }
+  function applyTerminalIndexMap(message: Extract<ServerMessage, { type: 'terminal_index_map' }>) {
+    if (!roomRevisionGate.acceptIndexMap(message.roomRevision)) return
+    terminalStructureRevision = message.terminalStructureRevision
+    terminalPositions = message.terminalPositions
+    terminalStructureLocked = message.terminalStructureLocked
+    terminals = terminals.map((terminal) => {
+      const mapped = message.items.find((item) => item.terminalId === terminal.terminalId)
+      return mapped ? { ...terminal, terminalIndex: mapped.index, visualOrder: mapped.index } : terminal
+    }).sort((left, right) => left.terminalIndex - right.terminalIndex)
   }
 
-  function armControlReclaim() {
-    controlReclaimPending = true
-    rememberRoomControl(roomId, true)
-    if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
-    controlReclaimTimer = setTimeout(() => {
-      controlReclaimTimer = null
-      controlReclaimPending = false
-      rememberRoomControl(roomId, false)
-    }, ROOM_CONTROL_RECLAIM_WINDOW_MS)
+  function applyTerminalState(message: Extract<ServerMessage, { type: 'terminal_state' }>) {
+    observeRoomRevision(message.roomRevision)
+    const applied = applyTerminalStateProjection(terminalViews, terminals, terminalPositions, message)
+    terminals = applied.terminals
+    terminalPositions = applied.positions
   }
 
-  function clearControlReclaim() {
-    controlReclaimPending = false
-    if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
-    controlReclaimTimer = null
+  function applyTerminalCwd(message: Extract<ServerMessage, { type: 'terminal_cwd' }>) {
+    observeRoomRevision(message.roomRevision)
+    terminals = terminals.map((terminal) => terminal.terminalId === message.terminalId
+      ? terminalViews.patch(terminal, message, { cwd: message.cwd })
+      : terminal)
   }
 
   function applyRoomSnapshot(snapshot: RoomSnapshot) {
@@ -394,10 +300,7 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
   function dispose(): void {
     if (!active) return
     active = false
-    if (reconnectTimer) clearTimeout(reconnectTimer)
-    reconnectTimer = null
-    if (controlReclaimTimer) clearTimeout(controlReclaimTimer)
-    controlReclaimTimer = null
+    reconnect.dispose()
     runnerRepair.dispose()
     notificationDelivery.clear()
     client?.close()
@@ -437,25 +340,4 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
-}
-
-function controlMemoryKey(targetRoomId: string): string {
-  return 'shell-deck:room-control-intent:' + targetRoomId
-}
-
-function rememberedRoomControl(targetRoomId: string): boolean {
-  try { return sessionStorage.getItem(controlMemoryKey(targetRoomId)) === 'controller' }
-  catch { return false }
-}
-
-function rememberRoomControl(targetRoomId: string, owned: boolean): void {
-  if (!targetRoomId) return
-  try {
-    if (owned) sessionStorage.setItem(controlMemoryKey(targetRoomId), 'controller')
-    else sessionStorage.removeItem(controlMemoryKey(targetRoomId))
-  } catch {}
-}
-
-function isReloadNavigation(): boolean {
-  return (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload'
 }

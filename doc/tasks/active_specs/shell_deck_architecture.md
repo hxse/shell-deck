@@ -26,6 +26,8 @@ server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade
 
 浏览器之间从不直接同步。terminal、runner、runtime input和notification全部先进入server-owned Room state，再由Room WebSocket投影到各连接；关闭browser不会停止server runner。Macro/Library selector和未保存draft保持browser-local，saved record通过user-global store与generic content invalidation同步，不能与Room runtime混成一份状态。
 
+浏览器Room Workspace实现中，`createRoomWorkspaceState`继续是全部Svelte rune与public return的唯一owner，并继续创建`TerminalRoomClient`与effects。`RoomWorkspaceMessageCoordinator`只按generation/revision顺序把ServerMessage路由到factory commit ports及既有runner/notification projection；`RoomWorkspaceReconnectCoordinator`只持有reconnect/reclaim timer与session control intent。两者不缓存Room snapshot、terminal list或runner snapshot，也不增加父版本不存在的continuation token：成功close probe响应保留active检查，retry保留active/roomId检查，control acquire保留原await后commit顺序。
+
 长期user content不属于Room。saved Macro/Library record另由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
 
 前端saved-content实现保持两个domain factory各自唯一拥有Svelte rune state与public assembly：Macro和Library分别装配本域MutationWorkflow及RemoteSyncCoordinator，后者只通过live snapshot/commit ports协调transport、lease transaction、invalidation queue和retry，不缓存第二份record/draft/lease，也不建立带feature flag的generic content session。
