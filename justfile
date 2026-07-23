@@ -120,6 +120,12 @@ test-20260723b-004:
     HISTFILE=/dev/null bun test tests/unit/macroFlowVisualEditor006.test.ts tests/unit/flowV2EditorCommands034.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/uiThemeCloseout004.test.ts tests/unit/businessThemeContrastC.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.flow.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
+test-20260723c-001:
+    HISTFILE=/dev/null bun test tests/unit/evidenceStore032.test.ts
+    HISTFILE=/dev/null bun test tests/unit/macroRunStore034.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
 

@@ -12,6 +12,8 @@
 * complete JSONL line已经写入但file/directory fsync或summary checkpoint报告不确定时，append按相同event intent与绝对sequence检查authoritative tail并幂等收口，不能追加第二个同序号event。crash留下的partial final line在下一次read/append前截断。
 * live run在内存维护provenance、next event sequence与bounded event window；正常append只写新增event，不读取完整segment或完整run。`summary.json`在run开始、segment边界、retention推进和终态checkpoint，冷读可从首尾segment修复stale summary。
 
+production ownership保持单向：`EvidenceStore`是run evidence唯一public facade以及append cursor/maintenance debt owner；internal segment storage只执行JSONL append/recover/read/prune，record validation只执行current exact codec与intent equality。其他production consumer不得直接import这两个internal module或绕过Store写evidence。
+
 Start按manifest publish → `run_started` append → 无await安装in-memory run的顺序提交。任一阶段失败都不能伪装成已启动；Destroy会关闭Room admission并使在途Start在await后复核generation/lifecycle，不能在已销毁Room中重新安装run。
 
 ## Runtime-only state
