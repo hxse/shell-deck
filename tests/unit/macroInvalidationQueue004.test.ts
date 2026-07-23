@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { MacroInvalidationQueue, type SequencedContentRecordChange } from '../../src/lib/macro/macroInvalidationQueue'
 
 describe('MacroInvalidationQueue', () => {
@@ -43,6 +45,33 @@ describe('MacroInvalidationQueue', () => {
     ]).toEqual([100, 300, 800, null])
     queue.resetRetry()
     expect(queue.nextRetryDelay()).toBe(100)
+  })
+})
+
+describe('Macro record session extraction', () => {
+  test('keeps the factory as the sole rune owner and sole production assembly point', () => {
+    const macroRoot = resolve(import.meta.dir, '../../src/lib/macro')
+    const sessionSource = readFileSync(resolve(macroRoot, 'macroRecordSession.svelte.ts'), 'utf8')
+    const mutationSource = readFileSync(resolve(macroRoot, 'macroRecordMutationWorkflow.ts'), 'utf8')
+    const remoteSyncSource = readFileSync(resolve(macroRoot, 'macroRecordRemoteSyncCoordinator.ts'), 'utf8')
+    const directConsumers = readdirSync(macroRoot)
+      .filter((file) => file.endsWith('.ts') && file !== 'macroRecordSession.svelte.ts')
+      .filter((file) => /from ['"]\.\/macroRecord(?:MutationWorkflow|RemoteSyncCoordinator)['"]/.test(
+        readFileSync(resolve(macroRoot, file), 'utf8'),
+      ))
+
+    expect(directConsumers).toEqual([])
+    expect(sessionSource).toContain('new MacroRecordMutationWorkflow')
+    expect(sessionSource).toContain('new MacroRecordRemoteSyncCoordinator')
+    expect(sessionSource).toContain('export function createMacroRecordSession')
+    expect(sessionSource).toContain('$state')
+    expect(mutationSource).not.toContain('$state')
+    expect(mutationSource).not.toContain('$effect')
+    expect(remoteSyncSource).not.toContain('$state')
+    expect(remoteSyncSource).not.toContain('$effect')
+    expect(sessionSource).not.toContain('contentChangeProcessing = Promise.resolve()')
+    expect(sessionSource).not.toContain('async function handleMacroRecordChanges')
+    expect(sessionSource).not.toContain('await recordClient.update')
   })
 })
 

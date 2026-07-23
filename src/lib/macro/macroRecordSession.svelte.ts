@@ -1,6 +1,5 @@
 import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEditLease'
 import { cloneJsonValue } from '../jsonClone'
-import { LibraryClient } from '../library/libraryClient'
 import type { ContentEditLeaseChangedMessage } from '../protocol'
 import type { TerminalRoomClient } from '../terminalRoomClient'
 import { validateMacroDefinitionV5 } from './macroDefinitionValidation'
@@ -11,20 +10,19 @@ import {
   messageOf,
   type MacroJsonEditSession,
 } from './macroJsonEditSession.svelte'
-import { MacroInvalidationQueue, type SequencedContentRecordChange } from './macroInvalidationQueue'
-import { MacroRecordClient, type MacroRecordListResult } from './macroRecordClient'
+import type { SequencedContentRecordChange } from './macroInvalidationQueue'
+import {
+  MacroRecordMutationWorkflow,
+  type PersistedDefinition,
+} from './macroRecordMutationWorkflow'
+import {
+  MacroRecordRemoteSyncCoordinator,
+  type MacroTemplateRefreshResult,
+} from './macroRecordRemoteSyncCoordinator'
+import type { MacroRecordListResult } from './macroRecordClient'
 
 type ContentEditLeaseChange = ContentEditLeaseChangedMessage & { sequence: number }
 type DefinitionOperationSource = 'visual' | 'json'
-type RefreshOutcome = 'applied' | 'stale' | 'retry'
-type TemplateRefreshResult = { outcome: RefreshOutcome; records?: MacroRecordSummary[] }
-
-type PersistedDefinition = {
-  record: MacroRecord
-  editing: boolean
-  leaseWarning: string | null
-  preservePublishedCreateBuffer: boolean
-}
 
 export type MacroOperationToken = {
   generation: number
@@ -56,10 +54,6 @@ type MacroRecordSessionOptions = {
 }
 
 export function createMacroRecordSession(options: MacroRecordSessionOptions) {
-  const recordClient = new MacroRecordClient(() => options.roomClient()?.controlGrant ?? null)
-  const libraryClient = new LibraryClient(() => options.roomClient()?.controlGrant ?? null)
-  const invalidations = new MacroInvalidationQueue()
-
   let templates = $state<MacroRecordSummary[]>([])
   let selectedRecord = $state<MacroRecord | null>(null)
   let baseDefinition = $state<MacroDefinitionV5 | null>(null)
@@ -78,12 +72,31 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   let saveToLibraryLabel = $state('Save to Library')
   let templateListProblem = $state<string | null>(null)
   let handledContentLeaseChangeSequence = 0
-  let contentChangeProcessing = Promise.resolve()
   let templateListGeneration = 0
-  let templateReadGeneration = 0
-  let reconciledConnectionGeneration = 0
-  let contentRetryTimer: ReturnType<typeof setTimeout> | null = null
   let saveToLibraryResetTimer: ReturnType<typeof setTimeout> | null = null
+  const mutations = new MacroRecordMutationWorkflow({
+    roomClient: options.roomClient,
+    selectedRecord: () => selectedRecord,
+    editLease: () => editLease,
+    contentEditing: () => contentEditing,
+  })
+  const remoteSync = new MacroRecordRemoteSyncCoordinator({
+    connectionGeneration: options.connectionGeneration,
+    snapshot: () => ({
+      selectedRecord,
+      editorGeneration,
+      operationPending,
+      protectedBuffer: dirty
+        || contentEditing
+        || options.json.editing
+        || leaseLost
+        || publishedCreateBufferPreserved,
+    }),
+    refreshTemplates,
+    readRecord: (recordId) => mutations.read(recordId),
+    installRecord: (record) => installRecord(record),
+    setErrorText: (value) => { errorText = value },
+  })
 
   $effect(() => {
     const changes = options.contentEditLeaseChanges()
@@ -106,18 +119,11 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
 
   $effect(() => {
     const generation = options.connectionGeneration()
-    if (generation <= 0 || generation === reconciledConnectionGeneration) return
-    reconciledConnectionGeneration = generation
-    resetContentRetry()
-    void reconcileSavedContentTruth(generation, false)
-    scheduleMacroRecordChangeDrain()
+    remoteSync.connectionChanged(generation)
   })
 
   $effect(() => {
-    const changes = options.contentRecordChanges()
-    if (!invalidations.observe(changes)) return
-    resetContentRetry()
-    scheduleMacroRecordChangeDrain()
+    remoteSync.observe(options.contentRecordChanges())
   })
 
   $effect(() => {
@@ -126,25 +132,21 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   })
 
   function mount(): () => void {
-    void reconcileSavedContentTruth(options.connectionGeneration(), true)
-    const focus = () => {
-      resetContentRetry()
-      void reconcileSavedContentTruth(options.connectionGeneration(), false)
-      scheduleMacroRecordChangeDrain()
-    }
+    remoteSync.mount()
+    const focus = () => remoteSync.focus()
     window.addEventListener('focus', focus)
     return () => {
       window.removeEventListener('focus', focus)
-      if (contentRetryTimer) clearTimeout(contentRetryTimer)
+      remoteSync.dispose()
       if (saveToLibraryResetTimer) clearTimeout(saveToLibraryResetTimer)
       void releaseEditLease()
     }
   }
 
-  async function refreshTemplates(report = true): Promise<TemplateRefreshResult> {
+  async function refreshTemplates(report = true): Promise<MacroTemplateRefreshResult> {
     const generation = ++templateListGeneration
     try {
-      const result = await recordClient.list()
+      const result = await mutations.list()
       if (generation !== templateListGeneration) return { outcome: 'stale' }
       installTemplateList(result)
       return { outcome: 'applied', records: result.templates }
@@ -175,7 +177,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       operationPending,
       controlEpoch: options.roomClient()?.controlGrant?.controlEpoch ?? null,
     }
-    const record = await recordClient.createFromLibrary(itemId, expectedRevision)
+    const record = await mutations.createFromLibrary(itemId, expectedRevision)
     await refreshTemplates(false)
     const unchanged = !guard.dirty
       && !guard.jsonEditing
@@ -217,7 +219,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
         errorText = null
         return true
       }
-      const record = await recordClient.read(id)
+      const record = await mutations.read(id)
       if (!canCommit(token)) return false
       installRecord(record)
       return true
@@ -273,7 +275,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     if (dirty && !confirm('Discard the unsaved draft and reload the latest saved Macro before editing?')) return
     const token = beginOperation()
     try {
-      const acquired = await acquireFreshEditLease(selectedRecord.id, token, 'edit')
+      const acquired = await mutations.acquireFreshEditLease(selectedRecord.id, 'edit', () => canCommit(token))
       if (!acquired) return
       editLease = acquired.grant
       leaseView = acquired.view
@@ -358,12 +360,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     const definition = cloneJsonValue(validation.value)
     saveToLibraryLabel = 'Saving…'
     try {
-      await libraryClient.create('macro-template', {
-        title: definition.name,
-        content: JSON.stringify(definition, null, 2),
-        description: definition.description,
-        tags: [],
-      })
+      await mutations.saveToLibrary(definition)
       if (!definitionOperationIsCurrent(token, revision, 'visual')) return
       saveToLibraryLabel = 'Saved'
       if (saveToLibraryResetTimer) clearTimeout(saveToLibraryResetTimer)
@@ -394,7 +391,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       let record = selectedRecord
       let lease = editLease
       if (!lease || !contentEditing) {
-        const acquired = await acquireFreshEditLease(selectedId, token, 'delete')
+        const acquired = await mutations.acquireFreshEditLease(selectedId, 'delete', () => canCommit(token))
         if (!acquired) return
         record = acquired.record
         lease = acquired.grant
@@ -405,7 +402,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
         temporaryLease = null
         return
       }
-      await recordClient.delete(record, lease)
+      await mutations.delete(record, lease)
       temporaryLease = null
       if (!canCommit(token)) return
       editLease = null
@@ -424,41 +421,6 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       if (canCommit(token)) reportMutationError(error)
     } finally {
       endOperation(token)
-    }
-  }
-
-  async function acquireFreshEditLease(
-    recordId: string,
-    token: MacroOperationToken,
-    intent: 'edit' | 'delete',
-  ): Promise<{ record: MacroRecord; grant: ContentEditLeaseGrant; view: ContentEditLeaseView } | null> {
-    const roomClient = options.roomClient()
-    if (!roomClient || selectedRecord?.id !== recordId) return null
-    const key = { kind: 'macro' as const, itemId: recordId }
-    const view = await roomClient.contentEditLeaseView(key)
-    if (!canCommit(token) || selectedRecord?.id !== recordId) return null
-    let result: { view: ContentEditLeaseView; grant: ContentEditLeaseGrant }
-    if (view.mode === 'held') {
-      const suffix = intent === 'delete' ? ' to delete it?' : '?'
-      if (!confirm(`This macro is being edited elsewhere. Take over its edit lease${suffix}`)) return null
-      result = await roomClient.takeOverContentEditLease(key, view.leaseEpoch)
-    } else {
-      result = await roomClient.acquireContentEditLease(key, view.leaseEpoch)
-    }
-    try {
-      if (!canCommit(token) || selectedRecord?.id !== recordId) {
-        await roomClient.releaseContentEditLease(result.grant.editLeaseId).catch(() => {})
-        return null
-      }
-      const record = await recordClient.read(recordId)
-      if (!canCommit(token) || selectedRecord?.id !== recordId) {
-        await roomClient.releaseContentEditLease(result.grant.editLeaseId).catch(() => {})
-        return null
-      }
-      return { record, grant: result.grant, view: result.view }
-    } catch (error) {
-      await roomClient.releaseContentEditLease(result.grant.editLeaseId).catch(() => {})
-      throw error
     }
   }
 
@@ -514,7 +476,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
         reconcilePublishedCreate(persisted.record, candidate, token, revision, 'json')
         return
       }
-      const refreshed = await recordClient.list()
+      const refreshed = await mutations.list()
       if (!definitionOperationIsCurrent(token, revision, 'json')) return
       installTemplateList(refreshed)
       installRecord(persisted.record, persisted.editing, persisted.preservePublishedCreateBuffer)
@@ -566,58 +528,19 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     revision: number,
     source: DefinitionOperationSource = 'visual',
   ): Promise<PersistedDefinition | null> {
-    const validation = validateMacroDefinitionV5(definition)
-    if (!validation.ok) throw new Error(formatMacroIssues(validation.issues))
-    const record = selectedRecord
-    const updateResult = record
-      ? editLease && contentEditing
-        ? await recordClient.update(record, validation.value, editLease)
-        : (() => { throw new Error('content_edit_lease_required') })()
-      : null
-    const result = updateResult?.record ?? await recordClient.create(validation.value)
-    if (!definitionOperationIsCurrent(token, revision, source)) {
-      if (!record) reconcilePublishedCreate(result, definition, token, revision, source)
-      return null
-    }
-    if (record && result.id !== record.id) throw new Error('macro_record_identity_changed')
-    if (record && result.revision !== record.revision + 1) throw new Error('macro_revision_conflict')
-    if (!record && result.revision !== 1) throw new Error('macro_revision_conflict')
-    if (record) {
-      if (!editLease || !contentEditing) throw new Error('content_edit_lease_required')
-      if (updateResult?.leaseOutcome.status === 'retained') {
-        editLease = updateResult.leaseOutcome.grant
-        leaseView = {
-          mode: 'held',
-          leaseEpoch: updateResult.leaseOutcome.grant.leaseEpoch,
-          expiresAt: updateResult.leaseOutcome.grant.expiresAt,
-        }
-        return { record: result, editing: true, leaseWarning: null, preservePublishedCreateBuffer: false }
-      }
-      editLease = null
-      leaseView = null
-      return {
-        record: result,
-        editing: false,
-        leaseWarning: updateResult?.leaseOutcome.status === 'lost'
-          ? updateResult.leaseOutcome.reason
-          : 'content_edit_lease_lost',
-        preservePublishedCreateBuffer: false,
-      }
-    }
-    const acquired = await acquireCreatedRecordEditLease(
-      result,
+    const outcome = await mutations.persistDefinition(
+      definition,
       () => definitionOperationIsCurrent(token, revision, source),
+      (outcome) => {
+        if (outcome.kind === 'published_create') {
+          reconcilePublishedCreate(outcome.record, definition, token, revision, source)
+          return
+        }
+        editLease = outcome.value.editLease
+        leaseView = outcome.value.leaseView
+      },
     )
-    if (acquired === null || !definitionOperationIsCurrent(token, revision, source)) {
-      reconcilePublishedCreate(result, definition, token, revision, source)
-      return null
-    }
-    return {
-      record: result,
-      editing: acquired.ok,
-      leaseWarning: acquired.ok ? null : `macro_saved_but_edit_lease_not_retained:${acquired.reason}`,
-      preservePublishedCreateBuffer: !acquired.ok,
-    }
+    return outcome.kind === 'persisted' ? outcome.value : null
   }
 
   function reconcilePublishedCreate(
@@ -638,156 +561,6 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     baseDefinition = cloneJsonValue(record.definition)
     dirty = false
     errorText = 'macro_saved_but_edit_lease_not_retained:operation_context_changed'
-    return true
-  }
-
-  async function acquireCreatedRecordEditLease(
-    record: MacroRecord,
-    operationIsCurrent: () => boolean,
-  ): Promise<{ ok: true } | { ok: false; reason: string } | null> {
-    const roomClient = options.roomClient()
-    if (!roomClient || !operationIsCurrent()) return null
-    const key = { kind: 'macro' as const, itemId: record.id }
-    try {
-      const view = await roomClient.contentEditLeaseView(key)
-      if (!operationIsCurrent()) return null
-      if (view.mode !== 'available') return { ok: false, reason: 'content_edit_lease_held' }
-      const acquired = await roomClient.acquireContentEditLease(key, view.leaseEpoch)
-      if (!operationIsCurrent()) {
-        await roomClient.releaseContentEditLease(acquired.grant.editLeaseId).catch(() => {})
-        return null
-      }
-      editLease = acquired.grant
-      leaseView = acquired.view
-      return { ok: true }
-    } catch (error) {
-      return { ok: false, reason: messageOf(error) }
-    }
-  }
-
-  function scheduleMacroRecordChangeDrain(): void {
-    contentChangeProcessing = contentChangeProcessing
-      .then(async () => { await drainMacroRecordChanges() })
-      .catch((error) => { errorText = messageOf(error) })
-  }
-
-  function resetContentRetry(): void {
-    invalidations.resetRetry()
-    if (contentRetryTimer) clearTimeout(contentRetryTimer)
-    contentRetryTimer = null
-  }
-
-  function scheduleContentRetry(): void {
-    if (contentRetryTimer) return
-    const delay = invalidations.nextRetryDelay()
-    if (delay === null) return
-    contentRetryTimer = setTimeout(() => {
-      contentRetryTimer = null
-      void reconcileSavedContentTruth(options.connectionGeneration(), false)
-      scheduleMacroRecordChangeDrain()
-    }, delay)
-  }
-
-  function hasProtectedMacroBuffer(): boolean {
-    return dirty || contentEditing || options.json.editing || leaseLost || publishedCreateBufferPreserved
-  }
-
-  function cleanReadonlySelectionMatches(id: string, revision: number, generation: number): boolean {
-    return selectedRecord?.id === id
-      && selectedRecord.revision === revision
-      && editorGeneration === generation
-      && !operationPending
-      && !hasProtectedMacroBuffer()
-  }
-
-  async function reconcileSavedContentTruth(expectedConnectionGeneration: number, report: boolean): Promise<void> {
-    const refreshed = await refreshTemplates(report)
-    if (refreshed.outcome !== 'applied') {
-      if (refreshed.outcome === 'retry') scheduleContentRetry()
-      return
-    }
-    if (expectedConnectionGeneration > 0 && expectedConnectionGeneration !== options.connectionGeneration()) return
-    const current = selectedRecord
-    if (!current) return
-    const summary = refreshed.records?.find((candidate) => candidate.id === current.id)
-    if (!summary) {
-      errorText = 'macro_record_deleted_elsewhere'
-      return
-    }
-    if (summary.revision <= current.revision) return
-    if (operationPending || hasProtectedMacroBuffer()) {
-      errorText = 'macro_record_changed_elsewhere'
-      return
-    }
-    const readGeneration = ++templateReadGeneration
-    const capturedEditorGeneration = editorGeneration
-    try {
-      const record = await recordClient.read(current.id)
-      if (readGeneration !== templateReadGeneration) return
-      if (expectedConnectionGeneration > 0 && expectedConnectionGeneration !== options.connectionGeneration()) return
-      if (!cleanReadonlySelectionMatches(current.id, current.revision, capturedEditorGeneration)) return
-      if (record.revision < Math.max(current.revision, summary.revision)) {
-        scheduleContentRetry()
-        return
-      }
-      installRecord(record)
-    } catch (error) {
-      if (readGeneration !== templateReadGeneration) return
-      if (isNotFoundError(error) && selectedRecord?.id === current.id) {
-        errorText = 'macro_record_deleted_elsewhere'
-      } else {
-        if (report) errorText = messageOf(error)
-        scheduleContentRetry()
-      }
-    }
-  }
-
-  async function drainMacroRecordChanges(): Promise<void> {
-    while (!operationPending) {
-      const batch = invalidations.batch()
-      if (batch.length === 0) return
-      const consumed = await handleMacroRecordChanges(batch)
-      if (!consumed) { scheduleContentRetry(); return }
-      invalidations.consumeThrough(batch.at(-1)!.sequence)
-      resetContentRetry()
-    }
-  }
-
-  async function handleMacroRecordChanges(changes: SequencedContentRecordChange[]): Promise<boolean> {
-    if (operationPending) return false
-    const refreshed = await refreshTemplates(false)
-    if (refreshed.outcome !== 'applied' || operationPending) return false
-    if (!selectedRecord) return true
-    const decision = invalidations.classify(changes, selectedRecord.id, selectedRecord.revision)
-    if (decision.kind === 'unrelated' || decision.kind === 'own_ack') return true
-    if (decision.kind === 'deleted') {
-      errorText = 'macro_record_deleted_elsewhere'
-      return true
-    }
-    if (hasProtectedMacroBuffer()) {
-      errorText = 'macro_record_changed_elsewhere'
-      return true
-    }
-    const expectedId = selectedRecord.id
-    const expectedRevision = selectedRecord.revision
-    const capturedEditorGeneration = editorGeneration
-    const requiredRevision = decision.revision ?? expectedRevision
-    const readGeneration = ++templateReadGeneration
-    try {
-      const record = await recordClient.read(expectedId)
-      if (readGeneration !== templateReadGeneration) return false
-      if (!cleanReadonlySelectionMatches(expectedId, expectedRevision, capturedEditorGeneration)) return false
-      if (record.revision < Math.max(expectedRevision, requiredRevision)) return false
-      installRecord(record)
-    } catch (error) {
-      if (readGeneration !== templateReadGeneration) return false
-      if (isNotFoundError(error) && selectedRecord?.id === expectedId) {
-        errorText = 'macro_record_deleted_elsewhere'
-        return true
-      }
-      if (selectedRecord?.id === expectedId) errorText = messageOf(error)
-      return false
-    }
     return true
   }
 
@@ -814,10 +587,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     editLease = null
     leaseView = null
     leaseLost = false
-    const roomClient = options.roomClient()
-    if (lease && roomClient?.canMutateShared) {
-      await roomClient.releaseContentEditLease(lease.editLeaseId).catch(() => {})
-    }
+    await mutations.releaseEditLease(lease)
   }
 
   function markEditLeaseLost(view: ContentEditLeaseView | null, reason: string): void {
@@ -847,7 +617,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   function endOperation(token: MacroOperationToken): void {
     if (operationGeneration !== token.generation) return
     operationPending = false
-    scheduleMacroRecordChangeDrain()
+    remoteSync.operationEnded()
   }
 
   function canCommit(token: MacroOperationToken): boolean {
@@ -878,11 +648,6 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
 
   function emptyDefinition(): MacroDefinitionV5 {
     return { schemaVersion: 5, name: 'New Macro', description: '', terminalLayout: [], body: [] }
-  }
-
-  function isNotFoundError(error: unknown): boolean {
-    return error instanceof Error
-      && (error.message.startsWith('macro_record_not_found:') || ('status' in error && error.status === 404))
   }
 
   return {

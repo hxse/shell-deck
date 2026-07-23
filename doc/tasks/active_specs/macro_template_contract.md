@@ -78,6 +78,8 @@ JSON Edit以及Save/Create/Start等lock-sensitive pending operation期间editor/
 
 transient WebSocket reconnect以显式`connectionGeneration`触发saved-content reconciliation，不清dirty/preserved page-memory buffer或`beforeunload` guard。新连接ready后重读record list；只有clean readonly selection可安装revision单调不退后的server truth，protected buffer只显示changed/deleted notice。list/read continuation分别由generation、connection、record identity、editor state和minimum revision约束；旧response不能覆盖新truth，transport/5xx失败不能提前消费invalidation sequence，queue做有界重试并在focus/reconnect继续drain。Create已commit而controller/connection先变化时，若submitted identity仍匹配，必须关联fresh record identity并进入read-only published-Create preservation，禁止重复Create。
 
+实现上，`createMacroRecordSession`是selection/draft/lease及全部Svelte rune state的唯一owner和唯一public assembly point。Macro-specific `MacroRecordMutationWorkflow`只编排record/Library client、fresh lease和persist transaction并返回显式outcome；`MacroRecordRemoteSyncCoordinator`只持有invalidation queue、retry timer、generation与serialized drain，通过live snapshot/commit ports让factory应用结果。两者不缓存第二份record/draft/lease state，Macro与Library不共享带feature flag的generic content session。
+
 ## 显式 Prepare terminals
 
 Macro运行区只有一个`Prepare terminals`按钮。不存在Settings toggle、Auto-prepare、Use/Activate、Start-and-prepare或selection/load/save/start/event trigger。
