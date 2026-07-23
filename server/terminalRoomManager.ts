@@ -1,26 +1,9 @@
-import { assertGeneratedId, assertRoomRouteToken, createGeneratedId } from '../src/lib/generatedId'
+import { assertGeneratedId, createGeneratedId } from '../src/lib/generatedId'
 import type { RoomSnapshot, ServerMessage, TerminalBackendKind, TerminalRuntimePosition, TerminalSnapshot } from '../src/lib/protocol'
-import {
-  type RoomControlBearer,
-  type RoomControlContext,
-  type RoomControlGrant,
-  type RoomControlView,
-} from '../src/lib/roomControl'
+import type { RoomControlBearer, RoomControlContext, RoomControlGrant, RoomControlView } from '../src/lib/roomControl'
 import { createTerminalId, createTerminalLaunchId, type TerminalRef } from '../src/lib/terminalIdentity'
-import {
-  admitRoomOperation,
-  beginRoomDestruction,
-  createRoomRuntime,
-  finishRoomDestruction,
-  type RoomClient,
-  type RoomLifecycle,
-  type RoomOperationTicket,
-  type RoomRuntime,
-} from './roomLifecycleCoordinator'
-import {
-  RoomControlCoordinator,
-  type RoomControlledOperationTicket,
-} from './roomControlCoordinator'
+import type { RoomClient, RoomLifecycle, RoomOperationTicket, RoomRuntime } from './roomLifecycleCoordinator'
+import { RoomControlCoordinator, type RoomControlledOperationTicket } from './roomControlCoordinator'
 import type { TerminalBackendFactory } from './terminalBackend'
 import {
   defaultBackendFactory,
@@ -37,30 +20,19 @@ import {
   runSerializedTerminalStructureMutation,
   runSerializedTerminalStructureOperation,
 } from './terminalMutationCoordinator'
-import {
-  DEFAULT_REPLAY_BYTE_LIMIT,
-} from './terminalReplayBuffer'
+import { DEFAULT_REPLAY_BYTE_LIMIT } from './terminalReplayBuffer'
 import type { TerminalSlot } from './terminalRuntimeState'
-import {
-  projectTerminalPositions,
-  projectTerminalReplayMessage,
-} from './terminalSnapshotProjection'
+import { projectTerminalPositions, projectTerminalReplayMessage } from './terminalSnapshotProjection'
+import { RoomRegistryLifecycleCoordinator, type RoomSummary } from './roomRegistryLifecycleCoordinator'
 
 export { DEFAULT_REPLAY_BYTE_LIMIT } from './terminalReplayBuffer'
 export { defaultBackendFactory, resolveShellCwd } from './terminalBackendCoordinator'
 export type { CreateTerminalOptions, TerminalRuntimeContext } from './terminalBackendCoordinator'
 export type { RoomClient, RoomLifecycle, RoomOperationTicket } from './roomLifecycleCoordinator'
+export type { RoomSummary } from './roomRegistryLifecycleCoordinator'
 export { ROOM_CONTROL_HEARTBEAT_MS, ROOM_CONTROL_TTL_MS } from './roomControlCoordinator'
 export type { RoomControlledOperationTicket } from './roomControlCoordinator'
 export const MAX_LIVE_ROOMS = 32
-
-export type RoomSummary = {
-  roomId: string
-  roomGeneration: string
-  terminalCount: number
-  connectedClientCount: number
-  hasActiveRun: boolean
-}
 
 type TerminalRoomManagerOptions = {
   replayByteLimit?: number
@@ -84,11 +56,7 @@ export class TerminalRoomManager {
   readonly serverInstanceId: string
   readonly maxLiveRooms = MAX_LIVE_ROOMS
   readonly homeDirectory: string
-  private readonly roomIdFactory: () => string
-  private readonly roomGenerationFactory: () => string
-  private activeRunProvider: (roomId: string, roomGeneration: string) => boolean = () => false
-  private destroyHooks: Array<(roomId: string, roomGeneration: string, signal: AbortSignal) => Promise<void> | void> = []
-  private readonly destroying = new Map<string, Promise<void>>()
+  private readonly registryCoordinator: RoomRegistryLifecycleCoordinator
   private readonly controlCoordinator: RoomControlCoordinator
   private readonly backendCoordinator: TerminalBackendCoordinator
 
@@ -97,10 +65,21 @@ export class TerminalRoomManager {
     if (!Number.isInteger(replayByteLimit) || replayByteLimit <= 0) throw new Error('invalid_replay_byte_limit')
     this.replayByteLimit = replayByteLimit
     this.backendFactory = options.backendFactory ?? defaultBackendFactory
-    this.roomIdFactory = options.roomIdFactory ?? (() => createGeneratedId('room'))
-    this.roomGenerationFactory = options.roomGenerationFactory ?? (() => createGeneratedId('roomGeneration'))
     this.serverInstanceId = assertGeneratedId((options.serverInstanceIdFactory ?? (() => createGeneratedId('serverInstance')))(), 'serverInstance')
     this.homeDirectory = resolveShellCwd(options.homeDirectory)
+    this.registryCoordinator = new RoomRegistryLifecycleCoordinator({
+      rooms: this.rooms,
+      clients: this.clients,
+      maxLiveRooms: this.maxLiveRooms,
+      roomIdFactory: options.roomIdFactory ?? (() => createGeneratedId('room')),
+      roomGenerationFactory: options.roomGenerationFactory ?? (() => createGeneratedId('roomGeneration')),
+      ownerContext: (owner) => this.controlCoordinator.ownerContext(owner),
+      invokeControlLost: (context) => this.controlCoordinator.invokeControlLost(context),
+      closeTerminalResource: (room, terminal) => {
+        this.backendCoordinator.cancelCwdRefresh(terminal)
+        this.backendCoordinator.beginBackendClose(room, terminal.backend)
+      },
+    })
     this.backendCoordinator = new TerminalBackendCoordinator({
       rooms: this.rooms,
       replayByteLimit: this.replayByteLimit,
@@ -132,15 +111,15 @@ export class TerminalRoomManager {
   }
 
   setActiveRunProvider(provider: (roomId: string, roomGeneration: string) => boolean): void {
-    this.activeRunProvider = provider
+    this.registryCoordinator.setActiveRunProvider(provider)
   }
 
   setDestroyHook(hook: (roomId: string, roomGeneration: string, signal: AbortSignal) => Promise<void> | void): void {
-    this.destroyHooks = [hook]
+    this.registryCoordinator.setDestroyHook(hook)
   }
 
   addDestroyHook(hook: (roomId: string, roomGeneration: string, signal: AbortSignal) => Promise<void> | void): void {
-    this.destroyHooks.push(hook)
+    this.registryCoordinator.addDestroyHook(hook)
   }
 
   setControlLostHook(hook: (context: RoomControlContext) => Promise<void> | void): void {
@@ -152,40 +131,23 @@ export class TerminalRoomManager {
   }
 
   ensureRootRoom(): { kind: 'created'; room: RoomSummary } | { kind: 'home'; rooms: RoomSummary[] } {
-    if (this.rooms.size > 0) return { kind: 'home', rooms: this.listRooms() }
-    return { kind: 'created', room: this.createRoom() }
+    return this.registryCoordinator.ensureRootRoom()
   }
 
   createRoom(): RoomSummary {
-    this.assertCapacity()
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const roomId = assertGeneratedId(this.roomIdFactory(), 'room')
-      if (this.rooms.has(roomId)) continue
-      return this.createRoomWithToken(roomId)
-    }
-    throw new Error('room_id_collision')
+    return this.registryCoordinator.createRoom()
   }
 
   ensureRoomFromRoute(roomId: string): { room: RoomSummary; created: boolean } {
-    const token = assertRoomRouteToken(roomId)
-    const existing = this.rooms.get(token)
-    if (existing) {
-      if (existing.lifecycle !== 'active') throw new Error('room_destroying')
-      return { room: this.roomSummary(existing), created: false }
-    }
-    this.assertCapacity()
-    return { room: this.createRoomWithToken(token), created: true }
+    return this.registryCoordinator.ensureRoomFromRoute(roomId)
   }
 
   listRooms(): RoomSummary[] {
-    return [...this.rooms.values()]
-      .filter((room) => room.lifecycle !== 'destroyed')
-      .map((room) => this.roomSummary(room))
-      .sort((left, right) => left.roomId.localeCompare(right.roomId))
+    return this.registryCoordinator.listRooms()
   }
 
   roomSummaryById(roomId: string): RoomSummary {
-    return this.roomSummary(this.activeRoomOrThrow(roomId))
+    return this.registryCoordinator.roomSummaryById(roomId)
   }
 
   connectClient(
@@ -262,8 +224,7 @@ export class TerminalRoomManager {
   }
 
   admit(roomId: string): RoomOperationTicket {
-    const room = this.activeRoomOrThrow(roomId)
-    return admitRoomOperation(room, () => this.rooms.get(room.roomId) === room)
+    return this.registryCoordinator.admit(roomId)
   }
 
   async runOperation<T>(roomId: string, operation: (ticket: RoomOperationTicket) => Promise<T> | T): Promise<T> {
@@ -402,76 +363,19 @@ export class TerminalRoomManager {
   }
 
   async destroyRoom(roomId: string, expectedRoomGeneration: string): Promise<void> {
-    const token = assertRoomRouteToken(roomId)
-    const generation = assertGeneratedId(expectedRoomGeneration, 'roomGeneration')
-    const room = this.rooms.get(token)
-    if (!room) throw new Error('room_not_found')
-    if (room.roomGeneration !== generation) throw new Error('room_generation_conflict')
-    if (room.lifecycle !== 'active') throw new Error('room_destroying')
-
-    const previousController = room.controller ? this.controlCoordinator.ownerContext(room.controller) : null
-    beginRoomDestruction(room)
-    const operation = finishRoomDestruction(room, previousController, {
-      controlLost: (owner) => this.controlCoordinator.invokeControlLost(owner),
-      destroyHooks: () => this.destroyHooks,
-      closeTerminalResource: (activeRoom, terminal) => {
-        this.backendCoordinator.cancelCwdRefresh(terminal)
-        this.backendCoordinator.beginBackendClose(activeRoom, terminal.backend)
-      },
-      removeClient: (clientId) => { this.clients.delete(clientId) },
-      removeRoom: (activeRoomId) => { this.rooms.delete(activeRoomId) },
-    })
-    this.destroying.set(room.roomId, operation)
-    try { await operation } finally { this.destroying.delete(room.roomId) }
+    await this.registryCoordinator.destroyRoom(roomId, expectedRoomGeneration)
   }
 
   async destroyAllRooms(): Promise<void> {
-    const targets = [...this.rooms.values()].filter((room) => room.lifecycle === 'active')
-    const started = targets.map(async (room) => await this.destroyRoom(room.roomId, room.roomGeneration))
-    await Promise.allSettled([...started, ...this.destroying.values()])
-  }
-
-  private createRoomWithToken(roomId: string): RoomSummary {
-    if (this.rooms.has(roomId)) throw new Error('room_id_conflict')
-    const roomGeneration = this.nextRoomGeneration()
-    const room = createRoomRuntime(roomId, roomGeneration)
-    this.rooms.set(roomId, room)
-    return this.roomSummary(room)
-  }
-
-  private assertCapacity(): void {
-    if (this.rooms.size >= MAX_LIVE_ROOMS) throw new Error('room_capacity_reached')
-  }
-
-  private roomSummary(room: RoomRuntime): RoomSummary {
-    return {
-      roomId: room.roomId,
-      roomGeneration: room.roomGeneration,
-      terminalCount: room.terminals.size,
-      connectedClientCount: room.clients.size,
-      hasActiveRun: this.activeRunProvider(room.roomId, room.roomGeneration),
-    }
+    await this.registryCoordinator.destroyAllRooms()
   }
 
   private activeRoomOrThrow(roomId: string): RoomRuntime {
-    const room = this.roomOrThrow(roomId)
-    if (room.lifecycle === 'destroying') throw new Error('room_destroying')
-    if (room.lifecycle !== 'active') throw new Error('room_not_found')
-    return room
+    return this.registryCoordinator.activeRoomOrThrow(roomId)
   }
 
   private roomOrThrow(roomId: string): RoomRuntime {
-    const room = this.rooms.get(assertRoomRouteToken(roomId))
-    if (!room || room.lifecycle === 'destroyed') throw new Error('room_not_found')
-    return room
-  }
-
-  private nextRoomGeneration(): string {
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const id = assertGeneratedId(this.roomGenerationFactory(), 'roomGeneration')
-      if (![...this.rooms.values()].some((room) => room.roomGeneration === id)) return id
-    }
-    throw new Error('room_generation_id_collision')
+    return this.registryCoordinator.roomOrThrow(roomId)
   }
 
   private broadcast(room: RoomRuntime, message: ServerMessage): void {

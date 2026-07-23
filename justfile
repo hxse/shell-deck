@@ -171,6 +171,17 @@ test-20260723c-005:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "Room terminal reset"
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomHome032.spec.ts
 
+test-20260723c-006:
+    HISTFILE=/dev/null bun test tests/unit/roomRegistryDecomposition006.test.ts
+    HISTFILE=/dev/null bun test tests/unit/terminalRoomManager032.test.ts
+    HISTFILE=/dev/null bun test tests/unit/terminalRoomDecomposition008.test.ts
+    HISTFILE=/dev/null bun test tests/unit/roomControl033.test.ts
+    HISTFILE=/dev/null bun test tests/integration/roomRouting032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/realRoomLifecycle032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/terminalRoomWebSocket032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.lifecycle.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomHome032.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
 

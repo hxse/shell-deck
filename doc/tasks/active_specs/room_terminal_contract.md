@@ -45,6 +45,8 @@ selected terminal严格属于browser-local state。Room snapshot、terminal snap
 
 Home不提供手动Refresh。Home可见时Svelte 5 effect每秒读取同一server Room registry；页面hidden或离开Home时cleanup，focus/visibility恢复时立即读取。读取不会建立browser-to-browser通道。
 
+Room registry ownership保持单向：`TerminalRoomManager`继续创建并公开唯一`rooms/clients` map，同时作为production唯一public facade与control/backend/structure composition root；internal `roomRegistryLifecycleCoordinator`只持有相同reference，负责capacity、random/lazy-route create、generation、list/summary、lifecycle admission和Destroy single-flight/drain。它不建立第二份Room/client registry，不直接依赖control/backend coordinator；control-lost与terminal cleanup通过manager ports进入。其他production consumer不得直接import registry coordinator。
+
 ## Macro binding 与 structure lock
 
 MacroDefinition只保存连续index/type。显式Prepare与Start均携带调用者看到的`expectedTerminalStructureRevision`，并通过同一Room lifecycle ticket、controller guard与structure queue串行执行；revision不匹配必须在任何mutation前返回conflict。Prepare只调结构，Start还要求所有binding ready。
