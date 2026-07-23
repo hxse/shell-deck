@@ -17,7 +17,7 @@ server还维护authoritative `terminalStructureRevision`。它只在create/delet
 
 cwd属于单个Shell terminal，不属于Room、Macro或server。执行`cd`会改变live cwd；拖拽不改变process，但会改变哪个Shell是最高index。cwd变化只发送轻量runtime event，不重发replay、不持久化，server不在terminal cwd写`.shell-deck`数据。它递增live room/terminal revision，但不属于Macro使用的terminal structure revision。
 
-terminal backend lifecycle由内部`terminalBackendCoordinator`单点协调：candidate `start()`期间的同步data/exit/error先缓冲，Room ticket与candidate成功后才commit并按snapshot/index/output原顺序发布；reset与destroy的旧backend close promise继续登记到同一Room drain。current callback必须同时匹配Room generation、Terminal object与launch identity，cwd debounce随terminal close/reset/destroy取消。外部仍只通过`TerminalRoomManager`facade访问，coordinator不拥有第二份terminal registry。
+terminal backend实现保持单向组合：`terminalBackendCoordinator`继续决定create/reset/close的structure transaction、candidate commit point与snapshot/index/callback发布顺序；`terminalBackendLifecycle`只负责`start()`同步data/exit/error buffer、current-launch callback和Room close drain；`terminalCwdCoordinator`只负责cwd resolve、last-shell inheritance及60ms refresh/cancel timer。三者直接操作manager取得的同一`RoomRuntime/TerminalSlot` object，不建立terminal map、replay、revision或cwd cache；其他production consumer仍只通过`TerminalRoomManager`facade访问。Room ticket与candidate成功后才commit；reset/destroy的旧backend close promise继续登记到同一Room drain，current callback必须同时匹配Room generation、Terminal object与launch identity，cwd debounce随terminal close/reset/destroy取消。
 
 上述继承只适用于用户点击New shell；Macro Prepare创建Shell时始终显式使用`$HOME`，避免把某个live terminal的路径写成Macro含义。
 

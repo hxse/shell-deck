@@ -158,6 +158,19 @@ test-20260723c-004:
     HISTFILE=/dev/null bun test tests/integration/roomRuntimeSync035.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/singleWriterRoom033.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts
 
+test-20260723c-005:
+    HISTFILE=/dev/null bun test tests/unit/terminalBackendDecomposition005.test.ts
+    HISTFILE=/dev/null bun test tests/unit/terminalRuntime032.test.ts
+    HISTFILE=/dev/null bun test tests/unit/terminalRoomDecomposition008.test.ts
+    HISTFILE=/dev/null bun test tests/unit/terminalRoomManager032.test.ts
+    HISTFILE=/dev/null bun test tests/unit/realPtyBackend.test.ts
+    HISTFILE=/dev/null bun test tests/integration/realRoomLifecycle032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/realPtyInteraction032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/realPtyOutputBatching.test.ts
+    HISTFILE=/dev/null bun test tests/integration/realPtyResizeFlush.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "Room terminal reset"
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomHome032.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
 
