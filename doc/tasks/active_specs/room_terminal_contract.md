@@ -17,6 +17,8 @@ server还维护authoritative `terminalStructureRevision`。它只在create/delet
 
 cwd属于单个Shell terminal，不属于Room、Macro或server。执行`cd`会改变live cwd；拖拽不改变process，但会改变哪个Shell是最高index。cwd变化只发送轻量runtime event，不重发replay、不持久化，server不在terminal cwd写`.shell-deck`数据。它递增live room/terminal revision，但不属于Macro使用的terminal structure revision。
 
+terminal backend lifecycle由内部`terminalBackendCoordinator`单点协调：candidate `start()`期间的同步data/exit/error先缓冲，Room ticket与candidate成功后才commit并按snapshot/index/output原顺序发布；reset与destroy的旧backend close promise继续登记到同一Room drain。current callback必须同时匹配Room generation、Terminal object与launch identity，cwd debounce随terminal close/reset/destroy取消。外部仍只通过`TerminalRoomManager`facade访问，coordinator不拥有第二份terminal registry。
+
 上述继承只适用于用户点击New shell；Macro Prepare创建Shell时始终显式使用`$HOME`，避免把某个live terminal的路径写成Macro含义。
 
 terminal tab与pane header使用同一个canonical单行label：`index · terminalId · [current cwd ·] kind · status`。Text省略cwd；两处内容一致并ellipsis，完整值放入title，pane header可选择复制。
@@ -58,3 +60,5 @@ Start把index/type解析为terminalId/launchId后冻结routing。active run期�
 Take Control只转移writer，不清空terminal、Text或active Macro run，也不搬运/删除另一设备browser-local的未保存Macro/Library draft。所有明确shared mutation的client guard和server rejection进入同一toast：默认3秒、hover暂停、mouseleave继续、文字可复制、点击外部立即关闭；不能再用silent disabled制造“点击没反应”。
 
 HTTP shared mutation使用仅owner可见的clientId/controlLeaseId/controlEpoch bearer，并逐请求复核live owner WebSocket、Room generation和lifecycle。grant只在内存中存在，不进入observer message、Room list、Trace、URL或localStorage。Home New/Destroy是generation-bound process lifecycle operation，不要求目标Room controller；Destroy仍先关闭admission并撤销control/content lease，再清理runtime。
+
+control实现由内部`roomControlCoordinator`单点拥有client registration、heartbeat/TTL、personalized view、takeover/release与controlled ticket，直接操作manager创建的唯一Room/client maps。`TerminalRoomManager`保留同名public facade；takeover在old-owner cleanup await后仍复核Room lifecycle与new owner context，published-operation仍只在publish前鉴权，不能因模块拆分新增post-commit false failure。

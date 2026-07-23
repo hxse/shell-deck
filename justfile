@@ -100,6 +100,11 @@ test-20260723a:
     HISTFILE=/dev/null bun test tests/unit/businessThemeContrastC.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/uiThemeCloseout004.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/businessThemeContrastC.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts
 
+test-20260723b-001:
+    HISTFILE=/dev/null bun test tests/unit/roomControl033.test.ts tests/unit/terminalRuntime032.test.ts tests/unit/terminalRoomManager032.test.ts tests/unit/terminalRoomDecomposition008.test.ts tests/unit/contentEditLease033.test.ts
+    HISTFILE=/dev/null bun test tests/integration/roomRuntimeSync035.test.ts tests/integration/realRoomLifecycle032.test.ts tests/integration/realPtyInteraction032.test.ts tests/integration/macroRuntime034.prepare.test.ts tests/integration/macroRuntime034.terminal.test.ts tests/integration/agentEventWaitLimit038.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/singleWriterRoom033.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
 

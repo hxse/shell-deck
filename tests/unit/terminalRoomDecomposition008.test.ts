@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { createGeneratedId } from '../../src/lib/generatedId'
 import type { TerminalBackendKind } from '../../src/lib/protocol'
 import {
@@ -34,8 +36,53 @@ import {
   projectTerminalIndexMapMessage,
   projectTerminalSnapshot,
 } from '../../server/terminalSnapshotProjection'
+import { TerminalRoomManager } from '../../server/terminalRoomManager'
 
 describe('Terminal Room manager extraction', () => {
+  test('manager remains the only production facade for single-state control and backend coordinators', () => {
+    const serverRoot = resolve(import.meta.dir, '../../server')
+    const managerSource = readFileSync(resolve(serverRoot, 'terminalRoomManager.ts'), 'utf8')
+    const controlSource = readFileSync(resolve(serverRoot, 'roomControlCoordinator.ts'), 'utf8')
+    const backendSource = readFileSync(resolve(serverRoot, 'terminalBackendCoordinator.ts'), 'utf8')
+    const directConsumers = readdirSync(serverRoot)
+      .filter((file) => file.endsWith('.ts') && file !== 'terminalRoomManager.ts')
+      .filter((file) => /from ['"]\.\/(?:roomControlCoordinator|terminalBackendCoordinator)['"]/.test(readFileSync(resolve(serverRoot, file), 'utf8')))
+
+    expect(directConsumers).toEqual([])
+    expect((managerSource + controlSource + backendSource).match(/rooms\s*=\s*new Map/g)).toHaveLength(1)
+    expect((managerSource + controlSource + backendSource).match(/clients\s*=\s*new Map/g)).toHaveLength(1)
+    expect(managerSource).not.toContain('const pendingData: string[]')
+    expect(managerSource).not.toContain('expiresAtMs = now +')
+    expect(managerSource).toContain('return this.controlCoordinator.connectClient(roomId, send, close, ping)')
+    expect(managerSource).toContain('return this.backendCoordinator.createTerminal(roomId, options)')
+
+    const facadeMethods = [
+      'connectClient',
+      'disconnectClient',
+      'noteClientPong',
+      'heartbeatSweep',
+      'roomControlView',
+      'acquireRoomControl',
+      'takeOverRoomControl',
+      'releaseRoomControl',
+      'admitControlledClient',
+      'admitControlledBearer',
+      'assertRoomControlContext',
+      'createTerminal',
+      'input',
+      'setTextContent',
+      'resize',
+      'resetTerminal',
+      'moveTerminal',
+      'closeTerminal',
+      'roomSnapshot',
+      'resolveTerminal',
+      'terminalSnapshot',
+      'destroyRoom',
+    ] as const
+    for (const method of facadeMethods) expect(typeof TerminalRoomManager.prototype[method]).toBe('function')
+  })
+
   test('bounded replay keeps the exact UTF-8 tail while Text replacement stays unbounded', () => {
     const shell = { backendKind: 'fake' as const, ...createTerminalReplayFields(), outputActivityRevision: 0 }
     for (const chunk of ['old', '界', 'END']) {
