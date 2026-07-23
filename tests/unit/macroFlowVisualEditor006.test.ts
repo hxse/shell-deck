@@ -27,13 +27,30 @@ describe('Macro flow visual editor extraction', () => {
     const lanes = readFileSync(resolve(componentRoot, 'ParallelLaneTabs.svelte'), 'utf8')
     const tree = readFileSync(resolve(componentRoot, 'macroFlowTreeController.svelte.ts'), 'utf8')
     const laneController = readFileSync(resolve(componentRoot, 'parallelLaneEditorController.svelte.ts'), 'utf8')
+    const lanePolicy = readFileSync(resolve(componentRoot, 'parallelLaneEditorPolicy.ts'), 'utf8')
+    const laneCommands = readFileSync(resolve(componentRoot, 'parallelLaneEditorCommands.ts'), 'utf8')
+    const setLaneActionIdSource = laneController.slice(
+      laneController.indexOf('  function setLaneActionId('),
+      laneController.indexOf('  function isLaneActionCollapsed('),
+    )
     const productionConsumers = sourceFiles(sourceRoot)
       .filter((path) => !path.endsWith('/MacroFlowNodeList.svelte') && !path.endsWith('/ParallelLaneTabs.svelte'))
       .filter((path) => /from ['"][^'"]*(?:macroFlowTreeController|parallelLaneEditorController)\.svelte['"]/.test(
         readFileSync(path, 'utf8'),
       ))
+    const commandConsumers = sourceFiles(sourceRoot)
+      .filter((path) => /from ['"][^'"]*parallelLaneEditorCommands['"]/.test(readFileSync(path, 'utf8')))
+      .map(fileName)
+    const policyConsumers = sourceFiles(sourceRoot)
+      .filter((path) => /from ['"][^'"]*parallelLaneEditorPolicy['"]/.test(readFileSync(path, 'utf8')))
+      .map(fileName)
 
     expect(productionConsumers).toEqual([])
+    expect(commandConsumers).toEqual(['parallelLaneEditorController.svelte.ts'])
+    expect(policyConsumers).toEqual([
+      'parallelLaneEditorCommands.ts',
+      'parallelLaneEditorController.svelte.ts',
+    ])
     expect(flow).toContain('createMacroFlowTreeController')
     expect(lanes).toContain('createParallelLaneEditorController')
     expect(flow).toContain('new MacroInsertionPaletteLifecycle')
@@ -47,6 +64,26 @@ describe('Macro flow visual editor extraction', () => {
     expect(tree + laneController).not.toMatch(/\blet\s+draft\b/)
     expect(tree).toContain('options.updateDraft')
     expect(laneController).toContain('options.updateDraft')
+    expect(lanePolicy + laneCommands).not.toMatch(/\$state|options\.updateDraft|\bconfirm\(|editNotice/)
+    expect(laneController.match(/\$state/g)).toHaveLength(2)
+    expect(setLaneActionIdSource).toContain('if (collapsedLaneActionIds.includes(actionId))')
+    expect(setLaneActionIdSource).not.toContain('result.ok')
+    expect(setLaneActionIdSource).toContain('return true')
+    expect(laneController).toContain('collapsedLaneActionIds.filter((id) => !removed.has(id))')
+    expect(laneController).toContain('options.setSelectedLaneId(result.addedLaneId)')
+    for (const text of [
+      'Duplicate lane id blocked: ',
+      'Duplicate lane label blocked: ',
+      'Duplicate action id blocked: ',
+      'Duplicate output id blocked: ',
+      'Add Capture or Extract before collecting lane text.',
+      'Lane terminal change blocked; incompatible actions for ',
+      'Remove parallel lane ',
+      'Remove parallel lane action ',
+    ]) expect(laneController).toContain(text)
+    for (const source of [laneController, lanePolicy, laneCommands]) {
+      expect(source.trimEnd().split('\n').length).toBeLessThanOrEqual(400)
+    }
   })
 
   test('default factory preserves the exact current node emitted by every root palette action', () => {
@@ -184,6 +221,10 @@ function sourceFiles(directory: string): string[] {
     if (entry.isDirectory()) return sourceFiles(path)
     return /\.(?:ts|svelte)$/.test(entry.name) ? [path] : []
   })
+}
+
+function fileName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1)
 }
 
 function definition(body: FlowV2Node[]): MacroDefinitionV5 {

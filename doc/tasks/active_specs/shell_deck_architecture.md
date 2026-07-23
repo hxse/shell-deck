@@ -50,7 +50,7 @@ current presentation由Tailwind CSS 4与daisyUI 5提供，`src/app.css`是唯一
 
 除Theme select这一项已登记结构增量外，framework迁移不拥有DOM hierarchy、control位置、panel/layout或业务interaction变化。`just ui-style-residue`与111-case theme/viewport matrix冻结source owner、semantic state和responsive contract，具体见`ui_theme_contract.md`。
 
-Macro visual editor中，`MacroInsertionPaletteLifecycle`是viewport placement、mount focus、Escape和trigger focus restoration的唯一实现。Flow tree与Parallel lane controller分别拥有本域collapse/ID/structure mutation，但只读取live draft并调用既有`updateDraft`；两个Svelte parent继续拥有DOM、render snippet、palette domain state与selected-lane wiring，因此controller拆分不改变component hierarchy、control order或mutation gateway。
+Macro visual editor中，`MacroInsertionPaletteLifecycle`是viewport placement、mount focus、Escape和trigger focus restoration的唯一实现。Flow tree controller继续拥有本域collapse/ID/structure mutation；Parallel lane的pure policy只读live参数，pure command只修改调用者显式传入的draft并返回result，stateful controller继续唯一拥有collapse/notice/confirm/selection reconciliation及既有`updateDraft` gateway。两个Svelte parent继续拥有DOM、render snippet、palette domain state与selected-lane wiring，因此拆分不改变component hierarchy、control order或mutation gateway。
 
 ## 启动与安全
 
