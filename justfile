@@ -67,7 +67,7 @@ test-001:
 
 test-002:
     HISTFILE=/dev/null bun test tests/unit/terminalParserWritePump.test.ts tests/unit/terminalViewState.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.stream.spec.ts tests/e2e/roomLargeReplay032.retention.spec.ts tests/e2e/roomLargeReplay032.lifecycle.spec.ts
 
 test-20260722b-001:
     bun run test:theme-foundation
@@ -76,7 +76,7 @@ test-20260722b-001:
 
 test-20260722b-002:
     HISTFILE=/dev/null bun test tests/unit/appRoomTerminalChrome002.test.ts tests/unit/themeFoundation001.test.ts tests/unit/terminalFont.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/workbenchThemeMigration003.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/themeFoundation001.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts --grep-invert "visited terminal views survive Shell and Text tab switches"
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/themeFoundation001.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.stream.spec.ts tests/e2e/roomLargeReplay032.retention.spec.ts tests/e2e/roomLargeReplay032.lifecycle.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts --grep-invert "visited terminal views survive Shell and Text tab switches"
 
 test-20260722b-002-chrome:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts
@@ -103,12 +103,12 @@ test-20260723a:
 test-20260723b-001:
     HISTFILE=/dev/null bun test tests/unit/roomControl033.test.ts tests/unit/terminalRuntime032.test.ts tests/unit/terminalRoomManager032.test.ts tests/unit/terminalRoomDecomposition008.test.ts tests/unit/contentEditLease033.test.ts
     HISTFILE=/dev/null bun test tests/integration/roomRuntimeSync035.test.ts tests/integration/realRoomLifecycle032.test.ts tests/integration/realPtyInteraction032.test.ts tests/integration/macroRuntime034.prepare.test.ts tests/integration/macroRuntime034.terminal.test.ts tests/integration/agentEventWaitLimit038.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/singleWriterRoom033.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/singleWriterRoom033.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.stream.spec.ts tests/e2e/roomLargeReplay032.retention.spec.ts tests/e2e/roomLargeReplay032.lifecycle.spec.ts
 
 test-20260723b-002:
     HISTFILE=/dev/null bun test tests/unit/macroInvalidationQueue004.test.ts tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/contentEditLease033.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts tests/integration/contentEditLeaseProcess033.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts
 
 test-20260723b-003:
     HISTFILE=/dev/null bun test tests/unit/librarySession005.test.ts tests/unit/libraryStore036.test.ts
@@ -146,7 +146,7 @@ test-20260723c-003:
     HISTFILE=/dev/null bun test tests/integration/singleWriter033.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
     HISTFILE=/dev/null bun test tests/integration/libraryHttp036.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts
 
 test-20260723c-004:
     HISTFILE=/dev/null bun test tests/unit/roomControlDecomposition004.test.ts
@@ -168,7 +168,7 @@ test-20260723c-005:
     HISTFILE=/dev/null bun test tests/integration/realPtyInteraction032.test.ts
     HISTFILE=/dev/null bun test tests/integration/realPtyOutputBatching.test.ts
     HISTFILE=/dev/null bun test tests/integration/realPtyResizeFlush.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "Room terminal reset"
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.lifecycle.spec.ts --grep "Room terminal reset"
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomHome032.spec.ts
 
 test-20260723c-006:
@@ -194,7 +194,7 @@ test-20260723c-008:
     HISTFILE=/dev/null bun test tests/unit/flowV2EditorCommands034.test.ts tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
     HISTFILE=/dev/null bun test tests/integration/contentEditLeaseProcess033.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.record.spec.ts tests/e2e/macroWorkbench034.feedback.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/roomRuntimeSync035.saved-content.spec.ts tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.record.spec.ts tests/e2e/macroWorkbench034.feedback.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
 test-20260723c-009:
     HISTFILE=/dev/null bun test tests/unit/librarySession005.test.ts tests/unit/libraryStore036.test.ts
@@ -215,11 +215,15 @@ test-20260723c-012:
     HISTFILE=/dev/null bun test tests/unit/macroFlowVisualEditor006.test.ts tests/unit/flowV2EditorCommands034.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/uiThemeCloseout004.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.flow.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
+test-20260723c-013:
+    HISTFILE=/dev/null bun test tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.stream.spec.ts tests/e2e/roomLargeReplay032.retention.spec.ts tests/e2e/roomLargeReplay032.lifecycle.spec.ts tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts
+
 test-20260722b-002-terminal-retention:
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"
 
 debug-large-replay *args:
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "real Room PTY" {{args}}
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.stream.spec.ts --grep "real Room PTY" {{args}}
 
 diff-check:
     git diff --check

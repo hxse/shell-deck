@@ -52,6 +52,8 @@ current presentation由Tailwind CSS 4与daisyUI 5提供，`src/app.css`是唯一
 
 Macro visual editor中，`MacroInsertionPaletteLifecycle`是viewport placement、mount focus、Escape和trigger focus restoration的唯一实现。Flow insertion controller唯一拥有anchor/summary/flags/position/palette element/notice/move-node rune state，并通过live ports委托既有lifecycle与`updateDraft`；Flow tree controller继续拥有本域collapse/ID/structure mutation。Parallel lane的pure policy只读live参数，pure command只修改调用者显式传入的draft并返回result，stateful controller继续唯一拥有collapse/notice/confirm/selection reconciliation及既有`updateDraft` gateway。Flow Svelte parent保留exact recursive DOM/render snippet和projection wiring，Parallel parent保留lane palette state与selected-lane wiring，因此拆分不改变component hierarchy、control order或mutation gateway。
 
+test evidence同样遵守400行边界。current comprehensive Macro仍只有一个top-level Playwright journey与同一page/context lifetime，ordered `test.step`实现按authoring/flow/runtime helper归属，state只由facade显式传入；Room large replay六个case与saved-content七个case按scenario拆为可自动发现的spec，case title/body/timeout/fault保持。`tests/ui-baseline/031B/controlInventory.ts`是稳定re-export facade，historical/current/evidence模块分别持有原array truth。inventory Gate把declared helper AST重新归属到原journey，并冻结case hash、expect/route/wait、step order、forced settings及runtime export value/order。已退出Playwright discovery且只由raw-byte hash引用的`comprehensiveUiBehavior031B.historical.ts`不再保存在current tree；需要时从`jj`历史恢复，结构化`.031B` control inventory baseline继续保留。
+
 ## 启动与安全
 
 所有入口通过 `justfile`。`just start` 先构建 production assets；`just dev` 使用 Vite HMR 并把 API/Room WebSocket 交给 Bun server。`.032` 不暴露尚未接入 runner 的 mock/real parser server mode。默认只绑定 `127.0.0.1`；非本地 bind 必须显式设置 `SHELL_DECK_ALLOW_LAN=1`，当前没有认证。

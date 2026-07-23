@@ -1,0 +1,75 @@
+{
+  "parentCommit": "6d437eb925ae",
+  "controlInventory": {
+    "preSplitSourceSha256": "c50df0da464e8be3f35ec448674a344a9b2e39ca47317619c1157d0eee1238b4",
+    "runtimeValueSha256": "163e4576aedbb929d8aa2d8a108cd62c36fbdde98ce5ba06b508c19eedc55071"
+  },
+  "macroComprehensive": {
+    "preSplitSourceSha256": "e45c5308093356e252bce7f1abc1ce035513bc6f0b7dea7e6a2385151220f7f7",
+    "postSplitSourceSha256": "00f36210c0b45eb6603957e2c07a0a780fcdfcfadb575ade66486b7998806d73",
+    "titles": [
+      "current UI journey preserves the complex V5 Macro and exercises server-owned runtime input through visible controls"
+    ],
+    "steps": [
+      "workspace settings, panels and terminals are operated from an empty deck",
+      "Macro template chrome creates the baseline record and exercises insertion cancellation",
+      "visual editor builds and exercises every main action surface",
+      "If branches, loop templates and control-flow bodies are built through their local UI",
+      "Parallel lanes cover lane CRUD, all lane actions and merged output",
+      "final artifact send, text capture, runtime input, finish and validation are completed",
+      "JSON edit and saved-record selection use current Copy/New/Edit/Delete semantics",
+      "the UI-created complex Macro pauses, resumes, accepts input and captures multiple terminal results",
+      "Trace renders the server-persisted completed run without legacy demo controls",
+      "capability repair remains explicit after a live index/type shift",
+      "runtime inventory reports an actual browser event for every non-Codex control"
+    ],
+    "expects": 109,
+    "routes": 1,
+    "waits": 1,
+    "waitForTimeouts": 0,
+    "forced": [
+      "page.setDefaultNavigationTimeout(15_000)",
+      "page.setDefaultTimeout(10_000)",
+      "test.describe.configure({ mode: 'serial' })",
+      "test.setTimeout(600_000)"
+    ]
+  },
+  "roomLargeReplay": {
+    "preSplitSourceSha256": "ff1cfb3b085b893e2ae8038195e6e5e7e23a57919d0a63b0e8b52d67910e8d3b",
+    "postSplitSourceSha256": "96beeee1bf65be6ee492d90994c69d0c280b81432e31a0c2d2c1439f5b8132bc",
+    "caseHashes": {
+      "large live Room burst keeps browser replay and render work bounded": "5b9e89e3b6aa5625cde2c37d1baeb2c11a80ec7e0e8dc972465b2ded78114fa8",
+      "live Shell output and resize preserve a user-scrolled xterm viewport until they return to bottom": "64795640212ff7bc3c01f084bd1c15e022f50eef295a5ce953780e352c8f01d1",
+      "visited terminal views survive Shell and Text tab switches without replaying long history": "4a255dd8e8f8f715ad42e936613e8968cbc6411830cd959d1e9cf9cb3c388297",
+      "real Room PTY streams 37 MB to its final marker without blocking browser progress": "55f287b5ef9808ad3c6dd7ac4982e3fea9617b485117c65ae9b536677943aab1",
+      "Room terminal reset replaces launch output and stale parser callbacks cannot return": "80d15dc66c2c1be2d69722c3b7b22782b1d45b564d95dafc449e8307c1ff39b8",
+      "historical terminal queries stay inert on real page hydration and later tab switches retain that xterm": "eef777978aef60ec38156e7c79e7abc801f39d457604b3003b516d1094e2577e"
+    },
+    "expects": 62,
+    "routes": 0,
+    "waits": 1,
+    "waitForTimeouts": 1,
+    "forced": [
+      "test.setTimeout(40_000)",
+      "test.setTimeout(60_000)"
+    ]
+  },
+  "savedContent": {
+    "preSplitSourceSha256": "8224c1f7c0149c4ad9cba755e302b1a5c950fd1f892ef6799395ddf0b4d106e8",
+    "postSplitSourceSha256": "a1ef836e58633be69a2f75744cfc4e3dd27baae86f859c9da8615f35dfeb7197",
+    "caseHashes": {
+      "a committed Macro Create keeps its fresh identity when Room control changes before the response arrives": "6294b16231ad022de651d707dc97436cf0d7bbd1b16550a1d306a3329017c1ad",
+      "a delayed first Macro Create preserves the submitted buffer when another Room deletes the record first": "cac11210bdb8d7198aa9f5087eef88a79cc6e18050f57dc7b14b14ec94a80cc7",
+      "a delayed first Macro Create preserves the submitted buffer when another Room saves a newer revision first": "89a38cca4ac743a1a3f97a33156654253f39ed46e16ec4f65b5263c2ae937ff8",
+      "pending Macro Save replays a later remote Delete without discarding its submitted buffer": "b980bd49296a327e32bc5a71b10c125f62b8f0f008b4d12219c606c224a2dc76",
+      "pending Macro Save replays its acknowledgement and a later remote Save in server order": "4ae68971bb815b515154c9830da2815e7b69bfc51e5c7bc1d6b7ebcee2bbab85",
+      "reconnect preserves a dirty Macro buffer and reconciles the missed saved-content notice": "5797254b2f0af5314cc3eb1a0c4fc8c8fe784cb79952de8b34cb7ee9d0287c2e",
+      "reconnect retries a failed Macro list read and installs current truth only into a clean readonly view": "4a9c15a4ec60c3667df40a3d9d15a85a69e364fb3f315f6a5cb25771aed1dcff"
+    },
+    "expects": 74,
+    "routes": 10,
+    "waits": 0,
+    "waitForTimeouts": 0,
+    "forced": []
+  }
+}

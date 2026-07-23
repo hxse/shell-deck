@@ -10,7 +10,9 @@ const roomFiles = [
   'tests/e2e/roomRuntimeSync035.takeover.spec.ts',
   'tests/e2e/roomRuntimeSync035.runner.spec.ts',
   'tests/e2e/roomRuntimeSync035.runtime-input.spec.ts',
-  'tests/e2e/roomRuntimeSync035.saved-content.spec.ts',
+  'tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts',
+  'tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts',
+  'tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts',
 ]
 
 const libraryFiles = [
@@ -41,13 +43,41 @@ const helperFiles = [
   'tests/e2e/libraryWorkbench036.helpers.ts',
   'tests/e2e/macroWorkbench034.helpers.ts',
   'tests/integration/macroRuntime034.helpers.ts',
+  'tests/e2e/comprehensiveMacroUiBehaviorCurrent.helpers.ts',
+  'tests/e2e/comprehensiveMacroUiBehaviorCurrent.steps-authoring.ts',
+  'tests/e2e/comprehensiveMacroUiBehaviorCurrent.steps-flow.ts',
+  'tests/e2e/comprehensiveMacroUiBehaviorCurrent.steps-runtime.ts',
+  'tests/e2e/roomLargeReplay032.helpers.ts',
+]
+const macroComprehensiveFiles = [
+  'tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts',
+  ...helperFiles.filter((file) => file.includes('comprehensiveMacroUiBehaviorCurrent')),
+]
+const roomLargeReplayFiles = [
+  'tests/e2e/roomLargeReplay032.stream.spec.ts',
+  'tests/e2e/roomLargeReplay032.retention.spec.ts',
+  'tests/e2e/roomLargeReplay032.lifecycle.spec.ts',
+  'tests/e2e/roomLargeReplay032.helpers.ts',
+]
+const savedContentFiles = roomFiles.filter((file) => file.includes('saved-content'))
+const controlInventoryFiles = [
+  'tests/ui-baseline/031B/controlInventory.ts',
+  'tests/ui-baseline/031B/controlInventoryHistorical.ts',
+  'tests/ui-baseline/031B/controlInventoryCurrent.ts',
+  'tests/ui-baseline/031B/controlInventoryEvidence.ts',
 ]
 const oldPrimaryFiles = [
+  'tests/e2e/comprehensiveUiBehavior031B.historical.ts',
   'tests/e2e/roomRuntimeSync035.spec.ts',
   'tests/e2e/libraryWorkbench036.spec.ts',
   'tests/e2e/macroWorkbench034.spec.ts',
   'tests/integration/macroRuntime034.test.ts',
+  'tests/e2e/roomRuntimeSync035.saved-content.spec.ts',
+  'tests/e2e/roomLargeReplay032.spec.ts',
 ]
+const splitBaseline = JSON.parse(readProjectFile(
+  'tests/test-baseline/20260723C.013/mutableTestInventory.json',
+)) as SplitBaseline
 
 type CaseInventory = {
   title: string
@@ -55,6 +85,34 @@ type CaseInventory = {
   routes: number
   waits: number
   hash: string
+}
+
+type SourceGroupInventory = {
+  titles: string[]
+  steps: string[]
+  expects: number
+  routes: number
+  waits: number
+  waitForTimeouts: number
+  forced: string[]
+  caseHashes: Record<string, string>
+  sourceDigest: string
+  source: string
+}
+
+type SplitBaseline = {
+  macroComprehensive: SourceExpectation & { titles: string[]; steps: string[] }
+  roomLargeReplay: SourceExpectation & { caseHashes: Record<string, string> }
+  savedContent: SourceExpectation & { caseHashes: Record<string, string> }
+}
+
+type SourceExpectation = {
+  postSplitSourceSha256: string
+  expects: number
+  routes: number
+  waits: number
+  waitForTimeouts: number
+  forced: string[]
 }
 
 test('current journeys preserve every attributed case, assertion and forced gate', () => {
@@ -80,12 +138,21 @@ test('current journeys preserve every attributed case, assertion and forced gate
 })
 
 test('public Gates discover every current E2E split and retain the .031B and .038 closeout coverage', () => {
-  for (const file of [...journeyFiles, ...helperFiles]) expect(existsSync(resolve(projectRoot, file))).toBe(true)
+  const splitFiles = [
+    ...journeyFiles,
+    ...helperFiles,
+    ...macroComprehensiveFiles,
+    ...roomLargeReplayFiles,
+    ...controlInventoryFiles,
+  ]
+  for (const file of new Set(splitFiles)) expect(existsSync(resolve(projectRoot, file))).toBe(true)
   for (const file of oldPrimaryFiles) expect(existsSync(resolve(projectRoot, file))).toBe(false)
 
   const packageJson = JSON.parse(readProjectFile('package.json')) as { scripts: Record<string, string> }
+  const justfile = readProjectFile('justfile')
   const publicGate = [packageJson.scripts['test:unit:core'], packageJson.scripts['test:integration'], packageJson.scripts['test:e2e'], packageJson.scripts['test:031b']].join(' ')
   for (const file of oldPrimaryFiles) expect(publicGate).not.toContain(file)
+  for (const file of oldPrimaryFiles) expect(justfile).not.toContain(file)
 
   expect(packageJson.scripts['test:e2e']).toBe('bun run scripts/runPlaywright.ts --workers=1')
   for (const file of [...roomFiles, ...macroFiles, ...libraryFiles]) expect(file.endsWith('.spec.ts')).toBe(true)
@@ -98,6 +165,79 @@ test('public Gates discover every current E2E split and retain the .031B and .03
   expect(packageJson.scripts['test:031b']).toContain('tests/unit/uiBehaviorInventory031B.test.ts')
   expect(packageJson.scripts['test:integration']).toContain('tests/integration/agentEventWaitLimit038.test.ts')
   expect(existsSync(resolve(projectRoot, 'tests/e2e/agentEventWaitLimit038.spec.ts'))).toBe(true)
+  for (const file of [
+    ...macroComprehensiveFiles.filter((path) => path.endsWith('.spec.ts')),
+    ...roomLargeReplayFiles.filter((path) => path.endsWith('.spec.ts')),
+    ...savedContentFiles,
+  ]) expect(justfile).toContain(file)
+})
+
+test('mutable split groups preserve pre-split cases, attributed evidence and forced settings', () => {
+  const macro = readSourceGroupInventory(macroComprehensiveFiles)
+  const largeReplay = readSourceGroupInventory(roomLargeReplayFiles)
+  const savedContent = readSourceGroupInventory(savedContentFiles)
+
+  expect(sourceEvidence(macro)).toEqual({
+    titles: splitBaseline.macroComprehensive.titles,
+    steps: splitBaseline.macroComprehensive.steps,
+    expects: splitBaseline.macroComprehensive.expects,
+    routes: splitBaseline.macroComprehensive.routes,
+    waits: splitBaseline.macroComprehensive.waits,
+    waitForTimeouts: splitBaseline.macroComprehensive.waitForTimeouts,
+    forced: splitBaseline.macroComprehensive.forced,
+    sourceDigest: splitBaseline.macroComprehensive.postSplitSourceSha256,
+  })
+  expect({
+    ...sourceEvidence(largeReplay),
+    caseHashes: largeReplay.caseHashes,
+  }).toEqual({
+    titles: Object.keys(splitBaseline.roomLargeReplay.caseHashes).sort(),
+    steps: [],
+    expects: splitBaseline.roomLargeReplay.expects,
+    routes: splitBaseline.roomLargeReplay.routes,
+    waits: splitBaseline.roomLargeReplay.waits,
+    waitForTimeouts: splitBaseline.roomLargeReplay.waitForTimeouts,
+    forced: splitBaseline.roomLargeReplay.forced,
+    sourceDigest: splitBaseline.roomLargeReplay.postSplitSourceSha256,
+    caseHashes: splitBaseline.roomLargeReplay.caseHashes,
+  })
+  expect({
+    ...sourceEvidence(savedContent),
+    caseHashes: savedContent.caseHashes,
+  }).toEqual({
+    titles: Object.keys(splitBaseline.savedContent.caseHashes).sort(),
+    steps: [],
+    expects: splitBaseline.savedContent.expects,
+    routes: splitBaseline.savedContent.routes,
+    waits: splitBaseline.savedContent.waits,
+    waitForTimeouts: splitBaseline.savedContent.waitForTimeouts,
+    forced: [],
+    sourceDigest: splitBaseline.savedContent.postSplitSourceSha256,
+    caseHashes: splitBaseline.savedContent.caseHashes,
+  })
+
+  for (const group of [macro, largeReplay, savedContent]) {
+    expect(group.source).not.toMatch(/\btest\.(?:only|skip)\s*\(/)
+    expect(group.source).not.toMatch(/\btest\.describe\.(?:only|skip)\s*\(/)
+  }
+})
+
+test('all split test sources stay bounded and the retired historical journey is absent', () => {
+  const boundedFiles = [
+    ...macroComprehensiveFiles,
+    ...roomLargeReplayFiles,
+    ...savedContentFiles,
+    ...controlInventoryFiles,
+    'tests/unit/currentTestJourneyInventory010.test.ts',
+    'tests/unit/uiBehaviorInventory031B.test.ts',
+  ]
+  for (const file of boundedFiles) {
+    expect(readProjectFile(file).trimEnd().split('\n').length, file).toBeLessThanOrEqual(400)
+  }
+  expect(existsSync(resolve(
+    projectRoot,
+    'tests/e2e/comprehensiveUiBehavior031B.historical.ts',
+  ))).toBe(false)
 })
 
 function readCaseInventory(file: string): CaseInventory[] {
@@ -132,6 +272,68 @@ function readCaseInventory(file: string): CaseInventory[] {
       hash: createHash('sha256').update(testSource).digest('hex'),
     }]
   })
+}
+
+function readSourceGroupInventory(files: string[]): SourceGroupInventory {
+  const result: SourceGroupInventory = {
+    titles: [],
+    steps: [],
+    expects: 0,
+    routes: 0,
+    waits: 0,
+    waitForTimeouts: 0,
+    forced: [],
+    caseHashes: {},
+    sourceDigest: '',
+    source: '',
+  }
+  const sourceHashes: Array<[string, string]> = []
+  for (const file of files) {
+    const source = readProjectFile(file)
+    result.source += source + '\n'
+    sourceHashes.push([file, createHash('sha256').update(source).digest('hex')])
+    for (const item of readCaseInventory(file)) result.caseHashes[item.title] = item.hash
+    const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const visit = (node: ts.Node) => {
+      if (ts.isCallExpression(node)) {
+        const callee = node.expression.getText(sourceFile)
+        const title = node.arguments[0]
+        if (callee === 'test' && title && ts.isStringLiteral(title)) result.titles.push(title.text)
+        if (callee === 'test.step' && title && ts.isStringLiteral(title)) result.steps.push(title.text)
+        if (callee === 'expect') result.expects += 1
+        if (callee.endsWith('.route')) result.routes += 1
+        if (callee.includes('waitFor')) result.waits += 1
+        if (callee.endsWith('.waitForTimeout')) result.waitForTimeouts += 1
+        if (isForcedCall(callee)) result.forced.push(node.getText(sourceFile))
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+  }
+  result.titles.sort()
+  result.forced.sort()
+  result.sourceDigest = createHash('sha256').update(JSON.stringify(sourceHashes)).digest('hex')
+  return result
+}
+
+function sourceEvidence(group: SourceGroupInventory) {
+  return {
+    titles: group.titles,
+    steps: group.steps,
+    expects: group.expects,
+    routes: group.routes,
+    waits: group.waits,
+    waitForTimeouts: group.waitForTimeouts,
+    forced: group.forced,
+    sourceDigest: group.sourceDigest,
+  }
+}
+
+function isForcedCall(callee: string): boolean {
+  return callee === 'test.setTimeout'
+    || callee === 'test.describe.configure'
+    || callee.endsWith('.setDefaultTimeout')
+    || callee.endsWith('.setDefaultNavigationTimeout')
 }
 
 function readProjectFile(file: string): string {

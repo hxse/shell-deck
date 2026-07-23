@@ -30,6 +30,7 @@ import {
   sourceInteractiveControlDigest038,
   workspaceRuntimeControlInventory034,
 } from '../ui-baseline/031B/controlInventory'
+import * as controlInventoryFacade from '../ui-baseline/031B/controlInventory'
 
 const projectRoot = resolve(import.meta.dir, '../..')
 const sourceRoots = [
@@ -38,19 +39,58 @@ const sourceRoots = [
 ]
 
 describe('.031B evolving UI source inventory', () => {
-  test('.031A historical browser journey remains byte-frozen outside current Playwright discovery', () => {
-    const historicalPath = resolve(projectRoot, 'tests/e2e/comprehensiveUiBehavior031B.historical.ts')
-    const digest = createHash('sha256').update(readFileSync(historicalPath)).digest('hex')
-    const accidentallyDiscoverable = readdirSync(resolve(projectRoot, 'tests/e2e'))
-      .filter((name) => name.startsWith('comprehensiveUiBehavior031B') && name.endsWith('.spec.ts'))
-
-    expect(digest).toBe('358c2f4cb913d9f9f132ae770015a502dd07f02c752b5259b06e836d508160bc')
-    expect(accidentallyDiscoverable).toEqual([])
-  })
-
   test('.031A historical source truth remains immutable', () => {
     expect(baseline031ASourceInteractiveControlCount).toBe(202)
     expect(baseline031ASourceInteractiveControlDigest).toBe('7de9ac2946db94a2134e22539477094c04cc95caef6f44afce0738ff388fec19')
+  })
+
+  test('control inventory facade preserves every runtime export value without copying arrays', () => {
+    const values = Object.fromEntries(
+      Object.entries(controlInventoryFacade).sort(([left], [right]) => left.localeCompare(right)),
+    )
+    expect(Object.keys(values)).toEqual([
+      'attributedBehaviorChanges',
+      'attributedControlChanges',
+      'attributedControlChanges035',
+      'attributedRestorations034',
+      'baseline031ARuntimeControlIds',
+      'baseline031ASourceInteractiveControlCount',
+      'baseline031ASourceInteractiveControlDigest',
+      'codexControlExclusions',
+      'libraryRuntimeControlInventory',
+      'macroRuntimeControlInventory',
+      'macroRuntimeControlInventory034',
+      'runtimeControlInventory',
+      'sourceInteractiveControlCount',
+      'sourceInteractiveControlCount032',
+      'sourceInteractiveControlCount033',
+      'sourceInteractiveControlCount034',
+      'sourceInteractiveControlCount035',
+      'sourceInteractiveControlCount038',
+      'sourceInteractiveControlDigest',
+      'sourceInteractiveControlDigest032',
+      'sourceInteractiveControlDigest033',
+      'sourceInteractiveControlDigest034',
+      'sourceInteractiveControlDigest035',
+      'sourceInteractiveControlDigest038',
+      'workspaceRuntimeControlInventory',
+      'workspaceRuntimeControlInventory034',
+    ])
+    expect(createHash('sha256').update(JSON.stringify(values)).digest('hex'))
+      .toBe('163e4576aedbb929d8aa2d8a108cd62c36fbdde98ce5ba06b508c19eedc55071')
+
+    const inventoryRoot = resolve(projectRoot, 'tests/ui-baseline/031B')
+    const facade = readFileSync(resolve(inventoryRoot, 'controlInventory.ts'), 'utf8')
+    expect(facade).not.toMatch(/\b(?:const|let)\s+\w+\s*=/)
+    for (const name of [
+      'controlInventory.ts',
+      'controlInventoryHistorical.ts',
+      'controlInventoryCurrent.ts',
+      'controlInventoryEvidence.ts',
+    ]) {
+      expect(readFileSync(resolve(inventoryRoot, name), 'utf8').trimEnd().split('\n').length)
+        .toBeLessThanOrEqual(400)
+    }
   })
 
   test('.032 source snapshot remains available after later contract evolution', () => {
