@@ -30,7 +30,7 @@ server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade
 
 长期user content不属于Room。saved Macro/Library record另由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
 
-前端saved-content实现保持两个domain factory各自唯一拥有Svelte rune state与public assembly：Macro和Library分别装配本域MutationWorkflow及RemoteSyncCoordinator，后者只通过live snapshot/commit ports协调transport、lease transaction、invalidation queue和retry，不缓存第二份record/draft/lease，也不建立带feature flag的generic content session。
+前端saved-content实现保持两个domain factory各自唯一拥有Svelte rune state与public assembly。Macro factory装配本域NavigationCoordinator、EditOrchestrator、MutationWorkflow及RemoteSyncCoordinator：navigation只拥有list generation并编排New/Select/Library Load request phase，edit只编排lease/persist/delete/JSON/dirty Start request phase；所有async结果继续经factory的live token/identity-aware commit ports写入。Library保持自己的domain-specific workflow/sync边界。任何helper都不得缓存第二份record/draft/lease，也不得建立带feature flag的generic content session。
 
 ## Macro 与 runner
 

@@ -38,7 +38,7 @@ Prompt和Note始终是任意text。Macro JSON content只能是纯`MacroDefinitio
 
 Library `macro-template` list与MacroRecord list采用同一invalid saved-content isolation语义：invalid LibraryItem envelope或无法通过唯一V5 text gateway的content不进入selector，list response返回stable `itemId/error` diagnostic，UI明确显示ignored item；直接read invalid Macro Library item fail loudly。该隔离不是compatibility或migration，server不会读取、转换或自动补旧schema。Prompt/Note不经过Macro validation。
 
-`POST /api/templates/from-library`重读exact `(macro-template,itemId,expectedRevision)` saved source，经唯一validator后由production Macro store创建fresh `tmpl_` MacroRecord。source不改写，重复Load得到独立record。Macro editor在request/response两端都clean且operation identity未变化时自动选择新record；dirty、JSON edit、edit lease、pending或revision变化时只创建并提示，不切换。Load永远不读取terminal、不Prepare、不Start。
+`POST /api/templates/from-library`重读exact `(macro-template,itemId,expectedRevision)` saved source，经唯一validator后由production Macro store创建fresh `tmpl_` MacroRecord。source不改写，重复Load得到独立record。Macro editor的NavigationCoordinator只执行create/list request phase；factory在response后再次比较selected record/revision、draft revision、dirty、JSON edit、edit lease、operation generation/pending与controller epoch。request/response两端都clean且identity未变化时才自动选择新record；否则只创建并提示，不切换。Load永远不读取terminal、不Prepare、不Start。
 
 Macro toolbar的`Save to Library`执行反向的显式domain action：当前visual draft只要persistable-valid即可创建fresh `macro-template` LibraryItem，不要求先Save MacroRecord。item的title/description取definition、tags为空、content为canonical pretty JSON；server仍通过唯一text validator。成功不保存或切换Macro、不清dirty、不打开/切换Library、不Prepare/Start。JSON Edit/pending、observer、无draft或invalid definition均零write。它不是clipboard Copy、Duplicate或同kind copy-and-create。
 
