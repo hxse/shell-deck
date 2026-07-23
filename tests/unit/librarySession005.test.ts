@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { ContentEditLeaseGrant } from '../../src/lib/contentEditLease'
 import { LibraryInvalidationQueue, type SequencedContentRecordChange } from '../../src/lib/library/libraryInvalidationQueue'
 import { LibraryNavigationCoordinator, type CurrentLibraryOperationState, type LibraryOperationIdentity } from '../../src/lib/library/libraryNavigationCoordinator'
@@ -60,7 +62,43 @@ describe('Library session coordinators', () => {
     expect(queue.nextRetryDelay()).toBe(100)
   })
 
+  test('factory remains the sole rune owner and production assembly point', () => {
+    const sourceRoot = resolve(import.meta.dir, '../../src')
+    const libraryRoot = resolve(sourceRoot, 'lib/library')
+    const sessionSource = readFileSync(resolve(libraryRoot, 'librarySession.svelte.ts'), 'utf8')
+    const mutationSource = readFileSync(resolve(libraryRoot, 'libraryMutationWorkflow.ts'), 'utf8')
+    const remoteSyncSource = readFileSync(resolve(libraryRoot, 'libraryRemoteSyncCoordinator.ts'), 'utf8')
+    const directConsumers = sourceFiles(sourceRoot)
+      .filter((path) => !path.endsWith('/librarySession.svelte.ts'))
+      .filter((path) => /from ['"][^'"]*(?:libraryMutationWorkflow|libraryRemoteSyncCoordinator)['"]/.test(
+        readFileSync(path, 'utf8'),
+      ))
+
+    expect(directConsumers).toEqual([])
+    expect(sessionSource).toContain('new LibraryNavigationCoordinator')
+    expect(sessionSource).toContain('new LibraryMutationWorkflow')
+    expect(sessionSource).toContain('new LibraryRemoteSyncCoordinator')
+    expect(sessionSource).toContain('export function createLibrarySession')
+    expect(sessionSource).toContain('$state')
+    expect(mutationSource).not.toContain('$state')
+    expect(mutationSource).not.toContain('$effect')
+    expect(remoteSyncSource).not.toContain('$state')
+    expect(remoteSyncSource).not.toContain('$effect')
+    expect(sessionSource).not.toContain('new LibraryClient')
+    expect(sessionSource).not.toContain('new LibraryInvalidationQueue')
+    expect(sessionSource).not.toContain('async function handleRemoteContent')
+    expect(mutationSource + remoteSyncSource).not.toContain('macroRecordSession')
+    expect(mutationSource + remoteSyncSource).not.toContain('GenericContentSession')
+  })
 })
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name)
+    if (entry.isDirectory()) return sourceFiles(path)
+    return /\.(?:ts|svelte)$/.test(entry.name) ? [path] : []
+  })
+}
 
 function fields(content: string): LibraryItemFields {
   return { title: 'Title', content, description: '', tags: [] }

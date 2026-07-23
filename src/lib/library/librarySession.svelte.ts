@@ -2,20 +2,26 @@ import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEdit
 import type { ContentEditLeaseChangedMessage } from '../protocol'
 import type { TerminalRoomClient } from '../terminalRoomClient'
 import { parseAndValidateMacroDefinitionJson } from '../macro/macroDefinitionValidation'
-import { LibraryClient } from './libraryClient'
-import { LibraryInvalidationQueue, type SequencedContentRecordChange } from './libraryInvalidationQueue'
+import type { SequencedContentRecordChange } from './libraryInvalidationQueue'
+import {
+  LibraryMutationWorkflow,
+  type LibraryFreshLeaseOutcome,
+} from './libraryMutationWorkflow'
 import {
   LibraryNavigationCoordinator,
   type CurrentLibraryOperationState,
   type LibraryOperationIdentity,
   type LibraryOperationSnapshot,
 } from './libraryNavigationCoordinator'
+import {
+  LibraryRemoteSyncCoordinator,
+  type LibraryListRefreshResult,
+  type LibraryRefreshOutcome,
+} from './libraryRemoteSyncCoordinator'
 import type { LibraryItem, LibraryItemFields, LibraryItemKind, LibraryItemListResult, LibraryItemSummary } from './libraryTypes'
 
 export type LibraryTab = 'json-template' | 'prompt' | 'note'
 export type LibraryLoadResult = { selected: boolean; recordId: string }
-type RefreshOutcome = 'applied' | 'stale' | 'retry'
-type LibraryListRefreshResult = { outcome: RefreshOutcome; records?: LibraryItemSummary[] }
 type ContentEditLeaseChange = ContentEditLeaseChangedMessage & { sequence: number }
 
 type LibrarySessionOptions = {
@@ -33,8 +39,6 @@ type LibrarySessionOptions = {
 }
 
 export function createLibrarySession(options: LibrarySessionOptions) {
-  const api = new LibraryClient(() => options.roomClient()?.controlGrant ?? null)
-  const invalidations = new LibraryInvalidationQueue()
   let kind = $state<LibraryItemKind>(libraryTabKind(options.initialTab))
   let searchText = $state(options.initialFilter)
   let items = $state<LibraryItemSummary[]>([])
@@ -49,26 +53,40 @@ export function createLibrarySession(options: LibrarySessionOptions) {
   let draftRevision = $state(0)
   let operationPending = $state(false)
   let listGeneration = 0
-  let selectedReadGeneration = 0
-  let reconciledConnectionGeneration = 0
-  let contentRetryTimer: ReturnType<typeof setTimeout> | null = null
   let searchTimer: ReturnType<typeof setTimeout> | null = null
   let handledLeaseSequence = 0
-  let contentChangeProcessing = Promise.resolve()
   let statusText = $state('Library')
   let errorText = $state<string | null>(null)
   let listProblem = $state<string | null>(null)
   let remoteNotice = $state<string | null>(null)
   const navigation = new LibraryNavigationCoordinator((pending) => { operationPending = pending })
   const selectedKey = $derived(selectedItem ? selectedItem.kind + ':' + selectedItem.itemId : '')
+  const mutations = new LibraryMutationWorkflow({ roomClient: options.roomClient })
+  const remoteSync = new LibraryRemoteSyncCoordinator({
+    connectionGeneration: options.connectionGeneration,
+    snapshot: () => ({
+      selectedItem,
+      draft,
+      draftRevision,
+      operationPending,
+      protectedBuffer: dirty
+        || editing
+        || editLease !== null
+        || leaseLost
+        || publishedCreateBufferPreserved,
+      publishedCreateBufferPreserved,
+    }),
+    reloadList,
+    readItem: (item) => mutations.read(item.kind, item.itemId),
+    installItem: (item) => installItem(item),
+    clearSelection,
+    setRemoteNotice: (notice) => { remoteNotice = notice },
+    setErrorText: (error) => { errorText = error },
+    reportError,
+  })
 
   $effect(() => {
-    const generation = options.connectionGeneration()
-    if (generation <= 0 || generation === reconciledConnectionGeneration) return
-    reconciledConnectionGeneration = generation
-    resetContentRetry()
-    void refreshLibrary(false, generation)
-    scheduleLibraryRecordChangeDrain()
+    remoteSync.connectionChanged(options.connectionGeneration())
   })
 
   $effect(() => {
@@ -77,9 +95,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
   })
 
   $effect(() => {
-    if (!invalidations.observe(options.contentRecordChanges())) return
-    resetContentRetry()
-    scheduleLibraryRecordChangeDrain()
+    remoteSync.observe(options.contentRecordChanges())
   })
 
   $effect(() => {
@@ -101,17 +117,13 @@ export function createLibrarySession(options: LibrarySessionOptions) {
   })
 
   function mount(): () => void {
-    void refreshLibrary(true, options.connectionGeneration())
-    const focus = () => {
-      resetContentRetry()
-      void refreshLibrary(false, options.connectionGeneration())
-      scheduleLibraryRecordChangeDrain()
-    }
+    remoteSync.mount()
+    const focus = () => remoteSync.focus()
     window.addEventListener('focus', focus)
     return () => {
       window.removeEventListener('focus', focus)
       if (searchTimer) clearTimeout(searchTimer)
-      if (contentRetryTimer) clearTimeout(contentRetryTimer)
+      remoteSync.dispose()
       void releaseEditLease()
     }
   }
@@ -159,7 +171,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
     const requestKind = kind
     const requestQuery = searchText
     try {
-      const result = await api.list(requestKind, requestQuery)
+      const result = await mutations.list(requestKind, requestQuery)
       if (generation !== listGeneration || requestKind !== kind || requestQuery !== searchText) {
         return { outcome: 'stale' }
       }
@@ -194,61 +206,8 @@ export function createLibrarySession(options: LibrarySessionOptions) {
   async function refreshLibrary(
     report = true,
     expectedConnectionGeneration = options.connectionGeneration(),
-  ): Promise<RefreshOutcome> {
-    const resolvesPublishedCreateBuffer = report && publishedCreateBufferPreserved
-    const refreshed = await reloadList(report)
-    if (refreshed.outcome !== 'applied') {
-      if (refreshed.outcome === 'retry' && !report) scheduleContentRetry()
-      return refreshed.outcome
-    }
-    if (expectedConnectionGeneration > 0
-      && expectedConnectionGeneration !== options.connectionGeneration()) return 'stale'
-    const current = selectedItem
-    if (!current) return 'applied'
-    const summary = refreshed.records?.find((item) => item.kind === current.kind && item.itemId === current.itemId)
-    const protectedBuffer = dirty || editing || editLease !== null || leaseLost || publishedCreateBufferPreserved
-    if (protectedBuffer && !resolvesPublishedCreateBuffer) {
-      if (!summary) {
-        remoteNotice = 'The selected item is no longer in the current saved result. The local draft was kept.'
-      } else if (summary.revision > current.revision) {
-        remoteNotice = 'This saved item changed elsewhere. The local draft was kept.'
-      }
-      return 'applied'
-    }
-    if (operationPending) return 'stale'
-    const readGeneration = ++selectedReadGeneration
-    const capturedDraft = draft
-    const capturedDraftRevision = draftRevision
-    const capturedRevision = current.revision
-    try {
-      const next = await api.read(current.kind, current.itemId)
-      if (readGeneration !== selectedReadGeneration) return 'stale'
-      if (expectedConnectionGeneration > 0
-        && expectedConnectionGeneration !== options.connectionGeneration()) return 'stale'
-      if (!resolvesPublishedCreateBuffer
-        && !cleanReadonlyLibrarySelectionMatches(current, capturedRevision, capturedDraft, capturedDraftRevision)) {
-        return 'stale'
-      }
-      if (resolvesPublishedCreateBuffer
-        && (!publishedCreateBufferPreserved
-          || selectedItem?.kind !== current.kind
-          || selectedItem.itemId !== current.itemId)) return 'stale'
-      if (next.revision < Math.max(capturedRevision, summary?.revision ?? capturedRevision)) return 'stale'
-      installItem(next)
-      return 'applied'
-    } catch (error) {
-      if (readGeneration !== selectedReadGeneration) return 'stale'
-      if ((resolvesPublishedCreateBuffer || !protectedBuffer)
-        && selectedItem?.kind === current.kind
-        && selectedItem.itemId === current.itemId
-        && requestStatus(error) === 404) {
-        clearSelection('Item removed elsewhere')
-        return 'applied'
-      }
-      if (report) reportError(error)
-      else scheduleContentRetry()
-      return 'retry'
-    }
+  ): Promise<LibraryRefreshOutcome> {
+    return await remoteSync.refresh(report, expectedConnectionGeneration)
   }
 
   async function selectByKey(key: string): Promise<void> {
@@ -260,7 +219,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
     try {
       if (!await releaseNavigationLease(operation)) return
       if (!canCommitNavigation(operation)) return
-      const item = await api.read(summary.kind, summary.itemId)
+      const item = await mutations.read(summary.kind, summary.itemId)
       if (!canCommitNavigation(operation) || item.kind !== kind) return
       installItem(item)
       statusText = 'Item loaded'
@@ -345,48 +304,32 @@ export function createLibrarySession(options: LibrarySessionOptions) {
     }
     const operation = beginOperation()
     try {
-      const updateResult = current
-        ? lease
-          ? await api.update(current, fields, lease)
-          : (() => { throw new Error('content_edit_lease_required') })()
-        : null
-      const saved = updateResult?.item ?? await api.create(kind, fields)
-      if (!canCommitLibraryOperation(operation)) {
-        reconcilePublishedSave(operation, saved)
-        return
-      }
-      let continueEditing = false
-      let leaseWarning: string | null = null
-      if (current) {
-        if (!lease) throw new Error('content_edit_lease_required')
-        if (updateResult?.leaseOutcome.status === 'retained') {
-          editLease = updateResult.leaseOutcome.grant
-          leaseView = {
-            mode: 'held',
-            leaseEpoch: updateResult.leaseOutcome.grant.leaseEpoch,
-            expiresAt: updateResult.leaseOutcome.grant.expiresAt,
+      const outcome = await mutations.persist(
+        kind,
+        fields,
+        current,
+        lease,
+        () => canCommitLibraryOperation(operation),
+        (committed) => {
+          if (committed.kind === 'published_save') {
+            reconcilePublishedSave(operation, committed.item)
+            return
           }
-          continueEditing = true
-        } else {
-          editLease = null
-          leaseView = null
-          leaseWarning = updateResult?.leaseOutcome.status === 'lost'
-            ? updateResult.leaseOutcome.reason
-            : 'content_edit_lease_lost'
-        }
-      } else {
-        const acquired = await acquireCreatedItemLease(saved, operation)
-        if (acquired === null) {
-          reconcilePublishedSave(operation, saved)
-          return
-        }
-        continueEditing = acquired.ok
-        if (!acquired.ok) {
-          leaseWarning = `library_saved_but_edit_lease_not_retained:${acquired.reason}`
-        }
+          editLease = committed.value.editLease
+          leaseView = committed.value.leaseView
+        },
+      )
+      if (outcome.kind !== 'persisted') return
+      const persisted = outcome.value
+      installItem(
+        persisted.item,
+        persisted.editing,
+        true,
+        persisted.preservePublishedCreateBuffer,
+      )
+      if (persisted.leaseWarning) {
+        remoteNotice = persisted.leaseWarning
       }
-      installItem(saved, continueEditing, true, !current && !continueEditing)
-      if (leaseWarning) remoteNotice = leaseWarning
       await reloadList(false, false)
       if (navigation.generation === operation.token) statusText = 'Saved'
     } catch (error) {
@@ -403,7 +346,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
       const expectedItemId = selectedItem.itemId
       const operation = beginOperation(false)
       try {
-        const latest = await api.read(expectedKind, expectedItemId)
+        const latest = await mutations.read(expectedKind, expectedItemId)
         if (!canCommitToken(operation)
           || !publishedCreateBufferPreserved
           || selectedItem?.kind !== expectedKind
@@ -436,10 +379,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
     else clearSelection('Draft cancelled')
     statusText = saved && !cancelledDirtyDraft ? 'Done' : 'Cancelled'
     try {
-      const roomClient = options.roomClient()
-      if (lease && roomClient?.canMutateShared) {
-        await roomClient.releaseContentEditLease(lease.editLeaseId).catch(() => {})
-      }
+      await mutations.releaseEditLease(lease)
     } finally {
       endOperation(operation)
     }
@@ -463,7 +403,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
         record = acquired.item
         temporaryLease = lease
       }
-      await api.delete(record, lease)
+      await mutations.delete(record, lease)
       temporaryLease = null
       if (!canCommitToken(operation)) return
       editLease = null
@@ -473,7 +413,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
       await reloadList(false, false)
     } catch (error) {
       if (temporaryLease) {
-        await options.roomClient()?.releaseContentEditLease(temporaryLease.editLeaseId).catch(() => {})
+        await mutations.discardTemporaryLease(temporaryLease)
       }
       if (canCommitToken(operation)) reportError(error)
     } finally {
@@ -485,64 +425,14 @@ export function createLibrarySession(options: LibrarySessionOptions) {
     item: LibraryItem,
     operation: LibraryOperationSnapshot,
     intent: 'edit' | 'remove',
-  ): Promise<{ item: LibraryItem; grant: ContentEditLeaseGrant; view: ContentEditLeaseView } | null> {
-    const roomClient = options.roomClient()
-    if (!roomClient || selectedItem?.itemId !== item.itemId) return null
-    const key = { kind: 'library' as const, itemKind: item.kind, itemId: item.itemId }
-    const view = await roomClient.contentEditLeaseView(key)
-    if (!canCommitToken(operation) || selectedItem?.itemId !== item.itemId) return null
-    let result: { view: ContentEditLeaseView; grant: ContentEditLeaseGrant }
-    if (view.mode === 'held') {
-      if (!confirm(`This Library item is being edited elsewhere. Take over its edit lease${intent === 'remove' ? ' to remove it' : ''}?`)) {
-        statusText = 'Item remains read-only'
-        return null
-      }
-      result = await roomClient.takeOverContentEditLease(key, view.leaseEpoch)
-    } else {
-      result = await roomClient.acquireContentEditLease(key, view.leaseEpoch)
-    }
-    try {
-      if (!canCommitToken(operation) || selectedItem?.itemId !== item.itemId) {
-        await roomClient.releaseContentEditLease(result.grant.editLeaseId).catch(() => {})
-        return null
-      }
-      const latest = await api.read(item.kind, item.itemId)
-      if (!canCommitToken(operation) || selectedItem?.itemId !== item.itemId) {
-        await roomClient.releaseContentEditLease(result.grant.editLeaseId).catch(() => {})
-        return null
-      }
-      return { item: latest, grant: result.grant, view: result.view }
-    } catch (error) {
-      await roomClient.releaseContentEditLease(result.grant.editLeaseId).catch(() => {})
-      throw error
-    }
-  }
-
-  async function acquireCreatedItemLease(
-    item: LibraryItem,
-    operation: LibraryOperationSnapshot,
-  ): Promise<{ ok: true } | { ok: false; reason: string } | null> {
-    const roomClient = options.roomClient()
-    if (!roomClient || !canCommitLibraryOperation(operation)) return null
-    const key = { kind: 'library' as const, itemKind: item.kind, itemId: item.itemId }
-    try {
-      const view = await roomClient.contentEditLeaseView(key)
-      if (!canCommitLibraryOperation(operation)) return null
-      if (view.mode !== 'available') {
-        leaseView = view
-        return { ok: false, reason: 'content_edit_lease_held' }
-      }
-      const acquired = await roomClient.acquireContentEditLease(key, view.leaseEpoch)
-      if (!canCommitLibraryOperation(operation)) {
-        await roomClient.releaseContentEditLease(acquired.grant.editLeaseId).catch(() => {})
-        return null
-      }
-      editLease = acquired.grant
-      leaseView = acquired.view
-      return { ok: true }
-    } catch (error) {
-      return { ok: false, reason: messageOf(error) }
-    }
+  ): Promise<Extract<LibraryFreshLeaseOutcome, { kind: 'acquired' }> | null> {
+    const outcome = await mutations.acquireFreshLease(
+      item,
+      intent,
+      () => canCommitToken(operation) && selectedItem?.itemId === item.itemId,
+    )
+    if (outcome.kind === 'declined') statusText = 'Item remains read-only'
+    return outcome.kind === 'acquired' ? outcome : null
   }
 
   async function loadIntoMacro(): Promise<void> {
@@ -645,15 +535,12 @@ export function createLibrarySession(options: LibrarySessionOptions) {
 
   function endOperation(operation: LibraryOperationSnapshot): void {
     if (!navigation.end(operation)) return
-    scheduleLibraryRecordChangeDrain()
+    remoteSync.operationEnded()
   }
 
   async function releaseNavigationLease(operation: LibraryOperationSnapshot): Promise<boolean> {
     const lease = editLease
-    const roomClient = options.roomClient()
-    if (lease && roomClient?.canMutateShared) {
-      await roomClient.releaseContentEditLease(lease.editLeaseId).catch(() => {})
-    }
+    await mutations.releaseEditLease(lease)
     if (!canCommitNavigation(operation)) return false
     editLease = null
     leaseView = null
@@ -685,111 +572,7 @@ export function createLibrarySession(options: LibrarySessionOptions) {
     editLease = null
     leaseView = null
     leaseLost = false
-    const roomClient = options.roomClient()
-    if (lease && roomClient?.canMutateShared) {
-      await roomClient.releaseContentEditLease(lease.editLeaseId).catch(() => {})
-    }
-  }
-
-  function scheduleLibraryRecordChangeDrain(): void {
-    contentChangeProcessing = contentChangeProcessing
-      .then(async () => { await drainLibraryRecordChanges() })
-      .catch((error) => { errorText = messageOf(error) })
-  }
-
-  function resetContentRetry(): void {
-    invalidations.resetRetry()
-    if (contentRetryTimer) clearTimeout(contentRetryTimer)
-    contentRetryTimer = null
-  }
-
-  function scheduleContentRetry(): void {
-    if (contentRetryTimer) return
-    const delay = invalidations.nextRetryDelay()
-    if (delay === null) return
-    contentRetryTimer = setTimeout(() => {
-      contentRetryTimer = null
-      void refreshLibrary(false, options.connectionGeneration())
-      scheduleLibraryRecordChangeDrain()
-    }, delay)
-  }
-
-  function hasProtectedLibraryBuffer(): boolean {
-    return dirty || editing || editLease !== null || leaseLost || publishedCreateBufferPreserved
-  }
-
-  function cleanReadonlyLibrarySelectionMatches(
-    item: LibraryItem,
-    revision: number,
-    capturedDraft: LibraryItemFields | null,
-    capturedDraftRevision: number,
-  ): boolean {
-    return selectedItem?.kind === item.kind
-      && selectedItem.itemId === item.itemId
-      && selectedItem.revision === revision
-      && draft === capturedDraft
-      && draftRevision === capturedDraftRevision
-      && !operationPending
-      && !hasProtectedLibraryBuffer()
-  }
-
-  async function drainLibraryRecordChanges(): Promise<void> {
-    while (!operationPending) {
-      const batch = invalidations.batch()
-      if (batch.length === 0) return
-      const consumed = await handleRemoteContent(batch)
-      if (!consumed) { scheduleContentRetry(); return }
-      invalidations.consumeThrough(batch.at(-1)!.sequence)
-      resetContentRetry()
-    }
-  }
-
-  async function handleRemoteContent(changes: SequencedContentRecordChange[]): Promise<boolean> {
-    if (operationPending) return false
-    const refreshed = await reloadList(false, false)
-    if (refreshed.outcome !== 'applied' || operationPending) return false
-    const current = selectedItem
-    if (!current) return true
-    const decision = invalidations.classify(changes, current)
-    if (decision.kind === 'unrelated' || decision.kind === 'own_ack') return true
-    if (hasProtectedLibraryBuffer()) {
-      remoteNotice = decision.kind === 'deleted'
-        ? 'This saved item was removed elsewhere. The local draft was kept.'
-        : 'This saved item changed elsewhere. The local draft was kept.'
-      return true
-    }
-    if (decision.kind === 'deleted') {
-      clearSelection('Item removed elsewhere')
-    } else {
-      const expectedRevision = current.revision
-      const capturedDraft = draft
-      const capturedDraftRevision = draftRevision
-      const requiredRevision = decision.revision ?? expectedRevision
-      const readGeneration = ++selectedReadGeneration
-      try {
-        const item = await api.read(current.kind, current.itemId)
-        if (readGeneration !== selectedReadGeneration) return false
-        if (!cleanReadonlyLibrarySelectionMatches(
-          current,
-          expectedRevision,
-          capturedDraft,
-          capturedDraftRevision,
-        )) return false
-        if (item.revision < Math.max(expectedRevision, requiredRevision)) return false
-        installItem(item)
-      } catch (error) {
-        if (readGeneration !== selectedReadGeneration) return false
-        if (requestStatus(error) === 404
-          && selectedItem?.kind === current.kind
-          && selectedItem.itemId === current.itemId) {
-          clearSelection('Item removed elsewhere')
-          return true
-        }
-        errorText = messageOf(error)
-        return false
-      }
-    }
-    return true
+    await mutations.releaseEditLease(lease)
   }
 
   function installItem(
