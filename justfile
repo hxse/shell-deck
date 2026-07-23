@@ -62,7 +62,7 @@ test-039:
     bun run test:039
 
 test-001:
-    HISTFILE=/dev/null bun test tests/unit/macroDefinition034.test.ts tests/unit/runnerSnapshotMerge035.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    HISTFILE=/dev/null bun test tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/runnerSnapshotMerge035.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts
 
 test-002:
@@ -106,7 +106,7 @@ test-20260723b-001:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/singleWriterRoom033.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomLargeReplay032.spec.ts
 
 test-20260723b-002:
-    HISTFILE=/dev/null bun test tests/unit/macroInvalidationQueue004.test.ts tests/unit/macroDefinition034.test.ts tests/unit/contentEditLease033.test.ts
+    HISTFILE=/dev/null bun test tests/unit/macroInvalidationQueue004.test.ts tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/contentEditLease033.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts tests/integration/contentEditLeaseProcess033.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts
 
@@ -191,7 +191,7 @@ test-20260723c-007:
 
 test-20260723c-008:
     HISTFILE=/dev/null bun test tests/unit/macroInvalidationQueue004.test.ts
-    HISTFILE=/dev/null bun test tests/unit/flowV2EditorCommands034.test.ts tests/unit/macroDefinition034.test.ts
+    HISTFILE=/dev/null bun test tests/unit/flowV2EditorCommands034.test.ts tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
     HISTFILE=/dev/null bun test tests/integration/contentEditLeaseProcess033.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.record.spec.ts tests/e2e/macroWorkbench034.feedback.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/roomRuntimeSync035.saved-content.spec.ts tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
@@ -200,6 +200,12 @@ test-20260723c-009:
     HISTFILE=/dev/null bun test tests/unit/librarySession005.test.ts tests/unit/libraryStore036.test.ts
     HISTFILE=/dev/null bun test tests/integration/libraryHttp036.test.ts tests/integration/libraryStoreProcess036.test.ts tests/integration/contentEditLeaseProcess033.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/libraryWorkbench036.navigation.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts tests/e2e/libraryWorkbench036.reconnect.spec.ts
+
+test-20260723c-010:
+    HISTFILE=/dev/null bun test tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/macroValidationDecomposition010.test.ts
+    HISTFILE=/dev/null bun test tests/unit/flowV2EditorCommands034.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/macroRunnerExecution007.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.prepare.test.ts tests/integration/macroRuntime034.execution.test.ts tests/integration/macroRuntime034.lifecycle.test.ts tests/integration/macroRuntime034.terminal.test.ts tests/integration/macroRuntime034.durability.test.ts tests/integration/agentEventWaitLimit038.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.flow.spec.ts tests/e2e/macroWorkbench034.record.spec.ts tests/e2e/macroWorkbench034.feedback.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"

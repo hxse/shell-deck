@@ -36,6 +36,8 @@ server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade
 
 production Macro采用`MacroDefinitionV5`与`MacroRecord` envelope分层。definition只表达portable Flow、连续terminal index/type及exact assigned/unassigned logical references；record metadata由user-global store生成。Macro selection是单个browser的editor状态，新Room默认null selection，不改变Room terminal。
 
+`macroDefinitionValidation.ts`是definition value/JSON validation的唯一production gateway；`macroNodeValidation.ts`只按source order执行body traversal及`object -> ID -> type -> actionOnly -> type-specific` dispatch。Action与Control validator同步追加同一`ValidationContext.issues`，recursive body继续经node facade进入；共享text matcher只是pure field validator，不建立第二份issue collection或partial validation入口。
+
 terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Library Load、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
 
 runner把manifest、append-only events和artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、run snapshot和structure lock只在live process内。日志从不恢复runner。
