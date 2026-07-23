@@ -3,21 +3,10 @@
     FlowV2ActionNode,
     FlowV2Node,
     MacroDefinitionV5,
-    MacroTerminalReference,
     ParallelNode,
   } from '../../macro/macroDefinitionTypes'
   import { artifactChoicesBefore } from '../../macro/macroArtifactChoices'
-  import { defaultFlowNode } from '../../macro/macroEditorDefaults'
-  import {
-    canMoveNodeToAnchor,
-    cloneBodyPath,
-    findNodePosition,
-    isInsertionAnchorValid,
-    insertNodeAtAnchor,
-    moveNodeToAnchor,
-    type BodyPath,
-    type InsertionAnchor,
-  } from '../../macro/flowV2EditorCommands'
+  import type { BodyPath } from '../../macro/flowV2EditorCommands'
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from '../../macro/scopedTextTemplate'
   import type { TextTemplateScope } from '../../macro/scopedTextTemplateEditor'
   import type { TerminalChoice } from '../../macro/macroTerminalChoices'
@@ -26,10 +15,9 @@
   import MacroControlNodeEditor from './MacroControlNodeEditor.svelte'
   import MacroInsertionPalette, {
     MacroInsertionPaletteLifecycle,
-    type InsertionPalettePosition,
-    type MacroPaletteItem,
   } from './MacroInsertionPalette.svelte'
   import NodeActionControls from './NodeActionControls.svelte'
+  import { createMacroFlowInsertionController } from './macroFlowInsertionController.svelte'
   import { createMacroFlowTreeController } from './macroFlowTreeController.svelte'
 
   type EditableActionNode = Exclude<FlowV2ActionNode, ParallelNode>
@@ -56,19 +44,19 @@
     currentNodeId?: string | null
   }>()
 
-  let insertionAnchor = $state<InsertionAnchor | null>(null)
-  let insertionSummary = $state('')
-  let insertionAllowsLoopControls = $state(false)
-  let insertionPosition = $state<InsertionPalettePosition | null>(null)
-  let insertionActionOnly = $state(false)
-  let insertionPaletteElement = $state<HTMLElement | null>(null)
-  let insertionNotice = $state('')
-  let moveNodeId = $state('')
-  const insertionPaletteLifecycle = new MacroInsertionPaletteLifecycle()
+  const insertion = createMacroFlowInsertionController({
+    draft: () => draft,
+    updateDraft: (mutator) => updateDraft(mutator),
+    insertionPaletteMode: () => insertionPaletteMode,
+    adoptTerminalSelection: (template, terminalIndex) => (
+      adoptTerminalSelection(template, terminalIndex)
+    ),
+    lifecycle: new MacroInsertionPaletteLifecycle(),
+  })
   const tree = createMacroFlowTreeController({
     draft: () => draft,
     updateDraft: (mutator) => updateDraft(mutator),
-    setInsertionNotice: (notice) => { insertionNotice = notice },
+    setInsertionNotice: insertion.setNotice,
   })
   const idEditNotice = $derived(tree.idEditNotice)
   const isNodeCollapsed = tree.isNodeCollapsed
@@ -83,229 +71,28 @@
   const removeElseAt = tree.removeElseAt
   const updateNode = tree.updateNode
   const setNodeId = tree.setNodeId
-  const findNode = tree.findNode
   const setForRangeMode = tree.setForRangeMode
   const textListItemEditorKey = tree.textListItemEditorKey
   const insertTextListItem = tree.insertTextListItem
   const updateTextListItem = tree.updateTextListItem
   const removeTextListItem = tree.removeTextListItem
   const moveTextListItem = tree.moveTextListItem
-
-  const insertionPaletteAnchored = $derived(insertionPaletteMode === 'anchored' && insertionPosition !== null)
-  const insertionPaletteStyle = $derived(insertionPaletteAnchored && insertionPosition
-    ? '--palette-x: ' + insertionPosition.x + 'px; --palette-y: ' + insertionPosition.y + 'px;'
-      + (insertionPosition.maxHeight ? ' --palette-max-height: ' + insertionPosition.maxHeight + 'px;' : '')
-    : '')
-
-  const actionPaletteItems: MacroPaletteItem[] = [
-    { type: 'send', label: 'send', testId: 'add-step-send' },
-    { type: 'notify', label: 'notify', testId: 'add-step-notify' },
-    { type: 'input', label: 'input', testId: 'add-step-input' },
-    { type: 'wait', label: 'wait', testId: 'add-step-wait' },
-    { type: 'capture-source', label: 'capture', testId: 'add-step-capture' },
-    { type: 'extract_text', label: 'extract', testId: 'add-step-extract' },
-    { type: 'parallel', label: 'parallel', testId: 'add-step-parallel' },
-  ]
-  const flowPaletteItems: MacroPaletteItem[] = [
-    { type: 'if', label: 'if', testId: 'add-flow-if' },
-    { type: 'for', label: 'for', testId: 'add-flow-for' },
-    { type: 'finish', label: 'finish', testId: 'add-flow-finish' },
-    { type: 'break', label: 'break', testId: 'add-flow-break', loopOnly: true },
-    { type: 'continue', label: 'continue', testId: 'add-flow-continue', loopOnly: true },
-  ]
-  $effect(() => {
-    const anchor = insertionAnchor
-    if (!anchor) return
-    if (isOpenInsertionAnchorValid(anchor)) return
-    insertionNotice = 'Insertion target changed. Choose an insertion point again.'
-    closeInsertion(false)
-  })
-
-  function isOpenInsertionAnchorValid(anchor: InsertionAnchor): boolean {
-    if (isInsertionAnchorValid(draft, anchor)) return true
-    if (anchor.kind === 'inside' && anchor.slot === 'control' && anchor.anchorNodeId) {
-      return findNodePosition(draft, anchor.anchorNodeId) !== undefined
-    }
-    return false
-  }
-
-  function openInsertion(
-    anchor: InsertionAnchor,
-    summary: string,
-    allowLoopControls: boolean,
-    event?: MouseEvent,
-    actionOnly = false,
-  ): void {
-    insertionNotice = ''
-    insertionAnchor = { ...anchor, parentPath: cloneBodyPath(anchor.parentPath) }
-    insertionSummary = summary
-    insertionAllowsLoopControls = allowLoopControls
-    insertionActionOnly = actionOnly
-    insertionPosition = insertionPaletteLifecycle.open(event, insertionPaletteMode)
-    moveNodeId = ''
-    void settleInsertionPalette(true)
-  }
-
-  async function settleInsertionPalette(shouldFocus: boolean): Promise<void> {
-    await insertionPaletteLifecycle.settle(
-      () => insertionPaletteMode,
-      () => insertionPosition,
-      () => insertionPaletteElement,
-      (position) => { insertionPosition = position },
-      shouldFocus,
-    )
-  }
-
-  function handleInsertionResize(): void {
-    if (insertionAnchor) void settleInsertionPalette(false)
-  }
-
-  function handleInsertionKeydown(event: KeyboardEvent): void {
-    insertionPaletteLifecycle.handleKeydown(event, insertionAnchor !== null, cancelInsertion)
-  }
-
-  function closeInsertion(restoreFocus: boolean): void {
-    insertionPaletteLifecycle.close(() => {
-      insertionAnchor = null
-      insertionSummary = ''
-      insertionAllowsLoopControls = false
-      insertionActionOnly = false
-      insertionPosition = null
-      insertionPaletteElement = null
-      moveNodeId = ''
-    }, restoreFocus)
-  }
-
-  function cancelInsertion(): void {
-    closeInsertion(true)
-  }
-
-  function insertFromPalette(type: FlowV2Node['type']): void {
-    if (!insertionAnchor) return
-    const anchor = insertionAnchor
-    let inserted = false
-    let reason = 'unknown'
-    updateDraft((template: MacroDefinitionV5) => {
-      const result = insertNodeAtAnchor(template, anchor, defaultFlowNode(template, type))
-      inserted = result.ok
-      reason = result.reason ?? 'unknown'
-    })
-    if (inserted) cancelInsertion()
-    else {
-      insertionNotice = 'Insertion failed: ' + reason
-      void settleInsertionPalette(false)
-    }
-  }
-
-  function moveExistingNodeFromPalette(): void {
-    if (!insertionAnchor || !moveNodeId) return
-    const anchor = { ...insertionAnchor, parentPath: cloneBodyPath(insertionAnchor.parentPath) } as InsertionAnchor
-    const nodeId = moveNodeId
-    let moved = false
-    updateDraft((template: MacroDefinitionV5) => { moved = moveNodeToAnchor(template, nodeId, anchor).ok })
-    if (moved) cancelInsertion()
-  }
-
-  function movableNodeChoices(): Array<{ id: string; type: FlowV2Node['type'] }> {
-    const anchor = insertionAnchor
-    if (!anchor) return []
-    return allNodeChoices(draft.body)
-      .filter((choice) => (!insertionActionOnly || isActionType(choice.type)) && canMoveNodeToAnchor(draft, choice.id, anchor))
-  }
-
-  function beforeAnchor(bodyPath: BodyPath, index: number, anchorNodeId?: string): InsertionAnchor {
-    return { kind: 'before', parentPath: cloneBodyPath(bodyPath), index, anchorNodeId }
-  }
-
-  function afterAnchor(bodyPath: BodyPath, index: number, anchorNodeId?: string): InsertionAnchor {
-    return { kind: 'after', parentPath: cloneBodyPath(bodyPath), index, anchorNodeId }
-  }
-
-  function insideAnchor(
-    bodyPath: BodyPath,
-    index: number,
-    slot: 'if' | 'elif' | 'else' | 'for' | 'control',
-    branchIndex?: number,
-    anchorNodeId?: string,
-  ): InsertionAnchor {
-    return { kind: 'inside', parentPath: cloneBodyPath(bodyPath), index, slot, branchIndex, anchorNodeId }
-  }
-
-  function insertIntoEmptyBody(
-    bodyPath: BodyPath,
-    label: string,
-    allowLoopControls: boolean,
-    event?: MouseEvent,
-    actionOnly = false,
-  ): void {
-    const anchor = emptyBodyInsertionAnchor(bodyPath)
-    if (!anchor) {
-      insertionNotice = 'Insertion failed: body_not_found'
-      return
-    }
-    openInsertion(anchor, 'Insert into ' + label, allowLoopControls, event, actionOnly)
-  }
-
-  function emptyBodyInsertionAnchor(bodyPath: BodyPath): InsertionAnchor | null {
-    const last = bodyPath[bodyPath.length - 1]
-    if (last?.kind === 'control') {
-      const position = findNodePosition(draft, last.nodeId)
-      if (!position) return null
-      return insideAnchor(position.bodyPath, position.index, 'control', undefined, last.nodeId)
-    }
-    return { kind: 'before', parentPath: cloneBodyPath(bodyPath), index: 0 }
-  }
-
-  function updateNodeTerminal(
-    nodeId: string,
-    terminal: MacroTerminalReference,
-    mutator: (node: FlowV2Node) => void,
-  ): boolean {
-    let updated = false
-    updateDraft((template: MacroDefinitionV5) => {
-      if (terminal.kind === 'terminal_index' && !adoptTerminalSelection(template, terminal.index)) return
-      const node = findNode(template.body, nodeId)
-      if (!node) return
-      mutator(node)
-      updated = true
-    })
-    return updated
-  }
-
-  function expectedTerminalTypeAt(reference: MacroTerminalReference): 'shell' | 'text' | undefined {
-    return reference.kind === 'terminal_index' ? draft.terminalLayout[reference.index - 1]?.type : undefined
-  }
-
-  function allNodeChoices(nodes: FlowV2Node[]): Array<{ id: string; type: FlowV2Node['type'] }> {
-    return nodes.flatMap((node) => {
-      const nested = node.type === 'if'
-        ? [
-            ...node.branches.flatMap((branch) => allNodeChoices(branch.body)),
-            ...(node.else ? allNodeChoices(node.else) : []),
-          ]
-        : node.type === 'for'
-          ? allNodeChoices(node.body)
-          : isControlTerminalNode(node) && node.body
-            ? allNodeChoices(node.body)
-            : []
-      return [{ id: node.id, type: node.type }, ...nested]
-    })
-  }
-
-  function isActionType(type: FlowV2Node['type']): boolean {
-    return type === 'send' || type === 'notify' || type === 'input' || type === 'wait'
-      || type === 'capture-source' || type === 'extract_text' || type === 'parallel'
-  }
+  const openInsertion = insertion.openInsertion
+  const handleInsertionResize = insertion.handleResize
+  const handleInsertionKeydown = insertion.handleKeydown
+  const cancelInsertion = insertion.cancelInsertion
+  const insertFromPalette = insertion.insertFromPalette
+  const moveExistingNodeFromPalette = insertion.moveExistingNodeFromPalette
+  const movableNodeChoices = insertion.movableNodeChoices
+  const beforeAnchor = insertion.beforeAnchor
+  const afterAnchor = insertion.afterAnchor
+  const insertIntoEmptyBody = insertion.insertIntoEmptyBody
+  const updateNodeTerminal = insertion.updateNodeTerminal
+  const expectedTerminalTypeAt = insertion.expectedTerminalTypeAt
 
   function isActionEditorNode(node: FlowV2Node): node is EditableActionNode {
     return node.type === 'send' || node.type === 'notify' || node.type === 'input'
       || node.type === 'wait' || node.type === 'capture-source' || node.type === 'extract_text'
-  }
-
-  function isControlTerminalNode(
-    node: FlowV2Node,
-  ): node is Extract<FlowV2Node, { type: 'break' | 'continue' | 'finish' }> {
-    return node.type === 'break' || node.type === 'continue' || node.type === 'finish'
   }
 
   function parallelContainsCurrentNode(node: ParallelNode): boolean {
@@ -316,8 +103,8 @@
 
 <svelte:window onkeydown={handleInsertionKeydown} onresize={handleInsertionResize} />
 
-{#if insertionNotice}
-  <p class="macro-insertion-notice alert alert-warning rounded-none py-2 text-xs" data-testid="macro-insertion-notice">{insertionNotice}</p>
+{#if insertion.notice}
+  <p class="macro-insertion-notice alert alert-warning rounded-none py-2 text-xs" data-testid="macro-insertion-notice">{insertion.notice}</p>
 {/if}
 {#if idEditNotice}
   <p class="macro-insertion-notice alert alert-warning rounded-none py-2 text-xs" data-testid="macro-id-edit-notice">{idEditNotice}</p>
@@ -408,22 +195,22 @@
   </div>
 {/snippet}
 
-{#if insertionAnchor}
+{#if insertion.anchor}
   <MacroInsertionPalette
-    anchored={insertionPaletteAnchored}
-    position={insertionPosition}
-    style={insertionPaletteStyle}
+    anchored={insertion.paletteAnchored}
+    position={insertion.position}
+    style={insertion.paletteStyle}
     {insertionPaletteMode}
-    summary={insertionSummary}
-    actionOnly={insertionActionOnly}
-    allowsLoopControls={insertionAllowsLoopControls}
-    actionItems={actionPaletteItems}
-    flowItems={flowPaletteItems}
-    {moveNodeId}
+    summary={insertion.summary}
+    actionOnly={insertion.actionOnly}
+    allowsLoopControls={insertion.allowsLoopControls}
+    actionItems={insertion.actionPaletteItems}
+    flowItems={insertion.flowPaletteItems}
+    moveNodeId={insertion.moveNodeId}
     movableNodeChoices={movableNodeChoices()}
-    blocked={insertionNotice.startsWith('Insertion failed:')}
-    bind:paletteElement={insertionPaletteElement}
-    onMoveNodeIdChange={(nodeId) => { moveNodeId = nodeId }}
+    blocked={insertion.notice.startsWith('Insertion failed:')}
+    bind:paletteElement={insertion.paletteElement}
+    onMoveNodeIdChange={insertion.setMoveNodeId}
     onInsert={insertFromPalette}
     onMoveExisting={moveExistingNodeFromPalette}
     onCancel={cancelInsertion}

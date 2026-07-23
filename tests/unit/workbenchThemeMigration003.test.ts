@@ -39,7 +39,7 @@ describe('20260722B.003 Macro and Library theme migration', () => {
     }).toEqual({
       files: 25,
       entries: 728,
-      digest: 'b88aba98b10ca53568ac6ed92d5652741e05b6609a7796348a0622666f9c3b69',
+      digest: '69668566dbed13b9d0a1452c23deb1f28c1f0dfa32955386091da37cfe7d4232',
     })
   })
 

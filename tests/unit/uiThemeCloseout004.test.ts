@@ -64,7 +64,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
     expect(THEME_PREFERENCES).toHaveLength(36)
   })
 
-  test('final structure has only the exact Theme and read-only notice-action deltas from the parent revision', () => {
+  test('final structure has only the exact registered deltas from the parent revision', () => {
     const files = collectSvelteFiles(resolve(projectRoot, 'src')).sort()
     const current = Object.fromEntries(files.map((path) => [
       relative(projectRoot, path).split('\\').join('/'),
@@ -78,6 +78,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
         'src/App.svelte',
         'src/lib/components/MacroPanel.svelte',
         'src/lib/components/macro/MacroEditorShell.svelte',
+        'src/lib/components/macro/MacroFlowNodeList.svelte',
       ].includes(path)) continue
       expect({ count: current[path].count, digest: current[path].digest }).toEqual({
         count: expected.count,
@@ -121,6 +122,25 @@ describe('20260722B.004 UI theme migration closeout', () => {
     expect(editorDelta.added).toEqual([
       "src/lib/components/macro/MacroEditorShell.svelte::RegularElement:div::data-testid=\"macro-editor-lock-notice\"|data-lock-reason={lockedReason}|data-click-to-edit={normalReadOnly}|role={normalReadOnly ? 'button' : 'status'}|tabindex={normalReadOnly ? 0 : undefined}|onclick={normalReadOnly ? activateNormalReadOnlyNotice : undefined}|onkeydown={normalReadOnly ? activateNormalReadOnlyNotice : undefined}",
     ])
+
+    const flowPath = 'src/lib/components/macro/MacroFlowNodeList.svelte'
+    expect(structureBaseline.files[flowPath]).toEqual({
+      count: 22,
+      digest: '7bbb9d90fd1bbccec7c662ef8615dfedde25a26c8d7a6a7d8306ed97ad1e40ee',
+    })
+    expect({
+      count: current[flowPath].count,
+      digest: current[flowPath].digest,
+      controllerBinding: current[flowPath].entries.filter((entry) => (
+        entry.includes('::Component:MacroInsertionPalette::')
+      )),
+    }).toEqual({
+      count: 22,
+      digest: '504a2ebf4fb51fb4ee0696c0fec78f2910ac9db12ee93b266e8ae2ee503935b2',
+      controllerBinding: [
+        "src/lib/components/macro/MacroFlowNodeList.svelte::Component:MacroInsertionPalette::anchored={insertion.paletteAnchored}|position={insertion.position}|{insertionPaletteMode}|summary={insertion.summary}|actionOnly={insertion.actionOnly}|allowsLoopControls={insertion.allowsLoopControls}|actionItems={insertion.actionPaletteItems}|flowItems={insertion.flowPaletteItems}|moveNodeId={insertion.moveNodeId}|movableNodeChoices={movableNodeChoices()}|blocked={insertion.notice.startsWith('Insertion failed:')}|bind:paletteElement={insertion.paletteElement}|onMoveNodeIdChange={insertion.setMoveNodeId}|onInsert={insertFromPalette}|onMoveExisting={moveExistingNodeFromPalette}|onCancel={cancelInsertion}",
+      ],
+    })
 
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
     expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(839)

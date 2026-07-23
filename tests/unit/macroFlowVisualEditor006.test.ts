@@ -25,6 +25,10 @@ describe('Macro flow visual editor extraction', () => {
     const palette = readFileSync(resolve(componentRoot, 'MacroInsertionPalette.svelte'), 'utf8')
     const flow = readFileSync(resolve(componentRoot, 'MacroFlowNodeList.svelte'), 'utf8')
     const lanes = readFileSync(resolve(componentRoot, 'ParallelLaneTabs.svelte'), 'utf8')
+    const insertion = readFileSync(
+      resolve(componentRoot, 'macroFlowInsertionController.svelte.ts'),
+      'utf8',
+    )
     const tree = readFileSync(resolve(componentRoot, 'macroFlowTreeController.svelte.ts'), 'utf8')
     const laneController = readFileSync(resolve(componentRoot, 'parallelLaneEditorController.svelte.ts'), 'utf8')
     const lanePolicy = readFileSync(resolve(componentRoot, 'parallelLaneEditorPolicy.ts'), 'utf8')
@@ -44,26 +48,43 @@ describe('Macro flow visual editor extraction', () => {
     const policyConsumers = sourceFiles(sourceRoot)
       .filter((path) => /from ['"][^'"]*parallelLaneEditorPolicy['"]/.test(readFileSync(path, 'utf8')))
       .map(fileName)
+    const insertionConsumers = sourceFiles(sourceRoot)
+      .filter((path) => /from ['"][^'"]*macroFlowInsertionController\.svelte['"]/.test(
+        readFileSync(path, 'utf8'),
+      ))
+      .map(fileName)
 
     expect(productionConsumers).toEqual([])
+    expect(insertionConsumers).toEqual(['MacroFlowNodeList.svelte'])
     expect(commandConsumers).toEqual(['parallelLaneEditorController.svelte.ts'])
     expect(policyConsumers).toEqual([
       'parallelLaneEditorCommands.ts',
       'parallelLaneEditorController.svelte.ts',
     ])
     expect(flow).toContain('createMacroFlowTreeController')
+    expect(flow).toContain('createMacroFlowInsertionController')
     expect(lanes).toContain('createParallelLaneEditorController')
     expect(flow).toContain('new MacroInsertionPaletteLifecycle')
+    expect(insertion).not.toContain('new MacroInsertionPaletteLifecycle')
+    expect(insertion).toContain('const lifecycle = options.lifecycle')
     expect(lanes).toContain('new MacroInsertionPaletteLifecycle')
-    expect(flow + lanes).not.toContain('estimatedHalfWidth')
+    expect(flow + insertion + lanes).not.toContain('estimatedHalfWidth')
     expect(palette.match(/estimatedHalfWidth/g)).toHaveLength(3)
-    expect((palette + flow + lanes).match(/getBoundingClientRect\(\)/g)).toHaveLength(2)
-    expect(flow + lanes).not.toContain("event.key === 'Escape'")
-    expect(flow + lanes).not.toContain("querySelector<HTMLElement>")
-    expect(tree + laneController).not.toMatch(/\$state\s*<\s*MacroDefinition|\$state\s*\(\s*options\.draft/)
+    expect((palette + flow + insertion + lanes).match(/getBoundingClientRect\(\)/g)).toHaveLength(2)
+    expect(flow + insertion + lanes).not.toContain("event.key === 'Escape'")
+    expect(flow + insertion + lanes).not.toContain("querySelector<HTMLElement>")
+    expect(tree + insertion + laneController)
+      .not.toMatch(/\$state\s*<\s*MacroDefinition|\$state\s*\(\s*options\.draft/)
     expect(tree + laneController).not.toMatch(/\blet\s+draft\b/)
     expect(tree).toContain('options.updateDraft')
+    expect(insertion).toContain('options.updateDraft')
     expect(laneController).toContain('options.updateDraft')
+    expect(flow.match(/\$state/g) ?? []).toHaveLength(0)
+    expect(insertion.match(/\$state/g)).toHaveLength(8)
+    expect(insertion).toContain('isInsertionAnchorValid(options.draft(), current)')
+    expect(insertion).toContain('insertNodeAtAnchor(template, target, defaultFlowNode(template, type))')
+    expect(insertion).toContain('moveNodeToAnchor(template, nodeId, target)')
+    expect(insertion).toContain("notice = 'Insertion failed: ' + reason")
     expect(lanePolicy + laneCommands).not.toMatch(/\$state|options\.updateDraft|\bconfirm\(|editNotice/)
     expect(laneController.match(/\$state/g)).toHaveLength(2)
     expect(setLaneActionIdSource).toContain('if (collapsedLaneActionIds.includes(actionId))')
@@ -81,7 +102,7 @@ describe('Macro flow visual editor extraction', () => {
       'Remove parallel lane ',
       'Remove parallel lane action ',
     ]) expect(laneController).toContain(text)
-    for (const source of [laneController, lanePolicy, laneCommands]) {
+    for (const source of [flow, insertion, laneController, lanePolicy, laneCommands]) {
       expect(source.trimEnd().split('\n').length).toBeLessThanOrEqual(400)
     }
   })
