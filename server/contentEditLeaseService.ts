@@ -1,6 +1,4 @@
-import { createHash } from 'node:crypto'
-import { existsSync, unlinkSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { join } from 'node:path'
 import {
   assertContentResourceKey,
   contentResourceKeyString,
@@ -11,43 +9,21 @@ import {
 } from '../src/lib/contentEditLease'
 import { assertGeneratedId, createGeneratedId } from '../src/lib/generatedId'
 import type { RoomControlContext } from '../src/lib/roomControl'
+import {
+  assertLeaseEpoch,
+  assertRevision,
+  availableState,
+  ContentEditLeaseStateStore,
+  iso,
+  leaseGrant,
+  leaseView,
+  type ContentEditLeaseState,
+  type HeldLeaseState,
+} from './contentEditLeaseStateStore'
 import { ContentResourceTransactions } from './sharedContentStore'
 import type { RoomControlledOperationTicket, TerminalRoomManager } from './terminalRoomManager'
-import {
-  canonicalResourceRelativePath,
-  ensurePrivateDirectory,
-  fsyncDirectory,
-  readPrivateFile,
-  writePrivateFileAtomic,
-} from './userDataRoot'
 
 export const CONTENT_EDIT_LEASE_TTL_MS = 30_000
-
-type AvailableLeaseState = {
-  schemaVersion: 1
-  resourceKey: ContentResourceKey
-  mode: 'available'
-  leaseEpoch: number
-  updatedAt: string
-}
-
-type HeldLeaseState = {
-  schemaVersion: 1
-  resourceKey: ContentResourceKey
-  mode: 'held'
-  leaseEpoch: number
-  editLeaseId: string
-  serverInstanceId: string
-  roomId: string
-  roomGeneration: string
-  clientId: string
-  controlEpoch: number
-  baseRevision: number
-  acquiredAt: string
-  expiresAt: string
-}
-
-type ContentEditLeaseState = AvailableLeaseState | HeldLeaseState
 
 type OwnedLease = {
   resourceKey: ContentResourceKey
@@ -74,10 +50,8 @@ export class ContentEditLeaseService {
   private readonly now: () => number
   private readonly editLeaseIdFactory: () => string
   private readonly onChanged: (resourceKey: ContentResourceKey, view: ContentEditLeaseView) => void
-  private readonly writeLeaseStateFile: (path: string, content: string) => void
-  private readonly deleteLeaseStateFile: (path: string) => void
+  private readonly stateStore: ContentEditLeaseStateStore
   private readonly owned = new Map<string, OwnedLease>()
-  private readonly leaseDirectory: string
 
   constructor(root: string, manager: TerminalRoomManager, options: ContentEditLeaseServiceOptions = {}) {
     this.transactions = new ContentResourceTransactions(root)
@@ -85,10 +59,11 @@ export class ContentEditLeaseService {
     this.now = options.now ?? Date.now
     this.editLeaseIdFactory = options.editLeaseIdFactory ?? (() => createGeneratedId('contentEditLease'))
     this.onChanged = options.onChanged ?? (() => {})
-    this.writeLeaseStateFile = options.writeLeaseState ?? writePrivateFileAtomic
-    this.deleteLeaseStateFile = options.deleteLeaseState ?? unlinkSync
-    this.leaseDirectory = join(this.transactions.paths.locks, 'content-edit')
-    ensurePrivateDirectory(this.leaseDirectory)
+    this.stateStore = new ContentEditLeaseStateStore(this.transactions.paths.root, this.transactions.paths.locks, {
+      now: this.now,
+      writeLeaseState: options.writeLeaseState,
+      deleteLeaseState: options.deleteLeaseState,
+    })
   }
 
   async view(resourceKey: ContentResourceKey, signal?: AbortSignal): Promise<ContentEditLeaseView> {
@@ -114,8 +89,8 @@ export class ContentEditLeaseService {
       const state = this.currentState(recordPath, key, now)
       if (state.leaseEpoch !== expected) throw new Error('content_edit_lease_epoch_conflict')
       if (state.mode === 'held') throw new Error('content_edit_lease_held')
-      const next = this.createHeldState(key, ticket.context, state.leaseEpoch + 1, this.readRecordRevision(recordPath), now)
-      this.writeState(recordPath, next)
+      const next = this.createHeldState(key, ticket.context, state.leaseEpoch + 1, this.stateStore.readRecordRevision(recordPath), now)
+      this.stateStore.writeState(recordPath, next)
       return next
     }, ticket.signal)
     ticket.assertAuthorized()
@@ -141,8 +116,8 @@ export class ContentEditLeaseService {
       const state = this.currentState(recordPath, key, now)
       if (state.leaseEpoch !== expected) throw new Error('content_edit_lease_epoch_conflict')
       if (state.mode !== 'held') throw new Error('content_edit_lease_lost')
-      const next = this.createHeldState(key, ticket.context, state.leaseEpoch + 1, this.readRecordRevision(recordPath), now)
-      this.writeState(recordPath, next)
+      const next = this.createHeldState(key, ticket.context, state.leaseEpoch + 1, this.stateStore.readRecordRevision(recordPath), now)
+      this.stateStore.writeState(recordPath, next)
       return next
     }, ticket.signal)
     ticket.assertAuthorized()
@@ -162,7 +137,7 @@ export class ContentEditLeaseService {
       const state = this.currentState(tracked.recordPath, tracked.resourceKey, this.now())
       this.assertOwnedState(state, normalizedLeaseId, ticket.context)
       const available = availableState(state.resourceKey, state.leaseEpoch, this.now())
-      this.writeState(tracked.recordPath, available)
+      this.stateStore.writeState(tracked.recordPath, available)
       return leaseView(available)
     }, ticket.signal)
     this.owned.delete(normalizedLeaseId)
@@ -180,7 +155,7 @@ export class ContentEditLeaseService {
           const current = this.currentState(owned.recordPath, owned.resourceKey, this.now())
           this.assertOwnedState(current, editLeaseId, context)
           const renewed: HeldLeaseState = { ...current, expiresAt: iso(this.now() + CONTENT_EDIT_LEASE_TTL_MS) }
-          this.writeState(owned.recordPath, renewed)
+          this.stateStore.writeState(owned.recordPath, renewed)
           return renewed
         })
         this.onChanged(owned.resourceKey, leaseView(state))
@@ -226,7 +201,7 @@ export class ContentEditLeaseService {
       }
       const state = this.currentState(recordPath, key, this.now())
       this.assertOwnedState(state, normalizedLeaseId, ticket.context)
-      const currentRevision = this.readRecordRevision(recordPath)
+      const currentRevision = this.stateStore.readRecordRevision(recordPath)
       if (currentRevision !== expected) throw new Error('content_revision_conflict')
       ticket.assertAuthorized()
       const value = operation(recordPath, currentRevision)
@@ -234,7 +209,7 @@ export class ContentEditLeaseService {
       if (options.deleteRecord) {
         this.owned.delete(normalizedLeaseId)
         try {
-          this.deleteState(recordPath)
+          this.stateStore.deleteState(recordPath)
           return {
             value,
             leaseOutcome: { status: 'released' } as const,
@@ -248,11 +223,11 @@ export class ContentEditLeaseService {
           }
         }
       } else {
-        const committedRevision = this.readRecordRevision(recordPath)
+        const committedRevision = this.stateStore.readRecordRevision(recordPath)
         if (committedRevision !== currentRevision + 1) throw new Error('content_commit_revision_not_advanced')
         const committedState: HeldLeaseState = { ...state, baseRevision: committedRevision }
         try {
-          this.writeState(recordPath, committedState)
+          this.stateStore.writeState(recordPath, committedState)
           return {
             value,
             leaseOutcome: { status: 'retained', grant: leaseGrant(committedState) } as const,
@@ -286,7 +261,7 @@ export class ContentEditLeaseService {
           throw new Error('content_edit_lease_lost')
         }
         const available = availableState(state.resourceKey, state.leaseEpoch, this.now())
-        this.writeState(owned.recordPath, available)
+        this.stateStore.writeState(owned.recordPath, available)
         return leaseView(available)
       })
       this.onChanged(owned.resourceKey, view)
@@ -320,50 +295,12 @@ export class ContentEditLeaseService {
   }
 
   private currentState(recordPath: string, resourceKey: ContentResourceKey, now: number): ContentEditLeaseState {
-    const state = this.readState(recordPath, resourceKey)
-    if (state.mode === 'held' && Date.parse(state.expiresAt) <= now) {
-      this.owned.delete(state.editLeaseId)
-      const available = availableState(resourceKey, state.leaseEpoch, now)
-      this.writeState(recordPath, available)
-      return available
-    }
-    return state
-  }
-
-  private readState(recordPath: string, resourceKey: ContentResourceKey): ContentEditLeaseState {
-    const path = this.statePath(recordPath)
-    if (!existsSync(path)) return availableState(resourceKey, 0, this.now())
-    const parsed = JSON.parse(readPrivateFile(path).toString('utf8')) as unknown
-    return assertLeaseState(parsed, resourceKey)
-  }
-
-  private writeState(recordPath: string, state: ContentEditLeaseState): void {
-    this.writeLeaseStateFile(this.statePath(recordPath), JSON.stringify(state, null, 2) + '\n')
-  }
-
-  private deleteState(recordPath: string): void {
-    const path = this.statePath(recordPath)
-    try { this.deleteLeaseStateFile(path) } catch (error) {
-      if (!(error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT')) throw error
-    }
-    fsyncDirectory(this.leaseDirectory)
-  }
-
-  private statePath(recordPath: string): string {
-    const relative = canonicalResourceRelativePath(this.transactions.paths.root, recordPath)
-    const digest = createHash('sha256').update(relative).digest('hex')
-    const path = join(this.leaseDirectory, digest + '.json')
-    if (basename(path) !== digest + '.json') throw new Error('invalid_content_edit_lease_path')
-    return path
-  }
-
-  private readRecordRevision(recordPath: string): number {
-    if (!existsSync(recordPath)) throw new Error('content_record_not_found')
-    let parsed: unknown
-    try { parsed = JSON.parse(readPrivateFile(recordPath).toString('utf8')) }
-    catch { throw new Error('invalid_content_record') }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid_content_record')
-    return assertRevision((parsed as Record<string, unknown>).revision)
+    return this.stateStore.currentState(
+      recordPath,
+      resourceKey,
+      now,
+      (editLeaseId) => this.owned.delete(editLeaseId),
+    )
   }
 
   private assertOwnedState(state: ContentEditLeaseState, editLeaseId: string, context: RoomControlContext): asserts state is HeldLeaseState {
@@ -383,85 +320,10 @@ export class ContentEditLeaseService {
   }
 }
 
-function assertLeaseState(value: unknown, expectedKey: ContentResourceKey): ContentEditLeaseState {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid_content_edit_lease_state')
-  const record = value as Record<string, unknown>
-  if (record.schemaVersion !== 1) throw new Error('invalid_content_edit_lease_state')
-  const resourceKey = assertContentResourceKey(record.resourceKey)
-  if (contentResourceKeyString(resourceKey) !== contentResourceKeyString(expectedKey)) throw new Error('content_edit_lease_resource_mismatch')
-  const leaseEpoch = assertLeaseEpoch(record.leaseEpoch)
-  if (record.mode === 'available') {
-    if (Object.keys(record).sort().join(',') !== 'leaseEpoch,mode,resourceKey,schemaVersion,updatedAt') throw new Error('invalid_content_edit_lease_state')
-    assertTimestamp(record.updatedAt)
-    return { schemaVersion: 1, resourceKey, mode: 'available', leaseEpoch, updatedAt: record.updatedAt as string }
-  }
-  if (record.mode !== 'held') throw new Error('invalid_content_edit_lease_state')
-  if (Object.keys(record).sort().join(',') !== 'acquiredAt,baseRevision,clientId,controlEpoch,editLeaseId,expiresAt,leaseEpoch,mode,resourceKey,roomGeneration,roomId,schemaVersion,serverInstanceId') {
-    throw new Error('invalid_content_edit_lease_state')
-  }
-  assertTimestamp(record.acquiredAt)
-  assertTimestamp(record.expiresAt)
-  return {
-    schemaVersion: 1,
-    resourceKey,
-    mode: 'held',
-    leaseEpoch,
-    editLeaseId: assertGeneratedId(record.editLeaseId, 'contentEditLease'),
-    serverInstanceId: assertGeneratedId(record.serverInstanceId, 'serverInstance'),
-    roomId: assertGeneratedId(record.roomId, 'room'),
-    roomGeneration: assertGeneratedId(record.roomGeneration, 'roomGeneration'),
-    clientId: assertGeneratedId(record.clientId, 'client'),
-    controlEpoch: assertLeaseEpoch(record.controlEpoch),
-    baseRevision: assertRevision(record.baseRevision),
-    acquiredAt: record.acquiredAt as string,
-    expiresAt: record.expiresAt as string,
-  }
-}
-
-function availableState(resourceKey: ContentResourceKey, leaseEpoch: number, now: number): AvailableLeaseState {
-  return { schemaVersion: 1, resourceKey, mode: 'available', leaseEpoch, updatedAt: iso(now) }
-}
-
-function leaseView(state: ContentEditLeaseState): ContentEditLeaseView {
-  return state.mode === 'available'
-    ? { mode: 'available', leaseEpoch: state.leaseEpoch }
-    : { mode: 'held', leaseEpoch: state.leaseEpoch, expiresAt: state.expiresAt }
-}
-
-function leaseGrant(state: HeldLeaseState): ContentEditLeaseGrant {
-  return {
-    resourceKey: state.resourceKey,
-    editLeaseId: state.editLeaseId,
-    leaseEpoch: state.leaseEpoch,
-    baseRevision: state.baseRevision,
-    expiresAt: state.expiresAt,
-  }
-}
-
 function sameControlContext(left: Pick<HeldLeaseState, 'serverInstanceId' | 'roomId' | 'roomGeneration' | 'clientId' | 'controlEpoch'> | RoomControlContext, right: RoomControlContext): boolean {
   return left.serverInstanceId === right.serverInstanceId
     && left.roomId === right.roomId
     && left.roomGeneration === right.roomGeneration
     && left.clientId === right.clientId
     && left.controlEpoch === right.controlEpoch
-}
-
-function assertLeaseEpoch(value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) < 0) throw new Error('invalid_lease_epoch')
-  return value as number
-}
-
-function assertRevision(value: unknown): number {
-  if (!Number.isInteger(value) || (value as number) < 1) throw new Error('invalid_content_revision')
-  return value as number
-}
-
-function assertTimestamp(value: unknown): void {
-  if (typeof value !== 'string' || Number.isNaN(Date.parse(value)) || new Date(value).toISOString() !== value) {
-    throw new Error('invalid_content_edit_lease_state')
-  }
-}
-
-function iso(value: number): string {
-  return new Date(value).toISOString()
 }

@@ -22,6 +22,8 @@ lease state位于`<user-root>/.locks/content-edit/`，只保存crash-expiring co
 
 record atomic replace/unlink是正文commit的point-of-no-return。此前controller/lease/revision不匹配保证零写入；此后lease coordination文件刷新失败不能把已发布正文报告成失败。commit返回authoritative value与`retained/released/lost` lease outcome；`lost`时Save/Delete仍成功并必须广播，当前editor转只读且旧editLeaseId不可重用。
 
+production ownership保持单向：`ContentEditLeaseService`是HTTP、Macro与Library的唯一业务入口，唯一持有owned lease、controller authorization和commit transaction；internal state store只负责SHA-256 path、exact codec、missing/expired state、private atomic write/delete与record revision读取。state store不得持有Room context、owned lease或broadcast callback，其他production consumer不得直接import。
+
 ## Browser settings
 
 Theme、panel visibility/width、Macro insertion placement、terminal drag toggle、notification volume与Library tab/filter使用唯一strict versioned localStorage value，current key为`shell-deck:settings:v3`且`schemaVersion`精确为`3`。Theme只接受`system`或current 35个daisyUI id，fresh/missing与invalid-current reset的默认值为`business`；已有合法v3 Theme逐值保留。initial value由stylesheet/application module前的同步head bootstrap应用，`main.ts`在Svelte mount前复核，explicit value刷新保留，`system`实时跟随OS明暗。terminal Prepare是Macro面板显式Room mutation，不是setting，browser schema不包含`autoPrepareTerminals`或等价字段。current key/schema任一字段错误时整体reset defaults并提示；v2及更早key不读取、不删除、不转换、不alias。全部browser settings只属于当前browser，不上传server、不进入Room或saved content。
