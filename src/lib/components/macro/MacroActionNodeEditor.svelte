@@ -158,33 +158,33 @@
   <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => onUpdate((item: FlowV2Node) => { if (item.type === 'send') item.ending = ending })} testId="send-ending-sequence" />
 {:else if node.type === 'notify'}
   <div class="macro-row">
-    <label>Level<select data-testid="notify-level" value={node.level} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.level = event.currentTarget.value as NotificationLevel })}><option value="info">info</option><option value="success">success</option><option value="warning">warning</option><option value="error">error</option></select></label>
-    <label>On failure<select data-testid="notify-on-failure" value={node.onFailure} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.onFailure = event.currentTarget.value as 'continue' | 'pause' | 'fail' })}><option value="continue">continue</option><option value="pause">pause</option><option value="fail">fail</option></select></label>
+    <label>Level<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-level" value={node.level} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.level = event.currentTarget.value as NotificationLevel })}><option value="info">info</option><option value="success">success</option><option value="warning">warning</option><option value="error">error</option></select></label>
+    <label>On failure<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-on-failure" value={node.onFailure} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.onFailure = event.currentTarget.value as 'continue' | 'pause' | 'fail' })}><option value="continue">continue</option><option value="pause">pause</option><option value="fail">fail</option></select></label>
   </div>
   <TemplatableScalarField label="Title" value={node.title} onChange={(value) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.title = value })} {templateScope} testId="notify-title" />
   <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.message = message })} choices={artifactChoices} {templateScope} />
   <div class="message-part-row card" data-testid="notify-channels">
     <div class="step-title"><strong>Channels</strong></div>
     <div class="macro-row">
-      <label class="checkbox-row"><input type="checkbox" data-testid="notify-channel-app" checked={Boolean(notifyChannel('app'))} onchange={(event) => setNotifyChannelEnabled('app', event.currentTarget.checked)} />app</label>
-      <label class="checkbox-row"><input type="checkbox" data-testid="notify-channel-system" checked={Boolean(notifyChannel('system'))} onchange={(event) => setNotifyChannelEnabled('system', event.currentTarget.checked)} />system</label>
-      <label class="checkbox-row"><input type="checkbox" data-testid="notify-channel-telegram" checked={Boolean(notifyChannel('telegram'))} onchange={(event) => setNotifyChannelEnabled('telegram', event.currentTarget.checked)} />telegram</label>
+      <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-channel-app" checked={Boolean(notifyChannel('app'))} onchange={(event) => setNotifyChannelEnabled('app', event.currentTarget.checked)} />app</label>
+      <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-channel-system" checked={Boolean(notifyChannel('system'))} onchange={(event) => setNotifyChannelEnabled('system', event.currentTarget.checked)} />system</label>
+      <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-channel-telegram" checked={Boolean(notifyChannel('telegram'))} onchange={(event) => setNotifyChannelEnabled('telegram', event.currentTarget.checked)} />telegram</label>
     </div>
     {#if notifyChannel('app')?.kind === 'app'}
       {@const appChannel = notifyChannel('app')}
       {#if appChannel?.kind === 'app'}
         <div class="macro-row">
-          <label class="checkbox-row"><input type="checkbox" data-testid="notify-app-toast" checked={appChannel.toast} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.toast = event.currentTarget.checked })} />Toast</label>
-          <label>Sound<select data-testid="notify-app-sound" value={appChannel.sound} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.sound = event.currentTarget.value as 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert' })}><option value="success">success</option><option value="bell">bell</option><option value="chime">chime</option><option value="ping">ping</option><option value="pulse">pulse</option><option value="warning">warning</option><option value="alert">alert</option><option value="none">none</option></select></label>
-          <label>Repeat count<input type="number" min="1" max="10" step="1" data-testid="notify-app-repeat-count" value={appChannel.repeatCount} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatCount = Number(event.currentTarget.value) })} /></label>
-          <label>Interval ms<input type="number" min="250" max="60000" step="1" data-testid="notify-app-repeat-interval-ms" value={appChannel.repeatIntervalMs} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatIntervalMs = Number(event.currentTarget.value) })} /></label>
+          <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-app-toast" checked={appChannel.toast} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.toast = event.currentTarget.checked })} />Toast</label>
+          <label>Sound<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-app-sound" value={appChannel.sound} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.sound = event.currentTarget.value as 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert' })}><option value="success">success</option><option value="bell">bell</option><option value="chime">chime</option><option value="ping">ping</option><option value="pulse">pulse</option><option value="warning">warning</option><option value="alert">alert</option><option value="none">none</option></select></label>
+          <label>Repeat count<input class="input box-border input-xs input-ghost w-full bg-base-content/15" type="number" min="1" max="10" step="1" data-testid="notify-app-repeat-count" value={appChannel.repeatCount} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatCount = Number(event.currentTarget.value) })} /></label>
+          <label>Interval ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" type="number" min="250" max="60000" step="1" data-testid="notify-app-repeat-interval-ms" value={appChannel.repeatIntervalMs} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatIntervalMs = Number(event.currentTarget.value) })} /></label>
         </div>
       {/if}
     {/if}
     {#if notifyChannel('telegram')?.kind === 'telegram'}
       {@const telegramChannel = notifyChannel('telegram')}
       {#if telegramChannel?.kind === 'telegram'}
-        <label>Telegram profile<select data-testid="notify-telegram-profile" value={telegramChannel.profileId} onchange={(event) => updateNotifyChannel('telegram', (channel) => { if (channel.kind === 'telegram') channel.profileId = event.currentTarget.value })}>{#each telegramProfileChoices(telegramChannel.profileId) as profileId}<option value={profileId}>{profileId}</option>{/each}</select></label>
+        <label>Telegram profile<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-telegram-profile" value={telegramChannel.profileId} onchange={(event) => updateNotifyChannel('telegram', (channel) => { if (channel.kind === 'telegram') channel.profileId = event.currentTarget.value })}>{#each telegramProfileChoices(telegramChannel.profileId) as profileId}<option value={profileId}>{profileId}</option>{/each}</select></label>
         {#if telegramProfilesError}<p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="notify-telegram-profile-status">Telegram profiles unavailable: {telegramProfilesError}</p>{/if}
       {/if}
     {/if}
@@ -194,17 +194,17 @@
     <MacroTerminalSelect testId="input-terminal" reference={node.terminal} expectedType={expectedTerminalTypeAt(node.terminal)} choices={terminalChoices()} onChange={(terminal) => onUpdateTerminal(terminal, (item: FlowV2Node) => { if (item.type === 'input') item.terminal = terminal })} />
   </label>
   <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => onUpdate((item: FlowV2Node) => { if (item.type === 'input') item.prompt = value })} {templateScope} testId="input-prompt" multiline maxRows={3} />
-  <label class="checkbox-row"><input type="checkbox" data-testid="input-allow-empty" checked={node.allowEmpty} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'input') item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
+  <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="input-allow-empty" checked={node.allowEmpty} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'input') item.allowEmpty = event.currentTarget.checked })} />Allow empty</label>
   <TerminalInputDeliveryField value={node.delivery} onChange={(delivery: TerminalInputDelivery) => onUpdate((item: FlowV2Node) => { if (item.type === 'input') item.delivery = delivery })} testId="input-input-delivery" />
   <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => onUpdate((item: FlowV2Node) => { if (item.type === 'input') item.ending = ending })} testId="input-ending-sequence" />
   <label>Default source
-    <select data-testid="input-default-source" value={node.defaultSource ? artifactSourceKey(node.defaultSource) : ''} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type !== 'input') return; item.defaultSource = assignedArtifactSourceFromKey(event.currentTarget.value) })}>
+    <select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="input-default-source" value={node.defaultSource ? artifactSourceKey(node.defaultSource) : ''} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type !== 'input') return; item.defaultSource = assignedArtifactSourceFromKey(event.currentTarget.value) })}>
       <option value="">none</option>{#each artifactChoices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}
     </select>
   </label>
 {:else if node.type === 'wait'}
   <label>Mode
-    <select data-testid="wait-mode" value={node.mode} onchange={(event) => {
+    <select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="wait-mode" value={node.mode} onchange={(event) => {
       const previous = node.mode
       if (!setNodeWaitMode(event.currentTarget.value)) event.currentTarget.value = previous
     }}>
@@ -212,10 +212,10 @@
     </select>
   </label>
   {#if node.mode === 'duration'}
-    <label>Duration ms<input data-testid="wait-duration-ms" type="number" value={node.durationMs} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'duration') item.durationMs = Number(event.currentTarget.value) })} /></label>
+    <label>Duration ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="wait-duration-ms" type="number" value={node.durationMs} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'duration') item.durationMs = Number(event.currentTarget.value) })} /></label>
   {:else if node.mode === 'terminal-quiet'}
     <label>Target tab<MacroTerminalSelect testId="wait-target-tab" reference={node.terminal} expectedType={expectedTerminalTypeAt(node.terminal)} choices={quietTerminalChoices()} allChoices={terminalChoices()} onChange={(terminal) => onUpdateTerminal(terminal, (item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'terminal-quiet') item.terminal = terminal })} /></label>
-    <div class="macro-row"><label>Quiet ms<input data-testid="wait-quiet-ms" type="number" value={node.quietMs} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'terminal-quiet') item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input data-testid="wait-max-ms" type="number" value={node.maxMs} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'terminal-quiet') item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select data-testid="wait-on-timeout" value={node.onTimeout} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'terminal-quiet') item.onTimeout = event.currentTarget.value as 'pause' | 'finish' })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
+    <div class="macro-row"><label>Quiet ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="wait-quiet-ms" type="number" value={node.quietMs} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'terminal-quiet') item.quietMs = Number(event.currentTarget.value) })} /></label><label>Max ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="wait-max-ms" type="number" value={node.maxMs} oninput={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'terminal-quiet') item.maxMs = Number(event.currentTarget.value) })} /></label><label>On timeout<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="wait-on-timeout" value={node.onTimeout} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'terminal-quiet') item.onTimeout = event.currentTarget.value as 'pause' | 'finish' })}><option value="pause">pause</option><option value="finish">finish</option></select></label></div>
   {:else}
     <TemplatableScalarField label="Prompt" value={node.prompt} onChange={(value) => onUpdate((item: FlowV2Node) => { if (item.type === 'wait' && item.mode === 'user-continue') item.prompt = value })} {templateScope} testId="wait-user-continue-prompt" multiline maxRows={3} />
   {/if}

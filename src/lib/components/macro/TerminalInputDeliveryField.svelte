@@ -37,7 +37,7 @@
       {/if}
     </span>
   </div>
-  <select class="select select-xs w-full" id={selectId} data-testid={testId} {value} onchange={(event) => onChange(event.currentTarget.value as TerminalInputDelivery)}>
+  <select class="select box-border select-xs select-ghost w-full bg-base-content/15" id={selectId} data-testid={testId} {value} onchange={(event) => onChange(event.currentTarget.value as TerminalInputDelivery)}>
     <option value="auto">Auto (recommended)</option>
     <option value="direct">Direct bytes</option>
     <option value="bracketed-paste">Bracketed paste</option>

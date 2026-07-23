@@ -119,7 +119,7 @@
   const kindLabel = libraryKindLabel
 </script>
 
-<aside class="prompt-panel library-panel flex min-h-0 min-w-0 w-full flex-col gap-2 overflow-auto border border-base-300 bg-base-100 p-2 text-[13px] text-base-content shadow-sm [&_label]:grid [&_label]:min-w-0 [&_label]:gap-1 [&_label]:text-[11px] [&_label]:font-semibold [&_button[aria-disabled=true]]:!pointer-events-auto [&_button[aria-disabled=true]]:cursor-not-allowed [&_button[aria-disabled=true]]:border-base-300 [&_button[aria-disabled=true]]:bg-base-200 [&_button[aria-disabled=true]]:text-base-content/45" data-testid="library-panel" data-kind={kind} data-dirty={dirty} data-editing={editing}>
+<aside class="prompt-panel library-panel flex min-h-0 min-w-0 w-full flex-col gap-2 overflow-auto border border-base-300 bg-base-100 p-2 text-[13px] text-base-content shadow-sm [&_label]:grid [&_label]:min-w-0 [&_label]:gap-1 [&_label]:text-[11px] [&_label]:font-semibold" data-testid="library-panel" data-kind={kind} data-dirty={dirty} data-editing={editing}>
   <div class="prompt-header library-header sticky top-0 z-10 flex min-h-[38px] items-center justify-between gap-2 border-b border-base-300 bg-base-100 px-2 py-[3px]">
     <div class="min-w-0"><h2 class="m-0 text-sm font-bold">Library</h2><p class="m-0 overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-base-content/60" data-testid="library-status">{statusText}</p></div>
     <button class="btn btn-xs btn-ghost" type="button" data-testid="library-reset-width" onclick={() => onResetWidth?.()}>Reset width</button>
@@ -135,12 +135,12 @@
     <button type="button" class="tab h-7 min-h-7 px-1.5 text-xs" class:active={kind === 'note'} class:tab-active={kind === 'note'} data-testid="library-tab-note" aria-disabled={operationPending} onclick={() => void changeKind('note')}>Note</button>
   </nav>
 
-  <section class="prompt-section prompt-toolbar library-toolbar card grid gap-2 border border-base-300 bg-base-100 p-2" data-testid="library-toolbar" aria-busy={operationPending}>
+  <section class="prompt-section prompt-toolbar library-toolbar card grid gap-2 bg-base-200/60 p-2 shadow-sm" data-testid="library-toolbar" aria-busy={operationPending}>
     <label>Search
-      <input class="input input-xs w-full border-base-300" data-testid="library-search" value={searchText} oninput={(event) => updateSearch(event.currentTarget.value)} placeholder="title, description, tags, content" />
+      <input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="library-search" value={searchText} oninput={(event) => updateSearch(event.currentTarget.value)} placeholder="title, description, tags, content" />
     </label>
     <label>{kindLabel(kind)}
-      <select class="select select-xs w-full border-base-300" data-testid="library-selector" value={selectedKey} aria-disabled={operationPending} onchange={(event) => void selectByKey(event.currentTarget.value)}>
+      <select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="library-selector" value={selectedKey} aria-disabled={operationPending} onchange={(event) => void selectByKey(event.currentTarget.value)}>
         <option value="">{items.length === 0 ? 'No items found' : 'Select item'}</option>
         {#each items as item (item.kind + ':' + item.itemId)}
           <option data-testid="library-list-item" value={item.kind + ':' + item.itemId}>{item.title}{item.tags.length ? ' · ' + item.tags.join(', ') : ''}</option>
@@ -148,28 +148,28 @@
       </select>
     </label>
     <div class="prompt-editor-actions library-actions flex flex-wrap items-center gap-1" data-testid="library-actions">
-      <button class="btn btn-xs btn-primary !pointer-events-auto" type="button" data-testid="library-new" onclick={() => void newItem()} aria-disabled={!canMutateShared || operationPending}>New</button>
-      <button class="btn btn-xs btn-outline !pointer-events-auto" type="button" data-testid="library-edit" onclick={() => void beginEdit()} aria-disabled={!canMutateShared || !selectedItem || operationPending}>Edit</button>
-      <button class="btn btn-xs btn-success btn-outline !pointer-events-auto" type="button" data-testid="library-save" onclick={() => void saveItem()} aria-disabled={!canMutateShared || !draft || operationPending}>{operationPending ? 'Working…' : 'Save'}</button>
+      <button class="btn btn-xs btn-primary !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="library-new" onclick={() => void newItem()} aria-disabled={!canMutateShared || operationPending}>New</button>
+      <button class="btn btn-xs btn-primary !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="library-edit" onclick={() => void beginEdit()} aria-disabled={!canMutateShared || !selectedItem || operationPending}>Edit</button>
+      <button class="btn btn-xs btn-success !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="library-save" onclick={() => void saveItem()} aria-disabled={!canMutateShared || !draft || operationPending}>{operationPending ? 'Working…' : 'Save'}</button>
       <button class="btn btn-xs btn-ghost" type="button" data-testid="library-cancel" onclick={() => void cancelEdit()} disabled={!draft || operationPending}>{publishedCreateBufferPreserved ? 'Discard local copy' : editing ? selectedItem ? dirty ? 'Cancel' : 'Done' : 'Discard' : 'Cancel'}</button>
       <button class="btn btn-xs btn-ghost" type="button" data-testid="library-copy" onclick={() => void copyContent()} disabled={!draft}>{copyLabel}</button>
-      {#if kind === 'macro-template'}<button class="btn btn-xs btn-secondary btn-outline !pointer-events-auto" type="button" data-testid="library-load-into-macro" onclick={() => void loadIntoMacro()} aria-disabled={!canMutateShared || !selectedItem || operationPending}>Load into Macro</button>{/if}
-      <button class="btn btn-xs btn-error btn-outline !pointer-events-auto" type="button" data-testid="library-remove" onclick={() => void removeItem()} aria-disabled={!canMutateShared || !selectedItem || operationPending}>Remove</button>
+      {#if kind === 'macro-template'}<button class="btn btn-xs btn-secondary !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="library-load-into-macro" onclick={() => void loadIntoMacro()} aria-disabled={!canMutateShared || !selectedItem || operationPending}>Load into Macro</button>{/if}
+      <button class="btn btn-xs btn-error !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="library-remove" onclick={() => void removeItem()} aria-disabled={!canMutateShared || !selectedItem || operationPending}>Remove</button>
       <button class="btn btn-xs btn-ghost" type="button" data-testid="library-refresh" onclick={() => void refreshLibrary()} disabled={operationPending}>Refresh</button>
     </div>
   </section>
 
-  <section class="prompt-section prompt-editor library-editor card grid gap-2 border border-base-300 bg-base-100 p-2" data-testid="library-editor" aria-busy={operationPending}>
+  <section class="prompt-section prompt-editor library-editor card grid gap-2 bg-base-200/60 p-2 shadow-sm" data-testid="library-editor" aria-busy={operationPending}>
     <div class="prompt-section-title flex items-center justify-between gap-2"><h3 class="m-0 text-[13px] font-bold">{editing ? 'Edit' : 'View'}</h3>{#if dirty}<span class="badge badge-warning badge-sm" data-testid="library-dirty">unsaved</span>{/if}</div>
     {#if draft}
       <label>Title
-        <input class="input input-xs w-full border-base-300 read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-title" value={draft.title} readonly={editorReadOnly} oninput={(event) => updateDraft('title', event.currentTarget.value)} />
+        <input class="input box-border input-xs input-ghost w-full bg-base-content/15 read-only:cursor-not-allowed read-only:text-base-content/60" data-testid="library-title" value={draft.title} readonly={editorReadOnly} oninput={(event) => updateDraft('title', event.currentTarget.value)} />
       </label>
       <label>Description
-        <input class="input input-xs w-full border-base-300 read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-description" value={draft.description} readonly={editorReadOnly} oninput={(event) => updateDraft('description', event.currentTarget.value)} />
+        <input class="input box-border input-xs input-ghost w-full bg-base-content/15 read-only:cursor-not-allowed read-only:text-base-content/60" data-testid="library-description" value={draft.description} readonly={editorReadOnly} oninput={(event) => updateDraft('description', event.currentTarget.value)} />
       </label>
       <label>Tags
-        <input class="input input-xs w-full border-base-300 read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/60" data-testid="library-tags" value={draft.tags.join(', ')} readonly={editorReadOnly} oninput={(event) => setTags(event.currentTarget.value)} placeholder="review, reusable" />
+        <input class="input box-border input-xs input-ghost w-full bg-base-content/15 read-only:cursor-not-allowed read-only:text-base-content/60" data-testid="library-tags" value={draft.tags.join(', ')} readonly={editorReadOnly} oninput={(event) => setTags(event.currentTarget.value)} placeholder="review, reusable" />
       </label>
       <div class="library-content-label text-[11px] font-semibold">Content</div>
       <div class:library-json-editor={kind === 'macro-template'}>
@@ -179,11 +179,11 @@
       </div>
       {#if kind === 'macro-template'}
         <div class="prompt-editor-actions library-macro-actions flex justify-end">
-          <button class="btn btn-xs btn-outline" type="button" data-testid="library-validate" onclick={validateMacro}>Validate</button>
+          <button class="btn btn-xs btn-primary" type="button" data-testid="library-validate" onclick={validateMacro}>Validate</button>
         </div>
         {#if validationText}<pre class="library-validation m-0 max-h-[180px] overflow-auto rounded-field border border-base-300 bg-base-200 p-2 font-mono text-xs whitespace-pre-wrap" data-testid="library-validation" role="status">{validationText}</pre>{/if}
       {/if}
-      {#if leaseView}<small class="badge badge-sm badge-outline text-[10px]" data-testid="library-lease-status">Lease {leaseView.mode} · epoch {leaseView.leaseEpoch}</small>{/if}
+      {#if leaseView}<small class="badge badge-sm badge-soft text-[10px]" data-testid="library-lease-status">Lease {leaseView.mode} · epoch {leaseView.leaseEpoch}</small>{/if}
     {:else}
       <p class="empty-text m-0 text-xs text-base-content/60">Select or create a {kindLabel(kind)} item.</p>
     {/if}

@@ -39,7 +39,7 @@ describe('20260722B.003 Macro and Library theme migration', () => {
     }).toEqual({
       files: 25,
       entries: 728,
-      digest: 'e17259d76cee38c24e1634cbf13bff37b64281e64a6dc6c878b32bb09baeee17',
+      digest: 'b88aba98b10ca53568ac6ed92d5652741e05b6609a7796348a0622666f9c3b69',
     })
   })
 
@@ -54,7 +54,9 @@ describe('20260722B.003 Macro and Library theme migration', () => {
     const source = workbenchSources.map((path) => readFileSync(path, 'utf8')).join('\n')
     expect(source).toContain('bg-base-100')
     expect(source).toContain('text-base-content')
-    expect(source).toContain('border-primary')
+    expect(source).toContain('bg-primary/15')
+    expect(source).toContain('input-ghost')
+    expect(source).toContain('select-ghost')
     expect(source).toContain('alert-warning')
     expect(source).toContain('alert-error')
     expect(source).toContain('btn-success')
@@ -109,7 +111,7 @@ describe('20260722B.003 Macro and Library theme migration', () => {
     const runDock = readFileSync(resolve(macroRoot, 'MacroRunDock.svelte'), 'utf8')
 
     expect(panel).toContain('macro-view-scroll min-h-0 min-w-0 flex-1 overflow-auto')
-    expect(panel).toContain('[&_button]:h-7')
+    expect(panel).not.toContain('[&_button]')
     expect(flow).toContain('flow-block grid min-w-0')
     expect(flow).toContain('border-l-4')
     expect(lineEditor).toContain('!h-5 !min-h-5')

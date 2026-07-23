@@ -43,7 +43,7 @@
 
 <span class="terminal-reference-field grid gap-1">
   <select
-    class="select select-xs w-full"
+    class="select box-border select-xs select-ghost w-full bg-base-content/15"
     class:select-warning={state.status === 'unassigned'}
     class:select-error={state.status !== 'selected' && state.status !== 'unassigned'}
     data-testid={testId}

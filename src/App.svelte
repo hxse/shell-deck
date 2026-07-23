@@ -129,22 +129,22 @@
         {:else}
           <button
             type="button"
-            class="room-control-takeover btn btn-sm btn-warning btn-outline box-border h-[30px] min-h-[30px] px-[9px] py-[5px] text-xs leading-none whitespace-nowrap"
+            class="room-control-takeover btn btn-sm btn-warning box-border h-[30px] min-h-[30px] px-[9px] py-[5px] text-xs leading-none whitespace-nowrap"
             data-testid="take-control"
             onclick={() => void workspace.takeControl()}
             disabled={workspace.controlPending}
           >{workspace.controlPending ? 'Taking control…' : 'Read-only · Take control'}</button>
         {/if}
         <button type="button" class="btn btn-sm btn-ghost box-border h-7 min-h-7 rounded-[5px] px-[7px] text-xs" data-testid="home-button" onclick={() => window.open('/', '_blank', 'noopener')}>Home</button>
-        <button type="button" class="panel-toggle btn btn-sm btn-outline box-border h-7 min-h-7 w-[86px] justify-center gap-[5px] rounded-[5px] px-[7px] text-xs leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-2.5" class:btn-active={settings.panels.macro.visible} aria-pressed={settings.panels.macro.visible} data-testid="macro-panel-toggle" onclick={() => updateMacroPanel(undefined, !settings.panels.macro.visible)}>
+        <button type="button" class="panel-toggle btn btn-sm btn-secondary box-border h-7 min-h-7 w-[86px] justify-center gap-[5px] rounded-[5px] px-[7px] text-xs leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-2.5" class:btn-active={settings.panels.macro.visible} aria-pressed={settings.panels.macro.visible} data-testid="macro-panel-toggle" onclick={() => updateMacroPanel(undefined, !settings.panels.macro.visible)}>
           <span class="switch-track relative h-3.5 w-6 shrink-0 rounded-full bg-base-content/30 shadow-inner" aria-hidden="true"><span class="switch-thumb absolute top-0.5 left-0.5 size-2.5 rounded-full bg-base-100 shadow-sm transition-transform"></span></span><span>Macro</span>
         </button>
-        <button type="button" class="panel-toggle btn btn-sm btn-outline box-border h-7 min-h-7 w-[86px] justify-center gap-[5px] rounded-[5px] px-[7px] text-xs leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-2.5" class:btn-active={settings.panels.library.visible} aria-pressed={settings.panels.library.visible} data-testid="library-panel-toggle" onclick={() => updateLibraryPanel(undefined, !settings.panels.library.visible)}>
+        <button type="button" class="panel-toggle btn btn-sm btn-secondary box-border h-7 min-h-7 w-[86px] justify-center gap-[5px] rounded-[5px] px-[7px] text-xs leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-2.5" class:btn-active={settings.panels.library.visible} aria-pressed={settings.panels.library.visible} data-testid="library-panel-toggle" onclick={() => updateLibraryPanel(undefined, !settings.panels.library.visible)}>
           <span class="switch-track relative h-3.5 w-6 shrink-0 rounded-full bg-base-content/30 shadow-inner" aria-hidden="true"><span class="switch-thumb absolute top-0.5 left-0.5 size-2.5 rounded-full bg-base-100 shadow-sm transition-transform"></span></span><span>Library</span>
         </button>
-        <button type="button" class="terminal-create-button btn btn-sm btn-primary box-border !h-7 !min-h-7 rounded-[5px] px-[7px] text-xs !pointer-events-auto" data-testid="terminal-create-real" onclick={workspace.createShell} aria-disabled={!workspace.canMutateShared || workspace.terminalStructureLocked}>New shell</button>
-        <button type="button" class="terminal-create-button btn btn-sm btn-primary box-border !h-7 !min-h-7 rounded-[5px] px-[7px] text-xs !pointer-events-auto" data-testid="terminal-create-text" onclick={workspace.createText} aria-disabled={!workspace.canMutateShared || workspace.terminalStructureLocked}>New text</button>
-        <button type="button" class="settings-button btn btn-sm relative z-[61] box-border h-7 min-h-7 min-w-[70px] rounded-[5px] px-[7px] text-xs" data-testid="settings-button" onclick={() => { settingsOpen = !settingsOpen }}>Settings</button>
+        <button type="button" class="terminal-create-button btn btn-sm btn-primary box-border !h-7 !min-h-7 rounded-[5px] px-[7px] text-xs !pointer-events-auto aria-disabled:cursor-not-allowed" data-testid="terminal-create-real" onclick={workspace.createShell} aria-disabled={!workspace.canMutateShared || workspace.terminalStructureLocked}>New shell</button>
+        <button type="button" class="terminal-create-button btn btn-sm btn-primary box-border !h-7 !min-h-7 rounded-[5px] px-[7px] text-xs !pointer-events-auto aria-disabled:cursor-not-allowed" data-testid="terminal-create-text" onclick={workspace.createText} aria-disabled={!workspace.canMutateShared || workspace.terminalStructureLocked}>New text</button>
+        <button type="button" class="settings-button btn btn-sm btn-primary relative z-[61] box-border h-7 min-h-7 min-w-[70px] rounded-[5px] px-[7px] text-xs" data-testid="settings-button" onclick={() => { settingsOpen = !settingsOpen }}>Settings</button>
       </div>
     </header>
     {#if settingsOpen}
@@ -154,7 +154,7 @@
         <label class="grid gap-1 text-xs font-semibold text-base-content">
           <span>Theme</span>
           <select
-            class="select select-sm w-full border-base-300"
+            class="select box-border select-sm select-ghost w-full bg-base-content/15"
             data-testid="theme-select"
             value={settings.theme}
             onchange={(event) => {
@@ -168,7 +168,7 @@
         </label>
         <button
           type="button"
-          class="drag-toggle settings-drag-toggle btn btn-sm btn-outline w-full justify-center gap-2 px-[9px] leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-3"
+          class="drag-toggle settings-drag-toggle btn btn-sm btn-secondary w-full justify-center gap-2 px-[9px] leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-3"
           class:btn-active={settings.terminalDragEnabled}
           data-testid="tab-drag-toggle"
           aria-pressed={settings.terminalDragEnabled}
@@ -176,7 +176,7 @@
         ><span class="switch-track relative h-4 w-7 shrink-0 rounded-full bg-base-content/30 shadow-inner" aria-hidden="true"><span class="switch-thumb absolute top-0.5 left-0.5 size-3 rounded-full bg-base-100 shadow-sm transition-transform"></span></span><span>Drag terminals</span></button>
         <button
           type="button"
-          class="settings-control-button btn btn-sm btn-soft w-full justify-start text-left"
+          class="settings-control-button btn btn-sm btn-primary w-full justify-start text-left"
           class:btn-active={settings.macroInsertionPlacement === 'anchored'}
           data-testid="macro-insertion-placement"
           aria-pressed={settings.macroInsertionPlacement === 'anchored'}
@@ -186,7 +186,7 @@
           <span class="flex items-center justify-between gap-3"><span>Notification volume</span><output class="font-[var(--shell-deck-terminal-font-family)] text-base-content/70" data-testid="notification-volume-output">{Math.round(settings.notificationVolume * 100)}%</output></span>
           <input class="range range-xs w-full" type="range" min="0" max="1000" step="10" value={Math.round(settings.notificationVolume * 100)} data-testid="notification-volume" oninput={(event) => updateSettings({ notificationVolume: Number(event.currentTarget.value) / 100 })} />
         </label>
-        <button type="button" class="settings-control-button btn btn-sm btn-soft w-full justify-start text-left" data-testid="notification-success-sound-test" onclick={() => { void workspace.playNotificationSound('success', 'success') }}>Play success sound</button>
+        <button type="button" class="settings-control-button btn btn-sm btn-primary w-full justify-start text-left" data-testid="notification-success-sound-test" onclick={() => { void workspace.playNotificationSound('success', 'success') }}>Play success sound</button>
       </section>
     {/if}
     <NoticeStack {notice} onDismiss={(id) => { if (notice?.id === id) notice = null }} />

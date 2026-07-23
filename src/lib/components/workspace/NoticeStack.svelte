@@ -55,7 +55,7 @@
 {#if notice}
   <section class="notice-stack fixed inset-0 z-[90]" aria-label="Notice">
     <button class="notice-dismiss-layer absolute inset-0 h-full w-full cursor-default border-0 bg-transparent p-0" type="button" data-testid="notice-dismiss-layer" aria-label="Dismiss notice" onclick={() => onDismiss(notice.id)}></button>
-    <div class="notice alert absolute top-[62px] right-[18px] z-[1] !flex w-[min(520px,calc(100vw-36px))] items-start justify-between gap-3 rounded-box border border-base-300 bg-base-100 px-3.5 py-3 text-[13px] text-base-content shadow-xl pointer-events-auto" class:alert-info={notice.level === 'info'} class:alert-success={notice.level === 'success'} class:alert-warning={notice.level === 'warning'} class:alert-error={notice.level === 'error'} class:info={notice.level === 'info'} class:success={notice.level === 'success'} class:warning={notice.level === 'warning'} class:error={notice.level === 'error'} role="alert" data-testid="notice-item" onmouseenter={pauseTimer} onmouseleave={resumeTimer}>
+    <div class="notice alert absolute top-[62px] right-[18px] z-[1] !flex w-[min(520px,calc(100vw-36px))] items-start justify-between gap-3 px-3.5 py-3 text-[13px] shadow-xl pointer-events-auto" class:alert-info={notice.level === 'info'} class:alert-success={notice.level === 'success'} class:alert-warning={notice.level === 'warning'} class:alert-error={notice.level === 'error'} class:info={notice.level === 'info'} class:success={notice.level === 'success'} class:warning={notice.level === 'warning'} class:error={notice.level === 'error'} role="alert" data-testid="notice-item" onmouseenter={pauseTimer} onmouseleave={resumeTimer}>
       <span class="notice-copy grid min-w-0 gap-[5px] [overflow-wrap:anywhere]">
         <small class="grid gap-0.5 font-[var(--shell-deck-terminal-font-family)] text-[11px] text-base-content/70">
           {#if notice.title}<span>title: {notice.title}</span>{/if}
@@ -68,7 +68,7 @@
           {#if notice.systemStatus}<span>system_status: {notice.systemStatus}</span>{/if}
         </small>
       </span>
-      <button class="btn btn-xs btn-error btn-outline" type="button" data-testid="notice-dismiss" aria-label="Dismiss notice" onclick={() => onDismiss(notice.id)}>Dismiss</button>
+      <button class="btn btn-xs btn-ghost" type="button" data-testid="notice-dismiss" aria-label="Dismiss notice" onclick={() => onDismiss(notice.id)}>Dismiss</button>
     </div>
   </section>
 {/if}

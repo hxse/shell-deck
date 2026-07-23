@@ -68,7 +68,7 @@
       />
     </label>
   {:else}
-    <label>{label}<input class="input input-xs w-full" bind:this={inputElement} data-testid={testId} value={textValue} oninput={(event) => updateText(event.currentTarget.value)} /></label>
+    <label>{label}<input class="input box-border input-xs input-ghost w-full bg-base-content/15" bind:this={inputElement} data-testid={testId} value={textValue} oninput={(event) => updateText(event.currentTarget.value)} /></label>
   {/if}
   {#if templateScope || templateEnabled}
     <label class="checkbox-row template-toggle-row flex w-fit cursor-pointer items-center gap-1.5 text-xs">
@@ -83,17 +83,17 @@
     </label>
   {/if}
   {#if templateEnabled && templateScope && !multiline}
-    <div class="template-tools flex min-w-0 flex-wrap items-center justify-end gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-1 text-primary" data-testid={testId ? testId + "-template-tools" : "scalar-template-tools"}>
+    <div class="template-tools flex min-w-0 flex-wrap items-center justify-end gap-1 rounded-md bg-primary/10 px-1.5 py-1 text-primary shadow-sm" data-testid={testId ? testId + "-template-tools" : "scalar-template-tools"}>
       <div class="template-insert-actions flex min-w-0 flex-wrap justify-end gap-1">
         {#each loopTemplateInsertActions as action}
-          <button class="btn btn-primary btn-soft btn-xs !h-5 !min-h-5 px-1.5 !text-[11px] leading-tight" type="button" data-testid={action.testId} title={'Insert ' + action.text} onclick={() => insertTemplateToken(action.text)}>{action.label}</button>
+          <button class="btn btn-primary btn-xs !h-5 !min-h-5 px-1.5 !text-[11px] leading-tight" type="button" data-testid={action.testId} title={'Insert ' + action.text} onclick={() => insertTemplateToken(action.text)}>{action.label}</button>
         {/each}
       </div>
     </div>
   {:else if templateEnabled && !templateScope}
-    <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid={testId ? testId + "-template-scope-issue" : "scalar-template-scope-issue"}>This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
+    <p class="template-scope-issue alert alert-error px-2 py-1.5 text-xs" data-testid={testId ? testId + "-template-scope-issue" : "scalar-template-scope-issue"}>This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
   {/if}
   {#if templateIssue}
-    <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid={testId ? testId + "-template-syntax-issue" : "scalar-template-syntax-issue"}>{templateIssue}</p>
+    <p class="template-scope-issue alert alert-error px-2 py-1.5 text-xs" data-testid={testId ? testId + "-template-syntax-issue" : "scalar-template-syntax-issue"}>{templateIssue}</p>
   {/if}
 </div>

@@ -45,7 +45,7 @@ Terminal tab与正文header显示同一条单行label：连续index、runtime te
 
 ## Theme
 
-在任一Room打开`Settings → Theme`即可选择`system`或35个daisyUI内置theme。新browser默认选择`business`；已有合法Theme选择不会因默认值变化而被覆盖。Theme属于当前browser的本地presentation setting：observer也可修改，刷新后保留，并同时覆盖Home、Room、terminal、Macro、Library与notice；它不会写入Room、server或saved record，也不会跨设备同步。`system`仍实时跟随OS light/dark，选择explicit theme后不再随OS变化。所有暗色theme的表单、panel、tab与divider使用统一增强的semantic border contrast。
+在任一Room打开`Settings → Theme`即可选择`system`或35个daisyUI内置theme。新browser默认选择`business`；已有合法Theme选择不会因默认值变化而被覆盖。Theme属于当前browser的本地presentation setting：observer也可修改，刷新后保留，并同时覆盖Home、Room、terminal、Macro、Library与notice；它不会写入Room、server或saved record，也不会跨设备同步。`system`仍实时跟随OS light/dark，选择explicit theme后不再随OS变化。button、input、select、textarea、tab与状态提示直接使用daisyUI当前theme的原生surface、background、focus与disabled样式；普通command使用当前theme的solid semantic button，只有移动、折叠、复制、取消等低权重chrome action使用ghost。input、select与普通textarea使用当前theme的content color生成无边框半透明填充面，因此在深色Theme中变亮、浅色Theme中变暗，不依赖某一个Theme的特殊CSS。明显的线条只用于pane、header、popover、editor gutter等真实结构边界。
 
 ## Codex hook
 
@@ -79,7 +79,7 @@ AgentEvent Capture新增`Enable timeout`。默认关闭并保存`waitLimit:{kind
 
 Start要求Macro已经Save，先通过runnable completeness（所有terminal/artifact reference均assigned），再要求当前terminal layout/type/readiness匹配。启动时server把index解析成terminalId/launchId并冻结，运行中terminal结构保持锁定；Pause只暂停live run，server restart或Room Destroy后不能Resume。Trace、manifest、events和artifact仍可只读查看，但不会恢复runner。
 
-Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Save/Delete后的record会同步，但不会切换其他browser的selector。Start后Room另有只读Running Macro；status、current step、Pause/Resume/Stop以及Input Action的prompt/draft/submit都由server主动同步到同Room设备。关闭所有页面不会停止run，重新进入原Room URL会立即得到当前live snapshot。
+Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Save/Delete后的record会同步，但不会切换其他browser的selector。saved Macro退出Edit后由`Read-only`提示明确标记，正文、field与flow node仍保持正常可读对比度；直接点击这条normal read-only提示，或聚焦后按Enter/Space，会先获取该record的content edit lease，成功后进入Edit。只有这条提示是快捷入口，点击正文/field不会进入Edit；active run、controller loss、pending或lease-lost提示也不会误触Edit。不同嵌套depth的纵向guide和横向渐隐separator都直接跟随当前Theme的semantic color。Start后Room另有只读Running Macro；status、current step、Pause/Resume/Stop以及Input Action的prompt/draft/submit都由server主动同步到同Room设备。关闭所有页面不会停止run，重新进入原Room URL会立即得到当前live snapshot。
 
 Notify Action在server只执行一次并向当时在线的同Room browser各广播一条message；Telegram与System notification都只呈现一次。每个browser去重后，App channel按`repeatCount`与`repeatIntervalMs`重复toast/sound；reconnect、Room切换或workspace dispose会取消尚未触发的剩余重复。后进入的browser不补弹历史通知，但仍可在Trace查看event。
 

@@ -95,6 +95,11 @@ test-20260722c:
     HISTFILE=/dev/null bun test tests/unit/businessThemeContrastC.test.ts tests/unit/browserSettings032.test.ts tests/unit/themeFoundation001.test.ts tests/unit/uiThemeCloseout004.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/businessThemeContrastC.spec.ts tests/e2e/themeFoundation001.spec.ts tests/e2e/appRoomTerminalChrome002.spec.ts
 
+test-20260723a:
+    just ui-style-residue
+    HISTFILE=/dev/null bun test tests/unit/businessThemeContrastC.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/uiThemeCloseout004.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/businessThemeContrastC.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
 

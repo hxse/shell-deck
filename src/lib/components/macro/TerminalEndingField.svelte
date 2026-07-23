@@ -9,7 +9,7 @@
 </script>
 
 <label>Ending sequence
-  <select class="select select-xs w-full" data-testid={testId} {value} onchange={(event) => onChange(event.currentTarget.value as TerminalEnding)}>
+  <select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid={testId} {value} onchange={(event) => onChange(event.currentTarget.value as TerminalEnding)}>
     <option value="none">None</option>
     <option value="cr">CR (\r)</option>
     <option value="lf">LF (\n)</option>

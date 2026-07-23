@@ -49,7 +49,19 @@
       ]
     },
     "src/lib/components/LibraryPanel.svelte": { "count": 47, "digest": "4e911729639d5f6d191f5e49cd9ecc8d1facfeb86a6db09ef1265476f00fdae6" },
-    "src/lib/components/MacroPanel.svelte": { "count": 7, "digest": "b2a3195ace982ecac132acaf5952ace26c7b61c4f93b95590f59e32036518560" },
+    "src/lib/components/MacroPanel.svelte": {
+      "count": 7,
+      "digest": "b2a3195ace982ecac132acaf5952ace26c7b61c4f93b95590f59e32036518560",
+      "entryDigests": [
+        "439c1750b99358d8aa9340a6c44e7fda266f87027b7c4aee8915e4f032d84d4b",
+        "5cffe3ac292d09e5bd6250c990edc52f6ac634c116d4f1c2ea4916f8f2474284",
+        "11d5120763f1bf44401e90cb02b4c5e414d185a28382850323ac33215c84e68f",
+        "02a9ab3d43f0ccab21b77d0e594a6799edd9bb8a1f4559ffd77bee418c8358cc",
+        "1be1b295b047198e659dc0fbfbe01dec83da5226199987ee576ede9789d53999",
+        "64cf05aa921981988da0783241db53e22cbfdc7eafaf81f0a9694172c6a5321a",
+        "a2e1e92633924c0b780e1ad6d07d109e593c3b9271e1269c26dcf388ea680ab5"
+      ]
+    },
     "src/lib/components/RoomHome.svelte": { "count": 17, "digest": "51e7ae396bdb4ab4097dac58c7931571f048408828e9cc7c4a5c6281c2591331" },
     "src/lib/components/TerminalSlot.svelte": { "count": 4, "digest": "f6260e5aff2ead2d9b5828df8945b95161f78eb4e2923420d7a717f1f8b21850" },
     "src/lib/components/TextBoxSlot.svelte": { "count": 10, "digest": "c729bd7dd3555e8583ff6485e383967fbbdd3fa2c7d4d01f0a45991e71b465af" },
@@ -58,7 +70,21 @@
     "src/lib/components/macro/LineNumberedTextarea.svelte": { "count": 7, "digest": "97057515c7a725d67a22323726ce78ec32bc581a5daf0c9be94a535ff71798fa" },
     "src/lib/components/macro/MacroActionNodeEditor.svelte": { "count": 82, "digest": "bb4303fe877a27002b871c74cd32cf4026fd7a51fb0b06351af059c13a095902" },
     "src/lib/components/macro/MacroControlNodeEditor.svelte": { "count": 76, "digest": "aa4a5e189c3c784167e65e1830ada40ae9a1d84037f7d186da53862dd4123cc8" },
-    "src/lib/components/macro/MacroEditorShell.svelte": { "count": 9, "digest": "a3a182b00117826cafa47fa937c34f0911c1c0d25a778bb67351b21dd4c55ddb" },
+    "src/lib/components/macro/MacroEditorShell.svelte": {
+      "count": 9,
+      "digest": "a3a182b00117826cafa47fa937c34f0911c1c0d25a778bb67351b21dd4c55ddb",
+      "entryDigests": [
+        "e4647f0b3ab1ac6ca8161e2b4ba2e01d60c220964926477b7bccfa481144dbf2",
+        "539ba44bb5ab07d3187237ad2881bf50c9c9e0e3905f6a3e688a9ffd711fd5b2",
+        "eac4b6faa80c5a39bca540fe26a2ea32935047399423bb11185e323b0d50ac69",
+        "050b6d241c11ccfeb12fa1a347043462d0717c0a02118a21534df837d02ffe96",
+        "059fca78c14c7ad398cbea2af96ce7b12fb760913096553e62047b9f7e658073",
+        "29aa68f32d0c355a5911d4a3e340353537980ba0ee172f4dd563b54baca3eefe",
+        "9ab151c97395328775f33f3a37b7d68287f42522ad65f035781ceae7e86fc148",
+        "d4befb5f50511f3c0982ab59720737094b6322204e3178e69525cb5caf753a2a",
+        "f5793a0cfd97c151b9ee34359c9eaab4a0f5445464685072ebac11a8b173c7e4"
+      ]
+    },
     "src/lib/components/macro/MacroFlowNodeList.svelte": { "count": 22, "digest": "7bbb9d90fd1bbccec7c662ef8615dfedde25a26c8d7a6a7d8306ed97ad1e40ee" },
     "src/lib/components/macro/MacroIconButton.svelte": { "count": 19, "digest": "3499c6b72e450891991a085418cf9ad5ac3352d79df1ee51a91b2bc648a50c0b" },
     "src/lib/components/macro/MacroInsertionPalette.svelte": { "count": 30, "digest": "152df0d74b4576bffe5846776ab984b9ff40bf7f902acde62725c127e47fdc3a" },

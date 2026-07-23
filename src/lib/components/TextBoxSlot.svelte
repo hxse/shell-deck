@@ -114,7 +114,7 @@
     </div>
     <textarea
       bind:this={editorElement}
-      class="text-box-editor textarea h-full min-h-0 w-full resize-none overflow-auto !rounded-none !border-0 bg-base-100 p-3 font-[var(--shell-deck-terminal-font-family)] text-[13px] leading-[1.45] text-base-content outline-none focus:shadow-[inset_0_0_0_2px_var(--color-primary)] read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/50"
+      class="text-box-editor textarea box-border h-full min-h-0 w-full resize-none overflow-auto !rounded-none !border-0 bg-base-100 p-3 font-[var(--shell-deck-terminal-font-family)] text-[13px] leading-[1.45] text-base-content outline-none focus:shadow-[inset_0_0_0_2px_var(--color-primary)] read-only:cursor-not-allowed read-only:bg-base-200 read-only:text-base-content/50"
       data-testid="text-box-editor"
       spellcheck="false"
       wrap="off"

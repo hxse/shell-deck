@@ -64,7 +64,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
     expect(THEME_PREFERENCES).toHaveLength(36)
   })
 
-  test('final structure has the exact four-element Theme delta from the parent revision', () => {
+  test('final structure has only the exact Theme and read-only notice-action deltas from the parent revision', () => {
     const files = collectSvelteFiles(resolve(projectRoot, 'src')).sort()
     const current = Object.fromEntries(files.map((path) => [
       relative(projectRoot, path).split('\\').join('/'),
@@ -74,7 +74,11 @@ describe('20260722B.004 UI theme migration closeout', () => {
     expect(Object.keys(current).sort()).toEqual(Object.keys(structureBaseline.files).sort())
 
     for (const [path, expected] of Object.entries(structureBaseline.files)) {
-      if (path === 'src/App.svelte') continue
+      if ([
+        'src/App.svelte',
+        'src/lib/components/MacroPanel.svelte',
+        'src/lib/components/macro/MacroEditorShell.svelte',
+      ].includes(path)) continue
       expect({ count: current[path].count, digest: current[path].digest }).toEqual({
         count: expected.count,
         digest: expected.digest,
@@ -91,6 +95,33 @@ describe('20260722B.004 UI theme migration closeout', () => {
       'src/App.svelte::RegularElement:select::data-testid="theme-select"|value={settings.theme}|onchange={(event) => { if (isThemePreference(event.currentTarget.value)) updateSettings({ theme: event.currentTarget.value }) }}',
       'src/App.svelte::RegularElement:option::value={theme}',
     ])
+
+    const macroPanelBaseline = structureBaseline.files['src/lib/components/MacroPanel.svelte']
+    expect(macroPanelBaseline.entryDigests).toHaveLength(7)
+    const macroPanelDelta = structureDelta(
+      macroPanelBaseline.entryDigests ?? [],
+      current['src/lib/components/MacroPanel.svelte'],
+    )
+    expect(macroPanelDelta.removed).toEqual([
+      '02a9ab3d43f0ccab21b77d0e594a6799edd9bb8a1f4559ffd77bee418c8358cc',
+    ])
+    expect(macroPanelDelta.added).toEqual([
+      "src/lib/components/MacroPanel.svelte::Component:MacroEditorShell::{draft}|validation={portableValidation}|{runnableValidation}|runtimePositions={terminalPositions}|{insertionPaletteMode}|{telegramProfileIds}|{telegramProfilesError}|locked={editorLocked}|editorKey={`${selectedRecord?.id ?? 'new'}:${editorGeneration}`}|lockedReason={runActive ? 'macro_run_active' : !canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required'}|currentNodeId={runActive ? runner?.currentNodeId ?? null : null}|onBeginEdit={() => void beginEdit()}|{onMutationDenied}|onUpdateDraft={updateDraft}",
+    ])
+
+    const editorBaseline = structureBaseline.files['src/lib/components/macro/MacroEditorShell.svelte']
+    expect(editorBaseline.entryDigests).toHaveLength(9)
+    const editorDelta = structureDelta(
+      editorBaseline.entryDigests ?? [],
+      current['src/lib/components/macro/MacroEditorShell.svelte'],
+    )
+    expect(editorDelta.removed).toEqual([
+      'eac4b6faa80c5a39bca540fe26a2ea32935047399423bb11185e323b0d50ac69',
+    ])
+    expect(editorDelta.added).toEqual([
+      "src/lib/components/macro/MacroEditorShell.svelte::RegularElement:div::data-testid=\"macro-editor-lock-notice\"|data-lock-reason={lockedReason}|data-click-to-edit={normalReadOnly}|role={normalReadOnly ? 'button' : 'status'}|tabindex={normalReadOnly ? 0 : undefined}|onclick={normalReadOnly ? activateNormalReadOnlyNotice : undefined}|onkeydown={normalReadOnly ? activateNormalReadOnlyNotice : undefined}",
+    ])
+
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
     expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(839)
 

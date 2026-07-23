@@ -113,7 +113,13 @@ test('nested authoring stays compact with an inclusive 760px boundary and inside
       return {
         panelFits: panel.scrollWidth <= panel.clientWidth + 1,
         viewFits: view.scrollWidth <= view.clientWidth + 1,
-        blocksFit: blocks.every((block) => block.scrollWidth <= block.clientWidth + 1),
+        overflowingBlocks: blocks
+          .filter((block) => block.scrollWidth > block.clientWidth + 1)
+          .map((block) => ({
+            label: block.dataset.flowBodyLabel ?? '',
+            clientWidth: block.clientWidth,
+            scrollWidth: block.scrollWidth,
+          })),
         runDisplay: controlStyle.display,
         runColumns: controlStyle.gridTemplateColumns,
         controlHeights: [...controls.querySelectorAll('button')].map((button) => button.getBoundingClientRect().height),
@@ -121,7 +127,7 @@ test('nested authoring stays compact with an inclusive 760px boundary and inside
     })
     expect(geometry.panelFits).toBe(true)
     expect(geometry.viewFits).toBe(true)
-    expect(geometry.blocksFit).toBe(true)
+    expect(geometry.overflowingBlocks).toEqual([])
     expect(geometry.controlHeights.every((height) => height <= 28)).toBe(true)
     if (width === 720) {
       expect(geometry.runDisplay).toBe('flex')

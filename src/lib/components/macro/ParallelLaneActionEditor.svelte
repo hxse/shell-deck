@@ -77,7 +77,7 @@
   }
 </script>
 
-<article class="step-card parallel-lane-action card grid min-w-0 gap-2 border border-base-300 bg-base-100 p-2 shadow-sm [&.collapsed>:not(.step-title)]:hidden" class:collapsed class:current-node={isCurrent} class:outline={isCurrent} class:outline-2={isCurrent} class:outline-primary={isCurrent} data-testid="parallel-lane-action" data-parallel-action-id={item.id} data-parallel-action-type={item.type} data-current-node={isCurrent ? 'true' : undefined}>
+<article class="step-card parallel-lane-action card grid min-w-0 gap-2 bg-base-200/60 p-2 shadow-sm [&.collapsed>:not(.step-title)]:hidden [&.current-node]:bg-primary/15" class:collapsed class:current-node={isCurrent} data-testid="parallel-lane-action" data-parallel-action-id={item.id} data-parallel-action-type={item.type} data-current-node={isCurrent ? 'true' : undefined}>
   <div class="step-title node-title-row flex min-w-0 flex-wrap items-center justify-between gap-2">
     <div class="node-title-cluster flex min-w-0 flex-wrap items-center gap-1.5">
       <strong>{itemIndex + 1}. {item.type}</strong>
@@ -85,23 +85,23 @@
     </div>
     <NodeActionControls collapsed={collapsed} moveUpDisabled={itemIndex === 0} {moveDownDisabled} groupTestId="parallel-node-action-controls" toggleTestId="parallel-node-toggle-collapse" moveUpTestId="parallel-node-move-up" moveDownTestId="parallel-node-move-down" addBeforeTestId="parallel-lane-add-before" addAfterTestId="parallel-lane-add-after" removeTestId="parallel-node-remove" onToggle={onToggle} onMoveUp={() => onMove(-1)} onMoveDown={() => onMove(1)} {onAddBefore} {onAddAfter} onRemove={onRemove} />
   </div>
-  <label>Action id<input data-testid="parallel-action-id-input" value={item.id} oninput={(event) => { if (!onSetId(event.currentTarget.value)) event.currentTarget.value = item.id }} /></label>
+  <label>Action id<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-action-id-input" value={item.id} oninput={(event) => { if (!onSetId(event.currentTarget.value)) event.currentTarget.value = item.id }} /></label>
 
   {#if item.type === 'send'}
     <MessagePartsEditor message={item.message} onChange={(message: MessageSpec) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'send') action.message = message })} choices={artifactChoices} {templateScope} testId="parallel-message-parts-editor" textPartTestId="parallel-message-text-part" />
     <TerminalInputDeliveryField value={item.delivery} onChange={(delivery: TerminalInputDelivery) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'send') action.delivery = delivery })} testId="parallel-send-input-delivery" />
     <TerminalEndingField value={item.ending} onChange={(ending: TerminalEnding) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'send') action.ending = ending })} testId="parallel-send-ending-sequence" />
   {:else if item.type === 'wait'}
-    <label>Mode<select data-testid="parallel-wait-mode" value={item.mode} onchange={(event) => onUpdate((action: ParallelLaneActionNode) => {
+    <label>Mode<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="parallel-wait-mode" value={item.mode} onchange={(event) => onUpdate((action: ParallelLaneActionNode) => {
       if (action.type !== 'wait') return
       setWaitMode(action, event.currentTarget.value)
     })}><option value="duration">duration</option><option value="terminal-quiet">terminal-quiet</option></select></label>
     {#if item.mode === 'duration'}
-      <label>Duration ms<input data-testid="parallel-wait-duration-ms" type="number" value={item.durationMs} oninput={(event) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'wait' && action.mode === 'duration') action.durationMs = Number(event.currentTarget.value) })} /></label>
+      <label>Duration ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-wait-duration-ms" type="number" value={item.durationMs} oninput={(event) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'wait' && action.mode === 'duration') action.durationMs = Number(event.currentTarget.value) })} /></label>
      {:else if item.mode === 'terminal-quiet'}
       <div class="macro-row">
-        <label>Quiet ms<input data-testid="parallel-wait-quiet-ms" type="number" value={item.quietMs} oninput={(event) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'wait' && action.mode === 'terminal-quiet') action.quietMs = Number(event.currentTarget.value) })} /></label>
-        <label>Max ms<input data-testid="parallel-wait-max-ms" type="number" value={item.maxMs} oninput={(event) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'wait' && action.mode === 'terminal-quiet') action.maxMs = Number(event.currentTarget.value) })} /></label>
+        <label>Quiet ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-wait-quiet-ms" type="number" value={item.quietMs} oninput={(event) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'wait' && action.mode === 'terminal-quiet') action.quietMs = Number(event.currentTarget.value) })} /></label>
+        <label>Max ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-wait-max-ms" type="number" value={item.maxMs} oninput={(event) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'wait' && action.mode === 'terminal-quiet') action.maxMs = Number(event.currentTarget.value) })} /></label>
       </div>
     {/if}
   {:else if item.type === 'capture-source'}

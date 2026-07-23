@@ -112,10 +112,10 @@
     <ul class="room-list mx-auto grid max-w-[980px] list-none gap-[9px] p-0" data-testid="room-list">
       {#each rooms as room (room.roomId)}
         <li class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 [@media(max-width:680px)]:grid-cols-1">
-          <button class="room-open btn btn-sm h-auto min-w-0 justify-between gap-4 border-base-300 px-3.5 py-3 text-left [@media(max-width:680px)]:flex-col [@media(max-width:680px)]:items-start" type="button" data-testid="room-open" onclick={() => window.location.assign('/' + room.roomId)}>
+          <button class="room-open btn btn-sm btn-ghost h-auto min-w-0 justify-between gap-4 bg-base-100 px-3.5 py-3 text-left shadow-sm [@media(max-width:680px)]:flex-col [@media(max-width:680px)]:items-start" type="button" data-testid="room-open" onclick={() => window.location.assign('/' + room.roomId)}>
             <code class="overflow-hidden text-ellipsis text-primary">{room.roomId}</code><span class="shrink-0 text-xs text-base-content/60">{room.terminalCount} terminals · {room.connectedClientCount} connections{room.hasActiveRun ? ' · running' : ''}</span>
           </button>
-          <button class="room-destroy btn btn-sm btn-error btn-outline" type="button" data-testid="room-destroy" onclick={() => void destroyRoom(room)}>Destroy</button>
+          <button class="room-destroy btn btn-sm btn-error" type="button" data-testid="room-destroy" onclick={() => void destroyRoom(room)}>Destroy</button>
         </li>
       {/each}
     </ul>

@@ -116,11 +116,11 @@
 
 <div class="message-parts-editor grid min-w-0 gap-2" data-testid={testId}>
   <div class="inline-actions flex flex-wrap justify-end gap-1.5">
-    <button class="btn btn-xs" type="button" data-testid="message-add-text" onclick={addTextPart}>Add Text</button>
-    <button class="btn btn-xs" type="button" data-testid="message-add-source" title="Add source artifact" onclick={addArtifactPart}>Add Source</button>
+    <button class="btn btn-xs btn-primary" type="button" data-testid="message-add-text" onclick={addTextPart}>Add Text</button>
+    <button class="btn btn-xs btn-primary" type="button" data-testid="message-add-source" title="Add source artifact" onclick={addArtifactPart}>Add Source</button>
   </div>
   {#each message.parts as part, partIndex (structureVersion + ":" + partIndex)}
-    <div class="message-part-row card min-w-0 gap-2 border border-base-300 bg-base-100 p-2 shadow-sm" data-testid="message-part-row">
+    <div class="message-part-row card min-w-0 gap-2 bg-base-200/60 p-2 shadow-sm" data-testid="message-part-row">
       <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2">
         <strong>{partIndex + 1}. {part.kind}</strong>
         <div class="inline-actions flex flex-wrap gap-1">
@@ -143,10 +143,10 @@
           </label>
         {/if}
         {#if part.kind === "template" && !templateScope}
-          <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid="message-template-scope-issue">This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
+          <p class="template-scope-issue alert alert-error px-2 py-1.5 text-xs" data-testid="message-template-scope-issue">This template needs an enclosing text-list for. Turn template off or move it back into scope.</p>
         {/if}
         {#if templateSyntaxIssue(part)}
-          <p class="template-scope-issue rounded-md border border-error/40 bg-error/10 px-2 py-1.5 text-xs text-error" data-testid="message-template-syntax-issue">{templateSyntaxIssue(part)}</p>
+          <p class="template-scope-issue alert alert-error px-2 py-1.5 text-xs" data-testid="message-template-syntax-issue">{templateSyntaxIssue(part)}</p>
         {/if}
         <label>Text
           <LineNumberedTextarea
@@ -160,7 +160,7 @@
         </label>
       {:else}
         <label>Source artifact
-          <select class="select select-xs w-full" class:select-warning={part.source.kind === 'unassigned'} data-testid="message-source-part" value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(partIndex, event.currentTarget.value)}>
+          <select class="select box-border select-xs select-ghost w-full bg-base-content/15" class:select-warning={part.source.kind === 'unassigned'} data-testid="message-source-part" value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(partIndex, event.currentTarget.value)}>
             <option value="">Unassigned</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
           </select>
         </label>

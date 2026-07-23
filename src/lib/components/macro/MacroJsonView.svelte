@@ -63,12 +63,12 @@
         <button class="btn btn-xs btn-success" type="button" data-testid="macro-save-json" onclick={onSave} disabled={saving || !canEdit} aria-disabled={saving || !canEdit}>{saving ? 'Saving…' : 'Save'}</button>
         <button class="btn btn-xs btn-ghost" type="button" data-testid="macro-cancel-json" onclick={onCancel} disabled={saving}>Cancel</button>
       {:else}
-        <button class="btn btn-xs btn-outline" type="button" data-testid="macro-edit-json" onclick={onStartEdit} disabled={!draft || operationPending || !canEdit} aria-disabled={!draft || operationPending || !canEdit} title={!canEdit ? readOnlyReason || 'Macro editing is unavailable' : operationPending ? 'Wait for the pending macro operation to finish' : undefined}>Edit</button>
+        <button class="btn btn-xs btn-primary" type="button" data-testid="macro-edit-json" onclick={onStartEdit} disabled={!draft || operationPending || !canEdit} aria-disabled={!draft || operationPending || !canEdit} title={!canEdit ? readOnlyReason || 'Macro editing is unavailable' : operationPending ? 'Wait for the pending macro operation to finish' : undefined}>Edit</button>
       {/if}
     </div>
   </div>
   {#if !canEdit && readOnlyReason}
-    <div class="macro-editor-lock-notice macro-json-lock-notice alert alert-warning border-2 px-3 py-2 text-xs font-bold" data-testid="macro-json-lock-notice" role="status">{readOnlyReason}</div>
+    <div class="macro-editor-lock-notice macro-json-lock-notice alert alert-warning px-3 py-2 text-xs font-bold" data-testid="macro-json-lock-notice" role="status">{readOnlyReason}</div>
   {/if}
   {#if editError}<div class="macro-json-error alert alert-error px-3 py-2 text-xs" role="alert" data-testid="macro-json-error">{editError}</div>{/if}
   {#if editing}

@@ -97,7 +97,7 @@ test('Room Destroy entering Home clears Macro and Library aggregate unload guard
   await page.getByTestId('macro-template-drawer').click()
   await page.getByTestId('macro-create').click()
   await page.getByTestId('macro-name').fill('Unsaved before Room Destroy')
-  await page.getByTestId('macro-template-dismiss-layer').click()
+  await page.getByTestId('macro-template-dismiss-layer').click({ position: { x: 8, y: 8 } })
   await ensureLibraryVisible(page)
   await page.getByTestId('library-tab-note').click()
   await page.getByTestId('library-new').click()

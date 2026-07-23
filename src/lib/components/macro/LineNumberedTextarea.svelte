@@ -204,7 +204,7 @@
   {#if insertActions.length > 0}
     <div class="textarea-toolbar col-[1/-1] flex min-w-0 flex-wrap justify-end gap-1 border-b border-base-300 bg-base-200/60 px-1.5 py-1">
       {#each insertActions as action}
-        <button class="template-token-button btn btn-xs !h-5 !min-h-5 min-w-0 px-1.5 !text-[11px] leading-tight [overflow-wrap:anywhere]" type="button" data-testid={action.testId} title={'Insert ' + action.text} disabled={disabled} onclick={() => insertAtSelection(action)}>{action.label}</button>
+        <button class="template-token-button btn btn-xs btn-primary !h-5 !min-h-5 min-w-0 px-1.5 !text-[11px] leading-tight [overflow-wrap:anywhere]" type="button" data-testid={action.testId} title={'Insert ' + action.text} disabled={disabled} onclick={() => insertAtSelection(action)}>{action.label}</button>
       {/each}
     </div>
   {/if}
@@ -218,7 +218,7 @@
     </div>
   {/if}
   <textarea
-    class="textarea w-full min-w-0 min-h-0 resize-y !rounded-none !border-0 bg-transparent font-mono leading-[var(--line-number-height)] [scrollbar-gutter:stable] focus:outline-2 focus:-outline-offset-2 focus:outline-primary/30 disabled:cursor-not-allowed disabled:bg-base-200/80 disabled:text-base-content/45 read-only:cursor-not-allowed read-only:bg-base-200/80 read-only:text-base-content/55"
+    class="textarea box-border w-full min-w-0 min-h-0 resize-y !rounded-none !border-0 bg-transparent font-mono leading-[var(--line-number-height)] [scrollbar-gutter:stable] focus:outline-2 focus:-outline-offset-2 focus:outline-primary/30 disabled:cursor-not-allowed disabled:bg-base-200/80 disabled:text-base-content/45 read-only:cursor-not-allowed read-only:bg-base-200/80 read-only:text-base-content/55"
     bind:this={textareaElement}
     data-testid={testId}
     aria-label={ariaLabel}

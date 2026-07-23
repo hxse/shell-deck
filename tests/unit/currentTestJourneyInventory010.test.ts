@@ -57,7 +57,7 @@ type CaseInventory = {
   hash: string
 }
 
-test('split current journeys preserve every original case, assertion and forced gate byte-for-byte', () => {
+test('current journeys preserve every attributed case, assertion and forced gate', () => {
   const inventory = journeyFiles.flatMap(readCaseInventory).sort((left, right) => left.title.localeCompare(right.title))
   const aggregate = createHash('sha256').update(JSON.stringify(inventory)).digest('hex')
 
@@ -66,7 +66,7 @@ test('split current journeys preserve every original case, assertion and forced 
   expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(644)
   expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(27)
   expect(inventory.reduce((total, item) => total + item.waits, 0)).toBe(20)
-  expect(aggregate).toBe('b47e58e82a8fbd5d56e104b1d40e2ed9f06d70d9eb7e3f34ec87b9870c562b0a')
+  expect(aggregate).toBe('a3034e50e266b5e01ef95d35820cd8f56b7f235d9adc7ae491a2107c11726dc1')
 
   expect(roomFiles.flatMap(readCaseInventory)).toHaveLength(14)
   expect(libraryFiles.flatMap(readCaseInventory)).toHaveLength(11)

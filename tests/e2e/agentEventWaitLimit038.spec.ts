@@ -107,12 +107,13 @@ async function expectTimeoutToggleAligned(checkbox: import('playwright/test').Lo
     const inputStyle = getComputedStyle(input)
     return {
       display: getComputedStyle(label).display,
+      nativeCheckbox: input.classList.contains('checkbox'),
       inputWidth: inputRect.width,
       inputHeight: inputRect.height,
-      inputPadding: inputStyle.padding,
+      appearance: inputStyle.appearance,
       centerDelta: Math.abs((inputRect.top + inputRect.height / 2) - (textRect.top + textRect.height / 2)),
     }
   })
-  expect(metrics).toMatchObject({ display: 'flex', inputWidth: 14, inputHeight: 14, inputPadding: '0px' })
+  expect(metrics).toMatchObject({ display: 'flex', nativeCheckbox: true, inputWidth: 14, inputHeight: 14, appearance: 'none' })
   expect(metrics.centerDelta).toBeLessThanOrEqual(1)
 }

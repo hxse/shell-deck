@@ -510,31 +510,31 @@
 {#if parallelNode}
   <section class="parallel-tabs-editor grid min-w-0 gap-2.5" data-testid="parallel-lane-tabs">
     <div class="macro-row">
-      <label>On lane fail<select data-testid="parallel-on-lane-fail" value={parallelNode.onLaneFail} onchange={(event) => updateParallel((node) => { node.onLaneFail = event.currentTarget.value as 'pause' | 'fail' })}><option value="pause">pause</option><option value="fail">fail</option></select></label>
+      <label>On lane fail<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="parallel-on-lane-fail" value={parallelNode.onLaneFail} onchange={(event) => updateParallel((node) => { node.onLaneFail = event.currentTarget.value as 'pause' | 'fail' })}><option value="pause">pause</option><option value="fail">fail</option></select></label>
       {#if collectsAnyLaneText}
-        <label>Separator<input data-testid="parallel-merge-separator" value={parallelNode.merge.separator} oninput={(event) => updateParallel((node) => { node.merge.separator = event.currentTarget.value })} /></label>
-        <label class="checkbox-row"><input type="checkbox" data-testid="parallel-include-empty-outputs" checked={parallelNode.merge.includeEmptyOutputs} onchange={(event) => updateParallel((node) => { node.merge.includeEmptyOutputs = event.currentTarget.checked })} />Include empty outputs</label>
+        <label>Separator<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-merge-separator" value={parallelNode.merge.separator} oninput={(event) => updateParallel((node) => { node.merge.separator = event.currentTarget.value })} /></label>
+        <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="parallel-include-empty-outputs" checked={parallelNode.merge.includeEmptyOutputs} onchange={(event) => updateParallel((node) => { node.merge.includeEmptyOutputs = event.currentTarget.checked })} />Include empty outputs</label>
       {/if}
     </div>
 
     <div class="parallel-tab-strip tabs tabs-box flex min-w-0 flex-wrap items-center gap-1 overflow-x-auto p-1" role="tablist">
       {#each parallelNode.lanes as lane}
-        <button class="tab tab-sm h-7 min-h-7 border border-transparent px-2 text-xs [&.current-node]:border-primary [&.current-node]:ring-1 [&.current-node]:ring-primary" type="button" class:tab-active={selectedLane?.id === lane.id} class:active={selectedLane?.id === lane.id} class:current-node={Boolean(currentNodeId && lane.body.some((item) => item.id === currentNodeId))} data-testid="parallel-lane-tab" data-current-node={currentNodeId && lane.body.some((item) => item.id === currentNodeId) ? 'true' : undefined} onclick={() => { selectedLaneId = lane.id; closeLaneInsertion(false) }}>{lane.label || lane.id}</button>
+        <button class="tab tab-sm h-7 min-h-7 px-2 text-xs [&.current-node]:bg-primary/20" type="button" class:tab-active={selectedLane?.id === lane.id} class:active={selectedLane?.id === lane.id} class:current-node={Boolean(currentNodeId && lane.body.some((item) => item.id === currentNodeId))} data-testid="parallel-lane-tab" data-current-node={currentNodeId && lane.body.some((item) => item.id === currentNodeId) ? 'true' : undefined} onclick={() => { selectedLaneId = lane.id; closeLaneInsertion(false) }}>{lane.label || lane.id}</button>
       {/each}
     </div>
 
     {#if selectedLane}
-      <div class="parallel-lane-card active-lane card grid min-w-0 gap-2 border border-primary/40 bg-base-200/30 p-2" data-testid="parallel-lane-editor">
+      <div class="parallel-lane-card active-lane card grid min-w-0 gap-2 bg-primary/10 p-2 shadow-sm" data-testid="parallel-lane-editor">
         <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2">
           <strong>{selectedLane.label || selectedLane.id}</strong>
           <div class="inline-actions parallel-lane-controls flex flex-wrap gap-1">
-            <button class="btn btn-xs" type="button" data-testid="parallel-add-lane" onclick={addLane}>Add lane</button>
-            <button class="btn btn-error btn-soft btn-xs" type="button" data-testid="parallel-remove-lane" disabled={parallelNode.lanes.length <= 1} onclick={() => removeLane(selectedLane.id)}>Remove lane</button>
+            <button class="btn btn-primary btn-xs" type="button" data-testid="parallel-add-lane" onclick={addLane}>Add lane</button>
+            <button class="btn btn-error btn-xs" type="button" data-testid="parallel-remove-lane" disabled={parallelNode.lanes.length <= 1} onclick={() => removeLane(selectedLane.id)}>Remove lane</button>
           </div>
         </div>
         <div class="macro-row">
-          <label>Lane id<input data-testid="parallel-lane-id-input" value={selectedLane.id} oninput={(event) => { if (!setLaneId(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.id }} /></label>
-          <label>Label<input data-testid="parallel-lane-label-input" value={selectedLane.label} oninput={(event) => { if (!setLaneLabel(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.label }} /></label>
+          <label>Lane id<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-lane-id-input" value={selectedLane.id} oninput={(event) => { if (!setLaneId(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.id }} /></label>
+          <label>Label<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-lane-label-input" value={selectedLane.label} oninput={(event) => { if (!setLaneLabel(selectedLane.id, event.currentTarget.value)) event.currentTarget.value = selectedLane.label }} /></label>
           <label>Lane tab<MacroTerminalSelect testId="parallel-lane-terminal" reference={selectedLane.terminal} expectedType={expectedTerminalTypeAt(selectedLane.terminal)} choices={terminalChoices()} disabledValues={unavailableLaneTerminalValues(selectedLane.id)} onChange={(terminal) => setLaneTerminalReference(selectedLane.id, terminal)} /></label>
         </div>
         {#if editNotice}
@@ -546,11 +546,11 @@
             <button type="button" class="macro-insertion-scrim fixed inset-0 !size-full !min-h-0 cursor-default !rounded-none !border-0 !bg-transparent !p-0" data-testid="parallel-lane-insertion-cancel-scrim" aria-label="Cancel parallel lane insertion" onclick={cancelLaneInsertion}></button>
             <section bind:this={laneInsertionPaletteElement} class="floating-insertion-palette relative z-[81] grid w-[min(360px,calc(100vw-32px))] max-h-[min(var(--palette-max-height,560px),calc(100vh-24px))] gap-2.5 overflow-auto rounded-box border border-base-300 bg-base-100 p-3 shadow-2xl [&.anchored]:fixed [&.anchored]:top-[var(--palette-y)] [&.anchored]:left-[var(--palette-x)] [&.anchored]:-translate-x-1/2 [&.anchored.above]:-translate-y-full" class:anchored={laneInsertionAnchored} class:above={laneInsertionPosition?.placement === 'above'} class:below={laneInsertionPosition?.placement === 'below'} style={laneInsertionPaletteStyle} data-testid="parallel-lane-action-palette" aria-label="Insert parallel lane action">
               <div class="palette-heading flex min-w-0 items-baseline justify-between gap-2"><span class="font-bold">{laneInsertion.summary}</span><small class="text-base-content/55">choose action</small></div>
-              <div class="step-palette grid gap-2 rounded-md border border-base-300 bg-base-200/40 p-2">
+              <div class="step-palette card grid gap-2 bg-base-200/60 p-2 shadow-sm">
                 <div class="palette-heading flex min-w-0 items-baseline justify-between gap-2"><span class="font-bold">Actions</span><small class="text-base-content/55">do lane work</small></div>
                 <div class="step-actions grid grid-cols-3 gap-1.5 [@media(max-width:760px)]:grid-cols-2">
                   {#each laneActionPaletteItemsFor(selectedLane) as item}
-                    <button class="btn btn-sm min-h-8" type="button" data-testid={item.testId} title={item.type} onclick={() => insertLaneAction(item.type)}><span class="tool-label">{item.label}</span></button>
+                    <button class="btn btn-sm btn-primary min-h-8" type="button" data-testid={item.testId} title={item.type} onclick={() => insertLaneAction(item.type)}><span class="tool-label">{item.label}</span></button>
                   {/each}
                 </div>
               </div>
@@ -589,18 +589,18 @@
 {/if}
 
 {#snippet OutputEditor(lane: ParallelLane, output: ParallelLaneOutputNode, itemIndex: number)}
-  <article class="step-card parallel-output-card card grid min-w-0 gap-2 border border-secondary/40 bg-secondary/5 p-2" data-testid="parallel-lane-output">
+  <article class="step-card parallel-output-card card grid min-w-0 gap-2 bg-secondary/10 p-2 shadow-sm" data-testid="parallel-lane-output">
     <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2">
       <span class="parallel-output-title flex min-w-0 items-baseline gap-1.5"><strong>Lane result</strong><small class="text-base-content/55">{output.source.kind === 'none' ? 'no text collected' : 'collecting text'}</small></span>
       <div class="inline-actions parallel-output-actions flex min-w-0 flex-wrap items-center gap-1.5">
         <label class="checkbox-row flex w-fit cursor-pointer items-center gap-1.5"><input class="checkbox checkbox-xs" type="checkbox" data-testid="parallel-collect-lane-text" checked={output.source.kind !== 'none'} onchange={(event) => { if (!setLaneCollectsText(lane.id, event.currentTarget.checked)) event.currentTarget.checked = false }} />Collect lane text</label>
-        <button class="btn btn-xs" type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, 'Insert lane action', event)}>Add action</button>
+        <button class="btn btn-xs btn-primary" type="button" data-testid="parallel-lane-add-before-output" onclick={(event) => openLaneInsertion(lane.id, itemIndex, 'Insert lane action', event)}>Add action</button>
       </div>
     </div>
     {#if output.source.kind !== 'none'}
       <div class="macro-row parallel-output-fields">
-        <label>Output id<input data-testid="parallel-output-id-input" value={output.id} oninput={(event) => { if (!setLaneOutputId(lane.id, output.id, event.currentTarget.value)) event.currentTarget.value = output.id }} /></label>
-        <label>Source<select data-testid="parallel-output-source" value={parallelOutputSourceKey(output.source)} onchange={(event) => setLaneOutputSource(lane.id, output.id, event.currentTarget.value)}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
+        <label>Output id<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-output-id-input" value={output.id} oninput={(event) => { if (!setLaneOutputId(lane.id, output.id, event.currentTarget.value)) event.currentTarget.value = output.id }} /></label>
+        <label>Source<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="parallel-output-source" value={parallelOutputSourceKey(output.source)} onchange={(event) => setLaneOutputSource(lane.id, output.id, event.currentTarget.value)}><option value="">none</option>{#each laneArtifactChoices(lane, output.id) as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
       </div>
     {/if}
   </article>

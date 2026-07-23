@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  registeredDarkThemeOverrideIds,
   scanAppCss,
+  scanInteractiveComponentSemantics,
+  scanMacroPresentationSemantics,
 } from '../../scripts/checkUiStyleResidue'
 import { DEFAULT_BROWSER_SETTINGS } from '../../src/lib/browserSettings'
 import {
@@ -29,10 +30,9 @@ const expectedDarkThemes = [
   'sunset',
   'abyss',
 ] as const
-const expectedBase300 = 'color-mix(in oklab, var(--color-base-content) 60%, var(--color-base-100))'
 const expectedDarkThemeSet = new Set<string>(expectedDarkThemes)
 
-describe('20260722C business default and dark border contrast', () => {
+describe('20260722C/20260723A business default and native theme ownership', () => {
   test('business is the single fresh/reset browser default', () => {
     expect(DEFAULT_BROWSER_SETTINGS.theme).toBe('business')
   })
@@ -45,31 +45,88 @@ describe('20260722C business default and dark border contrast', () => {
     }
   })
 
-  test('app CSS registers one exact semantic contrast override per dark theme', () => {
+  test('app CSS delegates every palette and component token to built-in themes', () => {
     const css = readFileSync(resolve(projectRoot, 'src/app.css'), 'utf8')
-    expect(registeredDarkThemeOverrideIds(css)).toEqual([...expectedDarkThemes])
-    expect(css.match(new RegExp(escapeRegExp(expectedBase300), 'g'))).toHaveLength(2)
-    expect(css.match(/--depth:\s*1;/g)).toHaveLength(2)
+    expect(css).not.toContain('[data-theme=')
+    expect(css).not.toContain('prefers-color-scheme')
+    expect(css).not.toContain('--color-base-')
+    expect(css).not.toContain('--depth')
     expect(scanAppCss(css)).toEqual([])
   })
 
-  test('the default residue Gate rejects dark override drift', () => {
+  test('the default residue Gate rejects application-owned theme overrides', () => {
     const css = readFileSync(resolve(projectRoot, 'src/app.css'), 'utf8')
+    const explicitOverride = css.replace(':root {', ':where([data-theme="business"]) { --depth: 1; }\n\n:root {')
+    expect(reasons(explicitOverride)).toContain('CSS block is outside the app.css allowlist: :where([data-theme="business"])')
 
-    const wrongMix = css.replace(expectedBase300, expectedBase300.replace('60%', '50%'))
-    expect(reasons(wrongMix)).toContain(`explicit dark theme --color-base-300 must be ${expectedBase300}`)
+    const systemOverride = css.replace(':root {', '@media (prefers-color-scheme: dark) { :root { --depth: 1; } }\n\n:root {')
+    expect(reasons(systemOverride)).toContain('CSS block is outside the app.css allowlist: @media (prefers-color-scheme: dark)')
+  })
 
-    const wrongDepth = css.replace('--depth: 1;', '--depth: 0;')
-    expect(reasons(wrongDepth)).toContain('explicit dark theme --depth must be 1')
+  test('interactive controls must own native daisyUI semantics without structural borders', () => {
+    expect(controlReasons('<input class="input box-border input-xs input-ghost bg-base-content/15" />')).toEqual([])
+    expect(controlReasons('<select class="select box-border select-xs select-ghost bg-base-content/15"><option>x</option></select>')).toEqual([])
+    expect(controlReasons('<button class="btn btn-xs btn-primary">Edit</button>')).toEqual([])
+    expect(controlReasons('<button class="btn btn-xs btn-success">Save</button>')).toEqual([])
+    expect(controlReasons('<button class="btn btn-xs btn-ghost">Cancel</button>')).toEqual([])
+    expect(controlReasons('<div role="tab" class="tab">Shell 1</div>')).toEqual([])
 
-    const extraLight = css.replace('[data-theme="business"]', '[data-theme="light"]')
-    expect(reasons(extraLight).some((reason) => reason.includes('explicit dark theme token owner drifts from the canonical catalog'))).toBe(true)
+    expect(controlReasons('<input class="input input-xs border-base-300" />')).toContain('interactive control must not consume the structural border-base-300 token')
+    expect(controlReasons('<input class="input input-xs input-ghost bg-base-200" />')).toContain('input must directly declare box-border because the project does not load Tailwind preflight')
+    expect(controlReasons('<select class="select select-xs bg-base-content/15"><option>x</option></select>')).toContain('select must use the daisyUI select-ghost surface or an explicit borderless composite-editor exception')
+    expect(controlReasons('<input class="input box-border input-xs input-ghost bg-base-200" />')).toContain('input input-ghost must pair with the single theme-derived bg-base-content/15 field fill')
+    expect(controlReasons('<select class="select box-border select-xs select-ghost bg-base-content/10"><option>x</option></select>')).toContain('select select-ghost must pair with the single theme-derived bg-base-content/15 field fill')
+    expect(controlReasons('<button class="btn btn-xs btn-outline">Edit</button>')).toContain('interactive control must use a daisyUI solid semantic or intentional ghost state instead of btn-outline')
+    expect(controlReasons('<button class="btn btn-xs btn-soft">Edit</button>')).toEqual(expect.arrayContaining([
+      'visible command must not use low-contrast btn-soft in the business theme',
+      'visible btn must declare a solid semantic surface or an intentional btn-ghost tertiary state',
+    ]))
+    expect(controlReasons('<button class="btn btn-xs">Edit</button>')).toContain('visible btn must declare a solid semantic surface or an intentional btn-ghost tertiary state')
+    expect(controlReasons('<div role="tab" class="border border-base-300">Shell 1</div>')).toEqual(expect.arrayContaining([
+      'role=tab control must directly declare daisyUI tab semantics',
+      'interactive control must not consume the structural border-base-300 token',
+    ]))
 
-    const missingAbyss = css.replace(', [data-theme="abyss"]', '')
-    expect(reasons(missingAbyss).some((reason) => reason.includes('explicit dark theme token owner drifts from the canonical catalog'))).toBe(true)
+    const ancestor = '<section class="[&_input]:border [&_button]:bg-base-100"><input class="input box-border input-ghost bg-base-content/15" /></section>'
+    expect(scanInteractiveComponentSemantics('src/lib/components/MacroPanel.svelte', ancestor).map((issue) => issue.reason))
+      .toContain('MacroPanel ancestor control presentation is forbidden; declare the daisyUI component on the control itself')
+  })
 
-    const misplacedSystem = css.replace('@media (prefers-color-scheme: dark) {\n  :root:not([data-theme]) {', '@media (prefers-color-scheme: dark) {}\n\n:root:not([data-theme]) {').replace('\n  }\n}\n\n:root {', '\n}\n\n:root {')
-    expect(reasons(misplacedSystem)).toContain('system dark theme token owner must be nested under prefers-color-scheme: dark')
+  test('saved Macro content remains readable and flow nodes own semantic depth separators', () => {
+    const editorFile = 'src/lib/components/macro/MacroEditorShell.svelte'
+    const panelFile = 'src/lib/components/MacroPanel.svelte'
+    const flowFile = 'src/lib/components/macro/MacroFlowNodeList.svelte'
+    const editor = readFileSync(resolve(projectRoot, editorFile), 'utf8')
+    const panel = readFileSync(resolve(projectRoot, panelFile), 'utf8')
+    const flow = readFileSync(resolve(projectRoot, flowFile), 'utf8')
+    expect(scanMacroPresentationSemantics(editorFile, editor)).toEqual([])
+    expect(scanMacroPresentationSemantics(panelFile, panel)).toEqual([])
+    expect(scanMacroPresentationSemantics(flowFile, flow)).toEqual([])
+
+    const dimmedEditor = editor.replace(
+      'data-[editor-locked=true]:[&_input]:pointer-events-none',
+      'data-[editor-locked=true]:[&_input]:pointer-events-none data-[editor-locked=true]:[&_input]:text-base-content/55',
+    )
+    expect(scanMacroPresentationSemantics(editorFile, dimmedEditor).map((issue) => issue.reason))
+      .toContain('saved Macro read-only content must remain full contrast; lock state belongs to the semantic notice')
+
+    const noticeWithoutKeyboardActivation = editor.replace(
+      'onkeydown={normalReadOnly ? activateNormalReadOnlyNotice : undefined}',
+      '',
+    )
+    expect(scanMacroPresentationSemantics(editorFile, noticeWithoutKeyboardActivation).map((issue) => issue.reason))
+      .toContain('normal saved Macro notice must exclusively own direct Edit activation token onkeydown={normalReadOnly ? activateNormalReadOnlyNotice : undefined}')
+
+    const panelWithoutCanonicalEdit = panel.replace(
+      'onBeginEdit={() => void beginEdit()} {onMutationDenied} onUpdateDraft={updateDraft}',
+      '{onMutationDenied} onUpdateDraft={updateDraft}',
+    )
+    expect(scanMacroPresentationSemantics(panelFile, panelWithoutCanonicalEdit).map((issue) => issue.reason))
+      .toContain('normal saved Macro notice must delegate to the canonical beginEdit content lease path')
+
+    const separatorWithoutPrimary = flow.replace('after:from-primary after:via-primary/70', '')
+    expect(scanMacroPresentationSemantics(flowFile, separatorWithoutPrimary).map((issue) => issue.reason))
+      .toContain('flow node must pair semantic vertical depth guides with the theme-derived ::after separator token after:from-primary after:via-primary/70')
   })
 })
 
@@ -77,6 +134,6 @@ function reasons(css: string): string[] {
   return scanAppCss(css).map((issue) => issue.reason)
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+function controlReasons(source: string): string[] {
+  return scanInteractiveComponentSemantics('src/Test.svelte', source).map((issue) => issue.reason)
 }
