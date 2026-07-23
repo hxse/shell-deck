@@ -22,7 +22,7 @@ Room identity 是 `serverInstanceId + roomId + roomGeneration`。生命周期为
 
 Room runtime message只广播到同一Room。Room controller是process-local memory state并随generation销毁；shared mutation先取得lifecycle ticket，再验证owner control epoch/lease。Home lifecycle管理是唯一不要求目标Room controller的外部入口。
 
-server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade，并创建唯一`rooms`与`clients` registry。`roomControlCoordinator.ts`只协调client、heartbeat、controller lease与controlled ticket；`terminalBackendCoordinator.ts`只协调terminal backend candidate/commit callback、replay revision、cwd refresh与close drain。两者通过显式ports操作manager拥有的同一`RoomRuntime`/`TerminalSlot`对象，不建立shadow map或第二份state；production consumer继续只import`terminalRoomManager.ts`。
+server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade，并创建唯一`rooms`与`clients` registry。其内部`roomControlCoordinator.ts`只组合presence与lease：presence coordinator负责client lifecycle/heartbeat，lease coordinator唯一转换controller epoch/owner并提供controlled ticket；二者持有manager同一组map reference。`terminalBackendCoordinator.ts`只协调terminal backend candidate/commit callback、replay revision、cwd refresh与close drain。这些internal coordinator通过显式ports操作manager拥有的同一`RoomRuntime`/`TerminalSlot`对象，不建立shadow map或第二份state；production consumer继续只import`terminalRoomManager.ts`。
 
 浏览器之间从不直接同步。terminal、runner、runtime input和notification全部先进入server-owned Room state，再由Room WebSocket投影到各连接；关闭browser不会停止server runner。Macro/Library selector和未保存draft保持browser-local，saved record通过user-global store与generic content invalidation同步，不能与Room runtime混成一份状态。
 

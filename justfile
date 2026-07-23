@@ -148,6 +148,16 @@ test-20260723c-003:
     HISTFILE=/dev/null bun test tests/integration/libraryHttp036.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts
 
+test-20260723c-004:
+    HISTFILE=/dev/null bun test tests/unit/roomControlDecomposition004.test.ts
+    HISTFILE=/dev/null bun test tests/unit/roomControl033.test.ts
+    HISTFILE=/dev/null bun test tests/unit/contentEditLease033.test.ts
+    HISTFILE=/dev/null bun test tests/unit/terminalRoomManager032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/terminalRoomWebSocket032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/singleWriter033.test.ts
+    HISTFILE=/dev/null bun test tests/integration/roomRuntimeSync035.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/singleWriterRoom033.spec.ts tests/e2e/roomRuntimeSync035.takeover.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.spec.ts --grep "historical terminal queries"
 
