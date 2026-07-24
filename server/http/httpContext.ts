@@ -1,7 +1,6 @@
 import type { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { ContentEditLeaseService } from '../contentEditLeaseService'
-import type { LibraryStore } from '../libraryStore'
 import type { MacroRunnerService } from '../macroRunnerService'
 import type { NotificationService } from '../notificationService'
 import type { MacroRecordStore } from '../sharedContentStore'
@@ -13,7 +12,6 @@ export type HttpContext = {
   agentEventStore: AgentEventStore
   ingestToken: string
   notificationService: NotificationService
-  libraryStore: LibraryStore
   macroStore: MacroRecordStore<MacroDefinitionV5>
   macroRunner: MacroRunnerService
 }

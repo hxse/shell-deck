@@ -51,14 +51,6 @@ export class MacroRecordClient {
     return response.leaseOutcome as ContentCommitLeaseOutcome
   }
 
-  async createFromLibrary(itemId: string, expectedRevision: number): Promise<MacroRecord> {
-    return (await requestJson('/api/templates/from-library', {
-      method: 'POST',
-      headers: this.controlHeaders(),
-      body: JSON.stringify({ itemId, expectedRevision }),
-    })).template as MacroRecord
-  }
-
   private controlHeaders(): Record<string, string> {
     const grant = this.controlGrant()
     if (!grant) throw new Error('room_control_required')

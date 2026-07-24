@@ -4,7 +4,7 @@
 
 唯一current格式是`MacroDefinitionV5`：`schemaVersion`必须精确为`5`，并包含`name`、`description`、`terminalLayout`与`body`。`terminalLayout`只保存从1开始连续的terminal `index/type`；definition不保存record metadata、Room/server identity、cwd、terminalId、launchId、alias或旧configId。
 
-持久化envelope是`MacroRecord`：server生成`tmpl_` id、revision、createdAt、updatedAt，并把definition放在`definition`字段中。JSON editor、clipboard Copy与Library Macro JSON只处理definition，不处理record envelope。
+持久化envelope是`MacroRecord`：server生成`tmpl_` id、revision、createdAt、updatedAt，并把definition放在`definition`字段中。JSON editor与clipboard Copy只处理definition，不处理record envelope。
 
 运行所需terminal slot使用exact union：
 
@@ -38,7 +38,7 @@ App Notify channel的唯一current shape是`{kind:"app", toast:boolean, sound:No
 2. `validateRunnableMacroDefinitionV5(input)`在persistable基础上为每个未指派slot返回stable `unassigned_terminal_reference`或`unassigned_artifact_reference` path。它不读取Room、不改写definition。
 3. live runtime validator只接收runnable definition，再检查当前Room的index/type、terminalId/launchId binding与readiness。
 
-assigned但missing/future/wrong artifact或assigned terminal缺layout/capability mismatch仍是invalid definition，不能自动降级为unassigned。Macro/JSON/Library Save使用第1层；Start严格按persistable→runnable→live Room执行。server Start对not-runnable返回`macro_not_runnable`及issues，零run安装、零terminal mutation、零`run_started`。
+assigned但missing/future/wrong artifact或assigned terminal缺layout/capability mismatch仍是invalid definition，不能自动降级为unassigned。Macro/JSON Save使用第1层；Start严格按persistable→runnable→live Room执行。server Start对not-runnable返回`macro_not_runnable`及issues，零run安装、零terminal mutation、零`run_started`。
 
 `parseAndValidateMacroTerminalLayoutFromDefinitionJson(text)`只供显式Prepare从当前JSON buffer读取layout；它没有last-valid fallback，也不让无关body错误阻止layout Prepare。
 
@@ -74,13 +74,13 @@ Macro workbench的DOM hierarchy、control顺序、compact density、nested flow 
 
 `MacroInsertionPalette.svelte`导出的`MacroInsertionPaletteLifecycle`唯一拥有root与lane palette的anchored/centered viewport placement、实测clamp、first-enabled-control focus、Escape/cancel与exact trigger focus restoration。`createMacroFlowInsertionController`唯一拥有root insertion的八项rune state、anchor validity及insert/move command；它只消费live draft/mode、parent `updateDraft`/terminal-adoption ports与既有lifecycle instance，不缓存definition或复制placement算法。`createMacroFlowTreeController`继续拥有tree本域的collapse、ID reconciliation及structure mutation。Parallel lane的lookup/capability/output choice由pure policy计算，draft command只修改显式传入的definition并返回structured result；`createParallelLaneEditorController`继续唯一拥有collapsed action IDs、notice、confirm、selection reconciliation及parent提供的`updateDraft` gateway。机械拆分保留父版本的Parallel失败路径：terminal adoption在`updateDraft` callback内先于lane重查，action rename通过duplicate检查后即使目标已消失也仍reconcile collapsed ID并返回`true`；修正这些语义必须另建行为task。Flow parent继续原地拥有props、recursive DOM/render snippet和projection wiring；Parallel parent继续拥有既有DOM、lane palette state与selected-lane wiring。
 
-Save要求persistable valid，不要求runnable或当前Room ready，不触发Prepare；成功后更新base revision、清dirty并保留当前Edit session/lease。Copy只把canonical pretty-printed definition写入clipboard；没有Duplicate、clone、copy-and-create、Import或Export。Macro toolbar另有明确的`Save to Library`跨domain action：它把当前persistable-valid visual draft创建为fresh Macro JSON Library item，不修改Macro record/selection/dirty，也不Prepare/Start；这不改变Copy的clipboard-only语义。
+Save要求persistable valid，不要求runnable或当前Room ready，不触发Prepare；成功后更新base revision、清dirty并保留当前Edit session/lease。Copy只把canonical pretty-printed definition写入clipboard；没有Duplicate、clone、copy-and-create、内建Library、Import或Export。外部保存只通过clipboard交给Gist等工具，恢复时显式New、进入JSON Edit、Paste并Save；输入必须已经符合当时的current schema，旧schema不会被自动升级。
 
 JSON Edit以及Save/Create/Start等lock-sensitive pending operation期间editor/selector必须inert，统一draft mutation入口仍做defensive guard。异步response只有在operation/draft/controller/lease identity仍匹配时才能commit；dirty Start严格串行执行Save/Create → 必要时取得fresh record lease → 使用fresh saved revision Start。runner处于`starting | running | paused | waiting_input | stopping`时selector、visual authoring与JSON Edit必须以明确read-only surface锁定，visual fieldset使用native disabled并由mutation gateway再次拒绝；终态`completed | failed | stopped`解除run lock，随后editability仍由controller/Edit session/lease决定。
 
 transient WebSocket reconnect以显式`connectionGeneration`触发saved-content reconciliation，不清dirty/preserved page-memory buffer或`beforeunload` guard。新连接ready后重读record list；只有clean readonly selection可安装revision单调不退后的server truth，protected buffer只显示changed/deleted notice。list/read continuation分别由generation、connection、record identity、editor state和minimum revision约束；旧response不能覆盖新truth，transport/5xx失败不能提前消费invalidation sequence，queue做有界重试并在focus/reconnect继续drain。Create已commit而controller/connection先变化时，若submitted identity仍匹配，必须关联fresh record identity并进入read-only published-Create preservation，禁止重复Create。
 
-实现上，`createMacroRecordSession`是selection/draft/lease及全部Svelte rune state的唯一owner、commit gateway和public assembly point。Macro-specific `MacroRecordNavigationCoordinator`只拥有list generation并编排list/Select/New/Library Load request phase；`MacroRecordEditOrchestrator`只用单次调用局部snapshot编排fresh lease、Save/Create/Delete、JSON Save和dirty Start persist phase。两者把typed outcome交给factory的live operation/controller/record/draft/JSON/lease-aware commit ports，不缓存record/draft/lease。既有`MacroRecordMutationWorkflow`继续唯一编排record/Library transport、fresh lease和persist transaction；`MacroRecordRemoteSyncCoordinator`继续只持有invalidation queue、retry timer、connection generation与serialized drain。published Create与retained lease仍在MutationWorkflow commit callback内同步进入factory，不能延迟到外层await后再关联identity。Macro与Library不共享带feature flag的generic content session。
+实现上，`createMacroRecordSession`是selection/draft/lease及全部Svelte rune state的唯一owner、commit gateway和public assembly point。`MacroRecordNavigationCoordinator`只拥有list generation并编排list/Select/New request phase；`MacroRecordEditOrchestrator`只用单次调用局部snapshot编排fresh lease、Save/Create/Delete、JSON Save和dirty Start persist phase。两者把typed outcome交给factory的live operation/controller/record/draft/JSON/lease-aware commit ports，不缓存record/draft/lease。`MacroRecordMutationWorkflow`继续唯一编排record transport、fresh lease和persist transaction；`MacroRecordRemoteSyncCoordinator`继续只持有invalidation queue、retry timer、connection generation与serialized drain。published Create与retained lease仍在MutationWorkflow commit callback内同步进入factory，不能延迟到外层await后再关联identity。production不建立第二种saved-content session或带feature flag的generic content session。
 
 ## 显式 Prepare terminals
 

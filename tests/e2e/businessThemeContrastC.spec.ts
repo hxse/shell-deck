@@ -64,10 +64,9 @@ test('native controls use theme surfaces without structural borders and retain f
   await expect(page.getByTestId('room-control-status')).toHaveText('Control: This device')
   await page.getByTestId('terminal-create-real').click()
   await expect(page.getByTestId('terminal-tab')).toBeVisible()
-  await page.getByTestId('library-panel-toggle').click()
-  await expect(page.getByTestId('library-search')).toBeVisible()
   await openTemplateDrawer(page)
   await expect(page.getByTestId('macro-template-search')).toBeVisible()
+  await expect(page.getByTestId('macro-template-select')).toBeVisible()
   await page.getByTestId('settings-button').click()
   const themeSelect = page.getByTestId('theme-select')
   await expect(themeSelect).toBeVisible()
@@ -95,7 +94,6 @@ test('business gives enabled commands solid semantic surfaces and reserves ghost
 
   await expectButtonVariant(page, 'settings-button', 'btn-primary')
   await expectButtonVariant(page, 'macro-panel-toggle', 'btn-secondary')
-  await expectButtonVariant(page, 'library-panel-toggle', 'btn-secondary')
 
   await openTemplateDrawer(page)
   await expectButtonVariant(page, 'macro-template-drawer', 'btn-primary')
@@ -115,12 +113,6 @@ test('business gives enabled commands solid semantic surfaces and reserves ghost
   await page.getByTestId('add-step-send').click()
   const editPresentation = await macroPresentationMetrics(page)
   expectDepthSeparators(editPresentation)
-
-  await page.getByTestId('library-panel-toggle').click()
-  await expect(page.getByTestId('library-panel')).toBeVisible()
-  await expectButtonVariant(page, 'library-new', 'btn-primary')
-  await expectFieldSurface(page, 'library-search')
-  await expectFieldSurface(page, 'library-selector')
 
   const metrics = await page.evaluate(() => {
     const sample = (color: string): [number, number, number, number] => {
@@ -150,8 +142,8 @@ test('business gives enabled commands solid semantic surfaces and reserves ghost
     return {
       base100: sample(root.getPropertyValue('--color-base-100')),
       base200: sample(root.getPropertyValue('--color-base-200')),
-      buttons: ['settings-button', 'macro-panel-toggle', 'macro-template-drawer', 'library-new'].map(button),
-      fields: ['condition-source', 'condition-simple-text', 'library-search', 'library-selector'].map(field),
+      buttons: ['settings-button', 'macro-panel-toggle', 'macro-template-drawer'].map(button),
+      fields: ['condition-source', 'condition-simple-text', 'node-id-input'].map(field),
     }
   })
 
@@ -234,7 +226,7 @@ async function createRoom(request: APIRequestContext): Promise<string> {
 async function expectNativeControlSurfaces(page: Page, label: string): Promise<void> {
   await twoAnimationFrames(page)
   const result = await page.evaluate(() => {
-    const ids = ['theme-select', 'library-search', 'macro-template-search']
+    const ids = ['theme-select', 'macro-template-search', 'macro-template-select']
     const button = document.querySelector<HTMLElement>('[data-testid="macro-template-drawer"]')
     if (!button) throw new Error('native_button_missing')
     const tab = document.querySelector<HTMLElement>('[data-testid="terminal-tab"]')

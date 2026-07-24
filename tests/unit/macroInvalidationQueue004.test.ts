@@ -2,25 +2,21 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { MacroInvalidationQueue, type SequencedContentRecordChange } from '../../src/lib/macro/macroInvalidationQueue'
-import {
-  macroNavigationIdentityMatches,
-  type MacroNavigationIdentity,
-} from '../../src/lib/macro/macroRecordNavigationCoordinator'
 
 describe('MacroInvalidationQueue', () => {
-  test('watermarks mixed content events and consumes only queued Macro changes', () => {
+  test('watermarks and consumes queued Macro changes', () => {
     const queue = new MacroInvalidationQueue()
     const changes = [
-      change(1, 'library', 'library-a', 'saved', 1),
-      change(2, 'macro', 'macro-a', 'saved', 1),
+      change(1, 'macro-a', 'saved', 1),
+      change(2, 'macro-b', 'saved', 1),
     ]
 
     expect(queue.observe(changes)).toBe(true)
-    expect(queue.batch().map(({ sequence }) => sequence)).toEqual([2])
+    expect(queue.batch().map(({ sequence }) => sequence)).toEqual([1, 2])
     expect(queue.observe(changes)).toBe(false)
 
-    expect(queue.observe([...changes, change(3, 'macro', 'macro-a', 'saved', 2)])).toBe(true)
-    expect(queue.batch().map(({ sequence }) => sequence)).toEqual([2, 3])
+    expect(queue.observe([...changes, change(3, 'macro-a', 'saved', 2)])).toBe(true)
+    expect(queue.batch().map(({ sequence }) => sequence)).toEqual([1, 2, 3])
     queue.consumeThrough(2)
     expect(queue.batch().map(({ sequence }) => sequence)).toEqual([3])
   })
@@ -28,13 +24,13 @@ describe('MacroInvalidationQueue', () => {
   test('classifies own acknowledgement, higher revision, delete, and unrelated records', () => {
     const queue = new MacroInvalidationQueue()
 
-    expect(queue.classify([change(1, 'macro', 'other', 'saved', 8)], 'macro-a', 2))
+    expect(queue.classify([change(1, 'other', 'saved', 8)], 'macro-a', 2))
       .toEqual({ kind: 'unrelated' })
-    expect(queue.classify([change(1, 'macro', 'macro-a', 'saved', 2)], 'macro-a', 2))
+    expect(queue.classify([change(1, 'macro-a', 'saved', 2)], 'macro-a', 2))
       .toEqual({ kind: 'own_ack', revision: 2 })
-    expect(queue.classify([change(1, 'macro', 'macro-a', 'saved', 3)], 'macro-a', 2))
+    expect(queue.classify([change(1, 'macro-a', 'saved', 3)], 'macro-a', 2))
       .toEqual({ kind: 'higher_revision', revision: 3 })
-    expect(queue.classify([change(1, 'macro', 'macro-a', 'deleted', null)], 'macro-a', 2))
+    expect(queue.classify([change(1, 'macro-a', 'deleted', null)], 'macro-a', 2))
       .toEqual({ kind: 'deleted' })
   })
 
@@ -111,7 +107,6 @@ describe('Macro record session extraction', () => {
       'operationGeneration',
       'operationPending',
       'errorText',
-      'saveToLibraryLabel',
       'templateListProblem',
     ])
     expect(sessionSource.match(/\$effect\(/g)).toHaveLength(4)
@@ -190,15 +185,12 @@ describe('Macro record session extraction', () => {
       'operationPending',
       'errorText',
       'templateListProblem',
-      'saveToLibraryLabel',
       'mount',
-      'loadFromLibrary',
       'selectTemplate',
       'createTemplate',
       'beginEdit',
       'cancelEdit',
       'saveTemplate',
-      'saveCurrentDraftToLibrary',
       'deleteTemplate',
       'updateDraft',
       'startJsonBuffer',
@@ -216,55 +208,20 @@ describe('Macro record session extraction', () => {
     }
   })
 
-  test('Library Load identity accepts only the same clean operation context', () => {
-    const expected = navigationIdentity()
-    expect(macroNavigationIdentityMatches(expected, { ...expected })).toBe(true)
-    for (const current of [
-      { ...expected, dirty: true },
-      { ...expected, jsonEditing: true },
-      { ...expected, editLeaseId: 'lease_next' },
-      { ...expected, operationPending: true },
-      { ...expected, selectedRecordId: 'macro_next' },
-      { ...expected, selectedRecordRevision: 3 },
-      { ...expected, draftRevision: 8 },
-      { ...expected, operationGeneration: 5 },
-      { ...expected, controlEpoch: 9 },
-    ]) {
-      expect(macroNavigationIdentityMatches(expected, current)).toBe(false)
-    }
-    expect(macroNavigationIdentityMatches({ ...expected, dirty: true }, expected)).toBe(false)
-  })
 })
 
 function change(
   sequence: number,
-  kind: 'macro' | 'library',
   itemId: string,
   operation: 'saved' | 'deleted',
   revision: number | null,
 ): SequencedContentRecordChange {
   return {
     type: 'content_record_changed',
-    resourceKey: kind === 'macro'
-      ? { kind, itemId }
-      : { kind, itemKind: 'note', itemId },
+    resourceKey: { kind: 'macro', itemId },
     operation,
     revision,
     sequence,
-  }
-}
-
-function navigationIdentity(): MacroNavigationIdentity {
-  return {
-    selectedRecordId: 'macro_a',
-    selectedRecordRevision: 2,
-    draftRevision: 7,
-    dirty: false,
-    jsonEditing: false,
-    editLeaseId: null,
-    operationGeneration: 4,
-    operationPending: false,
-    controlEpoch: 8,
   }
 }
 

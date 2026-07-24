@@ -4,7 +4,7 @@
 
 ## 当前项目目标
 
-`shell-deck` 是一个 terminal-first macro automation 工作台。它提供同一用户通过多标签页或设备连接同一 Room、一个 Room 内多个 terminal slot，以及可视化 macro panel，用可暂停、可追溯的宏模板编排终端输入、等待、capture source、Spark parser解析和分支。同一Room由server强制single-controller顺序控制，其他连接只读观察，不建立多人协作模型；user-global Macro/Library saved record另由跨Room/process的per-record edit lease保护。默认capture source是terminal-buffer原始TUI截取，也支持Room-scoped AgentEvent/Codex hook capture。
+`shell-deck` 是一个 terminal-first macro automation 工作台。它提供同一用户通过多标签页或设备连接同一 Room、一个 Room 内多个 terminal slot，以及可视化 macro panel，用可暂停、可追溯的宏模板编排终端输入、等待、capture source、Spark parser解析和分支。同一Room由server强制single-controller顺序控制，其他连接只读观察，不建立多人协作模型；user-global Macro saved record另由跨Room/process的per-record edit lease保护。默认capture source是terminal-buffer原始TUI截取，也支持Room-scoped AgentEvent/Codex hook capture。
 
 ## 工作方式
 
@@ -22,9 +22,9 @@
 * V0 编排 terminal，不编排 Codex。Codex 只是用户可能在 terminal 中运行的程序之一。
 * 所有 shell-deck 项目命令入口都通过 `justfile` 暴露；V0 不安装全局 `sdcodex`。Codex hook capture命令只支持在shell-deck创建的Shell terminal内启动；普通外部terminal缺少Room runtime context时必须fail loudly，不产生unbound evidence。
 * V0 MacroDefinition 的 terminal reference 只保存连续 index/type；terminalId/launchId 仅属于 live Room runtime，Start 时由 index 解析并冻结，definition 不保存 physical terminal id、alias、cwd 或 Room identity。
-* terminal Prepare只允许用户点击Macro面板唯一的`Prepare terminals`按钮显式触发，消费当前visual/JSON draft的合法terminalLayout snapshot；Settings、Macro selection、Library Load、Save、Start与terminal event都不得隐式Prepare。
-* 同一Room的共享mutation必须通过server-side controller guard；Macro/Library saved record编辑必须同时满足content edit lease与expected revision，client disabled state不承担正确性。
-* Macro 与 Library 的 Copy 只表示把当前文本写入 clipboard；产品不提供 Duplicate、clone 或 copy-and-create。创建相似内容必须显式 New、Paste、Save，并走正常 validation 与 fresh record identity。
+* terminal Prepare只允许用户点击Macro面板唯一的`Prepare terminals`按钮显式触发，消费当前visual/JSON draft的合法terminalLayout snapshot；Settings、Macro selection、Save、Start与terminal event都不得隐式Prepare。
+* 同一Room的共享mutation必须通过server-side controller guard；Macro saved record编辑必须同时满足content edit lease与expected revision，client disabled state不承担正确性。
+* Macro 的 Copy 只表示把当前文本写入 clipboard；产品不提供 Duplicate、clone、copy-and-create、内建Library、Import或Export。创建相似内容必须显式 New、Paste、Save，并走正常 validation 与 fresh record identity。
 * V0持久化MacroRecord、macro run event log、artifact与只读evidence；Room、terminal、runner cursor和run snapshot只存在于live server process，restart后不从日志恢复。
 * 前端使用 Svelte 5 写法；新增组件优先使用 runes。
 * 真实 PTY 等价于本机 shell 能力。默认只绑定 `127.0.0.1`；LAN 暴露必须显式开启，并且后续必须设计访问控制。

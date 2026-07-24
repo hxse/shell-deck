@@ -52,9 +52,6 @@ test-034:
 test-035:
     bun run test:035
 
-test-036:
-    bun run test:036
-
 test-037:
     bun run test:037
 
@@ -85,8 +82,8 @@ test-20260722b-002-chrome:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/workbenchThemeMigration003.spec.ts
 
 test-20260722b-003:
-    HISTFILE=/dev/null bun test tests/unit/uiStructureBaseline003.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/themeFoundation001.test.ts tests/unit/appRoomTerminalChrome002.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/macroFlowVisualEditor006.test.ts tests/unit/librarySession005.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/libraryWorkbench036.navigation.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts tests/e2e/libraryWorkbench036.reconnect.spec.ts
+    HISTFILE=/dev/null bun test tests/unit/uiStructureBaseline003.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/themeFoundation001.test.ts tests/unit/appRoomTerminalChrome002.test.ts tests/unit/uiBehaviorInventory031B.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/macroFlowVisualEditor006.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
 test-20260722b-004:
     just ui-style-residue
@@ -112,11 +109,6 @@ test-20260723b-002:
     HISTFILE=/dev/null bun test tests/unit/macroInvalidationQueue004.test.ts tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/contentEditLease033.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts tests/integration/contentEditLeaseProcess033.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/macroWorkbenchFixes001.spec.ts
-
-test-20260723b-003:
-    HISTFILE=/dev/null bun test tests/unit/librarySession005.test.ts tests/unit/libraryStore036.test.ts
-    HISTFILE=/dev/null bun test tests/integration/libraryHttp036.test.ts tests/integration/libraryStoreProcess036.test.ts tests/integration/contentEditLeaseProcess033.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/libraryWorkbench036.navigation.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts tests/e2e/libraryWorkbench036.reconnect.spec.ts
 
 test-20260723b-004:
     just ui-style-residue
@@ -148,8 +140,7 @@ test-20260723c-003:
     HISTFILE=/dev/null bun test tests/integration/contentEditLeaseProcess033.test.ts
     HISTFILE=/dev/null bun test tests/integration/singleWriter033.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
-    HISTFILE=/dev/null bun test tests/integration/libraryHttp036.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts
 
 test-20260723c-004:
     HISTFILE=/dev/null bun test tests/unit/roomControlDecomposition004.test.ts
@@ -197,12 +188,7 @@ test-20260723c-008:
     HISTFILE=/dev/null bun test tests/unit/flowV2EditorCommands034.test.ts tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
     HISTFILE=/dev/null bun test tests/integration/contentEditLeaseProcess033.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.record.spec.ts tests/e2e/macroWorkbench034.feedback.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
-
-test-20260723c-009:
-    HISTFILE=/dev/null bun test tests/unit/librarySession005.test.ts tests/unit/libraryStore036.test.ts
-    HISTFILE=/dev/null bun test tests/integration/libraryHttp036.test.ts tests/integration/libraryStoreProcess036.test.ts tests/integration/contentEditLeaseProcess033.test.ts
-    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/libraryWorkbench036.crud.spec.ts tests/e2e/libraryWorkbench036.navigation.spec.ts tests/e2e/libraryWorkbench036.races.spec.ts tests/e2e/libraryWorkbench036.reconnect.spec.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbench034.record.spec.ts tests/e2e/macroWorkbench034.feedback.spec.ts tests/e2e/macroWorkbench034.layout.spec.ts tests/e2e/roomRuntimeSync035.saved-content-save.spec.ts tests/e2e/roomRuntimeSync035.saved-content-create.spec.ts tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
 test-20260723c-010:
     HISTFILE=/dev/null bun test tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/macroValidationDecomposition010.test.ts
@@ -225,6 +211,11 @@ test-20260723c-013:
 test-20260723c-014:
     just file-size
     HISTFILE=/dev/null bun test tests/unit/fileSizeGate014.test.ts tests/unit/currentTestJourneyInventory010.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+
+test-20260724a:
+    bun run test:20260724a
+    HISTFILE=/dev/null bun test tests/integration/removedContentDomain20260724A.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/businessThemeContrastC.spec.ts tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/uiThemeCloseout004.spec.ts
 
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"

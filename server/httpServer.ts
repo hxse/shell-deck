@@ -10,7 +10,6 @@ import { errorResponse, json } from './http/httpPrimitives'
 import { handlePageRoutes } from './http/pageRoutes'
 import { handleRoomRoutes } from './http/roomRoutes'
 import { handleRunnerRoutes } from './http/runnerRoutes'
-import { LibraryStore } from './libraryStore'
 import { MacroRunStore } from './macroRunStore'
 import { MacroRunnerService } from './macroRunnerService'
 import { relocateNotificationConfig } from './notificationConfigRelocation'
@@ -30,7 +29,6 @@ export type ShellDeckServer = {
   port: number
   manager: TerminalRoomManager
   contentEditLeases: ContentEditLeaseService
-  libraryStore: LibraryStore
   macroStore: MacroRecordStore<MacroDefinitionV5>
   macroRunner: MacroRunnerService
   userDataRoot: string
@@ -43,7 +41,6 @@ export type StartOptions = {
   manager?: TerminalRoomManager
   dataRoot?: string
   contentEditLeaseOptions?: ContentEditLeaseServiceOptions
-  libraryStoreOptions?: SharedContentStoreOptions
   macroStoreOptions?: SharedContentStoreOptions
 }
 
@@ -90,7 +87,6 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     console.warn(notificationError)
   }
   const notificationService = new NotificationService(userDataRoot, fetch, 10_000, notificationError)
-  const libraryStore = new LibraryStore(userDataRoot, options.libraryStoreOptions)
   const macroStore = new MacroRecordStore<MacroDefinitionV5>(userDataRoot, options.macroStoreOptions)
   const macroRunStore = new MacroRunStore(userDataRoot)
   const macroRunner = new MacroRunnerService(manager, macroStore, macroRunStore, notificationService, agentEventStore)
@@ -103,7 +99,6 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     agentEventStore,
     ingestToken,
     notificationService,
-    libraryStore,
     macroStore,
     macroRunner,
   }
@@ -159,7 +154,6 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     port: server.port ?? 0,
     manager,
     contentEditLeases,
-    libraryStore,
     macroStore,
     macroRunner,
     userDataRoot,

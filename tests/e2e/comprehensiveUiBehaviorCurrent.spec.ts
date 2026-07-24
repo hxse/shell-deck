@@ -2,11 +2,11 @@ import { expect, test, type BrowserContext, type Locator, type Page } from 'play
 import { workspaceRuntimeControlInventory } from '../ui-baseline/031B/controlInventory'
 
 const ROOM_URL = /\/room_[1-9A-HJ-NP-Za-km-z]{22}$/
-const SETTINGS_KEY = 'shell-deck:settings:v3'
+const SETTINGS_KEY = 'shell-deck:settings:v4'
 
 test.describe.configure({ mode: 'serial' })
 
-test('current .036 UI journey preserves Room interactions and exercises automatic Home refresh plus single-writer feedback', async ({ browser }) => {
+test('current Macro-only UI journey preserves Room interactions and exercises automatic Home refresh plus single-writer feedback', async ({ browser }) => {
   test.setTimeout(180_000)
   const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] })
   const covered = new Set<string>()
@@ -37,8 +37,8 @@ test('current .036 UI journey preserves Room interactions and exercises automati
   await expect(first.getByTestId('room-identity')).toContainText('connected')
   await expect(first.getByTestId('empty-terminal-room')).toBeVisible()
   await expect(first.getByTestId('macro-panel')).toBeVisible()
-  await expect(first.getByTestId('library-panel')).toHaveCount(1)
-  await expect(first.getByTestId('library-side-panel')).toBeHidden()
+  await expect(first.getByTestId('library-panel-toggle')).toHaveCount(0)
+  await expect(first.getByTestId('library-side-panel')).toHaveCount(0)
   await expect(first.getByTestId('prompt-panel')).toHaveCount(0)
   await expect(first.locator('.run-log-view')).toHaveCount(0)
 

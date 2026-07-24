@@ -30,7 +30,7 @@ function errorStatus(message: string): number {
     || message.startsWith('runner_input_')
     || message === 'runner_not_waiting_input'
   ) return 409
-  if (message.startsWith('macro_record_not_found:') || message.startsWith('library_item_not_found:')) return 404
+  if (message.startsWith('macro_record_not_found:')) return 404
   if (message.includes('permissions_too_open')) return 503
   return 400
 }

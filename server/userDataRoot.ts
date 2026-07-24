@@ -22,13 +22,12 @@ import { createGeneratedSuffix } from '../src/lib/generatedId'
 
 export const PRIVATE_DIRECTORY_MODE = 0o700
 export const PRIVATE_FILE_MODE = 0o600
-export const USER_DATA_DIRECTORIES = ['macros', 'library', 'runs', 'agent-events', '.locks'] as const
+export const USER_DATA_DIRECTORIES = ['macros', 'runs', 'agent-events', '.locks'] as const
 
 export type UserDataPaths = {
   root: string
   macros: string
   notificationProfiles: string
-  library: string
   runs: string
   agentEvents: string
   locks: string
@@ -63,7 +62,6 @@ export function userDataPaths(root = resolveUserDataRoot()): UserDataPaths {
     root: normalizedRoot,
     macros: join(normalizedRoot, 'macros'),
     notificationProfiles: join(normalizedRoot, 'notification-profiles.json'),
-    library: join(normalizedRoot, 'library'),
     runs: join(normalizedRoot, 'runs'),
     agentEvents: join(normalizedRoot, 'agent-events'),
     locks: join(normalizedRoot, '.locks'),

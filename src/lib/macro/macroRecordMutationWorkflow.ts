@@ -1,5 +1,4 @@
 import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEditLease'
-import { LibraryClient } from '../library/libraryClient'
 import type { TerminalRoomClient } from '../terminalRoomClient'
 import { validateMacroDefinitionV5 } from './macroDefinitionValidation'
 import type { MacroDefinitionV5, MacroRecord } from './macroDefinitionTypes'
@@ -29,11 +28,9 @@ type MacroRecordMutationWorkflowOptions = {
 
 export class MacroRecordMutationWorkflow {
   private readonly recordClient: MacroRecordClient
-  private readonly libraryClient: LibraryClient
 
   constructor(private readonly options: MacroRecordMutationWorkflowOptions) {
     this.recordClient = new MacroRecordClient(() => options.roomClient()?.controlGrant ?? null)
-    this.libraryClient = new LibraryClient(() => options.roomClient()?.controlGrant ?? null)
   }
 
   async list(): Promise<MacroRecordListResult> {
@@ -42,19 +39,6 @@ export class MacroRecordMutationWorkflow {
 
   async read(recordId: string): Promise<MacroRecord> {
     return await this.recordClient.read(recordId)
-  }
-
-  async createFromLibrary(itemId: string, expectedRevision: number): Promise<MacroRecord> {
-    return await this.recordClient.createFromLibrary(itemId, expectedRevision)
-  }
-
-  async saveToLibrary(definition: MacroDefinitionV5): Promise<void> {
-    await this.libraryClient.create('macro-template', {
-      title: definition.name,
-      content: JSON.stringify(definition, null, 2),
-      description: definition.description,
-      tags: [],
-    })
   }
 
   async delete(record: MacroRecord, lease: ContentEditLeaseGrant): Promise<void> {

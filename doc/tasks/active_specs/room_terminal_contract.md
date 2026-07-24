@@ -59,7 +59,7 @@ Start把index/type解析为terminalId/launchId后冻结routing。active run期�
 
 顶栏显示`Control: This device`、`Read-only · Take control`或`Reconnecting · Read-only`。Take Control使用确认时看到的controlEpoch，成功后旧owner立即收到`room_control_lost`；release、disconnect或30秒TTL到期只进入available，不自动提升普通observer。若同一browser tab在reload或短暂重连前就是controller，它可在5秒窗口内保存非secret session intent，并仅在server已广播available时自动执行正常epoch-bound acquire；它不保存grant、不自动takeover，也不能抢走另一个live controller。owner server每10秒用WebSocket ping/pong续期，browser timer不承担authority。
 
-Take Control只转移writer，不清空terminal、Text或active Macro run，也不搬运/删除另一设备browser-local的未保存Macro/Library draft。所有明确shared mutation的client guard和server rejection进入同一toast：默认3秒、hover暂停、mouseleave继续、文字可复制、点击外部立即关闭；不能再用silent disabled制造“点击没反应”。
+Take Control只转移writer，不清空terminal、Text或active Macro run，也不搬运/删除另一设备browser-local的未保存Macro draft。所有明确shared mutation的client guard和server rejection进入同一toast：默认3秒、hover暂停、mouseleave继续、文字可复制、点击外部立即关闭；不能再用silent disabled制造“点击没反应”。
 
 HTTP shared mutation使用仅owner可见的clientId/controlLeaseId/controlEpoch bearer，并逐请求复核live owner WebSocket、Room generation和lifecycle。grant只在内存中存在，不进入observer message、Room list、Trace、URL或localStorage。Home New/Destroy是generation-bound process lifecycle operation，不要求目标Room controller；Destroy仍先关闭admission并撤销control/content lease，再清理runtime。
 

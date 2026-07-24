@@ -8,11 +8,11 @@ import {
   codexControlExclusions,
   attributedControlChanges,
   attributedControlChanges035,
+  attributedControlRemovals20260724A,
   attributedRestorations034,
   baseline031ARuntimeControlIds,
   baseline031ASourceInteractiveControlCount,
   baseline031ASourceInteractiveControlDigest,
-  libraryRuntimeControlInventory,
   macroRuntimeControlInventory034,
   macroRuntimeControlInventory,
   runtimeControlInventory,
@@ -52,12 +52,12 @@ describe('.031B evolving UI source inventory', () => {
       'attributedBehaviorChanges',
       'attributedControlChanges',
       'attributedControlChanges035',
+      'attributedControlRemovals20260724A',
       'attributedRestorations034',
       'baseline031ARuntimeControlIds',
       'baseline031ASourceInteractiveControlCount',
       'baseline031ASourceInteractiveControlDigest',
       'codexControlExclusions',
-      'libraryRuntimeControlInventory',
       'macroRuntimeControlInventory',
       'macroRuntimeControlInventory034',
       'runtimeControlInventory',
@@ -77,7 +77,7 @@ describe('.031B evolving UI source inventory', () => {
       'workspaceRuntimeControlInventory034',
     ])
     expect(createHash('sha256').update(JSON.stringify(values)).digest('hex'))
-      .toBe('163e4576aedbb929d8aa2d8a108cd62c36fbdde98ce5ba06b508c19eedc55071')
+      .toBe('c57796250d18bd67cefd3e8803df35a7f50a9f104612c26d72cf806d2b3b3374')
 
     const inventoryRoot = resolve(projectRoot, 'tests/ui-baseline/031B')
     const facade = readFileSync(resolve(inventoryRoot, 'controlInventory.ts'), 'utf8')
@@ -108,7 +108,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest034).toBe('ab466194c9bed56c5377668fcaf78e14d520a87067bac8f0d65dc413e59c4834')
   })
 
-  test('.035 source snapshot remains available after Library restoration', () => {
+  test('.035 source snapshot remains available after later contract evolution', () => {
     expect(sourceInteractiveControlCount035).toBe(174)
     expect(sourceInteractiveControlDigest035).toBe('c0be373c0b0c28b1ac83084b4d7bda99417c1345a0b303ebbb45283429298584')
   })
@@ -144,7 +144,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.036', '20260627A.038', '20260722A.001', '20260722B.001'].includes(change?.changedBy ?? '')).toBe(true)
+      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.038', '20260722A.001', '20260722B.001'].includes(change?.changedBy ?? '')).toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
@@ -201,14 +201,15 @@ describe('.031B evolving UI source inventory', () => {
     })])
   })
 
-  test('.036 attributes the current Library controls without reviving legacy Prompt scope or Duplicate behavior', () => {
-    const keys = libraryRuntimeControlInventory.map(({ key }) => key)
+  test('20260724A attributes every removed Library control outside the current runtime inventory', () => {
+    const keys = attributedControlRemovals20260724A.map(({ key }) => key)
+    const current = runtimeControlInventory.map(({ key }) => key)
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys).toContain('library-panel-toggle')
     expect(keys).toContain('library-load-into-macro')
     expect(keys).toContain('macro-save-to-library')
-    expect(keys.some((key) => key.includes('scope') || key.includes('duplicate') || key.includes('import') || key.includes('export'))).toBe(false)
-    for (const key of keys) expect(attributedControlChanges.find((entry) => entry.key === key)?.changedBy).toBe('20260627A.036')
+    for (const key of keys) expect(current).not.toContain(key)
+    expect(attributedControlRemovals20260724A.every((entry) => entry.changedBy === '20260724A' && entry.oldBehavior && entry.newBehavior && entry.spec)).toBe(true)
   })
 
   test('.033 attributes every controller-only behavior change on surviving controls', () => {

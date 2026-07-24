@@ -18,7 +18,6 @@ export {
   sourceInteractiveControlDigest038,
 } from './controlInventoryHistorical'
 export {
-  libraryRuntimeControlInventory,
   macroRuntimeControlInventory,
   macroRuntimeControlInventory034,
   runtimeControlInventory,
@@ -31,6 +30,7 @@ export {
   attributedBehaviorChanges,
   attributedControlChanges,
   attributedControlChanges035,
+  attributedControlRemovals20260724A,
   attributedRestorations034,
   codexControlExclusions,
 } from './controlInventoryEvidence'

@@ -4,9 +4,9 @@ import {
   type UiControlInventoryEntry,
 } from './controlInventoryHistorical'
 
-export const sourceInteractiveControlCount = 204
+export const sourceInteractiveControlCount = 183
 
-export const sourceInteractiveControlDigest = 'db3ecd85c4f1e5520d39df83b2ffd578d80d58e937a378063afea285931abaf2'
+export const sourceInteractiveControlDigest = '8bc48bddc270d85049ca8f5b1f7329d93b7b3a4b3787869f04fafe6dd11417df'
 
 const workspaceRuntimeControls034 = [
   ["home-refresh", "clicked"],
@@ -74,31 +74,6 @@ const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
   ...macroControlsAdded001,
 ]
 
-const libraryRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
-  ['macro-save-to-library', 'clicked'],
-  ['library-panel-toggle', 'clicked'],
-  ['library-resize-handle', 'clicked'],
-  ['library-reset-width', 'clicked'],
-  ['library-tab-macro-template', 'clicked'],
-  ['library-tab-prompt', 'clicked'],
-  ['library-tab-note', 'clicked'],
-  ['library-search', 'edited'],
-  ['library-selector', 'edited'],
-  ['library-new', 'clicked'],
-  ['library-edit', 'clicked'],
-  ['library-save', 'clicked'],
-  ['library-cancel', 'clicked'],
-  ['library-copy', 'clicked'],
-  ['library-remove', 'clicked'],
-  ['library-refresh', 'clicked'],
-  ['library-title', 'edited'],
-  ['library-description', 'edited'],
-  ['library-tags', 'edited'],
-  ['library-content', 'edited'],
-  ['library-validate', 'clicked'],
-  ['library-load-into-macro', 'clicked'],
-]
-
 export const workspaceRuntimeControlInventory034: UiControlInventoryEntry[] = workspaceRuntimeControls034.map(([key, evidence]) => ({ key, evidence }))
 
 export const workspaceRuntimeControlInventory: UiControlInventoryEntry[] = workspaceRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
@@ -107,11 +82,9 @@ export const macroRuntimeControlInventory034: UiControlInventoryEntry[] = macroR
 
 export const macroRuntimeControlInventory: UiControlInventoryEntry[] = macroRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
 
-export const libraryRuntimeControlInventory: UiControlInventoryEntry[] = libraryRuntimeControls.map(([key, evidence]) => ({ key, evidence }))
+export const runtimeControlInventory: UiControlInventoryEntry[] = [...workspaceRuntimeControlInventory, ...macroRuntimeControlInventory]
 
-export const runtimeControlInventory: UiControlInventoryEntry[] = [...workspaceRuntimeControlInventory, ...macroRuntimeControlInventory, ...libraryRuntimeControlInventory]
-
-export const currentRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [...workspaceRuntimeControls, ...macroRuntimeControls, ...libraryRuntimeControls]
+export const currentRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [...workspaceRuntimeControls, ...macroRuntimeControls]
 
 export const currentRuntimeControlIds = new Set<string>(currentRuntimeControls.map(([key]) => key))
 

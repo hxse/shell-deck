@@ -1,10 +1,9 @@
 import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEditLease'
 import { cloneJsonValue } from '../jsonClone'
 import type { TerminalRoomClient } from '../terminalRoomClient'
-import { validateMacroDefinitionV5 } from './macroDefinitionValidation'
 import type { MacroDefinitionV5, MacroRecord } from './macroDefinitionTypes'
 import type { MacroJsonCommit } from './macroJsonEditSession.svelte'
-import { formatMacroError, formatMacroIssues } from './macroJsonEditSession.svelte'
+import { formatMacroError } from './macroJsonEditSession.svelte'
 import type {
   MacroPersistDefinitionOutcome,
   MacroRecordMutationWorkflow,
@@ -75,11 +74,6 @@ type MacroRecordEditOptions = {
   refreshTemplates(report: boolean): Promise<MacroTemplateRefreshResult>
   rejectMutation(reason: string): void
   reportMutationError(error: unknown, formatted?: boolean): void
-  setErrorText(value: string): void
-  notifyMutationDenied(reason: string): void
-  beginLibrarySave(): void
-  commitLibrarySaved(context: MacroDefinitionOperationContext): boolean
-  finishLibrarySave(): void
 }
 
 export class MacroRecordEditOrchestrator {
@@ -149,45 +143,6 @@ export class MacroRecordEditOrchestrator {
     } catch (error) {
       if (options.canCommit(token)) options.reportMutationError(error, true)
     } finally {
-      options.endOperation(token)
-    }
-  }
-
-  async saveCurrentDraftToLibrary(): Promise<void> {
-    const options = this.#options
-    if (!options.roomClient() || !options.canMutateShared()) {
-      options.rejectMutation(options.roomClient() ? 'room_control_required' : 'room_disconnected')
-      return
-    }
-    if (options.operationPending()) {
-      options.rejectMutation('operation_pending')
-      return
-    }
-    if (options.jsonEditing()) {
-      options.rejectMutation('finish_json_edit_before_library_save')
-      return
-    }
-    const draft = options.draft()
-    if (!draft) {
-      options.rejectMutation('no_current_macro')
-      return
-    }
-    const validation = validateMacroDefinitionV5(draft)
-    if (!validation.ok) {
-      options.setErrorText(formatMacroIssues(validation.issues))
-      options.notifyMutationDenied('invalid_macro_definition')
-      return
-    }
-    const token = options.beginOperation()
-    const context = this.#context(cloneJsonValue(validation.value), token, options.draftRevision(), 'visual')
-    options.beginLibrarySave()
-    try {
-      await options.mutations.saveToLibrary(context.definition)
-      options.commitLibrarySaved(context)
-    } catch (error) {
-      if (options.canCommit(token)) options.reportMutationError(error, true)
-    } finally {
-      options.finishLibrarySave()
       options.endOperation(token)
     }
   }

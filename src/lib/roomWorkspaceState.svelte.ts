@@ -190,7 +190,7 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     const connection = client
     const view = controlView
     if (!connection || !connected || !view || view.mode === 'controller' || controlPending) return
-    if (view.mode === 'observer' && !window.confirm('Take control of this Room?\nShared terminals and the active Macro run stay on the server and will not be lost. The other connected device becomes read-only. Its unsaved browser-local Macro or Library draft remains on that device, but it cannot save shared changes until it takes control again.')) return
+    if (view.mode === 'observer' && !window.confirm('Take control of this Room?\nShared terminals and the active Macro run stay on the server and will not be lost. The other connected device becomes read-only. Its unsaved browser-local Macro draft remains on that device, but it cannot save shared changes until it takes control again.')) return
     controlPending = true
     try {
       const result = view.mode === 'available'

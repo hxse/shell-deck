@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from 'playwright/test'
 
-const SETTINGS_KEY = 'shell-deck:settings:v3'
+const SETTINGS_KEY = 'shell-deck:settings:v4'
 
 type TerminalTestSnapshot = {
   instanceId: number
@@ -30,7 +30,6 @@ test('App, Home, Room and terminal chrome retain structure and compact geometry 
   expect(await directChildFingerprint(page.getByTestId('workspace-shell'))).toEqual([
     'div:terminal-room',
     'section:macro-side-panel',
-    'section:library-side-panel',
   ])
   expect(await directChildFingerprint(page.getByTestId('terminal-room'))).toEqual([
     'div:tab-strip',

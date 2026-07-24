@@ -15,17 +15,25 @@ test('browser settings persist only current UI preferences in one versioned valu
   expect(Object.hasOwn(initial.settings, 'autoPrepareTerminals')).toBe(false)
   expect(initial.settings.theme).toBe('business')
   saveBrowserSettings({ ...initial.settings, theme: 'nord', terminalDragEnabled: true }, storage)
-  expect(JSON.parse(values.get(BROWSER_SETTINGS_KEY)!)).toMatchObject({ schemaVersion: 3, theme: 'nord', terminalDragEnabled: true })
+  expect(JSON.parse(values.get(BROWSER_SETTINGS_KEY)!)).toMatchObject({ schemaVersion: 4, theme: 'nord', terminalDragEnabled: true })
   expect(loadBrowserSettings(storage).reset).toBe(false)
 })
 
 test('invalid current-key values reset instead of filling, dropping or aliasing fields', () => {
   const { theme: _theme, ...settingsWithoutTheme } = DEFAULT_BROWSER_SETTINGS
   const invalidValues = [
-    { ...settingsWithoutTheme, schemaVersion: 2 },
+    { ...settingsWithoutTheme, schemaVersion: 3 },
     { ...DEFAULT_BROWSER_SETTINGS, theme: undefined },
     { ...DEFAULT_BROWSER_SETTINGS, theme: 'Dark' },
     { ...DEFAULT_BROWSER_SETTINGS, themeName: 'dark' },
+    {
+      ...DEFAULT_BROWSER_SETTINGS,
+      panels: { ...DEFAULT_BROWSER_SETTINGS.panels, library: { visible: false, widthPx: 380 } },
+    },
+    {
+      ...DEFAULT_BROWSER_SETTINGS,
+      library: { selectedTab: 'json-template', filter: '' },
+    },
   ]
   for (const value of invalidValues) {
     const storage = { getItem: () => JSON.stringify(value) }
@@ -33,12 +41,12 @@ test('invalid current-key values reset instead of filling, dropping or aliasing 
   }
 })
 
-test('v2 and unrelated historical keys are not read, removed or converted', () => {
+test('v3 and unrelated historical keys are not read, removed or converted', () => {
   const reads: string[] = []
   const storage = {
     getItem(key: string) {
       reads.push(key)
-      if (key === 'shell-deck:settings:v2') return JSON.stringify({ schemaVersion: 2, theme: 'dark' })
+      if (key === 'shell-deck:settings:v3') return JSON.stringify({ schemaVersion: 3, theme: 'dark' })
       return key === 'shell-deck:tab-drag-enabled' ? 'true' : null
     },
   }
@@ -50,13 +58,12 @@ test('default settings are returned as independent deep clones', () => {
   const first = loadBrowserSettings({ getItem: () => null }).settings
   const second = loadBrowserSettings({ getItem: () => null }).settings
   first.panels.macro.widthPx = 999
-  first.library.filter = 'changed'
   expect(second).toEqual(DEFAULT_BROWSER_SETTINGS)
   expect(second).not.toBe(DEFAULT_BROWSER_SETTINGS)
   expect(second.panels).not.toBe(DEFAULT_BROWSER_SETTINGS.panels)
 })
 
-test('saver rejects non-exact v3 settings', () => {
+test('saver rejects non-exact v4 settings', () => {
   const writes: string[] = []
   const storage = { setItem: (_key: string, value: string) => { writes.push(value) } }
   expect(() => saveBrowserSettings({ ...DEFAULT_BROWSER_SETTINGS, theme: 'unknown' } as never, storage)).toThrow('invalid_browser_settings')

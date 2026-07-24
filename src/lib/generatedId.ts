@@ -13,7 +13,6 @@ export const GENERATED_ID_PREFIX = {
   run: 'run_',
   runEvent: 'evt_',
   runnerInput: 'input_',
-  libraryItem: 'lib_',
   notification: 'notif_',
 } as const
 

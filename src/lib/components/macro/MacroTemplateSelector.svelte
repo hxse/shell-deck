@@ -17,8 +17,6 @@
     onCreateTemplate,
     onBeginEdit,
     onSaveTemplate,
-    saveToLibraryLabel = 'Save to Library',
-    onSaveToLibrary,
     onCancelEdit,
     onDeleteTemplate,
     onUpdateDraft,
@@ -38,8 +36,6 @@
     onCreateTemplate: () => void
     onBeginEdit: () => void
     onSaveTemplate: () => void
-    saveToLibraryLabel?: string
-    onSaveToLibrary: () => void
     onCancelEdit: () => void
     onDeleteTemplate: () => void
     onUpdateDraft: (mutator: (definition: MacroDefinitionV5) => void) => void
@@ -92,7 +88,6 @@
           <button class="btn btn-xs btn-primary !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-create" onclick={onCreateTemplate} disabled={locked} aria-disabled={!mutationAllowed || locked}>New</button>
           {#if selectedRecord && !contentEditing}<button class="btn btn-xs btn-primary !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-edit" onclick={onBeginEdit} disabled={locked} aria-disabled={!mutationAllowed || locked}>Edit</button>{/if}
           <button class="btn btn-xs btn-success !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-save" onclick={onSaveTemplate} disabled={!draft || !dirty || locked} aria-disabled={!editable || !dirty}>Save</button>
-          <button class="btn btn-xs btn-secondary !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-save-to-library" onclick={onSaveToLibrary} disabled={!draft || locked} aria-disabled={!mutationAllowed || !draft || locked}>{saveToLibraryLabel}</button>
           {#if contentEditing}<button class="btn btn-xs btn-ghost" type="button" data-testid="macro-cancel-edit" onclick={onCancelEdit} disabled={locked}>{selectedRecord ? dirty ? 'Cancel' : 'Done' : 'Discard'}</button>{/if}
           <button class="btn btn-xs btn-error !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-delete" onclick={onDeleteTemplate} disabled={!selectedRecord || locked} aria-disabled={!mutationAllowed || !selectedRecord || locked}>Delete</button>
         </div>

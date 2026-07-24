@@ -15,18 +15,6 @@ export type MacroOperationToken = {
   editLeaseId: string | null
 }
 
-export type MacroNavigationIdentity = {
-  selectedRecordId: string | null
-  selectedRecordRevision: number | null
-  draftRevision: number
-  dirty: boolean
-  jsonEditing: boolean
-  editLeaseId: string | null
-  operationGeneration: number
-  operationPending: boolean
-  controlEpoch: number | null
-}
-
 export type MacroTemplateRequestOutcome =
   | { kind: 'applied'; result: MacroRecordListResult }
   | { kind: 'stale' }
@@ -44,14 +32,12 @@ type MacroRecordNavigationOptions = {
   operationPending(): boolean
   jsonEditing(): boolean
   dirty(): boolean
-  navigationIdentity(): MacroNavigationIdentity
   beginOperation(): MacroOperationToken
   canCommit(token: MacroOperationToken): boolean
   endOperation(token: MacroOperationToken): void
   takeEditLease(): ContentEditLeaseGrant | null
   commitRefresh(outcome: MacroTemplateRequestOutcome, report: boolean): MacroTemplateRefreshResult
   commitNavigation(outcome: MacroNavigationCommitOutcome, token: MacroOperationToken): boolean
-  commitLibraryLoad(record: MacroRecord, identity: MacroNavigationIdentity): boolean
   rejectMutation(reason: string): void
   reportMutationError(error: unknown): void
 }
@@ -66,19 +52,6 @@ export class MacroRecordNavigationCoordinator {
 
   async refreshTemplates(report = true): Promise<MacroTemplateRefreshResult> {
     return this.#options.commitRefresh(await this.#requestTemplates(), report)
-  }
-
-  async loadFromLibrary(
-    itemId: string,
-    expectedRevision: number,
-  ): Promise<{ selected: boolean; recordId: string }> {
-    const identity = this.#options.navigationIdentity()
-    const record = await this.#options.mutations.createFromLibrary(itemId, expectedRevision)
-    await this.refreshTemplates(false)
-    return {
-      selected: this.#options.commitLibraryLoad(record, identity),
-      recordId: record.id,
-    }
   }
 
   async selectTemplate(id: string): Promise<boolean> {
@@ -136,23 +109,4 @@ export class MacroRecordNavigationCoordinator {
         : { kind: 'stale' }
     }
   }
-}
-
-export function macroNavigationIdentityMatches(
-  expected: MacroNavigationIdentity,
-  current: MacroNavigationIdentity,
-): boolean {
-  return !expected.dirty
-    && !expected.jsonEditing
-    && expected.editLeaseId === null
-    && !expected.operationPending
-    && !current.dirty
-    && !current.jsonEditing
-    && current.editLeaseId === null
-    && !current.operationPending
-    && current.selectedRecordId === expected.selectedRecordId
-    && current.selectedRecordRevision === expected.selectedRecordRevision
-    && current.draftRevision === expected.draftRevision
-    && current.operationGeneration === expected.operationGeneration
-    && current.controlEpoch === expected.controlEpoch
 }

@@ -13,13 +13,13 @@ test.afterEach(async ({ request }) => {
   })))
 })
 
-test('Macro and Library semantic surfaces resolve across representative themes', async ({ page, request }) => {
+test('Macro semantic surfaces resolve across representative themes', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
   await expect(page.getByTestId('macro-panel')).toBeVisible()
-  await page.getByTestId('library-panel-toggle').click()
-  await expect(page.getByTestId('library-panel')).toBeVisible()
+  await page.getByTestId('macro-template-drawer').click()
+  await expect(page.getByTestId('macro-template-search')).toBeVisible()
 
   const macroBackgrounds = new Set<string>()
   const primaryTokens = new Set<string>()
@@ -29,17 +29,14 @@ test('Macro and Library semantic surfaces resolve across representative themes',
     const state = await page.evaluate(() => {
       const root = getComputedStyle(document.documentElement)
       const macro = getComputedStyle(document.querySelector('[data-testid="macro-panel"]')!)
-      const library = getComputedStyle(document.querySelector('[data-testid="library-panel"]')!)
       const activeTab = getComputedStyle(document.querySelector('[data-testid="macro-tab-editor"]')!)
-      const disabledAction = getComputedStyle(document.querySelector('[data-testid="library-edit"]')!)
+      const disabledAction = getComputedStyle(document.querySelector('[data-testid="macro-save"]')!)
       return {
         base100: root.getPropertyValue('--color-base-100').trim(),
         baseContent: root.getPropertyValue('--color-base-content').trim(),
         primary: root.getPropertyValue('--color-primary').trim(),
         macroBackground: macro.backgroundColor,
         macroColor: macro.color,
-        libraryBackground: library.backgroundColor,
-        libraryColor: library.color,
         activeTabBackground: activeTab.backgroundColor,
         disabledCursor: disabledAction.cursor,
         disabledBackground: disabledAction.backgroundColor,
@@ -49,7 +46,6 @@ test('Macro and Library semantic surfaces resolve across representative themes',
     expect(state.baseContent).not.toBe('')
     expect(state.primary).not.toBe('')
     expect(state.macroBackground).not.toBe(state.macroColor)
-    expect(state.libraryBackground).not.toBe(state.libraryColor)
     expect(state.activeTabBackground).not.toBe('rgba(0, 0, 0, 0)')
     expect(state.disabledCursor).toBe('not-allowed')
     expect(state.disabledBackground).not.toBe('rgba(0, 0, 0, 0)')

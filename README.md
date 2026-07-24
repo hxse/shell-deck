@@ -2,7 +2,7 @@
 
 `shell-deck` is a local browser terminal workspace with live, URL-addressed Rooms and a visual macro system. Codex and other programs remain ordinary processes inside PTYs; a macro addresses terminals by their current index/type and resolves that logical layout to runtime terminal IDs at Start.
 
-Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro editor/runner cutover in `.034`, server-authoritative Room runtime sync in `.035`, the user-global Library in `.036`, exact persistable unassigned references in MacroDefinitionV4 in `.037`, explicit AgentEvent wait limits in MacroDefinitionV5 in `.038`, and retained terminal views across tab switches in `.039`.
+Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro editor/runner cutover in `.034`, server-authoritative Room runtime sync in `.035`, exact persistable unassigned references in MacroDefinitionV4 in `.037`, explicit AgentEvent wait limits in MacroDefinitionV5 in `.038`, and retained terminal views across tab switches in `.039`. `20260724A` removes the former `.036` Library domain; MacroRecord is now the only saved user-content model.
 
 Core V0 behavior:
 
@@ -11,8 +11,8 @@ Core V0 behavior:
 - multiple Shell/Text terminals per Room; each Shell owns its own cwd
 - full UUID-v4 short IDs through one generated-ID module; index follows UI order while terminalId follows the terminal object
 - no terminal alias or rename identity
-- user-level Macro/evidence/Library storage is independent from Room URLs and terminal cwd
-- saved Macro/Library records use per-record cross-Room/process edit leases plus optimistic revision; different records remain independent
+- user-level Macro/evidence storage is independent from Room URLs and terminal cwd
+- saved Macro records use per-record cross-Room/process edit leases plus optimistic revision; different records remain independent
 - no role system and no Codex pre-injected prompts
 - `just codex` only runs inside a shell-deck-created Shell with complete Room context; external terminals fail loudly
 - AgentEvent ingest normalizes Codex hook callbacks; Codex session ids are trace data, not macro template state
@@ -40,10 +40,10 @@ just test-032              # Room/user-storage foundation gate
 just test-033              # Room controller/content edit lease gate
 just test-034              # Macro editor/Prepare/runner regression gate
 just test-035              # server-authoritative Room runtime sync gate
-just test-036              # user-global Macro JSON / Prompt / Note Library gate
 just test-037              # Macro unassigned-reference regression gate
 just test-038              # Macro V5 explicit AgentEvent wait-limit gate
 just test-039              # retained terminal view lifecycle gate
+just test-20260724a        # removed Library domain + Macro-only saved-content gate
 ```
 
 V0 phase tasks:
@@ -72,3 +72,4 @@ Documentation entry points:
 - `doc/tasks/index/007_20260627A.037.md`
 - `doc/tasks/index/008_20260627A.038.md`
 - `doc/tasks/index/020_20260627A.039.md`
+- `doc/tasks/index/051_20260724A.md`

@@ -59,36 +59,6 @@ test('root and Parallel AgentEvent captures default to unbounded and expose an e
   await expect(laneCapture.getByTestId('parallel-capture-agent-timeout-ms')).toHaveCount(0)
 })
 
-test('Library Macro JSON list visibly isolates invalid definitions like the Macro list', async ({ page, request }) => {
-  const validId = 'lib_d6gU92rYGn8qqiTBj1WCPo'
-  const invalidId = 'lib_5tQdPmwEQbXEQzJDuBzCHF'
-  await page.route('**/api/library/items?*', async (route) => {
-    const url = new URL(route.request().url())
-    if (route.request().method() !== 'GET' || url.pathname !== '/api/library/items' || url.searchParams.get('kind') !== 'macro-template') {
-      await route.continue()
-      return
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        ok: true,
-        items: [{ itemId: validId, kind: 'macro-template', revision: 1, title: 'Valid Library Macro', tags: [], updatedAt: '2026-07-21T00:00:00.000Z' }],
-        invalidItems: [{ itemId: invalidId, error: 'invalid_library_macro_definition' }],
-      }),
-    })
-  })
-
-  const created = await request.post('/api/rooms')
-  const room = await created.json() as { url: string }
-  await page.goto(room.url)
-  await page.getByTestId('library-panel-toggle').click()
-
-  await expect(page.getByTestId('library-list-problem')).toContainText(`Invalid Library items ignored: ${invalidId} (invalid_library_macro_definition)`)
-  await expect(page.getByTestId('library-selector').locator('option')).toContainText(['Valid Library Macro'])
-  await expect(page.getByTestId('library-selector').locator('option')).not.toContainText([invalidId])
-})
-
 async function openTemplateDrawer(page: import('playwright/test').Page) {
   if (await page.getByTestId('macro-template-drawer-body').count() === 0) await page.getByTestId('macro-template-drawer').click()
 }

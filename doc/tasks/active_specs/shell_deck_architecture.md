@@ -4,7 +4,7 @@
 
 shell-deck 是一个 local-first、terminal-first workspace。一个 server process 可以承载多个由 `/<roomId>` URL 选择的 live Room；同一用户可通过多个标签页或设备连接同一 Room并同步terminal state，但server强制一个Room同时只有一个controller，其他连接只读观察。产品不建立多人协作或Project/target-directory模型。
 
-Room、terminal、Text content、replay、client、runner cursor 与 run snapshot 都只存在于当前 server process。长期 MacroRecord、Trace/artifact、AgentEvent evidence、Library和 notification config 位于同一 OS 用户的 User Data Root，不与 Room URL、server cwd 或 Shell cwd 绑定。
+Room、terminal、Text content、replay、client、runner cursor 与 run snapshot 都只存在于当前 server process。长期 MacroRecord、Trace/artifact、AgentEvent evidence和notification config位于同一 OS 用户的 User Data Root，不与 Room URL、server cwd 或 Shell cwd 绑定。MacroRecord是唯一saved user-content domain。
 
 ## 路由
 
@@ -24,13 +24,13 @@ Room runtime message只广播到同一Room。Room controller是process-local mem
 
 server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade、map owner与composition root，并创建唯一`rooms/clients` registry。`roomRegistryLifecycleCoordinator`持有相同reference，只负责create/list/lookup/admission/Destroy；control-lost和terminal cleanup经manager ports进入。`roomControlCoordinator.ts`只组合presence与lease：presence coordinator负责client lifecycle/heartbeat，lease coordinator唯一转换controller epoch/owner并提供controlled ticket。`terminalBackendCoordinator.ts`保留terminal structure transaction与发布顺序，只组合candidate/callback/close lifecycle和CWD resolve/timer lifecycle；这些helper始终操作同一live `TerminalSlot`，不缓存runtime真值。这些internal coordinator通过显式ports操作manager拥有的同一`RoomRuntime`/`TerminalSlot`对象，不建立shadow map或第二份state；production consumer继续只import`terminalRoomManager.ts`。
 
-浏览器之间从不直接同步。terminal、runner、runtime input和notification全部先进入server-owned Room state，再由Room WebSocket投影到各连接；关闭browser不会停止server runner。Macro/Library selector和未保存draft保持browser-local，saved record通过user-global store与generic content invalidation同步，不能与Room runtime混成一份状态。
+浏览器之间从不直接同步。terminal、runner、runtime input和notification全部先进入server-owned Room state，再由Room WebSocket投影到各连接；关闭browser不会停止server runner。Macro selector和未保存draft保持browser-local，saved MacroRecord通过user-global store与content invalidation同步，不能与Room runtime混成一份状态。
 
 浏览器Room Workspace实现中，`createRoomWorkspaceState`继续是全部Svelte rune与public return的唯一owner，并继续创建`TerminalRoomClient`与effects。`RoomWorkspaceMessageCoordinator`只按generation/revision顺序把ServerMessage路由到factory commit ports及既有runner/notification projection；`RoomWorkspaceReconnectCoordinator`只持有reconnect/reclaim timer与session control intent。两者不缓存Room snapshot、terminal list或runner snapshot，也不增加父版本不存在的continuation token：成功close probe响应保留active检查，retry保留active/roomId检查，control acquire保留原await后commit顺序。
 
-长期user content不属于Room。saved Macro/Library record另由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
+长期user content不属于Room。saved MacroRecord由`.033`跨Room/process的per-record content edit lease与expected revision共同保护；controller和content lease是两层正交primitive，不能互相替代。
 
-前端saved-content实现保持两个domain factory各自唯一拥有Svelte rune state、commit gateway与public assembly。Macro factory装配本域NavigationCoordinator、EditOrchestrator、MutationWorkflow及RemoteSyncCoordinator：navigation只拥有list generation并编排New/Select/Library Load request phase，edit只编排lease/persist/delete/JSON/dirty Start request phase。Library factory独立装配NavigationCoordinator、ListCoordinator、EditOrchestrator、MutationWorkflow及RemoteSyncCoordinator：list只拥有180ms timer与request generation，edit只编排navigation/lease/mutation request phase，既有navigation继续唯一冻结operation identity。两个domain的async结果都只经各自factory的live token/identity-aware commit ports写入；任何helper都不得缓存第二份record/draft/lease，也不得建立带feature flag的generic content session。
+前端saved-content实现只有Macro factory拥有Svelte rune state、commit gateway与public assembly。它装配NavigationCoordinator、EditOrchestrator、MutationWorkflow及RemoteSyncCoordinator：navigation只拥有list generation并编排New/Select request phase，edit只编排lease/persist/delete/JSON/dirty Start request phase。async结果只经factory的live token/identity-aware commit ports写入；任何helper都不得缓存第二份record/draft/lease，也不得建立带feature flag的generic content session。
 
 ## Macro 与 runner
 
@@ -38,7 +38,7 @@ production Macro采用`MacroDefinitionV5`与`MacroRecord` envelope分层。defin
 
 `macroDefinitionValidation.ts`是definition value/JSON validation的唯一production gateway；`macroNodeValidation.ts`只按source order执行body traversal及`object -> ID -> type -> actionOnly -> type-specific` dispatch。Action与Control validator同步追加同一`ValidationContext.issues`，recursive body继续经node facade进入；共享text matcher只是pure field validator，不建立第二份issue collection或partial validation入口。
 
-terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Library Load、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
+terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
 
 runner把manifest、append-only events和artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、run snapshot和structure lock只在live process内。日志从不恢复runner。
 
@@ -46,7 +46,7 @@ runner把manifest、append-only events和artifacts持久化为只读Trace eviden
 
 ## UI presentation
 
-current presentation由Tailwind CSS 4与daisyUI 5提供，`src/app.css`是唯一project-authored CSS source；component没有`<style>`，xterm vendor stylesheet保持package-owned。Theme preference是browser settings v3中的local-only exact value，只在Room既有Settings提供入口，但覆盖同browser的Home与全部Room surface。Theme application不建立server API、Room message或跨browser同步。
+current presentation由Tailwind CSS 4与daisyUI 5提供，`src/app.css`是唯一project-authored CSS source；component没有`<style>`，xterm vendor stylesheet保持package-owned。Theme preference是browser settings v4中的local-only exact value，只在Room既有Settings提供入口，但覆盖同browser的Home与全部Room surface。Theme application不建立server API、Room message或跨browser同步。
 
 除Theme select这一项已登记结构增量外，framework迁移不拥有DOM hierarchy、control位置、panel/layout或业务interaction变化。`just ui-style-residue`与111-case theme/viewport matrix冻结source owner、semantic state和responsive contract，具体见`ui_theme_contract.md`。
 

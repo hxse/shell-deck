@@ -51,6 +51,40 @@ export const attributedControlChanges035: UiControlInventoryEntry[] = [{
   spec: "20260627A.035/02_spec/01_contract.md — Home自动刷新",
 }]
 
+const removedLibraryControls20260724A = [
+  'macro-save-to-library',
+  'library-panel-toggle',
+  'library-resize-handle',
+  'library-reset-width',
+  'library-tab-macro-template',
+  'library-tab-prompt',
+  'library-tab-note',
+  'library-search',
+  'library-selector',
+  'library-new',
+  'library-edit',
+  'library-save',
+  'library-cancel',
+  'library-copy',
+  'library-remove',
+  'library-refresh',
+  'library-title',
+  'library-description',
+  'library-tags',
+  'library-content',
+  'library-validate',
+  'library-load-into-macro',
+] as const
+
+export const attributedControlRemovals20260724A: UiControlInventoryEntry[] = removedLibraryControls20260724A.map((key) => ({
+  key,
+  evidence: 'boundary',
+  changedBy: '20260724A',
+  oldBehavior: '20260627A.036 exposed this user-global Library transfer or workbench control.',
+  newBehavior: '20260724A removes the Library product domain; MacroRecord remains the only saved-content UI.',
+  spec: '20260724A/02_spec/01_contract.md — Removed Semantics',
+}))
+
 export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
   ['terminal-create-real', 'Shell creation becomes controller-only.'],
   ['terminal-create-text', 'Text creation becomes controller-only.'],
@@ -70,8 +104,6 @@ export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
 function addedControlTask(key: string): string {
   if (key === 'theme-select') return '20260722B.001'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001'
-  if (key === 'macro-save-to-library') return '20260627A.036'
-  if (key.startsWith('library-')) return '20260627A.036'
   if (key === "take-control") return "20260627A.033"
   if (["macro-edit", "macro-cancel-edit", "macro-prepare-terminals", "macro-insertion-placement"].includes(key)) return "20260627A.034"
   return "20260627A.032"
@@ -80,8 +112,6 @@ function addedControlTask(key: string): string {
 function addedControlOldBehavior(key: string): string {
   if (key === 'theme-select') return '20260722A.001 had no browser-local UI theme preference control.'
   if (macroControlIdsAdded001.has(key)) return '.010 did not expose this Macro authoring or notification control.'
-  if (key === 'macro-save-to-library') return '.035 allowed clipboard Copy of Macro JSON but had no explicit Macro-to-Library create action.'
-  if (key.startsWith('library-')) return '.035 had no production Library surface; .032 had removed the legacy Prompt schema during the current-schema cutover.'
   if (key === "take-control") return ".032 had no explicit controller handoff control."
   if (addedControlTask(key) === "20260627A.034") return ".031A did not expose this current-schema V3 control with this identity."
   return ".031A had no routed Room/Home control with this identity."
@@ -90,8 +120,6 @@ function addedControlOldBehavior(key: string): string {
 function addedControlNewBehavior(key: string): string {
   if (key === 'theme-select') return '.001 adds the only Theme selector with system plus all 35 registered daisyUI themes.'
   if (macroControlIdsAdded001.has(key)) return '.001 exposes per-item insertion, App notification repetition, or optional Parallel lane text collection through an explicit control.'
-  if (key === 'macro-save-to-library') return '.036 saves the current valid Macro draft as a fresh independent Macro JSON Library item without saving or switching the Macro.'
-  if (key.startsWith('library-')) return '.036 restores the side-panel presentation with the current user-global Macro JSON, Prompt and Note Library contract.'
   if (key === "take-control") return ".033 adds explicit confirmed takeover for an observer."
   if (addedControlTask(key) === "20260627A.034") return ".034 adds the explicit V3 edit lifecycle or Prepare control."
   return ".032 adds the canonical Room/Home or current-schema terminal interaction."
@@ -100,8 +128,6 @@ function addedControlNewBehavior(key: string): string {
 function addedControlSpec(key: string): string {
   if (key === 'theme-select') return '20260722B.001/02_spec/01_contract.md — Settings control'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001/02_spec/01_contract.md — Macro authoring and notification interaction contract'
-  if (key === 'macro-save-to-library') return '20260627A.036/02_spec/01_contract.md — Save current Macro draft to Library'
-  if (key.startsWith('library-')) return '20260627A.036/02_spec/01_contract.md — Library UI精准重构边界与Library panel'
   if (key === "take-control") return "20260627A.033/02_spec/01_contract.md — Take Control与丢失控制"
   if (addedControlTask(key) === "20260627A.034") return "20260627A.034/02_spec/01_contract.md — Macro workbench and explicit Prepare"
   return "20260627A.032/02_spec/01_contract.md — canonical Room routes, Home lifecycle and terminal runtime"
@@ -115,7 +141,7 @@ function removedControlBehavior(key: string): string {
   if (key === 'for-text-list-add') return '.001 replaces the header-only append control with per-item insert-above and insert-below controls.'
   if (key === 'terminal-create-fake') return '.032 removes the fake-terminal production control; tests use real Shell and Text only.'
   if (key === 'terminal-alias-input') return '.032 removes terminal alias/rename from the current schema and UI.'
-  if (key.startsWith('prompt-')) return '.032 intentionally removes the legacy Prompt panel; the user-content Library is restored by the later Library task.'
+  if (key.startsWith('prompt-')) return '.032 removes the legacy Prompt panel; 20260724A keeps Prompt outside the current product after deleting Library.'
   if (
     key.startsWith('macro-') || key.startsWith('node-') || key.startsWith('add-') || key.startsWith('message-')
     || key.startsWith('send-') || key.startsWith('notify-') || key.startsWith('input-') || key.startsWith('wait-')

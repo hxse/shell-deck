@@ -32,7 +32,7 @@ Home没有手动Refresh；页面可见时每秒自动读取server Room清单，�
 
 第一个连接是controller，顶栏显示`Control: This device`；之后打开的同Room页面显示`Read-only · Take control`。observer仍能查看、滚动、复制、切换terminal和修改本地Settings，但不能输入Shell、编辑Text或改变terminal结构。点击Take control并确认后，当前页面取得写权，原页面立即只读。断线、release或TTL后不会自动把写权交给另一个页面，需显式点击Take control。
 
-Take Control不会丢失共享terminal或active Macro run；另一设备browser-local的未保存Macro/Library draft仍留在该设备，只是取得control前不能保存shared change。observer点击明确写操作时会看到可复制的短暂toast，而不是无提示失效。
+Take Control不会丢失共享terminal或active Macro run；另一设备browser-local的未保存Macro draft仍留在该设备，只是取得control前不能保存shared change。observer点击明确写操作时会看到可复制的短暂toast，而不是无提示失效。
 
 ## Terminal
 
@@ -45,7 +45,7 @@ Terminal tab与正文header显示同一条单行label：连续index、runtime te
 
 ## Theme
 
-在任一Room打开`Settings → Theme`即可选择`system`或35个daisyUI内置theme。新browser默认选择`business`；已有合法Theme选择不会因默认值变化而被覆盖。Theme属于当前browser的本地presentation setting：observer也可修改，刷新后保留，并同时覆盖Home、Room、terminal、Macro、Library与notice；它不会写入Room、server或saved record，也不会跨设备同步。`system`仍实时跟随OS light/dark，选择explicit theme后不再随OS变化。button、input、select、textarea、tab与状态提示直接使用daisyUI当前theme的原生surface、background、focus与disabled样式；普通command使用当前theme的solid semantic button，只有移动、折叠、复制、取消等低权重chrome action使用ghost。input、select与普通textarea使用当前theme的content color生成无边框半透明填充面，因此在深色Theme中变亮、浅色Theme中变暗，不依赖某一个Theme的特殊CSS。明显的线条只用于pane、header、popover、editor gutter等真实结构边界。
+在任一Room打开`Settings → Theme`即可选择`system`或35个daisyUI内置theme。新browser默认选择`business`；已有合法current setting会逐值保留。Theme属于当前browser的本地presentation setting：observer也可修改，刷新后保留，并同时覆盖Home、Room、terminal、Macro与notice；它不会写入Room、server或saved record，也不会跨设备同步。`system`仍实时跟随OS light/dark，选择explicit theme后不再随OS变化。button、input、select、textarea、tab与状态提示直接使用daisyUI当前theme的原生surface、background、focus与disabled样式；普通command使用当前theme的solid semantic button，只有移动、折叠、复制、取消等低权重chrome action使用ghost。input、select与普通textarea使用当前theme的content color生成无边框半透明填充面，因此在深色Theme中变亮、浅色Theme中变暗，不依赖某一个Theme的特殊CSS。明显的线条只用于pane、header、popover、editor gutter等真实结构边界。
 
 ## Codex hook
 
@@ -59,7 +59,7 @@ shell_deck_room_context_required
 
 ## 长期数据
 
-User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord、Library、run/artifact evidence、AgentEvent evidence和notification config都在这里；它们不属于 Room 或 terminal cwd。
+User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord、run/artifact evidence、AgentEvent evidence和notification config都在这里；它们不属于 Room 或 terminal cwd。current runtime只管理`macros/`、`runs/`、`agent-events/`与`.locks/`。
 
 notification 配置可用以下命令初始化：
 
@@ -67,7 +67,7 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro editor/runner，`.035`交付server-authoritative runtime sync，`.036`接入Library UI，`.037`切换到`MacroDefinitionV4` exact assigned/unassigned reference，`.038`再切换到`MacroDefinitionV5` explicit AgentEvent wait limit，`.039`让访问过的terminal view在tab切换时保持挂载，不再重复回放长历史。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro editor/runner，`.035`交付server-authoritative runtime sync，`.037`切换到`MacroDefinitionV4` exact assigned/unassigned reference，`.038`再切换到`MacroDefinitionV5` explicit AgentEvent wait limit，`.039`让访问过的terminal view在tab切换时保持挂载，不再重复回放长历史。`20260724A`删除原`.036` Library domain，MacroRecord成为唯一saved user content。
 
 ## Macro
 
@@ -81,15 +81,9 @@ Start要求Macro已经Save，先通过runnable completeness（所有terminal/art
 
 Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Save/Delete后的record会同步，但不会切换其他browser的selector。saved Macro退出Edit后由`Read-only`提示明确标记，正文、field与flow node仍保持正常可读对比度；直接点击这条normal read-only提示，或聚焦后按Enter/Space，会先获取该record的content edit lease，成功后进入Edit。只有这条提示是快捷入口，点击正文/field不会进入Edit；active run、controller loss、pending或lease-lost提示也不会误触Edit。不同嵌套depth的纵向guide和横向渐隐separator都直接跟随当前Theme的semantic color。Start后Room另有只读Running Macro；status、current step、Pause/Resume/Stop以及Input Action的prompt/draft/submit都由server主动同步到同Room设备。关闭所有页面不会停止run，重新进入原Room URL会立即得到当前live snapshot。
 
+产品不再提供内建Library、Prompt/Note素材库、Import或Export。需要外部保存时，使用Copy把current `MacroDefinitionV5` JSON写入clipboard后存到Gist等外部工具；恢复时显式New、进入JSON Edit、Paste并Save。shell-deck只接受当时的current schema，旧版本、alias和缺失字段都会fail loudly，不做自动升级。
+
 Notify Action在server只执行一次并向当时在线的同Room browser各广播一条message；Telegram与System notification都只呈现一次。每个browser去重后，App channel按`repeatCount`与`repeatIntervalMs`重复toast/sound；reconnect、Room切换或workspace dispose会取消尚未触发的剩余重复。后进入的browser不补弹历史通知，但仍可在Trace查看event。
-
-## Library
-
-顶栏Library按钮打开独立side panel。Library是user-global长期素材，不跟随Room、terminal cwd或当前选中的Macro切换；内部固定为Macro JSON、Prompt、Note三个tab，tab与search filter保存在browser localStorage。
-
-saved item默认只读。New建立browser-local draft；Edit取得该`(kind,itemId)`的content edit lease；Save/Delete同时验证Room controller、lease与expected revision。另一Room或server process编辑同一item时，本页面仍可Search、Read、Copy，但必须显式take over lease后才能写；不同item互不阻塞。
-
-Copy只把当前content写入clipboard，不创建item，也没有Duplicate/Import/Export。Prompt与Note接受任意文本。Macro JSON只接受纯、persistable的`MacroDefinitionV5`，包括合法的`{kind:"unassigned"}`；Validate、Save和Load into Macro共用唯一text validator。Load每次创建fresh MacroRecord。当前Macro editor clean时创建后自动选中，存在未保存编辑时只创建、不切换；两种情况都不会Prepare terminals。
 
 ## 验证
 
@@ -100,8 +94,8 @@ just test-032
 just test-033
 just test-034
 just test-035
-just test-036
 just test-037
 just test-038
 just test-039
+just test-20260724a
 ```

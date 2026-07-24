@@ -1,41 +1,36 @@
 <script lang="ts">
   import type { ContentEditLeaseChangedMessage, ContentRecordChangedMessage, RoomSnapshot, TerminalRuntimePosition, TerminalSnapshot } from '../../protocol'
-  import { MacroRecordClient } from '../../macro/macroRecordClient'
   import type { MacroRunnerSnapshot } from '../../macro/runnerTypes'
   import type { TerminalRoomClient } from '../../terminalRoomClient'
   import type { TerminalViewSnapshot } from '../../terminalViewState'
   import type { MacroInsertionPaletteMode } from '../../workspace/uiLayoutTypes'
   import MacroPanel from '../MacroPanel.svelte'
-  import LibraryPanel from '../LibraryPanel.svelte'
   import TerminalSlot from '../TerminalSlot.svelte'
   import TextBoxSlot from '../TextBoxSlot.svelte'
   import TerminalTabBar from './TerminalTabBar.svelte'
 
   let {
     client, terminals, activeTerminal, activeTerminalId, draggingTerminalId, tabDragEnabled, sharedReadOnly,
-    macroVisible, macroWidthPx, libraryVisible, libraryWidthPx, librarySelectedTab, libraryFilter, canMutateShared, terminalStructureRevision, terminalPositions, terminalStructureLocked, runnerSnapshot, contentRecordChanges, contentEditLeaseChanges, connectionGeneration,
-    insertionPaletteMode, onMacroWidthChange, onMacroDirtyChange, onLibraryWidthChange, onLibraryPreferenceChange, onLibraryDirtyChange, onRoomSnapshot,
+    macroVisible, macroWidthPx, canMutateShared, terminalStructureRevision, terminalPositions, terminalStructureLocked, runnerSnapshot, contentRecordChanges, contentEditLeaseChanges, connectionGeneration,
+    insertionPaletteMode, onMacroWidthChange, onMacroDirtyChange, onRoomSnapshot,
     onSelectTerminal, onCloseTerminal, onStartTabDrag, onDropOnTab, onTabDragEnd, onTabKeydown, onMutationDenied,
   } = $props<{
     client: TerminalRoomClient | null; terminals: TerminalViewSnapshot[]; activeTerminal: TerminalViewSnapshot | null
     activeTerminalId: string | null; draggingTerminalId: string | null; tabDragEnabled: boolean; sharedReadOnly: boolean
-    macroVisible: boolean; macroWidthPx: number; libraryVisible: boolean; libraryWidthPx: number
-    librarySelectedTab: 'json-template' | 'prompt' | 'note'; libraryFilter: string
+    macroVisible: boolean; macroWidthPx: number
     canMutateShared: boolean; terminalStructureRevision: number
     terminalPositions: TerminalRuntimePosition[] | null; terminalStructureLocked: boolean; insertionPaletteMode: MacroInsertionPaletteMode
     runnerSnapshot: MacroRunnerSnapshot | null; contentRecordChanges: Array<ContentRecordChangedMessage & { sequence: number }>
     contentEditLeaseChanges: Array<ContentEditLeaseChangedMessage & { sequence: number }>
     connectionGeneration: number
-    onMacroWidthChange: (widthPx: number) => void; onMacroDirtyChange: (dirty: boolean) => void; onLibraryWidthChange: (widthPx: number) => void
-    onLibraryPreferenceChange: (selectedTab: 'json-template' | 'prompt' | 'note', filter: string) => void
-    onLibraryDirtyChange: (dirty: boolean) => void; onRoomSnapshot: (snapshot: RoomSnapshot) => void
+    onMacroWidthChange: (widthPx: number) => void; onMacroDirtyChange: (dirty: boolean) => void
+    onRoomSnapshot: (snapshot: RoomSnapshot) => void
     onSelectTerminal: (terminalId: string) => void; onCloseTerminal: (event: MouseEvent, terminal: TerminalSnapshot) => void
     onStartTabDrag: (event: DragEvent, terminalId: string) => void; onDropOnTab: (event: DragEvent, terminal: TerminalSnapshot) => void
     onTabDragEnd: () => void; onTabKeydown: (event: KeyboardEvent, terminal: TerminalSnapshot) => void
     onMutationDenied: (reason: string) => void
   }>()
 
-  let macroPanel = $state<{ loadFromLibrary(itemId: string, expectedRevision: number): Promise<{ selected: boolean; recordId: string }> } | null>(null)
   let retainedTerminalIds = $state<string[]>([])
   const visibleTerminalId = $derived(activeTerminal?.terminalId ?? null)
   const retainedTerminalIdSet = $derived(new Set(retainedTerminalIds))
@@ -64,21 +59,6 @@
     window.addEventListener('pointerup', finish, { once: true })
   }
 
-  function beginLibraryResize(event: PointerEvent) {
-    event.preventDefault()
-    const startX = event.clientX
-    const startWidth = libraryWidthPx
-    const move = (next: PointerEvent) => onLibraryWidthChange(Math.max(280, Math.min(1200, startWidth + startX - next.clientX)))
-    const finish = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', finish) }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', finish, { once: true })
-  }
-
-  async function loadLibraryMacro(itemId: string, expectedRevision: number) {
-    if (macroPanel) return await macroPanel.loadFromLibrary(itemId, expectedRevision)
-    const record = await new MacroRecordClient(() => client?.controlGrant ?? null).createFromLibrary(itemId, expectedRevision)
-    return { selected: false, recordId: record.id }
-  }
 </script>
 
 <section class="workspace-shell room-workspace flex min-h-0 flex-1 gap-0 overflow-hidden bg-base-200 p-0 [@media(max-width:980px)]:flex-col" data-testid="workspace-shell">
@@ -110,20 +90,9 @@
     style={`width: ${macroWidthPx}px;${macroVisible ? '' : ' display: none;'}`} hidden={!macroVisible}>
     <button class="panel-resize-handle relative box-border w-1.5 flex-[0_0_6px] touch-none cursor-col-resize rounded-none border-0 bg-transparent p-0 before:absolute before:inset-y-2 before:left-0.5 before:w-0.5 before:rounded-full before:bg-base-content/20 before:transition-[background-color,box-shadow] before:content-[''] hover:before:bg-primary/60 focus-visible:before:bg-primary/60 focus-visible:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] active:before:bg-primary active:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_24%,transparent)] [@media(max-width:980px)]:hidden" type="button" data-testid="macro-resize-handle" aria-label="Resize Macro panel" onpointerdown={beginResize}></button>
     <div class="side-panel-scroll macro-workbench-shell box-border flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-2.5 overflow-hidden p-2.5">
-      <MacroPanel bind:this={macroPanel} roomClient={client} {canMutateShared} {terminalStructureRevision} {terminalPositions} {terminalStructureLocked}
+      <MacroPanel roomClient={client} {canMutateShared} {terminalStructureRevision} {terminalPositions} {terminalStructureLocked}
         {runnerSnapshot} {contentRecordChanges} {contentEditLeaseChanges} {connectionGeneration} {insertionPaletteMode} {onRoomSnapshot} {onMutationDenied}
         onDirtyChange={onMacroDirtyChange} onResetWidth={() => onMacroWidthChange(760)} />
-    </div>
-  </section>
-
-  <section class="workspace-side-panel prompt-side-panel library-side-panel relative flex min-h-0 min-w-[280px] max-w-[85vw] shrink-0 border-l border-base-300 bg-base-200 [&_.macro-panel]:box-border [&_.macro-panel]:w-full [&_.macro-panel]:max-h-none [&_.macro-panel]:overflow-visible [&_.prompt-panel]:box-border [&_.prompt-panel]:w-full [&_.run-log-panel]:box-border [&_.run-log-panel]:w-full [@media(min-width:981px)_and_(max-width:1100px)]:min-w-[240px] [@media(min-width:981px)_and_(max-width:1100px)]:flex-[0_1_auto] [@media(max-width:980px)]:!w-auto [@media(max-width:980px)]:max-w-none [@media(max-width:980px)]:min-h-[260px] [@media(max-width:980px)]:border-t [@media(max-width:980px)]:border-l-0" data-testid="library-side-panel"
-    style={`width: ${libraryWidthPx}px;${libraryVisible ? '' : ' display: none;'}`} hidden={!libraryVisible}>
-    <button class="panel-resize-handle relative box-border w-1.5 flex-[0_0_6px] touch-none cursor-col-resize rounded-none border-0 bg-transparent p-0 before:absolute before:inset-y-2 before:left-0.5 before:w-0.5 before:rounded-full before:bg-base-content/20 before:transition-[background-color,box-shadow] before:content-[''] hover:before:bg-primary/60 focus-visible:before:bg-primary/60 focus-visible:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_20%,transparent)] active:before:bg-primary active:before:shadow-[0_0_0_1px_color-mix(in_oklab,var(--color-primary)_24%,transparent)] [@media(max-width:980px)]:hidden" type="button" data-testid="library-resize-handle" aria-label="Resize Library panel" onpointerdown={beginLibraryResize}></button>
-    <div class="side-panel-scroll grid min-h-0 min-w-0 flex-1 content-start gap-2.5 overflow-auto p-2.5">
-      <LibraryPanel roomClient={client} {canMutateShared} selectedTab={librarySelectedTab} filter={libraryFilter}
-        {contentRecordChanges} contentLeaseChanges={contentEditLeaseChanges} {connectionGeneration} onPreferenceChange={onLibraryPreferenceChange}
-        onDirtyChange={onLibraryDirtyChange} onLoadIntoMacro={loadLibraryMacro} {onMutationDenied}
-        onResetWidth={() => onLibraryWidthChange(380)} />
     </div>
   </section>
 </section>

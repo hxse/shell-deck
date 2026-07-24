@@ -6,7 +6,7 @@ import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from './macro
 import { MacroRecordEditOrchestrator, type MacroDefinitionOperationContext, type MacroEditCommitOutcome, type MacroStartRecordSnapshot } from './macroRecordEditOrchestrator'
 import { formatMacroError, messageOf, type MacroJsonEditSession } from './macroJsonEditSession.svelte'
 import type { SequencedContentRecordChange } from './macroInvalidationQueue'
-import { type MacroNavigationCommitOutcome, type MacroNavigationIdentity, type MacroOperationToken, MacroRecordNavigationCoordinator, type MacroTemplateRequestOutcome, macroNavigationIdentityMatches } from './macroRecordNavigationCoordinator'
+import { type MacroNavigationCommitOutcome, type MacroOperationToken, MacroRecordNavigationCoordinator, type MacroTemplateRequestOutcome } from './macroRecordNavigationCoordinator'
 import { type MacroPersistDefinitionOutcome, MacroRecordMutationWorkflow, type PersistedDefinition } from './macroRecordMutationWorkflow'
 import { MacroRecordRemoteSyncCoordinator, type MacroTemplateRefreshResult } from './macroRecordRemoteSyncCoordinator'
 import type { MacroRecordListResult } from './macroRecordClient'
@@ -44,10 +44,8 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   let operationGeneration = $state(0)
   let operationPending = $state(false)
   let errorText = $state<string | null>(null)
-  let saveToLibraryLabel = $state('Save to Library')
   let templateListProblem = $state<string | null>(null)
   let handledContentLeaseChangeSequence = 0
-  let saveToLibraryResetTimer: ReturnType<typeof setTimeout> | null = null
   const mutations = new MacroRecordMutationWorkflow({
     roomClient: options.roomClient, selectedRecord: () => selectedRecord,
     editLease: () => editLease, contentEditing: () => contentEditing,
@@ -55,8 +53,8 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   const navigation = new MacroRecordNavigationCoordinator({
     mutations, canMutateShared: options.canMutateShared, roomClientPresent: () => options.roomClient() !== null,
     operationPending: () => operationPending, jsonEditing: () => options.json.editing, dirty: () => dirty,
-    navigationIdentity, beginOperation, canCommit, endOperation, takeEditLease,
-    commitRefresh, commitNavigation, commitLibraryLoad, rejectMutation, reportMutationError,
+    beginOperation, canCommit, endOperation, takeEditLease,
+    commitRefresh, commitNavigation, rejectMutation, reportMutationError,
   })
   const edit = new MacroRecordEditOrchestrator({
     mutations, roomClient: options.roomClient, canMutateShared: options.canMutateShared,
@@ -69,12 +67,6 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     commitEdit, acceptPersistOutcome, installPersisted, reconcilePublishedCreate, installTemplateList,
     refreshTemplates: (report) => navigation.refreshTemplates(report),
     rejectMutation, reportMutationError,
-    setErrorText: (value) => { errorText = value },
-    notifyMutationDenied: options.onMutationDenied, beginLibrarySave: () => { saveToLibraryLabel = 'Saving…' },
-    commitLibrarySaved,
-    finishLibrarySave: () => {
-      if (saveToLibraryLabel === 'Saving…') saveToLibraryLabel = 'Save to Library'
-    },
   })
   const remoteSync = new MacroRecordRemoteSyncCoordinator({
     connectionGeneration: options.connectionGeneration,
@@ -120,7 +112,6 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     return () => {
       window.removeEventListener('focus', focus)
       remoteSync.dispose()
-      if (saveToLibraryResetTimer) clearTimeout(saveToLibraryResetTimer)
       void edit.releaseEditLease()
     }
   }
@@ -141,29 +132,6 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     templateListProblem = result.invalidRecords.length === 0
       ? null
       : `Invalid Macro records ignored: ${result.invalidRecords.map((record) => `${record.recordId} (${record.error})`).join(', ')}`
-  }
-
-  function navigationIdentity(): MacroNavigationIdentity {
-    return {
-      selectedRecordId: selectedRecord?.id ?? null,
-      selectedRecordRevision: selectedRecord?.revision ?? null,
-      draftRevision,
-      dirty,
-      jsonEditing: options.json.editing,
-      editLeaseId: editLease?.editLeaseId ?? null,
-      operationGeneration,
-      operationPending,
-      controlEpoch: options.roomClient()?.controlGrant?.controlEpoch ?? null,
-    }
-  }
-
-  function commitLibraryLoad(record: MacroRecord, identity: MacroNavigationIdentity): boolean {
-    if (macroNavigationIdentityMatches(identity, navigationIdentity())) {
-      installRecord(record)
-      return true
-    }
-    errorText = `Created ${record.id}; current Macro draft was not switched.`
-    return false
   }
 
   function commitNavigation(outcome: MacroNavigationCommitOutcome, token: MacroOperationToken): boolean {
@@ -335,17 +303,6 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
         : draftRevision === context.revision)
   }
 
-  function commitLibrarySaved(context: MacroDefinitionOperationContext): boolean {
-    if (!definitionIsCurrent(context)) return false
-    saveToLibraryLabel = 'Saved'
-    if (saveToLibraryResetTimer) clearTimeout(saveToLibraryResetTimer)
-    saveToLibraryResetTimer = setTimeout(() => {
-      saveToLibraryResetTimer = null
-      if (saveToLibraryLabel === 'Saved') saveToLibraryLabel = 'Save to Library'
-    }, 900)
-    return true
-  }
-
   function rejectMutation(reason: string): void {
     errorText = reason
     options.onMutationDenied(reason)
@@ -371,15 +328,12 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     get operationPending() { return operationPending },
     get errorText() { return errorText },
     get templateListProblem() { return templateListProblem },
-    get saveToLibraryLabel() { return saveToLibraryLabel },
     mount,
-    loadFromLibrary: (itemId: string, expectedRevision: number) => navigation.loadFromLibrary(itemId, expectedRevision),
     selectTemplate: (id: string) => navigation.selectTemplate(id),
     createTemplate: () => navigation.createTemplate(),
     beginEdit: (enterJson = false) => edit.beginEdit(enterJson),
     cancelEdit: () => edit.cancelEdit(),
     saveTemplate: () => edit.saveTemplate(),
-    saveCurrentDraftToLibrary: () => edit.saveCurrentDraftToLibrary(),
     deleteTemplate: () => edit.deleteTemplate(),
     updateDraft,
     startJsonBuffer: () => edit.startJsonBuffer(),

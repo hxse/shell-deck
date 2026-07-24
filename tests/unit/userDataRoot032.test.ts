@@ -18,9 +18,10 @@ test('User Data Root resolution is independent from cwd and creates private path
     expect(resolveUserDataRoot({ XDG_DATA_HOME: join(base, 'xdg'), HOME: join(base, 'home') })).toBe(join(base, 'xdg', 'shell-deck'))
     expect(resolveUserDataRoot({ HOME: join(base, 'home') })).toBe(join(base, 'home', '.local', 'share', 'shell-deck'))
     const paths = initializeUserDataRoot(join(base, 'data'))
-    for (const path of [paths.root, paths.macros, paths.library, paths.runs, paths.agentEvents, paths.locks]) {
+    for (const path of [paths.root, paths.macros, paths.runs, paths.agentEvents, paths.locks]) {
       expect(lstatSync(path).mode & 0o777).toBe(0o700)
     }
+    expect(() => lstatSync(join(paths.root, 'library'))).toThrow()
     const target = join(paths.macros, 'private.json')
     writePrivateFileAtomic(target, 'secret')
     expect(readFileSync(target, 'utf8')).toBe('secret')

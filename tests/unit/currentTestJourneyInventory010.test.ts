@@ -15,13 +15,6 @@ const roomFiles = [
   'tests/e2e/roomRuntimeSync035.saved-content-reconnect.spec.ts',
 ]
 
-const libraryFiles = [
-  'tests/e2e/libraryWorkbench036.crud.spec.ts',
-  'tests/e2e/libraryWorkbench036.navigation.spec.ts',
-  'tests/e2e/libraryWorkbench036.races.spec.ts',
-  'tests/e2e/libraryWorkbench036.reconnect.spec.ts',
-]
-
 const macroFiles = [
   'tests/e2e/macroWorkbench034.record.spec.ts',
   'tests/e2e/macroWorkbench034.flow.spec.ts',
@@ -37,10 +30,9 @@ const runtimeFiles = [
   'tests/integration/macroRuntime034.durability.test.ts',
 ]
 
-const journeyFiles = [...roomFiles, ...libraryFiles, ...macroFiles, ...runtimeFiles]
+const journeyFiles = [...roomFiles, ...macroFiles, ...runtimeFiles]
 const helperFiles = [
   'tests/e2e/roomRuntimeSync035.helpers.ts',
-  'tests/e2e/libraryWorkbench036.helpers.ts',
   'tests/e2e/macroWorkbench034.helpers.ts',
   'tests/integration/macroRuntime034.helpers.ts',
   'tests/e2e/comprehensiveMacroUiBehaviorCurrent.helpers.ts',
@@ -119,15 +111,14 @@ test('current journeys preserve every attributed case, assertion and forced gate
   const inventory = journeyFiles.flatMap(readCaseInventory).sort((left, right) => left.title.localeCompare(right.title))
   const aggregate = createHash('sha256').update(JSON.stringify(inventory)).digest('hex')
 
-  expect(inventory).toHaveLength(51)
-  expect(new Set(inventory.map(({ title }) => title)).size).toBe(51)
-  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(657)
-  expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(27)
+  expect(inventory).toHaveLength(40)
+  expect(new Set(inventory.map(({ title }) => title)).size).toBe(40)
+  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(449)
+  expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(17)
   expect(inventory.reduce((total, item) => total + item.waits, 0)).toBe(20)
-  expect(aggregate).toBe('259d3b4b8eeee5b5027229c9961319dc4d3d11a2c4e512ac8571e218dc4e275a')
+  expect(aggregate).toBe('242a232cb0c97c795860b4fd1a761f0db9f5e0c6fa4b6b77e7720bcbf87f15b6')
 
   expect(roomFiles.flatMap(readCaseInventory)).toHaveLength(14)
-  expect(libraryFiles.flatMap(readCaseInventory)).toHaveLength(11)
   expect(macroFiles.flatMap(readCaseInventory)).toHaveLength(11)
   expect(runtimeFiles.flatMap(readCaseInventory)).toHaveLength(15)
 
@@ -155,12 +146,8 @@ test('public Gates discover every current E2E split and retain the .031B and .03
   for (const file of oldPrimaryFiles) expect(justfile).not.toContain(file)
 
   expect(packageJson.scripts['test:e2e']).toBe('bun run scripts/runPlaywright.ts --workers=1')
-  for (const file of [...roomFiles, ...macroFiles, ...libraryFiles]) expect(file.endsWith('.spec.ts')).toBe(true)
+  for (const file of [...roomFiles, ...macroFiles]) expect(file.endsWith('.spec.ts')).toBe(true)
   for (const file of runtimeFiles) expect(packageJson.scripts['test:integration'].split(file)).toHaveLength(2)
-  for (const file of libraryFiles) {
-    expect(packageJson.scripts['test:031b'].split(file)).toHaveLength(2)
-  }
-
   expect(packageJson.scripts['test:unit:core']).toContain('tests/unit/currentTestJourneyInventory010.test.ts')
   expect(packageJson.scripts['test:031b']).toContain('tests/unit/uiBehaviorInventory031B.test.ts')
   expect(packageJson.scripts['test:integration']).toContain('tests/integration/agentEventWaitLimit038.test.ts')

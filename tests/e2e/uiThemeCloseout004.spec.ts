@@ -23,14 +23,6 @@ test('all 35 explicit themes and both system appearances pass the three-viewport
 
   await observer.goto(roomUrl)
   await expect(observer.getByTestId('take-control')).toBeVisible()
-  await ensureLibraryVisible(observer)
-  await observer.getByTestId('library-tab-note').click()
-  const savedOption = observer.getByTestId('library-selector').locator('option', { hasText: 'Theme matrix note' })
-  await expect(savedOption).toHaveCount(1)
-  const savedValue = await savedOption.getAttribute('value')
-  if (!savedValue) throw new Error('theme_matrix_library_item_missing')
-  await observer.getByTestId('library-selector').selectOption(savedValue)
-  await expect(observer.getByTestId('library-title')).toHaveAttribute('readonly', '')
   await expect(observer.getByTestId('text-box-editor')).toHaveAttribute('readonly', '')
 
   await openTemplateDrawer(observer)
@@ -43,7 +35,8 @@ test('all 35 explicit themes and both system appearances pass the three-viewport
 
   await home.goto('/')
   await expect(home.getByTestId('room-home')).toBeVisible()
-  await expect(home.getByTestId('room-open')).toHaveCount(1)
+  const roomId = new URL(roomUrl, home.url()).pathname.slice(1)
+  await expect(home.getByTestId('room-open').filter({ hasText: roomId })).toHaveCount(1)
 
   const matrixCases: string[] = []
   const baseTokens = new Set<string>()
@@ -107,20 +100,7 @@ async function createPopulatedRoom(page: Page, request: APIRequestContext): Prom
   await page.getByTestId('terminal-create-text').click()
   await expect(page.getByTestId('text-box-editor')).toBeVisible()
   await page.getByTestId('text-box-editor').fill('theme matrix terminal text')
-  await ensureLibraryVisible(page)
-  await page.getByTestId('library-tab-note').click()
-  await page.getByTestId('library-new').click()
-  await page.getByTestId('library-title').fill('Theme matrix note')
-  await page.getByTestId('library-content').fill('Stable populated Library state')
-  await page.getByTestId('library-save').click()
-  await expect(page.getByTestId('library-status')).toHaveText('Saved')
-  await page.getByTestId('library-cancel').click()
   return body.url
-}
-
-async function ensureLibraryVisible(page: Page): Promise<void> {
-  if (!await page.getByTestId('library-side-panel').isVisible()) await page.getByTestId('library-panel-toggle').click()
-  await expect(page.getByTestId('library-panel')).toBeVisible()
 }
 
 async function applyThemeForMatrix(page: Page, theme: string, scheme: EffectiveColorScheme): Promise<void> {
@@ -164,28 +144,24 @@ async function roomMatrixState(page: Page) {
       const rect = element.getBoundingClientRect()
       return rect.left >= -1 && rect.right <= innerWidth + 1 && rect.top >= -1 && rect.bottom <= innerHeight + 1
     }
-    const surfaceIds = ['macro-panel', 'library-panel', 'text-box-pane', 'settings-popover', 'notice-item']
+    const surfaceIds = ['macro-panel', 'text-box-pane', 'settings-popover', 'notice-item']
     const surfaces = surfaceIds.map((id) => getComputedStyle(required(id)))
     const disabled = required('macro-save') as HTMLButtonElement
     const readOnly = required('text-box-editor') as HTMLTextAreaElement
     const currentMacro = required('macro-tab-editor')
-    const currentLibrary = required('library-tab-note')
     const currentTerminal = required('terminal-tab')
     const rootStyle = getComputedStyle(document.documentElement)
     const workspace = required('workspace-shell')
     const macroPanel = required('macro-side-panel')
-    const libraryPanel = required('library-side-panel')
     const terminalRoom = required('terminal-room')
     return {
       innerWidth,
       documentFits: document.documentElement.scrollWidth <= innerWidth + 1 && document.body.scrollWidth <= innerWidth + 1,
       workspaceDirection: getComputedStyle(workspace).flexDirection,
       macroVisible: !macroPanel.hidden && getComputedStyle(macroPanel).display !== 'none',
-      libraryVisible: !libraryPanel.hidden && getComputedStyle(libraryPanel).display !== 'none',
-      togglesPressed: [required('macro-panel-toggle'), required('library-panel-toggle')].map((element) => element.getAttribute('aria-pressed')),
+      togglesPressed: [required('macro-panel-toggle')].map((element) => element.getAttribute('aria-pressed')),
       criticalOwners: {
         macro: within(required('macro-create'), required('macro-panel')),
-        library: within(required('library-new'), required('library-panel')),
         terminal: within(currentTerminal, terminalRoom),
         settings: within(required('theme-select'), required('settings-popover')),
       },
@@ -201,7 +177,6 @@ async function roomMatrixState(page: Page) {
         readOnlyCursor: getComputedStyle(readOnly).cursor,
         macroCurrent: currentMacro.getAttribute('aria-selected'),
         macroCurrentBackground: getComputedStyle(currentMacro).backgroundColor,
-        libraryCurrentBackground: getComputedStyle(currentLibrary).backgroundColor,
         terminalCurrent: currentTerminal.getAttribute('aria-selected'),
         terminalCurrentBackground: getComputedStyle(currentTerminal).backgroundColor,
       },
@@ -240,9 +215,8 @@ function expectRoomCase(state: RoomMatrixState, width: number, label: string): v
   expect(state.documentFits, label).toBe(true)
   expect(state.workspaceDirection, label).toBe(width <= 980 ? 'column' : 'row')
   expect(state.macroVisible, label).toBe(true)
-  expect(state.libraryVisible, label).toBe(true)
-  expect(state.togglesPressed, label).toEqual(['true', 'true'])
-  expect(state.criticalOwners, label).toEqual({ macro: true, library: true, terminal: true, settings: true })
+  expect(state.togglesPressed, label).toEqual(['true'])
+  expect(state.criticalOwners, label).toEqual({ macro: true, terminal: true, settings: true })
   expect(state.viewportPlacement, label).toEqual({ settings: true, notice: true, terminal: true })
   expect(state.nativeState.disabled, label).toBe(true)
   expect(state.nativeState.disabledCursor, label).toBe('not-allowed')
@@ -254,7 +228,6 @@ function expectRoomCase(state: RoomMatrixState, width: number, label: string): v
   for (const color of [...state.surfaceBackgrounds, ...state.surfaceForegrounds]) expectOpaque(color, label)
   for (const color of [
     state.nativeState.macroCurrentBackground,
-    state.nativeState.libraryCurrentBackground,
     state.nativeState.terminalCurrentBackground,
   ]) expectOpaque(color, label)
 }

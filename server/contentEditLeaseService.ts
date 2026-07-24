@@ -249,8 +249,7 @@ export class ContentEditLeaseService {
 
   recordPath(resourceKey: ContentResourceKey): string {
     const key = assertContentResourceKey(resourceKey)
-    if (key.kind === 'macro') return join(this.transactions.paths.macros, key.itemId + '.json')
-    return join(this.transactions.paths.library, key.itemKind, key.itemId + '.json')
+    return join(this.transactions.paths.macros, key.itemId + '.json')
   }
 
   private async releaseOwnedInternal(editLeaseId: string, owned: OwnedLease): Promise<void> {

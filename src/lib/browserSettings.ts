@@ -1,31 +1,27 @@
 import { THEME_PREFERENCES, type ThemePreference } from './theme'
 
-export const BROWSER_SETTINGS_KEY = 'shell-deck:settings:v3'
+export const BROWSER_SETTINGS_KEY = 'shell-deck:settings:v4'
 
 export type BrowserSettings = {
-  schemaVersion: 3
+  schemaVersion: 4
   theme: ThemePreference
   panels: {
     macro: { visible: boolean; widthPx: number }
-    library: { visible: boolean; widthPx: number }
   }
   macroInsertionPlacement: 'anchored' | 'center'
   terminalDragEnabled: boolean
   notificationVolume: number
-  library: { selectedTab: 'json-template' | 'prompt' | 'note'; filter: string }
 }
 
 export const DEFAULT_BROWSER_SETTINGS: BrowserSettings = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   theme: 'business',
   panels: {
     macro: { visible: true, widthPx: 760 },
-    library: { visible: false, widthPx: 380 },
   },
   macroInsertionPlacement: 'anchored',
   terminalDragEnabled: false,
   notificationVolume: 2.4,
-  library: { selectedTab: 'json-template', filter: '' },
 }
 
 export type LoadedBrowserSettings = { settings: BrowserSettings; reset: boolean }
@@ -73,14 +69,12 @@ export function isBrowserSettingsValue(value: unknown, themePreferences: readonl
       && candidate.widthPx <= 1200
   }
 
-  if (!isRecord(value) || value.schemaVersion !== 3 || !isRecord(value.panels) || !isRecord(value.library)) return false
-  if (!hasExactKeys(value, ['schemaVersion', 'theme', 'panels', 'macroInsertionPlacement', 'terminalDragEnabled', 'notificationVolume', 'library'])) return false
+  if (!isRecord(value) || value.schemaVersion !== 4 || !isRecord(value.panels)) return false
+  if (!hasExactKeys(value, ['schemaVersion', 'theme', 'panels', 'macroInsertionPlacement', 'terminalDragEnabled', 'notificationVolume'])) return false
   if (typeof value.theme !== 'string' || !themePreferences.includes(value.theme)) return false
-  if (!hasExactKeys(value.panels, ['macro', 'library']) || !hasExactKeys(value.library, ['selectedTab', 'filter'])) return false
-  if (!isPanel(value.panels.macro) || !isPanel(value.panels.library)) return false
+  if (!hasExactKeys(value.panels, ['macro']) || !isPanel(value.panels.macro)) return false
   if (value.macroInsertionPlacement !== 'anchored' && value.macroInsertionPlacement !== 'center') return false
   if (typeof value.terminalDragEnabled !== 'boolean') return false
   if (typeof value.notificationVolume !== 'number' || !Number.isFinite(value.notificationVolume) || value.notificationVolume < 0 || value.notificationVolume > 10) return false
-  if (typeof value.library.selectedTab !== 'string' || !['json-template', 'prompt', 'note'].includes(value.library.selectedTab) || typeof value.library.filter !== 'string') return false
   return true
 }

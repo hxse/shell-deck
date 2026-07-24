@@ -22,7 +22,6 @@
   let notice = $state<NoticeItem | null>(null)
   let settingsOpen = $state(false)
   let macroDirty = $state(false)
-  let libraryDirty = $state(false)
 
   onMount(() => {
     if (loadedSettings.reset) pushNotice('Browser settings were reset because the stored schema is invalid.')
@@ -47,7 +46,7 @@
   onDestroy(() => { workspace?.dispose() })
 
   function handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (!macroDirty && !libraryDirty) return
+    if (!macroDirty) return
     event.preventDefault()
     event.returnValue = ''
   }
@@ -57,7 +56,6 @@
     window.history.replaceState(null, '', '/')
     isHome = true
     roomId = ''
-    libraryDirty = false
     macroDirty = false
   }
 
@@ -76,23 +74,6 @@
         },
       },
     }
-  }
-
-  function updateLibraryPanel(widthPx?: number, visible?: boolean) {
-    settings = {
-      ...settings,
-      panels: {
-        ...settings.panels,
-        library: {
-          visible: visible ?? settings.panels.library.visible,
-          widthPx: widthPx ?? settings.panels.library.widthPx,
-        },
-      },
-    }
-  }
-
-  function updateLibraryPreference(selectedTab: 'json-template' | 'prompt' | 'note', filter: string) {
-    settings = { ...settings, library: { selectedTab, filter } }
   }
 
   function pushNotice(text: string) {
@@ -138,9 +119,6 @@
         <button type="button" class="btn btn-sm btn-ghost box-border h-7 min-h-7 rounded-[5px] px-[7px] text-xs" data-testid="home-button" onclick={() => window.open('/', '_blank', 'noopener')}>Home</button>
         <button type="button" class="panel-toggle btn btn-sm btn-secondary box-border h-7 min-h-7 w-[86px] justify-center gap-[5px] rounded-[5px] px-[7px] text-xs leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-2.5" class:btn-active={settings.panels.macro.visible} aria-pressed={settings.panels.macro.visible} data-testid="macro-panel-toggle" onclick={() => updateMacroPanel(undefined, !settings.panels.macro.visible)}>
           <span class="switch-track relative h-3.5 w-6 shrink-0 rounded-full bg-base-content/30 shadow-inner" aria-hidden="true"><span class="switch-thumb absolute top-0.5 left-0.5 size-2.5 rounded-full bg-base-100 shadow-sm transition-transform"></span></span><span>Macro</span>
-        </button>
-        <button type="button" class="panel-toggle btn btn-sm btn-secondary box-border h-7 min-h-7 w-[86px] justify-center gap-[5px] rounded-[5px] px-[7px] text-xs leading-none [&[aria-pressed=true]_.switch-track]:bg-primary [&[aria-pressed=true]_.switch-thumb]:translate-x-2.5" class:btn-active={settings.panels.library.visible} aria-pressed={settings.panels.library.visible} data-testid="library-panel-toggle" onclick={() => updateLibraryPanel(undefined, !settings.panels.library.visible)}>
-          <span class="switch-track relative h-3.5 w-6 shrink-0 rounded-full bg-base-content/30 shadow-inner" aria-hidden="true"><span class="switch-thumb absolute top-0.5 left-0.5 size-2.5 rounded-full bg-base-100 shadow-sm transition-transform"></span></span><span>Library</span>
         </button>
         <button type="button" class="terminal-create-button btn btn-sm btn-primary box-border !h-7 !min-h-7 rounded-[5px] px-[7px] text-xs !pointer-events-auto aria-disabled:cursor-not-allowed" data-testid="terminal-create-real" onclick={workspace.createShell} aria-disabled={!workspace.canMutateShared || workspace.terminalStructureLocked}>New shell</button>
         <button type="button" class="terminal-create-button btn btn-sm btn-primary box-border !h-7 !min-h-7 rounded-[5px] px-[7px] text-xs !pointer-events-auto aria-disabled:cursor-not-allowed" data-testid="terminal-create-text" onclick={workspace.createText} aria-disabled={!workspace.canMutateShared || workspace.terminalStructureLocked}>New text</button>
@@ -200,10 +178,6 @@
       sharedReadOnly={!workspace.canMutateShared}
       macroVisible={settings.panels.macro.visible}
       macroWidthPx={settings.panels.macro.widthPx}
-      libraryVisible={settings.panels.library.visible}
-      libraryWidthPx={settings.panels.library.widthPx}
-      librarySelectedTab={settings.library.selectedTab}
-      libraryFilter={settings.library.filter}
       canMutateShared={workspace.canMutateShared}
       terminalStructureRevision={workspace.terminalStructureRevision}
       terminalPositions={workspace.terminalPositions}
@@ -215,9 +189,6 @@
       insertionPaletteMode={settings.macroInsertionPlacement}
       onMacroWidthChange={(widthPx) => updateMacroPanel(widthPx)}
       onMacroDirtyChange={(dirty) => { macroDirty = dirty }}
-      onLibraryWidthChange={(widthPx) => updateLibraryPanel(widthPx)}
-      onLibraryPreferenceChange={updateLibraryPreference}
-      onLibraryDirtyChange={(dirty) => { libraryDirty = dirty }}
       onRoomSnapshot={workspace.applyRoomSnapshot}
       onSelectTerminal={workspace.selectTerminal}
       onCloseTerminal={workspace.closeTerminalTab}

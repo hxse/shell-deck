@@ -9,20 +9,18 @@
   let {
     templates, filteredTemplates, draft, selectedRecord, templateSearch, dirty, contentEditing, mutationAllowed = true,
     errorText, macroView, runner, statusText, runnerInput, runnerInputSyncing = false, preparing = false,
-    saveToLibraryLabel = 'Save to Library',
     prepareDisabled = false, prepareDisabledReason = '', startDisabled = false, startDisabledReason = '',
     jsonEditing = false, operationPending = false, runActive = false,
-    onTemplateSearchChange, onSelectTemplate, onCreateTemplate, onBeginEdit, onSaveTemplate, onSaveToLibrary,
+    onTemplateSearchChange, onSelectTemplate, onCreateTemplate, onBeginEdit, onSaveTemplate,
     onCancelEdit, onDeleteTemplate, onUpdateDraft, onResetWidth, onPrepare,
     onRunnerInputChange, onSubmitRunnerInput, onRefreshRunner, onMacroControl, onViewChange,
   } = $props<{
     templates: MacroRecordSummary[]; filteredTemplates: MacroRecordSummary[]; draft: MacroDefinitionV5 | null; selectedRecord: MacroRecord | null
     templateSearch: string; dirty: boolean; contentEditing: boolean; mutationAllowed?: boolean; errorText: string | null; macroView: MacroView; runner: MacroRunnerSnapshot | null
     statusText: string; runnerInput: string; runnerInputSyncing?: boolean; preparing?: boolean; prepareDisabled?: boolean; prepareDisabledReason?: string
-    saveToLibraryLabel?: string
     startDisabled?: boolean; startDisabledReason?: string; jsonEditing?: boolean; operationPending?: boolean; runActive?: boolean
     onTemplateSearchChange: (value: string) => void; onSelectTemplate: (id: string) => Promise<boolean>; onCreateTemplate: () => void
-    onBeginEdit: () => void; onSaveTemplate: () => void; onSaveToLibrary: () => void; onCancelEdit: () => void; onDeleteTemplate: () => void
+    onBeginEdit: () => void; onSaveTemplate: () => void; onCancelEdit: () => void; onDeleteTemplate: () => void
     onUpdateDraft: (mutator: (definition: MacroDefinitionV5) => void) => void; onResetWidth?: () => void; onPrepare: () => void
     onRunnerInputChange: (value: string) => void; onSubmitRunnerInput: () => void; onRefreshRunner: () => void
     onMacroControl: (action: 'start' | 'pause' | 'resume' | 'stop') => void; onViewChange: (view: MacroView) => void
@@ -31,7 +29,7 @@
 
 <MacroTemplateSelector {templates} {filteredTemplates} {draft} {selectedRecord} {templateSearch} {dirty} {contentEditing} {mutationAllowed}
   onTemplateSearchChange={onTemplateSearchChange} onSelectTemplate={onSelectTemplate} onCreateTemplate={onCreateTemplate}
-  onBeginEdit={onBeginEdit} onSaveTemplate={onSaveTemplate} {saveToLibraryLabel} onSaveToLibrary={onSaveToLibrary}
+  onBeginEdit={onBeginEdit} onSaveTemplate={onSaveTemplate}
   onCancelEdit={onCancelEdit} onDeleteTemplate={onDeleteTemplate}
   onUpdateDraft={onUpdateDraft} onResetWidth={onResetWidth} locked={jsonEditing || operationPending || runActive} />
 

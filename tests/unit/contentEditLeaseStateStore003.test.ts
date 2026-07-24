@@ -58,7 +58,7 @@ describe('content edit lease state storage extraction', () => {
   })
 
   test('exact state validator retains available and held schemas', () => {
-    const key: ContentResourceKey = { kind: 'library', itemKind: 'note', itemId: createGeneratedId('libraryItem') }
+    const key: ContentResourceKey = { kind: 'macro', itemId: createGeneratedId('macroTemplate') }
     const now = Date.parse('2026-07-23T00:00:30.000Z')
     const available = availableState(key, 4, now)
     const held = heldState(key, now)

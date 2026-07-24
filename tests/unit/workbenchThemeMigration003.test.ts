@@ -9,7 +9,6 @@ const componentRoot = resolve(projectRoot, 'src/lib/components')
 const macroRoot = resolve(componentRoot, 'macro')
 const workbenchSources = [
   resolve(componentRoot, 'MacroPanel.svelte'),
-  resolve(componentRoot, 'LibraryPanel.svelte'),
   ...readdirSync(macroRoot)
     .filter((name) => name.endsWith('.svelte'))
     .sort()
@@ -29,7 +28,7 @@ const formerlyLocalStyleOwners = [
   'TerminalInputDeliveryField.svelte',
 ]
 
-describe('20260722B.003 Macro and Library theme migration', () => {
+describe('Macro workbench theme contract', () => {
   test('non-presentation workbench structure has the frozen current fingerprint', () => {
     const inventory = workbenchSources.flatMap((path) => structureInventory(path))
     expect({
@@ -37,9 +36,9 @@ describe('20260722B.003 Macro and Library theme migration', () => {
       entries: inventory.length,
       digest: createHash('sha256').update(JSON.stringify(inventory)).digest('hex'),
     }).toEqual({
-      files: 25,
-      entries: 728,
-      digest: '69668566dbed13b9d0a1452c23deb1f28c1f0dfa32955386091da37cfe7d4232',
+      files: 24,
+      entries: 680,
+      digest: 'f007b846777a9b5168431e3a81e3db91062e500747d9b2b64b0116b1a279b5ea',
     })
   })
 
