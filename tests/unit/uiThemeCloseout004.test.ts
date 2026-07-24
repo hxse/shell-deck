@@ -23,6 +23,37 @@ const structureBaseline = JSON.parse(readFileSync(
   files: Record<string, { count: number; digest: string; entryDigests?: string[] }>
 }
 
+const structuredJsonComponentFingerprints = {
+  'src/lib/components/macro/CaptureSourceEditor.svelte': {
+    count: 89,
+    digest: '24eefe047b00d5b0d799e56baf526daa89c75004506fd7d16161a4996ef938ac',
+  },
+  'src/lib/components/macro/ExtractTextEditor.svelte': {
+    count: 104,
+    digest: '7663ad2c0c227700fff0b90645d20bba40fb645a78e15146b9f112715d4cce60',
+  },
+  'src/lib/components/macro/MacroActionNodeEditor.svelte': {
+    count: 82,
+    digest: 'bb4303fe877a27002b871c74cd32cf4026fd7a51fb0b06351af059c13a095902',
+  },
+  'src/lib/components/macro/MacroConditionEditor.svelte': {
+    count: 70,
+    digest: 'e82762173430f990f987ee01de88e83f8f5071ac5d0ad22828eb5ea3470b6258',
+  },
+  'src/lib/components/macro/MacroControlNodeEditor.svelte': {
+    count: 46,
+    digest: '6789955a7f0968be8788895b88c84f204550c25f8abc709be8371e36345ac335',
+  },
+  'src/lib/components/macro/MessagePartsEditor.svelte': {
+    count: 22,
+    digest: 'c9f8eaac2cc493ee8267212a079d72d13f8a82d553b687d57b9ea011a0b730e4',
+  },
+  'src/lib/components/macro/ParallelLaneTabs.svelte': {
+    count: 57,
+    digest: 'e2647db722d2f04b8b42f8fde0154fa2ce3e4e68ca0fc65925bc7c6f0d11b3f2',
+  },
+} as const
+
 describe('20260722B.004 UI theme migration closeout', () => {
   test('the repeatable residue Gate accepts the production tree', () => {
     expect(scanUiStyleResidue(projectRoot)).toEqual([])
@@ -71,9 +102,11 @@ describe('20260722B.004 UI theme migration closeout', () => {
       structureFingerprint(projectRoot, path),
     ]))
     expect(structureBaseline.revision).toBe('wylwysvyyrvy')
-    expect(Object.keys(current).sort()).toEqual(Object.keys(structureBaseline.files)
-      .filter((path) => path !== 'src/lib/components/LibraryPanel.svelte')
-      .sort())
+    expect(Object.keys(current).sort()).toEqual([
+      ...Object.keys(structureBaseline.files)
+        .filter((path) => path !== 'src/lib/components/LibraryPanel.svelte'),
+      'src/lib/components/macro/MacroConditionEditor.svelte',
+    ].sort())
 
     for (const [path, expected] of Object.entries(structureBaseline.files)) {
       if ([
@@ -81,6 +114,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
         'src/lib/components/LibraryPanel.svelte',
         'src/lib/components/MacroPanel.svelte',
         'src/lib/components/macro/MacroEditorShell.svelte',
+        ...Object.keys(structuredJsonComponentFingerprints),
         'src/lib/components/macro/MacroFlowNodeList.svelte',
         'src/lib/components/macro/MacroTemplateSelector.svelte',
         'src/lib/components/macro/MacroWorkbenchChrome.svelte',
@@ -91,6 +125,11 @@ describe('20260722B.004 UI theme migration closeout', () => {
         digest: expected.digest,
       })
     }
+
+    expect(Object.fromEntries(Object.keys(structuredJsonComponentFingerprints).map((path) => [
+      path,
+      { count: current[path].count, digest: current[path].digest },
+    ]))).toEqual(structuredJsonComponentFingerprints)
 
     const appBaseline = structureBaseline.files['src/App.svelte']
     expect(appBaseline.entryDigests).toHaveLength(41)
@@ -182,7 +221,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
     })
 
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
-    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(783)
+    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(849)
 
     const app = readFileSync(resolve(projectRoot, 'src/App.svelte'), 'utf8')
     expect(app.match(/data-testid="theme-select"/g)).toHaveLength(1)

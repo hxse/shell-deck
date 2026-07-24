@@ -2,12 +2,13 @@ import { captureTerminalBuffer } from '../src/lib/capture/terminalBufferCapture'
 import { createGeneratedId } from '../src/lib/generatedId'
 import type {
   AgentEventCaptureMode,
-  AgentEventWaitLimit,
+  CaptureWaitLimit,
   CaptureSourceConfig,
   FlowV2ActionNode,
 } from '../src/lib/macro/macroDefinitionTypes'
 import type { FrozenTerminalBinding } from '../src/lib/macro/runnerTypes'
 import type { TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
+import type { JsonSchema, JsonValue } from '../src/lib/macro/structuredJson'
 import { buildTerminalInputPayload, resolveTerminalInputDelivery } from '../src/lib/terminal/terminalInputDelivery'
 import type { NotificationDispatcher } from './notificationService'
 import type { TerminalRoomManager } from './terminalRoomManager'
@@ -45,10 +46,17 @@ export type MacroActionRuntimeContext = {
       stepId: string,
       binding: FrozenTerminalBinding,
       captureMode: AgentEventCaptureMode,
-      waitLimit: AgentEventWaitLimit,
+      waitLimit: CaptureWaitLimit,
     ) => Promise<{ text: string; raw: unknown; events: Array<{ eventId: string }> }>
+    waitForStructuredJsonCapture: (
+      stepId: string,
+      binding: FrozenTerminalBinding,
+      schema: JsonSchema,
+      waitLimit: CaptureWaitLimit,
+    ) => Promise<JsonValue>
     appendEvent: (kind: string, data?: Record<string, unknown>) => void
     persistArtifact: (stepId: string, name: string, value: string, prefix: string, data?: Record<string, unknown>) => string
+    persistJsonArtifact: (stepId: string, name: string, value: JsonValue, prefix: string, data?: Record<string, unknown>) => string
     writeSupplementalArtifact: (stepId: string, artifact: string, prefix: string, value: string, extension?: string) => string
   }
 }
@@ -160,6 +168,26 @@ export async function executeMacroAction(context: MacroActionRuntimeContext, nod
     return
   }
   if (node.type === 'capture-source') {
+    if (node.capture.kind === 'structured-json') {
+      const configuredTerminalIndex = assignedMacroTerminalIndex(node.capture.terminal)
+      const binding = frozenBinding(context, configuredTerminalIndex)
+      const currentTerminalIndex = context.manager.indexMap(context.run.roomId)
+        .find((item) => item.terminalId === binding.terminalId)?.index ?? null
+      const value = await context.callbacks.waitForStructuredJsonCapture(
+        node.id,
+        binding,
+        node.capture.schema,
+        node.capture.waitLimit,
+      )
+      context.callbacks.persistJsonArtifact(node.id, 'captured_json', value, 'capture-structured-json', {
+        captureKind: node.capture.kind,
+        configuredTerminalIndex,
+        currentTerminalIndex,
+        terminalId: binding.terminalId,
+        launchId: binding.launchId,
+      })
+      return
+    }
     const captured = await capture(context, node.id, node.capture)
     context.callbacks.persistArtifact(node.id, 'captured_text', captured.text, 'capture', captured.data)
     return
@@ -204,7 +232,7 @@ function send(
 async function capture(
   context: MacroActionRuntimeContext,
   stepId: string,
-  source: CaptureSourceConfig,
+  source: Exclude<CaptureSourceConfig, { kind: 'structured-json' }>,
 ): Promise<{ text: string; data: Record<string, unknown> }> {
   const configuredTerminalIndex = assignedMacroTerminalIndex(source.terminal)
   const binding = frozenBinding(context, configuredTerminalIndex)

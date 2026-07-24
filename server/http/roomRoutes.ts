@@ -1,5 +1,9 @@
 import { assertRoomRouteToken } from '../../src/lib/generatedId'
 import { agentEventTokenFromRequest, ingestAgentEvent } from '../agentEventIngest'
+import {
+  ingestStructuredJson,
+  parseStructuredJsonSubmission,
+} from '../structuredJsonIngest'
 import type { HttpContext, HttpRouteResult } from './httpContext'
 import {
   assertNoQuery,
@@ -12,7 +16,7 @@ import {
 } from './httpPrimitives'
 
 export async function handleRoomRoutes(req: Request, url: URL, context: HttpContext): Promise<HttpRouteResult> {
-  const { agentEventStore, ingestToken, manager } = context
+  const { agentEventStore, ingestToken, macroRunner, manager } = context
 
   if (url.pathname === '/health') {
     assertNoQuery(url)
@@ -87,6 +91,38 @@ export async function handleRoomRoutes(req: Request, url: URL, context: HttpCont
       store: agentEventStore,
     })
     return result.ok ? json({ ok: true, event: result.event }, 201) : json(result, result.status)
+  }
+
+  const structuredResult = /^\/api\/rooms\/([^/]+)\/structured-results$/.exec(url.pathname)
+  if (structuredResult) {
+    if (req.method !== 'POST') return methodNotAllowed(['POST'])
+    const token = agentEventTokenFromRequest(req)
+    if (!token || token !== ingestToken) {
+      return json({ ok: false, error: 'structured_json_ingest_token_invalid' }, 403)
+    }
+    let body: unknown
+    try {
+      body = await requestJson(req)
+    } catch {
+      return json({ ok: false, error: 'structured_json_submission_invalid' }, 422)
+    }
+    if (!parseStructuredJsonSubmission(body)) {
+      return json({ ok: false, error: 'structured_json_submission_invalid' }, 422)
+    }
+    assertNoQuery(url)
+    let roomId: string
+    try {
+      roomId = assertRoomRouteToken(decodeURIComponent(structuredResult[1]))
+    } catch {
+      return json({ ok: false, error: 'structured_json_runtime_membership_mismatch' }, 404)
+    }
+    const result = ingestStructuredJson(body, token, {
+      roomId,
+      expectedToken: ingestToken,
+      manager,
+      macroRunner,
+    })
+    return result.ok ? json({ ok: true }, 201) : json(result, result.status)
   }
 
   return null

@@ -4,21 +4,17 @@
     FlowV2Node,
     MacroDefinitionV5,
     MacroTerminalReference,
-    SimpleTextMatchOp,
+    MacroCondition,
     TextListItem,
-    TextMatchCondition,
   } from '../../macro/macroDefinitionTypes'
-  import {
-    artifactSourceFromKey,
-    artifactSourceKey,
-    type ArtifactChoice,
-  } from '../../macro/macroArtifactChoices'
+  import type { ArtifactChoice } from '../../macro/macroArtifactChoices'
   import type { BodyPath } from '../../macro/flowV2EditorCommands'
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from '../../macro/scopedTextTemplate'
   import type { TextTemplateScope } from '../../macro/scopedTextTemplateEditor'
   import type { TerminalChoice } from '../../macro/macroTerminalChoices'
   import type { MacroInsertionPaletteMode } from '../../workspace/uiLayoutTypes'
   import LineNumberedTextarea from './LineNumberedTextarea.svelte'
+  import MacroConditionEditor from './MacroConditionEditor.svelte'
   import MacroIconButton from './MacroIconButton.svelte'
   import ParallelLaneTabs from './ParallelLaneTabs.svelte'
 
@@ -104,25 +100,6 @@
       : inherited
   }
 
-  function setSimpleMatcherOp(condition: TextMatchCondition, op: SimpleTextMatchOp): TextMatchCondition {
-    if (condition.matcher.kind !== 'simple') return condition
-    return { ...condition, matcher: { kind: 'simple', op, text: condition.matcher.text } }
-  }
-
-  function setSimpleMatcherText(condition: TextMatchCondition, text: string): TextMatchCondition {
-    if (condition.matcher.kind !== 'simple') return condition
-    return { ...condition, matcher: { kind: 'simple', op: condition.matcher.op, text } }
-  }
-
-  function setRegexMatcherPattern(condition: TextMatchCondition, pattern: string): TextMatchCondition {
-    if (condition.matcher.kind !== 'regex') return condition
-    return { ...condition, matcher: { kind: 'regex', pattern, flags: condition.matcher.flags } }
-  }
-
-  function setRegexMatcherFlags(condition: TextMatchCondition, flags: string): TextMatchCondition {
-    if (condition.matcher.kind !== 'regex') return condition
-    return { ...condition, matcher: { kind: 'regex', pattern: condition.matcher.pattern, flags } }
-  }
 </script>
 
 {#if node.type === 'if'}
@@ -140,7 +117,7 @@
           {#if branch.kind === 'elif'}<MacroIconButton kind="remove" testId="remove-flow-elif" onClick={() => removeElifAt(bodyPath, index, branchIndex, node.id)} />{/if}
         </div>
       </div>
-      {@render ConditionEditor(branch.condition, artifactChoices, (condition: TextMatchCondition) => onUpdate((item: FlowV2Node) => { if (item.type === 'if') item.branches[branchIndex].condition = condition }))}
+      <MacroConditionEditor condition={branch.condition} choices={artifactChoices} onChange={(condition: MacroCondition) => onUpdate((item: FlowV2Node) => { if (item.type === 'if') item.branches[branchIndex].condition = condition })} />
       {@render renderNodeList(branch.body, [...bodyPath, { kind: 'if-branch', nodeId: node.id, branchIndex }], allowLoopControls, branch.kind + ' body', false, templateScope, depth + 1)}
     </div>
   {/each}
@@ -182,19 +159,3 @@
     {@render renderNodeList(node.body ?? [], [...bodyPath, { kind: 'control', nodeId: node.id }], false, node.type + ' action body', true, templateScope, depth + 1)}
   {/if}
 {/if}
-
-{#snippet ConditionEditor(condition: TextMatchCondition, choices: ArtifactChoice[], onChange: (condition: TextMatchCondition) => void)}
-  <div class="condition-row grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] gap-2">
-    <label>Source<select class="select box-border select-xs select-ghost w-full bg-base-content/15" class:select-warning={condition.source.kind === 'unassigned'} data-testid="condition-source" class:artifact-source-unassigned={condition.source.kind === 'unassigned'} value={artifactSourceKey(condition.source)} onchange={(event) => onChange({ ...condition, source: artifactSourceFromKey(event.currentTarget.value) })}><option value="">Unassigned</option>{#each choices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}</select></label>
-    <label>Matcher<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="condition-matcher-kind" value={condition.matcher.kind} onchange={(event) => onChange({ ...condition, matcher: event.currentTarget.value === 'regex' ? { kind: 'regex', pattern: 'READY', flags: 'i' } : { kind: 'simple', op: 'contains', text: 'READY' } })}><option value="simple">simple</option><option value="regex">regex</option></select></label>
-    {#if condition.matcher.kind === 'simple'}
-      <label>Op<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="condition-simple-op" value={condition.matcher.op} onchange={(event) => onChange(setSimpleMatcherOp(condition, event.currentTarget.value as SimpleTextMatchOp))}><option value="contains">contains</option><option value="not_contains">not_contains</option><option value="equals">equals</option><option value="not_equals">not_equals</option><option value="starts_with">starts_with</option><option value="ends_with">ends_with</option></select></label>
-      <label>Text<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="condition-simple-text" value={condition.matcher.text} oninput={(event) => onChange(setSimpleMatcherText(condition, event.currentTarget.value))} /></label>
-    {:else}
-      <label>Pattern<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="condition-regex-pattern" value={condition.matcher.pattern} oninput={(event) => onChange(setRegexMatcherPattern(condition, event.currentTarget.value))} /></label>
-      <label>Flags<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="condition-regex-flags" value={condition.matcher.flags ?? ''} oninput={(event) => onChange(setRegexMatcherFlags(condition, event.currentTarget.value))} /></label>
-    {/if}
-    <label>Scope<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="condition-scope" value={condition.scope.kind === 'lines' ? 'lines:' + condition.scope.mode : 'whole'} onchange={(event) => { const value = event.currentTarget.value; onChange({ ...condition, scope: value === 'whole' ? { kind: 'whole' } : { kind: 'lines', mode: value.split(':')[1] as never, includeEmptyLines: false } }) }}><option value="whole">whole</option><option value="lines:first">lines.first</option><option value="lines:last">lines.last</option><option value="lines:any">lines.any</option><option value="lines:all">lines.all</option></select></label>
-  </div>
-  {#if condition.source.kind === 'unassigned'}<small class="artifact-source-warning text-[11px] leading-snug text-warning" data-testid="condition-source-warning">Source is unassigned. Save is allowed, but Start requires an earlier compatible output.</small>{/if}
-{/snippet}

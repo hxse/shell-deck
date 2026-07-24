@@ -1,13 +1,18 @@
 import type {
+  ArtifactName,
   FlowV2ArtifactSource,
+  FlowV2JsonArtifactSource,
   FlowV2Node,
   FlowV2StepArtifactSource,
+  FlowV2TextStepArtifactSource,
   MacroDefinitionV5,
   ParallelLane,
   ParallelOutputSource,
 } from './macroDefinitionTypes'
 
 export type ArtifactChoice = { label: string; source: FlowV2StepArtifactSource }
+export type TextArtifactChoice = { label: string; source: FlowV2TextStepArtifactSource }
+export type JsonArtifactChoice = { label: string; source: Extract<FlowV2StepArtifactSource, { artifact: 'captured_json' }> }
 
 export function artifactChoicesBefore(
   template: MacroDefinitionV5,
@@ -29,6 +34,14 @@ export function laneArtifactChoices(
   return choices
 }
 
+export function textArtifactChoices(choices: ArtifactChoice[]): TextArtifactChoice[] {
+  return choices.filter((choice): choice is TextArtifactChoice => choice.source.artifact !== 'captured_json')
+}
+
+export function jsonArtifactChoices(choices: ArtifactChoice[]): JsonArtifactChoice[] {
+  return choices.filter((choice): choice is JsonArtifactChoice => choice.source.artifact === 'captured_json')
+}
+
 export function parallelMessageChoices(
   outerChoices: ArtifactChoice[],
   lane: ParallelLane,
@@ -46,18 +59,30 @@ export function artifactSourceFromKey(key: string): FlowV2ArtifactSource {
   return assignedArtifactSourceFromKey(key) ?? { kind: 'unassigned' }
 }
 
+export function jsonArtifactSourceFromKey(key: string): FlowV2JsonArtifactSource {
+  const source = assignedArtifactSourceFromKey(key)
+  return source?.artifact === 'captured_json' ? source : { kind: 'unassigned' }
+}
+
 export function assignedArtifactSourceFromKey(key: string): FlowV2StepArtifactSource | undefined {
   if (!key) return undefined
   const [stepId, artifact] = key.split(':')
-  return {
-    kind: 'step_artifact',
-    stepId,
-    artifact: artifact === 'merged_text'
+  if (!stepId) return undefined
+  const normalized: ArtifactName | undefined = artifact === 'captured_json'
+    ? 'captured_json'
+    : artifact === 'merged_text'
       ? 'merged_text'
       : artifact === 'extracted_text'
         ? 'extracted_text'
-        : 'captured_text',
-  }
+        : artifact === 'captured_text'
+          ? 'captured_text'
+          : undefined
+  if (!normalized) return undefined
+  return {
+    kind: 'step_artifact',
+    stepId,
+    artifact: normalized,
+  } as FlowV2StepArtifactSource
 }
 
 export function parallelOutputSourceKey(source: ParallelOutputSource): string {
@@ -65,7 +90,8 @@ export function parallelOutputSourceKey(source: ParallelOutputSource): string {
 }
 
 export function parallelOutputSourceFromKey(key: string): ParallelOutputSource {
-  return assignedArtifactSourceFromKey(key) ?? { kind: 'none' }
+  const source = assignedArtifactSourceFromKey(key)
+  return source && source.artifact !== 'captured_json' ? source : { kind: 'none' }
 }
 
 function collectArtifactChoicesBefore(
@@ -99,7 +125,9 @@ function collectArtifactChoicesBefore(
 }
 
 function artifactOutputForNode(node: FlowV2Node): ArtifactChoice | null {
-  if (node.type === 'capture-source') return artifactChoice(node.id, 'captured_text')
+  if (node.type === 'capture-source') {
+    return artifactChoice(node.id, node.capture.kind === 'structured-json' ? 'captured_json' : 'captured_text')
+  }
   if (node.type === 'parallel') return artifactChoice(node.id, 'merged_text')
   if (node.type === 'extract_text') return artifactChoice(node.id, 'extracted_text')
   return null
@@ -107,11 +135,11 @@ function artifactOutputForNode(node: FlowV2Node): ArtifactChoice | null {
 
 function artifactChoice(
   stepId: string,
-  artifact: FlowV2StepArtifactSource['artifact'],
+  artifact: ArtifactName,
 ): ArtifactChoice {
   return {
     label: `${stepId}.${artifact}`,
-    source: { kind: 'step_artifact', stepId, artifact },
+    source: { kind: 'step_artifact', stepId, artifact } as FlowV2StepArtifactSource,
   }
 }
 

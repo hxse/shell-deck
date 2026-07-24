@@ -15,6 +15,7 @@ import {
   validateTerminalReference,
 } from './macroReferenceValidation'
 import { validateFilterMatcher } from './macroTextMatchValidation'
+import { validateJsonPointer } from './structuredJson'
 
 type NodeValidator = (
   value: unknown,
@@ -104,7 +105,7 @@ function validateParallelLaneBody(
       exactKeys(childRecord, ['id', 'type', 'source'], context.issues, childPath)
       const source = object(childRecord.source, context.issues, `${childPath}.source`)
       if (source?.kind === 'none') exactKeys(source, ['kind'], context.issues, `${childPath}.source`)
-      else validateAssignedArtifact(childRecord.source, `${childPath}.source`, outputContext)
+      else validateAssignedArtifact(childRecord.source, `${childPath}.source`, outputContext, 'text')
       if (childIndex !== value.length - 1) add(context.issues, 'semantic_conflict', `${childPath}.type`, 'parallel lane output must be the final node')
       return
     }
@@ -129,7 +130,9 @@ function validateParallelLaneBody(
     if (childRecord.type === 'extract_text' && childRecord.onEmpty !== 'pause' && childRecord.onEmpty !== 'fail') {
       add(context.issues, 'semantic_conflict', `${childPath}.onEmpty`, 'parallel lane extract onEmpty must be pause or fail')
     }
-    if (typeof childRecord.id === 'string' && childRecord.type === 'capture-source') registerArtifact(outputContext, childRecord.id, 'captured_text')
+    if (typeof childRecord.id === 'string' && childRecord.type === 'capture-source') {
+      registerArtifact(outputContext, childRecord.id, childRecord.capture && typeof childRecord.capture === 'object' && (childRecord.capture as { kind?: unknown }).kind === 'structured-json' ? 'captured_json' : 'captured_text')
+    }
     if (typeof childRecord.id === 'string' && childRecord.type === 'extract_text') registerArtifact(outputContext, childRecord.id, 'extracted_text')
   })
   if (outputCount === 0) add(context.issues, 'semantic_conflict', path, 'parallel lane must declare final output')
@@ -212,9 +215,17 @@ export function validateTerminalControl(
 function validateCondition(value: unknown, path: string, context: ValidationContext): void {
   const condition = object(value, context.issues, path)
   if (!condition) return
+  if (condition.kind === 'json_match') {
+    exactKeys(condition, ['kind', 'source', 'pointer', 'matcher'], context.issues, path)
+    validateArtifactReference(condition.source, `${path}.source`, context, 'json')
+    const pointerIssue = validateJsonPointer(condition.pointer)
+    if (pointerIssue) add(context.issues, 'invalid_json_pointer', `${path}.pointer`, pointerIssue)
+    validateJsonMatcher(condition.matcher, `${path}.matcher`, context)
+    return
+  }
   exactKeys(condition, ['kind', 'source', 'matcher', 'scope'], context.issues, path)
-  if (condition.kind !== 'text_match') add(context.issues, 'invalid_literal', `${path}.kind`, 'condition kind must be text_match')
-  validateArtifactReference(condition.source, `${path}.source`, context)
+  if (condition.kind !== 'text_match') add(context.issues, 'invalid_literal', `${path}.kind`, 'condition kind must be text_match or json_match')
+  validateArtifactReference(condition.source, `${path}.source`, context, 'serializable')
   validateFilterMatcher(condition.matcher, `${path}.matcher`, context)
   const scope = object(condition.scope, context.issues, `${path}.scope`)
   if (!scope) return
@@ -224,4 +235,30 @@ function validateCondition(value: unknown, path: string, context: ValidationCont
     literal(scope.mode, ['first', 'last', 'any', 'all'], context.issues, `${path}.scope.mode`, 'unsupported line scope mode')
     if (scope.includeEmptyLines !== undefined) booleanValue(scope.includeEmptyLines, context.issues, `${path}.scope.includeEmptyLines`)
   } else add(context.issues, 'invalid_literal', `${path}.scope.kind`, 'scope kind must be whole or lines')
+}
+
+function validateJsonMatcher(value: unknown, path: string, context: ValidationContext): void {
+  const matcher = object(value, context.issues, path)
+  if (!matcher) return
+  if (matcher.kind === 'exists' || matcher.kind === 'not_exists') {
+    exactKeys(matcher, ['kind'], context.issues, path)
+    return
+  }
+  if (matcher.kind === 'equals' || matcher.kind === 'not_equals') {
+    exactKeys(matcher, ['kind', 'value'], context.issues, path)
+    if (!isJsonScalar(matcher.value)) add(context.issues, 'invalid_literal', `${path}.value`, 'JSON equality value must be a scalar')
+    return
+  }
+  if (['less_than', 'less_than_or_equal', 'greater_than', 'greater_than_or_equal'].includes(String(matcher.kind))) {
+    exactKeys(matcher, ['kind', 'value'], context.issues, path)
+    if (typeof matcher.value !== 'number' || !Number.isFinite(matcher.value)) {
+      add(context.issues, 'expected_number', `${path}.value`, 'JSON numeric matcher value must be a finite number')
+    }
+    return
+  }
+  add(context.issues, 'invalid_literal', `${path}.kind`, 'unsupported JSON match operation')
+}
+
+function isJsonScalar(value: unknown): value is string | number | boolean | null {
+  return value === null || typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))
 }

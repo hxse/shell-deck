@@ -67,6 +67,7 @@
   }
 
   function setCaptureKind(kind: CaptureSourceConfig['kind']): void {
+    if (kind === 'structured-json') return
     onUpdate((action: ParallelLaneActionNode) => {
       if (action.type === 'capture-source') action.capture = defaultParallelCaptureSource(kind)
     })

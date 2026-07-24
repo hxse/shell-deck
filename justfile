@@ -217,6 +217,10 @@ test-20260724a:
     HISTFILE=/dev/null bun test tests/integration/removedContentDomain20260724A.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/workbenchThemeMigration003.spec.ts tests/e2e/businessThemeContrastC.spec.ts tests/e2e/appRoomTerminalChrome002.spec.ts tests/e2e/comprehensiveUiBehaviorCurrent.spec.ts tests/e2e/uiThemeCloseout004.spec.ts
 
+test-20260724b:
+    bun run test:20260724b
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/structuredJsonCapture20260724B.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"
 
@@ -240,3 +244,7 @@ test: test-unit test-e2e
 # Shell-deck wrapped Codex entry. It is valid only inside a shell-deck-created Shell.
 codex *args:
     bun run scripts/shell-deck-codex.ts {{args}}
+
+# Submit one structured JSON value from stdin using this terminal's Room runtime context.
+submit-json:
+    bun run scripts/submitStructuredJson.ts

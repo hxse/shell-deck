@@ -4,15 +4,19 @@ import type {
   MacroTerminalReference,
   ParallelLane,
   ParallelLaneActionNode,
+  ParallelCaptureSourceConfig,
   ParallelLaneOutputNode,
   ParallelNode,
 } from '../../macro/macroDefinitionTypes'
-import { laneArtifactChoices, type ArtifactChoice } from '../../macro/macroArtifactChoices'
+import {
+  laneArtifactChoices,
+  textArtifactChoices,
+  type TextArtifactChoice,
+} from '../../macro/macroArtifactChoices'
 import { allMacroNodeIds } from '../../macro/macroEditorDefaults'
 import {
   isCaptureKindAllowed,
   terminalChoiceForIndex,
-  type CapabilityCaptureKind,
   type TerminalChoice,
 } from '../../macro/macroTerminalChoices'
 
@@ -133,9 +137,11 @@ export function parallelLaneActionPaletteItems(
 export function parallelLaneCaptureKinds(
   lane: ParallelLane,
   choices: TerminalChoice[],
-): CapabilityCaptureKind[] {
-  return parallelLaneTerminalChoice(lane, choices)?.capabilities.captureKinds
+): ParallelCaptureSourceConfig['kind'][] {
+  return (
+    parallelLaneTerminalChoice(lane, choices)?.capabilities.captureKinds
     ?? ['terminal-buffer', 'agent-event', 'text-box']
+  ).filter((kind): kind is ParallelCaptureSourceConfig['kind'] => kind !== 'structured-json')
 }
 
 export function parallelLaneCaptureAllowed(
@@ -183,8 +189,8 @@ export function unavailableParallelLaneTerminalValues(
 export function parallelLaneOutputSourceChoices(
   lane: ParallelLane,
   outputId: string,
-): ArtifactChoice[] {
-  return laneArtifactChoices(lane, outputId)
+): TextArtifactChoice[] {
+  return textArtifactChoices(laneArtifactChoices(lane, outputId))
 }
 
 export function duplicateParallelLaneId(

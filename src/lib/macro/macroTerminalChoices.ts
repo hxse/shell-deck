@@ -24,7 +24,7 @@ export type TerminalSelectState = {
 
 export function terminalCapabilities(type: TerminalType): MacroTerminalCapabilities {
   return type === 'shell'
-    ? { kind: 'shell', canWaitQuiet: true, captureKinds: ['terminal-buffer', 'agent-event'] }
+    ? { kind: 'shell', canWaitQuiet: true, captureKinds: ['terminal-buffer', 'agent-event', 'structured-json'] }
     : { kind: 'text', canWaitQuiet: false, captureKinds: ['text-box'] }
 }
 

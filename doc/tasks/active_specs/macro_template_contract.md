@@ -14,17 +14,28 @@ type MacroTerminalReference =
   | { kind: "unassigned" }
 ```
 
-该字段名固定为`terminal`，用于root Send/Input/terminal-quiet Wait、Capture config与Parallel lane。lane内Action继承lane terminal。required artifact slot使用`StepArtifactSource | {kind:"unassigned"}`，只覆盖If/Elif condition、root/lane Extract及Send/Notify artifact message part。Message artifact的`source`必须存在。`Input.defaultSource`仍是optional assigned-only；Parallel Output的`{kind:"none"}`仍表示明确不输出，不等同unassigned。
+该字段名固定为`terminal`，用于root Send/Input/terminal-quiet Wait、Capture config与Parallel lane。lane内Action继承lane terminal。artifact source按value family分为text与JSON；Message、Input default、Extract及`text_match`是正式textual consumer，可读取`captured_text | merged_text | extracted_text | captured_json`。text value逐字读取；JSON在read boundary递归按Unicode code point排序object key，并投影成无缩进、无末尾换行的canonical JSON，不双写字符串artifact。`json_match`只读取`captured_json`并保持typed比较。Parallel Output仍只读取lane-local text artifact。required source允许exact `{kind:"unassigned"}`；`Input.defaultSource`仍是optional assigned-only，Parallel Output的`{kind:"none"}`仍表示明确不输出。
 
-AgentEvent Capture还必须保存exact wait policy：
+AgentEvent与structured JSON Capture共享exact wait policy：
 
 ```ts
-type AgentEventWaitLimit =
+type CaptureWaitLimit =
   | { kind: "unbounded" }
   | { kind: "timeout"; timeoutMs: number }
 ```
 
-新建AgentEvent Capture默认unbounded。timeout branch要求positive integer毫秒并在到期时fail；其他Capture kind不得携带`waitLimit`。
+新建这两种Capture默认unbounded。timeout branch要求positive integer毫秒，只计算active waiting time并在到期时fail；其他Capture kind不得携带`waitLimit`。root Flow另支持：
+
+```ts
+{
+  kind: "structured-json"
+  terminal: MacroTerminalReference
+  schema: JsonSchema
+  waitLimit: CaptureWaitLimit
+}
+```
+
+`schema`按JSON Schema 2020-12独立编译；真正schema object位置上的`$ref`/`$dynamicRef`只接受以`#`开头的local fragment且不联网解析remote resource，检查只沿标准subschema keyword下钻，不能把`properties`/`$defs` map key或`const`/`enum`/`examples` instance data误当reference keyword。schema `$id`不能形成跨Macro registry或令同一saved schema重复validation失败。invalid schema以`invalid_json_schema`失败。structured Capture只产生`captured_json`；它不允许出现在Parallel lane，也不双写`captured_text`。
 
 App Notify channel的唯一current shape是`{kind:"app", toast:boolean, sound:NotificationSound, repeatCount:number, repeatIntervalMs:number}`。`repeatCount`表示包含首次呈现的总次数，必须是1到10的integer；`repeatIntervalMs`表示相邻呈现的间隔，必须是250到60000的integer。新建App channel默认3次、1000ms；两个字段始终required，缺失、fraction、越界或额外旧字段均fail loudly，不补默认、不迁移。
 
@@ -57,6 +68,8 @@ For text-list不提供header级`Add item`；每个item以icon-only `Insert item 
 Parallel schema、validator与runner不因authoring简化而变化，每条lane仍有且仅有一个final Output。UI以`Collect lane text`映射现有`output.source`：unchecked写入`{kind:"none"}`并隐藏id/source；checked只在存在earlier lane-local Capture/Extract时选择最靠后的artifact，否则保持unchecked并提示。只有任一lane收集text时显示merge separator与include-empty controls，`onLaneFail`始终可见。
 
 JSON editor保持纯文本语义，不读取Room、不补引用或wait policy。JSON Save使用V5 persistable gateway；合法unassigned与exact waitLimit必须原样round-trip。
+
+root Capture editor按所选Shell capability提供`structured-json`，保存raw JSON Schema与waitLimit；JSON parse失败或parse-valid但compile-invalid的schema编辑文本都作为逐字invalid draft保留并阻止Save，不能pretty-print或回退到上一个合法schema。Schema editor沿用普通multiline字段的默认自适应高度，不单独放大。合法Schema可打开theme-native建议提示词modal；提示词包含当前Schema、`just -f "$SHELL_DECK_JUSTFILE" submit-json` stdin命令、成功条件和schema mismatch重试说明，只供复制或手动选择，不自动改写任意Send。完整提示词由上下相同的`------------`包裹，分隔线与正文之间保留空行，区块前后各保留换行。clipboard失败时正文保持可见并提示手动复制，invalid Schema时入口disabled。If editor显式切换`text_match/json_match`：text matcher列出全部earlier artifact并按统一textual projection读取；JSON source只列earlier `captured_json`，使用JSON Pointer与typed scalar/number matcher。root/Parallel Send、Notify message、Input default与Extract Text同样列出earlier `captured_json`；Parallel capture palette仍过滤structured kind，final Output仍只列lane-local text。
 
 ## CRUD 与 editor lifecycle
 
@@ -93,6 +106,8 @@ Macro运行区只有一个`Prepare terminals`按钮。不存在Settings toggle�
 Start运行明确保存的MacroRecord revision；dirty Start严格串行Save/Create后使用response中的fresh revision。client与server都要求persistable、runnable、Room ready、expected record/structure revision和controller。成功后冻结definition、record revision、Room generation、structure revision以及每个index/type解析出的terminalId/launchId；Action执行期间不再按live index解析，也不重读MacroRecord。runner对任何意外unassigned做defensive fail loudly，绝不解释为空字符串、terminal 1、none、skip或continue。
 
 runner tight loop按固定budget执行macrotask cooperative yield并在yield后复核abort/pause。terminal-quiet比较frozen launch的单调outputActivityRevision，不比较截断replay长度。Input submit先durable append event再清pending/resume，append失败保留可重试input；每个run只能提交一个终态。
+
+structured Capture只等待同一Room generation、同一frozen terminalId/launchId通过`just submit-json`提交的第一份schema-valid JSON。每个live run最多一个pending structured waiter；没有step id、submission queue或独立端口。Pause保留waiter及已接受value，但只在Resume后完成step；Stop、Destroy、abort或restart清除。JSON If使用标准JSON Pointer：缺失目标的value comparison一律false（包括`not_equals`），equals保持scalar类型严格，number comparator只匹配number。
 
 active run属于live Room，不属于browser。server在WebSocket连接后立即发送一次包含最近durable tail的完整`runner_snapshot`；Start、step/current node、Pause/Resume、Waiting Input、input draft/submit、Stop和终态只广播state与新增event的`runner_delta`，rapid transition最多在25ms内合并。两者带Room-generation内单调`runtimeRevision`、冻结`runningMacro {recordId, recordRevision, definition}`、status/current node/error、runtime input和absolute event window metadata。client忽略旧revision并按eventSeq合并；发现gap时进入绑定Room/connection generation与本地token的single-flight HTTP完整snapshot repair，每批最多三次（立即、100ms、300ms），耗尽后保留pending并只由focus、reconnect或后续runner message继续，正常UI不polling。
 

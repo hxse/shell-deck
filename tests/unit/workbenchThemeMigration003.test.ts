@@ -36,9 +36,9 @@ describe('Macro workbench theme contract', () => {
       entries: inventory.length,
       digest: createHash('sha256').update(JSON.stringify(inventory)).digest('hex'),
     }).toEqual({
-      files: 24,
-      entries: 680,
-      digest: 'f007b846777a9b5168431e3a81e3db91062e500747d9b2b64b0116b1a279b5ea',
+      files: 25,
+      entries: 746,
+      digest: '3226c9df3c01a80f8c4524fbde2745a0c65996fea6122e65ab5bf61783036745',
     })
   })
 
@@ -71,12 +71,13 @@ describe('Macro workbench theme contract', () => {
       .split(',')
       .map((entry) => entry.trim()) ?? []
     expect(new Set(included)).toEqual(new Set([
-      'alert', 'badge', 'button', 'card', 'checkbox', 'fieldset', 'input', 'range', 'select', 'tab', 'textarea',
+      'alert', 'badge', 'button', 'card', 'checkbox', 'fieldset', 'input', 'modal', 'range', 'select', 'tab', 'textarea',
     ]))
   })
 
   test('recent Macro controls and non-color run feedback remain in their existing owners', () => {
     const flow = readFileSync(resolve(macroRoot, 'MacroControlNodeEditor.svelte'), 'utf8')
+    const condition = readFileSync(resolve(macroRoot, 'MacroConditionEditor.svelte'), 'utf8')
     const scalar = readFileSync(resolve(macroRoot, 'TemplatableScalarField.svelte'), 'utf8')
     const message = readFileSync(resolve(macroRoot, 'MessagePartsEditor.svelte'), 'utf8')
     const action = readFileSync(resolve(macroRoot, 'MacroActionNodeEditor.svelte'), 'utf8')
@@ -101,6 +102,8 @@ describe('Macro workbench theme contract', () => {
     expect(runDock).toContain('data-current-node-id')
     expect(editor).toContain('macro_run_active')
     expect(editor).toContain('disabled={hardDisabled}')
+    expect(condition).toContain('condition-json-pointer')
+    expect(condition).toContain('condition-json-matcher-kind')
   })
 
   test('compact geometry and nested overflow are expressed by static utilities', () => {

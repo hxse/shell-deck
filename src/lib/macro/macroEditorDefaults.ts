@@ -1,7 +1,9 @@
 import type {
   CaptureSourceConfig,
   FlowV2ArtifactSource,
+  FlowV2JsonArtifactSource,
   FlowV2Node,
+  JsonMatchCondition,
   MacroDefinitionV5,
   MacroTerminalReference,
   NotifyChannel,
@@ -12,7 +14,7 @@ import type {
   TextMatchCondition,
 } from './macroDefinitionTypes'
 
-export function unassignedArtifactSource(): FlowV2ArtifactSource {
+export function unassignedArtifactSource(): { kind: 'unassigned' } {
   return { kind: 'unassigned' }
 }
 
@@ -29,12 +31,25 @@ export function defaultCaptureSource(
       waitLimit: { kind: 'unbounded' },
     }
   }
+  if (kind === 'structured-json') {
+    return {
+      kind,
+      terminal,
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { decision: { type: 'string' } },
+        required: ['decision'],
+      },
+      waitLimit: { kind: 'unbounded' },
+    }
+  }
   if (kind === 'text-box') return { kind, terminal }
   return { kind, terminal, mode: 'scrollback-tail', maxChars: 20000 }
 }
 
 export function defaultParallelCaptureSource(
-  kind: CaptureSourceConfig['kind'],
+  kind: ParallelCaptureSourceConfig['kind'],
 ): ParallelCaptureSourceConfig {
   const { terminal: _terminal, ...capture } = defaultCaptureSource(kind)
   return capture as ParallelCaptureSourceConfig
@@ -46,6 +61,15 @@ export function defaultTextMatchCondition(source: FlowV2ArtifactSource): TextMat
     source,
     matcher: { kind: 'simple', op: 'contains', text: 'READY' },
     scope: { kind: 'whole' },
+  }
+}
+
+export function defaultJsonMatchCondition(source: FlowV2JsonArtifactSource): JsonMatchCondition {
+  return {
+    kind: 'json_match',
+    source,
+    pointer: '',
+    matcher: { kind: 'exists' },
   }
 }
 
@@ -155,7 +179,7 @@ export function defaultFlowNode(
 export function defaultParallelLaneAction(
   template: MacroDefinitionV5,
   type: ParallelLaneActionNode['type'],
-  captureKind: CaptureSourceConfig['kind'] = 'terminal-buffer',
+  captureKind: ParallelCaptureSourceConfig['kind'] = 'terminal-buffer',
 ): ParallelLaneActionNode {
   const id = uniqueMacroEditorKey(type.replace(/[^A-Za-z0-9_]/g, '_'), allMacroNodeIds(template.body))
   if (type === 'send') return { id, type, message: { parts: [] }, delivery: 'auto', ending: 'cr' }

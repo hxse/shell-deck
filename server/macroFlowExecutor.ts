@@ -75,10 +75,7 @@ async function executeNode(context: MacroFlowExecutionContext, node: FlowV2Node)
     return
   }
   if (node.type === 'if') {
-    const branch = node.branches.find((candidate) => matchesMacroCondition(
-      readMacroArtifact(context.artifacts, candidate.condition.source),
-      candidate.condition,
-    ))
+    const branch = node.branches.find((candidate) => matchesMacroCondition(context.artifacts, candidate.condition))
     if (branch) await executeNodes(context, branch.body)
     else if (node.else) await executeNodes(context, node.else)
     return

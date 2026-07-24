@@ -12,13 +12,14 @@ import {
   readMacroArtifact,
   renderMacroMessage,
   renderMacroScalar,
+  type MacroArtifactValue,
   type MacroArtifactMap,
 } from '../../server/macroTextEvaluation'
 
 describe('Macro runner execution extraction', () => {
   test('text, artifact, scoped template, condition and extract evaluation stay exact', () => {
     const artifacts: MacroArtifactMap = new Map([
-      ['capture', new Map([['captured_text', '  READY\nsecond\n']])],
+      ['capture', new Map([['captured_text', { kind: 'text', value: '  READY\nsecond\n' }]])],
     ])
     const binding = { index: 2, key: 'target', value: 'VALUE', forStepId: 'loop' }
 
@@ -36,13 +37,17 @@ describe('Macro runner execution extraction', () => {
     expect(assignedMacroTerminalIndex({ kind: 'terminal_index', index: 3 })).toBe(3)
     expect(() => assignedMacroTerminalIndex({ kind: 'unassigned' })).toThrow('unassigned_terminal_reference')
 
-    expect(matchesMacroCondition('first\nREADY\n', {
+    expect(matchesMacroCondition(new Map([
+      ['capture', new Map([['captured_text', { kind: 'text', value: 'first\nREADY\n' }]])],
+    ]), {
       kind: 'text_match',
       source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' },
       matcher: { kind: 'simple', op: 'equals', text: 'READY' },
       scope: { kind: 'lines', mode: 'any', includeEmptyLines: false },
     })).toBe(true)
-    expect(matchesMacroCondition('first\nlast', {
+    expect(matchesMacroCondition(new Map([
+      ['capture', new Map([['captured_text', { kind: 'text', value: 'first\nlast' }]])],
+    ]), {
       kind: 'text_match',
       source: { kind: 'step_artifact', stepId: 'capture', artifact: 'captured_text' },
       matcher: { kind: 'regex', pattern: '^last$' },
@@ -64,7 +69,7 @@ describe('Macro runner execution extraction', () => {
 
   test('nested For, If, Parallel and Finish preserve callback and lifecycle ordering', async () => {
     const artifacts: MacroArtifactMap = new Map([
-      ['seed', new Map([['captured_text', 'READY']])],
+      ['seed', new Map([['captured_text', { kind: 'text', value: 'READY' }]])],
     ])
     const trace: string[] = []
     const context = executionContext(artifacts, trace, [{
@@ -118,7 +123,8 @@ describe('Macro runner execution extraction', () => {
     expect(caught).toBeInstanceOf(MacroFlowSignal)
     expect((caught as MacroFlowSignal).signal).toBe('finish')
     expect(context.templateBindings).toEqual([])
-    expect(artifacts.get('parallel')?.get('merged_text')).toBe('[lane_a:A:1]READY\n\n[lane_b:B:2]')
+    expect(artifacts.get('parallel')?.get('merged_text'))
+      .toEqual({ kind: 'text', value: '[lane_a:A:1]READY\n\n[lane_b:B:2]' })
     expect(trace).toEqual([
       'checkpoint', 'step_started:loop',
       'checkpoint', 'step_started:branch',
@@ -182,8 +188,8 @@ function executionContext(
       appendEvent: (kind, data) => { trace.push(`${kind}:${String(data?.stepId ?? '')}`) },
       executeAction: async (node) => { trace.push(`action:${node.id}`) },
       persistArtifact: (stepId, name, value) => {
-        const outputs = artifacts.get(stepId) ?? new Map<string, string>()
-        outputs.set(name, value)
+        const outputs = artifacts.get(stepId) ?? new Map<string, MacroArtifactValue>()
+        outputs.set(name, { kind: 'text', value })
         artifacts.set(stepId, outputs)
         trace.push(`artifact:${stepId}:${name}`)
         return `artifact://${stepId}/${name}`

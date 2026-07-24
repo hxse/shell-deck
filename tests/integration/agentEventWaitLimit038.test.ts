@@ -9,7 +9,7 @@ import { NotificationService } from '../../server/notificationService'
 import { MacroRecordStore } from '../../server/sharedContentStore'
 import { TerminalRoomManager } from '../../server/terminalRoomManager'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
-import type { AgentEventWaitLimit, MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { CaptureWaitLimit, MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import type { RoomControlGrant } from '../../src/lib/roomControl'
 
@@ -91,7 +91,7 @@ test('a matching AgentEvent hook error fails immediately instead of leaving an u
   } finally { await harness.dispose() }
 })
 
-async function createHarness(waitLimit: AgentEventWaitLimit) {
+async function createHarness(waitLimit: CaptureWaitLimit) {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-agent-wait-038-'))
   const manager = new TerminalRoomManager()
   const room = manager.createRoom()
@@ -126,7 +126,7 @@ async function createHarness(waitLimit: AgentEventWaitLimit) {
   }
 }
 
-function definition(waitLimit: AgentEventWaitLimit): MacroDefinitionV5 {
+function definition(waitLimit: CaptureWaitLimit): MacroDefinitionV5 {
   return {
     schemaVersion: 5,
     name: 'Agent wait',

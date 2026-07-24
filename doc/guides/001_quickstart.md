@@ -57,6 +57,21 @@ shell_deck_room_context_required
 
 不存在 global ingest、manual identity、disk spool/import 或 unbound evidence fallback。
 
+### Structured JSON result
+
+需要Codex或其他terminal程序返回稳定字段时，不要解析普通assistant文字。Macro先用Send明确要求程序完成任务并在结果准备后执行：
+
+```bash
+printf '%s' '{"decision":"retry","confidence":0.82}' \
+  | just -f "$SHELL_DECK_JUSTFILE" submit-json
+```
+
+随后添加root `Capture → structured-json`，选择同一个Shell、填写JSON Schema并设置可选timeout。Schema字段与普通多行文本使用相同的自适应高度；Schema合法后可点击`View suggested prompt`查看包含当前Schema和提交命令的完整参考提示词，再把它复制到需要的Send。参考提示词由上下相同的`------------`包裹，分隔线与正文之间以及整个区块前后都用换行隔离。modal中的`Copy`只是快捷方式；clipboard权限被拒绝时正文仍可选中，并会提示手动`Ctrl/Cmd+A`、`Ctrl/Cmd+C`。它不会猜测或自动改写某个Send。
+
+`SHELL_DECK_JUSTFILE`由shell-deck Shell注入为当前checkout的canonical absolute justfile路径，因此terminal cwd或项目checkout位置变化不会让参考命令失效。命令没有Room或step参数；它从当前shell-deck Shell继承Room generation、terminalId、launchId、URL与memory-only token，因此普通外部terminal缺少完整context，其他Room或旧launch也不能误投。
+
+server只接受当前run在该terminal等待的第一份schema-valid JSON。schema不匹配时命令打印`structured_json_schema_mismatch`及issues，Capture继续等待，可修正后重新提交；Pause期间可接收但Resume后才推进，Stop会取消等待。Capture输出typed `captured_json`。后续If可选择`json_match`，用JSON Pointer（例如`/decision`）和typed equals/number matcher分支；也可把它选作root/Parallel Send、Notify message、Input default、Extract Text或`text_match`的source。后一类textual consumer统一读取成key稳定排序的compact单行JSON且不附加换行，所以Send仍只由自己的Ending sequence决定是否提交；artifact本身不会双写成text。structured Capture本身仍不能放进Parallel lane，Parallel final Output也只收集lane-local text。
+
 ## 长期数据
 
 User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord、run/artifact evidence、AgentEvent evidence和notification config都在这里；它们不属于 Room 或 terminal cwd。current runtime只管理`macros/`、`runs/`、`agent-events/`与`.locks/`。
@@ -73,7 +88,7 @@ just notification-config-init
 
 新Room默认不选择Macro。点击Macro面板的New创建client-local draft；Save只校验并保存portable、persistable的`MacroDefinitionV5`，不要求当前Room已有匹配terminal。definition只保存连续terminal index/type，不保存terminalId、cwd或Room identity。terminal target与必填artifact source使用exact tagged reference；新slot默认`{kind:"unassigned"}`，可Save但不可Start，旧primitive `terminalIndex`与空`stepId`写法会直接失败。
 
-AgentEvent Capture新增`Enable timeout`。默认关闭并保存`waitLimit:{kind:"unbounded"}`，一直等待Codex结果或用户Stop；开启后保存显式duration，Pause期间不计算超时时间。server不再存在隐藏的10分钟AgentEvent超时。
+AgentEvent与structured JSON Capture提供`Enable timeout`。默认关闭并保存`waitLimit:{kind:"unbounded"}`，一直等待结果或用户Stop；开启后保存显式duration，Pause期间不计算超时时间。server不存在隐藏的10分钟Capture超时。
 
 需要调整当前Room terminal顺序/类型时，显式点击Start左侧的`Prepare terminals`。它读取当前visual draft或JSON Edit buffer的terminal layout；切换Macro、Save、Start和terminal变化都不会自动Prepare。Prepare只keep/move/create/insert，不删除或修复failed/exited terminal。
 
@@ -98,4 +113,5 @@ just test-037
 just test-038
 just test-039
 just test-20260724a
+just test-20260724b
 ```

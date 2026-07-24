@@ -1,4 +1,4 @@
-import type { MacroTerminalLayoutItem, TerminalType } from './macroDefinitionTypes'
+import type { ArtifactName, MacroTerminalLayoutItem, TerminalType } from './macroDefinitionTypes'
 import { add, finishIssues, type MacroDefinitionIssue, type ValidationContext } from './macroValidationContext'
 import { exactKeys, literal, object, positiveInteger, stringValue, type RecordValue } from './macroValidationPrimitives'
 
@@ -6,7 +6,12 @@ export type MacroTerminalLayoutValidation =
   | { ok: true; value: MacroTerminalLayoutItem[] }
   | { ok: false; issues: MacroDefinitionIssue[] }
 
-type TerminalCapability = 'send' | 'input' | 'terminal-quiet' | 'terminal-buffer' | 'text-box' | 'agent-event' | 'parallel'
+type TerminalCapability = 'send' | 'input' | 'terminal-quiet' | 'terminal-buffer' | 'text-box' | 'agent-event' | 'structured-json' | 'parallel'
+export type ArtifactFamily = 'text' | 'json' | 'serializable'
+
+const TEXT_ARTIFACTS = ['captured_text', 'merged_text', 'extracted_text'] as const
+const JSON_ARTIFACTS = ['captured_json'] as const
+const SERIALIZABLE_ARTIFACTS = [...TEXT_ARTIFACTS, ...JSON_ARTIFACTS] as const
 
 export function validateMacroTerminalLayout(input: unknown, path = 'terminalLayout'): MacroTerminalLayoutValidation {
   const issues: MacroDefinitionIssue[] = []
@@ -30,7 +35,7 @@ export function validateMacroTerminalLayout(input: unknown, path = 'terminalLayo
   return issues.length === 0 ? { ok: true, value } : { ok: false, issues: finishIssues(issues) }
 }
 
-export function validateArtifactReference(value: unknown, path: string, context: ValidationContext): void {
+export function validateArtifactReference(value: unknown, path: string, context: ValidationContext, family: ArtifactFamily): void {
   const source = object(value, context.issues, path)
   if (!source) return
   if (source.kind === 'unassigned') {
@@ -38,13 +43,13 @@ export function validateArtifactReference(value: unknown, path: string, context:
     if (context.mode === 'runnable') add(context.issues, 'unassigned_artifact_reference', path, 'artifact source must be assigned before Start')
     return
   }
-  validateAssignedArtifactObject(source, path, context)
+  validateAssignedArtifactObject(source, path, context, family)
 }
 
-export function validateAssignedArtifact(value: unknown, path: string, context: ValidationContext): void {
+export function validateAssignedArtifact(value: unknown, path: string, context: ValidationContext, family: ArtifactFamily): void {
   const source = object(value, context.issues, path)
   if (!source) return
-  validateAssignedArtifactObject(source, path, context)
+  validateAssignedArtifactObject(source, path, context, family)
 }
 
 export function validateTerminalSlot(value: unknown, inherited: number | null | undefined, capability: TerminalCapability, path: string, context: ValidationContext): number | null | undefined {
@@ -75,11 +80,16 @@ export function validateTerminalReference(value: unknown, capability: TerminalCa
   return index
 }
 
-function validateAssignedArtifactObject(source: RecordValue, path: string, context: ValidationContext): void {
+function validateAssignedArtifactObject(source: RecordValue, path: string, context: ValidationContext, family: ArtifactFamily): void {
   exactKeys(source, ['kind', 'stepId', 'artifact'], context.issues, path)
   if (source.kind !== 'step_artifact') add(context.issues, 'invalid_literal', `${path}.kind`, 'artifact source kind must be step_artifact')
   const stepId = stringValue(source.stepId, context.issues, `${path}.stepId`, { nonEmpty: true })
-  const artifact = literal(source.artifact, ['captured_text', 'merged_text', 'extracted_text'], context.issues, `${path}.artifact`, 'unsupported artifact name')
+  const allowed = family === 'json'
+    ? JSON_ARTIFACTS
+    : family === 'text'
+      ? TEXT_ARTIFACTS
+      : SERIALIZABLE_ARTIFACTS
+  const artifact = literal<ArtifactName>(source.artifact, allowed, context.issues, `${path}.artifact`, `artifact must be a ${family} output`)
   if (stepId && artifact && !context.artifactOutputs.get(stepId)?.has(artifact)) add(context.issues, 'invalid_reference', path, 'artifact source must reference an earlier compatible output')
 }
 

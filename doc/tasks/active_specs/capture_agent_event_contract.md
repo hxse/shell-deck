@@ -1,4 +1,4 @@
-# AgentEvent Foundation Contract
+# Capture Ingest Contract
 
 Live ingest 的唯一入口为 `POST /api/rooms/:roomId/agent-events`。server 每次启动生成 memory-only ingest token，并只向自己创建的 Shell 注入 ingest URL/token、server/Room generation、terminalId 与 launchId。
 
@@ -11,3 +11,11 @@ Macro `capture-source`只能消费与frozen run snapshot的serverInstanceId、ro
 AgentEvent Capture必须显式保存`waitLimit`。`{kind:"unbounded"}`无限等待匹配结果，直到成功、用户Stop、Room/launch失效、server restart或matching `agent.error`；不存在隐藏server timeout。`{kind:"timeout",timeoutMs}`只计算active waiting time，Pause期间冻结，超时以`agent_event_capture_timeout:<terminalId>` fail loudly。matching hook error以`agent_event_hook_error:<terminalId>`立即失败。迟到event只保留为evidence，不复活终态run；下一次Start的baseline必须忽略它。
 
 成功capture写入run artifact与`artifact_created` evidence，但AgentEvent、artifact和Trace永不用于恢复Room或runner。server restart、Room generation或launch变化后，旧event不能满足新run capture。
+
+## Structured JSON submission
+
+structured结果使用同一memory-only ingest token与terminal runtime identity，但走专用`POST /api/rooms/:roomId/structured-results`。Shell同时注入`SHELL_DECK_SUBMIT_JSON_URL`与当前checkout canonical absolute `SHELL_DECK_JUSTFILE`；terminal内程序以`just -f "$SHELL_DECK_JUSTFILE" submit-json`从stdin读取一个JSON value。recipe不接受Room、terminal、step或token参数，缺完整runtime context以`structured_json_room_context_required`失败，非法stdin以`structured_json_invalid_json`失败。
+
+body exact包含`protocolVersion:1`、roomGeneration、terminalId、launchId与value。server依次验证token、exact body、path Room active、terminal launch membership、matching active waiter和Capture冻结的JSON Schema。token错误返回`structured_json_ingest_token_invalid`，malformed/non-exact body返回`structured_json_submission_invalid`；body通过后，malformed path、inactive Room或runtime identity不匹配统一返回`structured_json_runtime_membership_mismatch`，其余等待/校验错误返回`structured_json_capture_not_waiting`或带确定性issues的`structured_json_schema_mismatch`；失败提交不消费waiter。
+
+structured Capture只允许root Flow，并只产生typed `captured_json`。schema采用JSON Schema 2020-12、每次validation独立编译；真正subschema object的`$ref`/`$dynamicRef`只解析以`#`开头的local fragment且不联网，property/map key与instance data中的同名字段不当作keyword。第一份合法提交原子消费当前terminal唯一waiter；Pause可接受并保留结果但Resume后才推进，Stop/Destroy/restart清除，timeout只计算active time。不同Room/generation/terminal/launch的提交不能交叉消费。

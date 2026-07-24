@@ -2,6 +2,7 @@ import type { MacroDefinitionIssue } from '../src/lib/macro/macroDefinitionValid
 import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
 import type { FrozenTerminalBinding, MacroRunnerSnapshot } from '../src/lib/macro/runnerTypes'
 import type { TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
+import type { StructuredJsonValidator, JsonValue } from '../src/lib/macro/structuredJson'
 import type { MacroArtifactMap } from './macroTextEvaluation'
 
 export type PendingInputResult =
@@ -15,6 +16,13 @@ export type PendingInput = {
   draft: string
   inputRevision: number
   resolve: (result: PendingInputResult) => void
+}
+
+export type PendingStructuredCapture = {
+  stepId: string
+  binding: FrozenTerminalBinding
+  validator: StructuredJsonValidator
+  submittedValue: JsonValue | undefined
 }
 
 export type LiveRun = {
@@ -34,6 +42,7 @@ export type LiveRun = {
   abortController: AbortController
   pauseWaiters: Array<() => void>
   pendingInput: PendingInput | null
+  pendingStructuredCapture: PendingStructuredCapture | null
   artifacts: MacroArtifactMap
   templateBindings: TextListTemplateBinding[]
   parallelProgress: Map<string, number>
@@ -77,6 +86,7 @@ export function createLiveRun(input: {
     abortController: new AbortController(),
     pauseWaiters: [],
     pendingInput: null,
+    pendingStructuredCapture: null,
     artifacts: new Map(),
     templateBindings: [],
     parallelProgress: new Map(),

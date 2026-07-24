@@ -3,6 +3,10 @@ import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot, MacroRunTrace } from '../src/lib/macro/runnerTypes'
 import { MacroRunnerLifecycle } from './macroRunnerLifecycle'
 import type { MacroStartPreflight } from './macroRunnerLiveState'
+import type {
+  StructuredJsonSubmission,
+  StructuredJsonSubmissionResult,
+} from './macroStructuredCapture'
 import type { NotificationDispatcher } from './notificationService'
 import type { MacroRunStore } from './macroRunStore'
 import type { MacroRecordStore } from './sharedContentStore'
@@ -66,6 +70,13 @@ export class MacroRunnerService {
 
   stop(roomId: string): MacroRunnerSnapshot {
     return this.lifecycle.stop(roomId)
+  }
+
+  submitStructuredJson(
+    roomId: string,
+    submission: StructuredJsonSubmission,
+  ): StructuredJsonSubmissionResult {
+    return this.lifecycle.submitStructuredJson(roomId, submission)
   }
 
   updateInputDraft(

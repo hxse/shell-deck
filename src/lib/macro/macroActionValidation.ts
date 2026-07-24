@@ -20,6 +20,7 @@ import {
   validateTerminalSlot,
 } from './macroReferenceValidation'
 import { validateFilterMatcher } from './macroTextMatchValidation'
+import { compileStructuredJsonSchema } from './structuredJson'
 
 export function validateSend(node: RecordValue, path: string, context: ValidationContext, inherited: number | null | undefined): void {
   exactKeys(node, inherited === undefined ? ['id', 'type', 'terminal', 'message', 'delivery', 'ending'] : ['id', 'type', 'message', 'delivery', 'ending'], context.issues, path)
@@ -36,7 +37,7 @@ export function validateInput(node: RecordValue, path: string, context: Validati
   booleanValue(node.allowEmpty, context.issues, `${path}.allowEmpty`)
   if (!isTerminalInputDelivery(node.delivery)) add(context.issues, 'invalid_literal', `${path}.delivery`, 'delivery must be auto, direct-bytes or bracketed-paste')
   if (!isTerminalEnding(node.ending)) add(context.issues, 'invalid_literal', `${path}.ending`, 'ending must be none, lf, cr or crlf')
-  if (node.defaultSource !== undefined) validateAssignedArtifact(node.defaultSource, `${path}.defaultSource`, context)
+  if (node.defaultSource !== undefined) validateAssignedArtifact(node.defaultSource, `${path}.defaultSource`, context, 'serializable')
 }
 
 export function validateNotify(node: RecordValue, path: string, context: ValidationContext): void {
@@ -113,12 +114,21 @@ export function validateCaptureNode(node: RecordValue, path: string, context: Va
       if (agent.kind !== 'codex') add(context.issues, 'invalid_literal', `${path}.capture.agent.kind`, 'agent kind must be codex')
     }
     literal(capture.captureMode, ['result_only', 'prompt_only', 'prompt_and_result'], context.issues, `${path}.capture.captureMode`, 'unsupported agent capture mode')
-    validateAgentEventWaitLimit(capture.waitLimit, `${path}.capture.waitLimit`, context)
-  } else add(context.issues, 'invalid_literal', `${path}.capture.kind`, 'capture kind must be terminal-buffer, text-box or agent-event')
-  if (typeof node.id === 'string') registerArtifact(context, node.id, 'captured_text')
+    validateCaptureWaitLimit(capture.waitLimit, `${path}.capture.waitLimit`, context)
+  } else if (capture.kind === 'structured-json') {
+    exactKeys(capture, ['kind', ...inheritedKeys, 'schema', 'waitLimit'], context.issues, `${path}.capture`)
+    validateTerminalSlot(capture.terminal, inherited, 'structured-json', `${path}.capture.terminal`, context)
+    if (inherited !== undefined) {
+      add(context.issues, 'semantic_conflict', `${path}.capture.kind`, 'structured-json capture is only supported in root flow')
+    }
+    const compiled = compileStructuredJsonSchema(capture.schema)
+    if (!compiled.ok) add(context.issues, 'invalid_json_schema', `${path}.capture.schema`, compiled.message)
+    validateCaptureWaitLimit(capture.waitLimit, `${path}.capture.waitLimit`, context)
+  } else add(context.issues, 'invalid_literal', `${path}.capture.kind`, 'capture kind must be terminal-buffer, text-box, agent-event or structured-json')
+  if (typeof node.id === 'string') registerArtifact(context, node.id, capture.kind === 'structured-json' ? 'captured_json' : 'captured_text')
 }
 
-function validateAgentEventWaitLimit(value: unknown, path: string, context: ValidationContext): void {
+function validateCaptureWaitLimit(value: unknown, path: string, context: ValidationContext): void {
   const waitLimit = object(value, context.issues, path)
   if (!waitLimit) return
   if (waitLimit.kind === 'unbounded') exactKeys(waitLimit, ['kind'], context.issues, path)
@@ -130,7 +140,7 @@ function validateAgentEventWaitLimit(value: unknown, path: string, context: Vali
 
 export function validateExtract(node: RecordValue, path: string, context: ValidationContext): void {
   exactKeys(node, ['id', 'type', 'source', 'split', 'filters', 'select', 'extract', 'trim', 'onEmpty'], context.issues, path)
-  validateArtifactReference(node.source, `${path}.source`, context)
+  validateArtifactReference(node.source, `${path}.source`, context, 'serializable')
   validateSplit(node.split, `${path}.split`, context)
   if (!Array.isArray(node.filters)) add(context.issues, 'expected_array', `${path}.filters`, 'filters must be an array')
   else node.filters.forEach((filter, index) => validateFilter(filter, `${path}.filters[${index}]`, context))
@@ -161,7 +171,7 @@ function validateMessage(value: unknown, path: string, context: ValidationContex
       validateTemplateString(part.template, `${partPath}.template`, context)
     } else if (part.kind === 'artifact') {
       exactKeys(part, ['kind', 'source'], context.issues, partPath)
-      validateArtifactReference(part.source, `${partPath}.source`, context)
+      validateArtifactReference(part.source, `${partPath}.source`, context, 'serializable')
     } else add(context.issues, 'invalid_literal', `${partPath}.kind`, 'message part kind must be text, template or artifact')
   })
 }

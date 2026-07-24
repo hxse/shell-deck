@@ -62,9 +62,9 @@
   }
 
   function captureKindsForReference(reference: MacroTerminalReference): CapabilityCaptureKind[] {
-    if (reference.kind !== 'terminal_index') return ['terminal-buffer', 'agent-event', 'text-box']
+    if (reference.kind !== 'terminal_index') return ['terminal-buffer', 'agent-event', 'structured-json', 'text-box']
     return terminalChoiceForIndex(reference.index, terminalChoices())?.capabilities.captureKinds
-      ?? ['terminal-buffer', 'agent-event', 'text-box']
+      ?? ['terminal-buffer', 'agent-event', 'structured-json', 'text-box']
   }
 
   function captureAllowed(capture: CaptureSourceConfig): boolean {

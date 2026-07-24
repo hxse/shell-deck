@@ -3,9 +3,12 @@
   import MacroIconButton from "./MacroIconButton.svelte"
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN, scopedTemplateSyntaxIssue } from "../../macro/scopedTextTemplate"
   import { messageTextPartValue, withMessagePartTemplateMode, type TextTemplateScope } from "../../macro/scopedTextTemplateEditor"
-  import type { FlowV2ArtifactSource, FlowV2StepArtifactSource, MessagePart, MessageSpec } from '../../macro/macroDefinitionTypes'
-
-  export type ArtifactChoice = { label: string; source: FlowV2StepArtifactSource }
+  import type { MessagePart, MessageSpec } from '../../macro/macroDefinitionTypes'
+  import {
+    artifactSourceFromKey,
+    artifactSourceKey,
+    type ArtifactChoice,
+  } from '../../macro/macroArtifactChoices'
 
   let {
     message,
@@ -27,20 +30,6 @@
 
   function cloneMessage(): MessageSpec {
     return JSON.parse(JSON.stringify(message)) as MessageSpec
-  }
-
-  function sourceKey(source: FlowV2ArtifactSource): string {
-    return source.kind === 'step_artifact' ? source.stepId + ":" + source.artifact : ""
-  }
-
-  function sourceFromKey(key: string): FlowV2ArtifactSource {
-    if (!key) return { kind: 'unassigned' }
-    const [stepId, artifact] = key.split(":")
-    return {
-      kind: "step_artifact",
-      stepId,
-      artifact: artifact === "merged_text" ? "merged_text" : artifact === "extracted_text" ? "extracted_text" : "captured_text",
-    }
   }
 
   function addTextPart() {
@@ -78,7 +67,7 @@
     const next = cloneMessage()
     const part = next.parts[index]
     if (part?.kind !== "artifact") return
-    part.source = sourceFromKey(key)
+    part.source = artifactSourceFromKey(key)
     onChange(next)
   }
 
@@ -160,8 +149,8 @@
         </label>
       {:else}
         <label>Source artifact
-          <select class="select box-border select-xs select-ghost w-full bg-base-content/15" class:select-warning={part.source.kind === 'unassigned'} data-testid="message-source-part" value={sourceKey(part.source)} onchange={(event) => updateArtifactPart(partIndex, event.currentTarget.value)}>
-            <option value="">Unassigned</option>{#each choices as choice}<option value={sourceKey(choice.source)}>{choice.label}</option>{/each}
+          <select class="select box-border select-xs select-ghost w-full bg-base-content/15" class:select-warning={part.source.kind === 'unassigned'} data-testid="message-source-part" value={artifactSourceKey(part.source)} onchange={(event) => updateArtifactPart(partIndex, event.currentTarget.value)}>
+            <option value="">Unassigned</option>{#each choices as choice}<option value={artifactSourceKey(choice.source)}>{choice.label}</option>{/each}
           </select>
         </label>
         {#if part.source.kind === 'unassigned'}

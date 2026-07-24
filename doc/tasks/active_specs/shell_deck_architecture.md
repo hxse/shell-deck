@@ -40,7 +40,9 @@ production Macro采用`MacroDefinitionV5`与`MacroRecord` envelope分层。defin
 
 terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
 
-runner把manifest、append-only events和artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、run snapshot和structure lock只在live process内。日志从不恢复runner。
+runner把manifest、append-only events和typed text/JSON artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、pending structured Capture、run snapshot和structure lock只在live process内。日志从不恢复runner。
+
+Shell启动时除AgentEvent hook context外还注入structured-result URL、同一memory-only ingest token与当前checkout canonical `SHELL_DECK_JUSTFILE`。`just -f "$SHELL_DECK_JUSTFILE" submit-json`从stdin提交当前Room generation与terminal launch的JSON；现有HTTP server按token、exact body、path Room/membership顺序只交给该Room live runner当前唯一matching waiter，不增加端口、step id或queue。Capture冻结JSON Schema 2020-12，成功后产生typed `captured_json`；JSON If通过JSON Pointer与typed matcher消费。Send/Notify message、Input default、Extract Text与`text_match`作为textual boundary可读取JSON，并统一得到key排序、compact、无末尾换行的canonical JSON；这不产生第二份text artifact。Parallel final Output仍只接受lane-local text。
 
 正常runner UI不polling。连接/重连收到完整、revisioned runner snapshot，后续状态由server push；Running Macro是Room共享的冻结只读配置，不覆盖各browser本地正在查看或编辑的Macro。runtime input draft也由server内存持有并在single-controller takeover后继续。
 

@@ -1,4 +1,4 @@
-import { readFileSync, unlinkSync } from 'node:fs'
+import { readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { createGeneratedSuffix } from '../src/lib/generatedId'
@@ -23,6 +23,8 @@ import { createServerPidRecord, parseServerPidRecord } from './serverProcessIden
 import { MacroRecordStore, type SharedContentStoreOptions } from './sharedContentStore'
 import { ROOM_CONTROL_HEARTBEAT_MS, TerminalRoomManager } from './terminalRoomManager'
 import { initializeUserDataRoot, resolveUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
+
+const SHELL_DECK_JUSTFILE = realpathSync(resolve(import.meta.dir, '../justfile'))
 
 export type ShellDeckServer = {
   url: string
@@ -146,6 +148,8 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     SHELL_DECK_TERMINAL_ID: context.terminalId,
     SHELL_DECK_LAUNCH_ID: context.launchId,
     SHELL_DECK_INGEST_URL: 'http://127.0.0.1:' + server.port + '/api/rooms/' + context.roomId + '/agent-events',
+    SHELL_DECK_SUBMIT_JSON_URL: 'http://127.0.0.1:' + server.port + '/api/rooms/' + context.roomId + '/structured-results',
+    SHELL_DECK_JUSTFILE,
     SHELL_DECK_INGEST_TOKEN: ingestToken,
   }))
 

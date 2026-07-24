@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks'
 import type { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import type { AgentEvent, AgentEventMatch } from '../src/lib/agentEvents/agentEventTypes'
-import type { AgentEventCaptureMode, AgentEventWaitLimit, FlowV2Node } from '../src/lib/macro/macroDefinitionTypes'
+import type { AgentEventCaptureMode, CaptureWaitLimit, FlowV2Node } from '../src/lib/macro/macroDefinitionTypes'
 import type { FrozenTerminalBinding } from '../src/lib/macro/runnerTypes'
 
 type CaptureAgentEventKind = 'agent.prompt_submitted' | 'agent.output' | 'agent.error'
@@ -50,7 +50,7 @@ export async function waitForMacroAgentEventCapture(
   stepId: string,
   binding: FrozenTerminalBinding,
   captureMode: AgentEventCaptureMode,
-  waitLimit: AgentEventWaitLimit,
+  waitLimit: CaptureWaitLimit,
 ): Promise<{ text: string; raw: unknown; events: AgentEvent[] }> {
   const startedAtMs = performance.now()
   const pausedAtStartMs = context.totalPausedMs(startedAtMs)

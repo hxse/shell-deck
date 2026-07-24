@@ -1,5 +1,6 @@
 import type { TerminalEnding } from './terminalEnding'
 import type { TerminalInputDelivery } from './terminalInputDelivery'
+import type { JsonScalar, JsonSchema } from './structuredJson'
 
 export type { TerminalEnding } from './terminalEnding'
 export type { ResolvedTerminalInputDelivery, TerminalInputDelivery } from './terminalInputDelivery'
@@ -18,19 +19,26 @@ export type NotifyChannel =
   | { kind: 'telegram'; profileId: string }
 
 export type AgentEventCaptureMode = 'result_only' | 'prompt_only' | 'prompt_and_result'
-export type AgentEventWaitLimit = { kind: 'unbounded' } | { kind: 'timeout'; timeoutMs: number }
+export type CaptureWaitLimit = { kind: 'unbounded' } | { kind: 'timeout'; timeoutMs: number }
 export type CaptureSourceConfig =
   | { kind: 'terminal-buffer'; terminal: MacroTerminalReference; mode: 'scrollback-tail' | 'raw-stream-tail'; maxChars: number }
   | { kind: 'text-box'; terminal: MacroTerminalReference }
-  | { kind: 'agent-event'; agent: { kind: 'codex' }; terminal: MacroTerminalReference; captureMode: AgentEventCaptureMode; waitLimit: AgentEventWaitLimit }
+  | { kind: 'agent-event'; agent: { kind: 'codex' }; terminal: MacroTerminalReference; captureMode: AgentEventCaptureMode; waitLimit: CaptureWaitLimit }
+  | { kind: 'structured-json'; terminal: MacroTerminalReference; schema: JsonSchema; waitLimit: CaptureWaitLimit }
 export type ParallelCaptureSourceConfig =
   | Omit<Extract<CaptureSourceConfig, { kind: 'terminal-buffer' }>, 'terminal'>
   | Omit<Extract<CaptureSourceConfig, { kind: 'text-box' }>, 'terminal'>
   | Omit<Extract<CaptureSourceConfig, { kind: 'agent-event' }>, 'terminal'>
 
-export type ArtifactName = 'captured_text' | 'merged_text' | 'extracted_text'
-export type FlowV2StepArtifactSource = { kind: 'step_artifact'; stepId: string; artifact: ArtifactName }
+export type TextArtifactName = 'captured_text' | 'merged_text' | 'extracted_text'
+export type JsonArtifactName = 'captured_json'
+export type ArtifactName = TextArtifactName | JsonArtifactName
+export type FlowV2TextStepArtifactSource = { kind: 'step_artifact'; stepId: string; artifact: TextArtifactName }
+export type FlowV2JsonStepArtifactSource = { kind: 'step_artifact'; stepId: string; artifact: JsonArtifactName }
+export type FlowV2StepArtifactSource = FlowV2TextStepArtifactSource | FlowV2JsonStepArtifactSource
 export type FlowV2ArtifactSource = FlowV2StepArtifactSource | { kind: 'unassigned' }
+export type FlowV2TextArtifactSource = FlowV2TextStepArtifactSource | { kind: 'unassigned' }
+export type FlowV2JsonArtifactSource = FlowV2JsonStepArtifactSource | { kind: 'unassigned' }
 export type ScopedTemplateText = { kind: 'template'; template: string }
 export type TemplatableScalarText = string | ScopedTemplateText
 export type MessagePart = { kind: 'text'; text: string } | ScopedTemplateText | { kind: 'artifact'; source: FlowV2ArtifactSource }
@@ -53,6 +61,25 @@ export type TextMatchCondition = {
   matcher: TextFilterMatcher
   scope: { kind: 'whole' } | { kind: 'lines'; mode: 'first' | 'last' | 'any' | 'all'; includeEmptyLines?: boolean }
 }
+export type JsonMatchKind =
+  | 'exists'
+  | 'not_exists'
+  | 'equals'
+  | 'not_equals'
+  | 'less_than'
+  | 'less_than_or_equal'
+  | 'greater_than'
+  | 'greater_than_or_equal'
+export type JsonMatchCondition = {
+  kind: 'json_match'
+  source: FlowV2JsonArtifactSource
+  pointer: string
+  matcher:
+    | { kind: 'exists' | 'not_exists' }
+    | { kind: 'equals' | 'not_equals'; value: JsonScalar }
+    | { kind: 'less_than' | 'less_than_or_equal' | 'greater_than' | 'greater_than_or_equal'; value: number }
+}
+export type MacroCondition = TextMatchCondition | JsonMatchCondition
 
 export type SendNode = { id: string; type: 'send'; terminal: MacroTerminalReference; message: MessageSpec; delivery: TerminalInputDelivery; ending: TerminalEnding }
 export type NotifyNode = { id: string; type: 'notify'; level: NotificationLevel; title: TemplatableScalarText; message: MessageSpec; channels: NotifyChannel[]; onFailure: NotificationFailureAction }
@@ -70,14 +97,14 @@ export type ParallelLaneActionNode =
   | (Omit<Extract<WaitNode, { mode: 'terminal-quiet' }>, 'terminal' | 'onTimeout'> & { onTimeout: 'pause' })
   | { id: string; type: 'capture-source'; capture: ParallelCaptureSourceConfig }
   | (Omit<ExtractTextNode, 'onEmpty'> & { onEmpty: 'pause' | 'fail' })
-export type ParallelLaneOutputNode = { id: string; type: 'output'; source: FlowV2StepArtifactSource | { kind: 'none' } }
+export type ParallelLaneOutputNode = { id: string; type: 'output'; source: FlowV2TextStepArtifactSource | { kind: 'none' } }
 export type ParallelOutputSource = ParallelLaneOutputNode['source']
 export type ParallelLaneNode = ParallelLaneActionNode | ParallelLaneOutputNode
 export type ParallelLane = { id: string; label: string; terminal: MacroTerminalReference; body: ParallelLaneNode[] }
 export type ParallelNode = { id: string; type: 'parallel'; lanes: ParallelLane[]; merge: { kind: 'sectioned_text'; separator: string; includeEmptyOutputs: boolean }; onLaneFail: 'pause' | 'fail' }
 
 export type FlowV2ActionNode = SendNode | NotifyNode | InputNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
-export type FlowV2IfBranch = { kind: 'if' | 'elif'; condition: TextMatchCondition; body: FlowV2Node[] }
+export type FlowV2IfBranch = { kind: 'if' | 'elif'; condition: MacroCondition; body: FlowV2Node[] }
 export type TextListItem = { key: string; value: string }
 export type FlowV2ForRange = { kind: 'count'; count: number } | { kind: 'forever' } | { kind: 'text-list'; items: TextListItem[] }
 export type FlowV2ControlTerminalNode =

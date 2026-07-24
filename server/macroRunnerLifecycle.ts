@@ -13,6 +13,7 @@ import { executeMacroAction, type MacroActionRuntimeContext } from './macroActio
 import { initializeMacroAgentEventBaselines, waitForMacroAgentEventCapture } from './macroAgentCapture'
 import { executeMacroFlow, MacroFlowSignal } from './macroFlowExecutor'
 import { MacroRunnerInteraction } from './macroRunnerInteraction'
+import { MacroRunnerArtifacts } from './macroRunnerArtifacts'
 import {
   createLiveRun,
   isActiveRunStatus,
@@ -21,6 +22,12 @@ import {
   type MacroStartPreflight,
 } from './macroRunnerLiveState'
 import { MacroRunnerPublication } from './macroRunnerPublication'
+import {
+  submitMacroStructuredJson,
+  waitForMacroStructuredJson,
+  type StructuredJsonSubmission,
+  type StructuredJsonSubmissionResult,
+} from './macroStructuredCapture'
 import type { NotificationDispatcher } from './notificationService'
 import { macroDefinitionHash, type MacroRunStore } from './macroRunStore'
 import type { MacroRecordStore } from './sharedContentStore'
@@ -30,6 +37,7 @@ export class MacroRunnerLifecycle {
   private readonly runs = new Map<string, LiveRun>()
   private readonly publication: MacroRunnerPublication
   private readonly interaction: MacroRunnerInteraction
+  private readonly artifacts: MacroRunnerArtifacts
 
   constructor(
     private readonly manager: TerminalRoomManager,
@@ -45,6 +53,7 @@ export class MacroRunnerLifecycle {
       appendEvent: (run, kind, data) => this.appendEvent(run, kind, data),
       bumpAndPublish: (run) => this.publication.bumpAndPublish(run),
     })
+    this.artifacts = new MacroRunnerArtifacts(runStore, (run, kind, data) => this.appendEvent(run, kind, data))
   }
 
   hasActiveRun(roomId: string, roomGeneration: string): boolean {
@@ -178,7 +187,17 @@ export class MacroRunnerLifecycle {
   }
 
   stop(roomId: string): MacroRunnerSnapshot {
-    return this.interaction.stop(roomId)
+    const snapshot = this.interaction.stop(roomId)
+    const run = this.runs.get(roomId)
+    if (run) run.pendingStructuredCapture = null
+    return snapshot
+  }
+
+  submitStructuredJson(
+    roomId: string,
+    submission: StructuredJsonSubmission,
+  ): StructuredJsonSubmissionResult {
+    return submitMacroStructuredJson(this.runs.get(roomId), submission)
   }
 
   updateInputDraft(
@@ -203,6 +222,7 @@ export class MacroRunnerLifecycle {
     const run = this.runs.get(roomId)
     if (!run || run.roomGeneration !== roomGeneration) return
     run.abortController.abort()
+    run.pendingStructuredCapture = null
     for (const resolve of run.pauseWaiters.splice(0)) resolve()
     this.interaction.cancelPendingInput(run)
     try { this.finish(run, 'failed', 'run_failed', { code: 'room_destroyed' }, 'room_destroyed') } catch {}
@@ -249,12 +269,34 @@ export class MacroRunnerLifecycle {
           },
           totalPausedMs: (now) => this.interaction.totalPausedMs(run, now),
         }, stepId, binding, captureMode, waitLimit),
+        waitForStructuredJsonCapture: (stepId, binding, schema, waitLimit) => waitForMacroStructuredJson(
+          run,
+          stepId,
+          binding,
+          schema,
+          waitLimit,
+          {
+            checkpoint: () => this.interaction.checkpoint(run),
+            validateBinding: () => {
+              if (!this.manager.hasTerminalLaunch(
+                run.roomId,
+                run.roomGeneration,
+                binding.terminalId,
+                binding.launchId,
+              )) throw new Error('frozen_terminal_launch_lost')
+            },
+            totalPausedMs: (now) => this.interaction.totalPausedMs(run, now),
+          },
+        ),
         appendEvent: (kind, data) => this.appendEvent(run, kind, data),
         persistArtifact: (stepId, name, value, prefix, data) => {
-          return this.persistArtifact(run, stepId, name, value, prefix, data)
+          return this.artifacts.persistText(run, stepId, name, value, prefix, data)
+        },
+        persistJsonArtifact: (stepId, name, value, prefix, data) => {
+          return this.artifacts.persistJson(run, stepId, name, value, prefix, data)
         },
         writeSupplementalArtifact: (stepId, artifact, prefix, value, extension) => {
-          return this.writeSupplementalArtifact(run, stepId, artifact, prefix, value, extension)
+          return this.artifacts.writeSupplemental(run, stepId, artifact, prefix, value, extension)
         },
       },
     }
@@ -271,7 +313,7 @@ export class MacroRunnerLifecycle {
           appendEvent: (kind, data) => this.appendEvent(run, kind, data),
           executeAction: (node) => executeMacroAction(actionContext, node),
           persistArtifact: (stepId, name, value, prefix, data) => {
-            return this.persistArtifact(run, stepId, name, value, prefix, data)
+            return this.artifacts.persistText(run, stepId, name, value, prefix, data)
           },
           pauseRun: (reason, stepId) => this.interaction.pauseRun(run, reason, stepId),
           isTerminalized: () => run.terminalized,
@@ -307,48 +349,17 @@ export class MacroRunnerLifecycle {
       run.currentNodeId = null
       run.error = error
       run.pendingInput = null
+      run.pendingStructuredCapture = null
       this.publication.bumpAndPublish(run)
     } catch {
       run.terminalized = true
       run.status = 'failed'
       run.currentNodeId = null
       run.error = 'run_event_append_failed'
+      run.pendingStructuredCapture = null
       this.interaction.cancelPendingInput(run)
       this.publication.bumpAndPublish(run)
     } finally { this.manager.releaseRunStructureLock(run.roomId, run.runId) }
-  }
-
-  private setArtifact(run: LiveRun, stepId: string, name: string, value: string): void {
-    const outputs = run.artifacts.get(stepId) ?? new Map<string, string>()
-    outputs.set(name, value)
-    run.artifacts.set(stepId, outputs)
-  }
-
-  private persistArtifact(
-    run: LiveRun,
-    stepId: string,
-    name: string,
-    value: string,
-    prefix: string,
-    data: Record<string, unknown> = {},
-  ): string {
-    const artifactRef = this.runStore.writeArtifact(run.runId, prefix, value)
-    this.setArtifact(run, stepId, name, value)
-    this.appendEvent(run, 'artifact_created', { stepId, artifact: name, artifactRef, chars: value.length, ...data })
-    return artifactRef
-  }
-
-  private writeSupplementalArtifact(
-    run: LiveRun,
-    stepId: string,
-    artifact: string,
-    prefix: string,
-    value: string,
-    extension = 'txt',
-  ): string {
-    const artifactRef = this.runStore.writeArtifact(run.runId, prefix, value, extension)
-    this.appendEvent(run, 'artifact_created', { stepId, artifact, artifactRef, chars: value.length })
-    return artifactRef
   }
 
   private appendEvent(run: LiveRun, kind: string, data: Record<string, unknown> = {}): void {

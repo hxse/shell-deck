@@ -59,7 +59,7 @@ test('TerminalSlot updates the existing xterm theme without a second theme catal
 test('the final app entry owns framework registration and only runtime xterm geometry remains as a global bridge', () => {
   const framework = read('src/app.css')
   const included = framework.match(/include:\s*([^;]+);/)?.[1].split(',').map((entry) => entry.trim())
-  expect(included).toEqual(['alert', 'badge', 'button', 'card', 'checkbox', 'fieldset', 'input', 'range', 'select', 'tab', 'textarea'])
+  expect(included).toEqual(['alert', 'badge', 'button', 'card', 'checkbox', 'fieldset', 'input', 'modal', 'range', 'select', 'tab', 'textarea'])
   expect(framework.match(/\.terminal-host/g)).toHaveLength(2)
   expect(framework).not.toMatch(/#[0-9a-f]{3,8}\b/i)
 

@@ -12,6 +12,8 @@ describe('Macro runner lifecycle decomposition', () => {
       'macroRunnerInteraction.ts',
       'macroRunnerPublication.ts',
       'macroRunnerLiveState.ts',
+      'macroRunnerArtifacts.ts',
+      'macroStructuredCapture.ts',
     ] as const
     const sources = Object.fromEntries(names.map((name) => [
       name,
@@ -24,10 +26,12 @@ describe('Macro runner lifecycle decomposition', () => {
     expect(consumers(serverRoot, productionFiles, 'macroRunnerInteraction')).toEqual(['macroRunnerLifecycle.ts'])
     expect(consumers(serverRoot, productionFiles, 'macroRunnerPublication')).toEqual(['macroRunnerLifecycle.ts'])
     expect(consumers(serverRoot, productionFiles, 'macroRunnerLiveState')).toEqual([
+      'macroRunnerArtifacts.ts',
       'macroRunnerInteraction.ts',
       'macroRunnerLifecycle.ts',
       'macroRunnerPublication.ts',
       'macroRunnerService.ts',
+      'macroStructuredCapture.ts',
     ])
     for (const name of names.filter((name) => name !== 'macroRunnerService.ts')) {
       expect(sources[name]).not.toMatch(/from ['"]\.\/macroRunnerService['"]/)
@@ -36,6 +40,7 @@ describe('Macro runner lifecycle decomposition', () => {
     expect(combined.match(/runs\s*=\s*new Map<string, LiveRun>/g)).toHaveLength(1)
     expect(combined.match(/runtimeRevisions\s*=\s*new Map<string, number>/g)).toHaveLength(1)
     expect(combined.match(/pendingInput:\s*PendingInput \| null/g)).toHaveLength(1)
+    expect(combined.match(/pendingStructuredCapture:\s*PendingStructuredCapture \| null/g)).toHaveLength(1)
     expect(combined.match(/publishTimer:\s*ReturnType<typeof setTimeout> \| null/g)).toHaveLength(1)
     expect(sources['macroRunnerService.ts']).toContain('private readonly lifecycle: MacroRunnerLifecycle')
     for (const name of names) {
@@ -53,6 +58,7 @@ describe('Macro runner lifecycle decomposition', () => {
       'pause',
       'resume',
       'stop',
+      'submitStructuredJson',
       'updateInputDraft',
       'submitInput',
       'destroyRoom',

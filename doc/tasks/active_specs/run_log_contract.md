@@ -8,7 +8,7 @@
 * `events/` 按100条一个segment保存最近的durable event tail；文件名是segment首个绝对`eventSeq`。每个event包含immutable Room provenance、monotonic absolute eventSeq、generated eventId、kind、timestamp与data。
 * V0固定最多保留最近1000条event，不提供配置。跨过上限时只删除最旧完整segment，因此steady retained window为901至1000条；旧event永久删除，不提供历史分页。
 * `summary.json`永久保留run开始/更新时间、firstAvailableEventSeq、lastEventSeq、totalEventCount、discardedEventCount与lastEventKind。eventSeq不因retention重新编号，Trace必须明确显示已删除数量。
-* artifact先以private atomic file写入，再追加`artifact_created` event。event retention不删除artifact；artifact只随整个run evidence被显式清理。
+* artifact先以private atomic file写入，再追加`artifact_created` event。text artifact保存`.txt`；structured Capture的`captured_json`以key稳定排序的pretty JSON加末尾LF保存`.json`。event retention不删除artifact；artifact只随整个run evidence被显式清理。
 * complete JSONL line已经写入但file/directory fsync或summary checkpoint报告不确定时，append按相同event intent与绝对sequence检查authoritative tail并幂等收口，不能追加第二个同序号event。crash留下的partial final line在下一次read/append前截断。
 * live run在内存维护provenance、next event sequence与bounded event window；正常append只写新增event，不读取完整segment或完整run。`summary.json`在run开始、segment边界、retention推进和终态checkpoint，冷读可从首尾segment修复stale summary。
 
@@ -18,9 +18,9 @@ Start按manifest publish → `run_started` append → 无await安装in-memory ru
 
 ## Runtime-only state
 
-runner cursor、run snapshot、Pause/Resume waiters、pending input、frozen routing map与active structure lock都只存在于当前server process。Pause/Resume是同一live run中的精确运行时暂停/恢复；server restart、Room Destroy或generation变化后返回`run_not_active`，绝不从manifest、event、artifact或Trace恢复runner。
+runner cursor、run snapshot、Pause/Resume waiters、pending input、pending structured Capture、typed artifact map、frozen routing map与active structure lock都只存在于当前server process。Pause/Resume是同一live run中的精确运行时暂停/恢复；server restart、Room Destroy或generation变化后返回`run_not_active`，绝不从manifest、event、artifact或Trace恢复runner。
 
-production ownership保持单一：`MacroRunnerService`是HTTP/server consumer唯一public facade；internal lifecycle唯一持有Room-to-`LiveRun` registry，interaction只原地操作该对象，publication唯一持有Room-local runtime revision并通过live getter读取current run。internal module不得缓存、序列化或复制pending input、pause waiter、timer、artifact或parallel progress。
+production ownership保持单一：`MacroRunnerService`是HTTP/server consumer唯一public facade；internal lifecycle唯一持有Room-to-`LiveRun` registry，interaction只原地操作该对象，publication唯一持有Room-local runtime revision并通过live getter读取current run。structured ingest只通过runner facade提交，不能读取run map；internal module不得缓存、序列化或复制pending input、pending structured Capture、pause waiter、timer、artifact或parallel progress。
 
 Running、Paused、Waiting input与Stopping期间，Room terminal structure由active-run lock冻结；lock acquire与release都是authoritative Room state change并推进roomRevision。Room Home的generation-bound Destroy仍可用，并会停止run、记录终态或留下可解释的interrupted evidence。
 
