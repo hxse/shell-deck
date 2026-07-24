@@ -72,7 +72,6 @@
   const updateNode = tree.updateNode
   const setNodeId = tree.setNodeId
   const setForRangeMode = tree.setForRangeMode
-  const textListItemEditorKey = tree.textListItemEditorKey
   const insertTextListItem = tree.insertTextListItem
   const updateTextListItem = tree.updateTextListItem
   const removeTextListItem = tree.removeTextListItem
@@ -133,7 +132,7 @@
         <button class="btn btn-primary btn-xs" type="button" data-testid="empty-body-add" onclick={(event) => insertIntoEmptyBody(bodyPath, label, allowLoopControls, event, actionOnly)}>Add inside</button>
       </div>
     {/if}
-    {#each nodes as node, index (node.id)}
+    {#each nodes as node, index (node)}
       <article class="step-editor flow-node-editor card relative grid min-w-0 gap-2 bg-base-200/60 p-2 shadow-sm after:pointer-events-none after:absolute after:right-[8%] after:bottom-0 after:left-0 after:h-0.5 after:bg-linear-to-r after:to-transparent after:content-[''] [&.collapsed>:not(.step-title)]:hidden [&.contains-current-node]:bg-primary/5 [&.current-node]:bg-primary/15 {depth % 4 === 0 ? 'after:from-primary after:via-primary/70' : depth % 4 === 1 ? 'after:from-secondary after:via-secondary/70' : depth % 4 === 2 ? 'after:from-accent after:via-accent/70' : 'after:from-info after:via-info/70'}" class:collapsed={isNodeCollapsed(node.id)} class:current-node={currentNodeId === node.id} class:contains-current-node={node.type === 'parallel' && parallelContainsCurrentNode(node)} data-flow-node-id={node.id} data-flow-node-type={node.type} data-flow-node-depth={depth} data-flow-sibling={index > 0} data-current-node={currentNodeId === node.id ? 'true' : undefined}>
         <div class="step-title node-title-row flex min-w-0 flex-wrap items-center justify-between gap-2" data-testid="node-menu">
           <div class="node-title-cluster flex min-w-0 flex-wrap items-center gap-1.5">
@@ -174,7 +173,6 @@
             {removeElifAt}
             {removeElseAt}
             {setForRangeMode}
-            {textListItemEditorKey}
             {insertTextListItem}
             {updateTextListItem}
             {removeTextListItem}

@@ -2,6 +2,7 @@ import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEdit
 import { cloneJsonValue } from '../jsonClone'
 import type { ContentEditLeaseChangedMessage } from '../protocol'
 import type { TerminalRoomClient } from '../terminalRoomClient'
+import { createMacroDraftMutationTracker } from './macroDraftMutation'
 import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
 import { MacroRecordEditOrchestrator, type MacroDefinitionOperationContext, type MacroEditCommitOutcome, type MacroStartRecordSnapshot } from './macroRecordEditOrchestrator'
 import { formatMacroError, messageOf, type MacroJsonEditSession } from './macroJsonEditSession.svelte'
@@ -46,6 +47,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   let errorText = $state<string | null>(null)
   let templateListProblem = $state<string | null>(null)
   let handledContentLeaseChangeSequence = 0
+  const draftMutations = createMacroDraftMutationTracker()
   const mutations = new MacroRecordMutationWorkflow({
     roomClient: options.roomClient, selectedRecord: () => selectedRecord,
     editLease: () => editLease, contentEditing: () => contentEditing,
@@ -138,14 +140,14 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     if (!canCommit(token)) return false
     if (outcome.kind === 'select_record') installRecord(outcome.record)
     else if (outcome.kind === 'clear_selection') {
-      selectedRecord = null; baseDefinition = null; draft = null
+      selectedRecord = null; replaceBaseDefinition(null); draft = null
       dirty = false; contentEditing = false; leaseLost = false; publishedCreateBufferPreserved = false
       options.json.clearSelection()
       options.showEditor()
       draftRevision += 1; editorGeneration += 1
       errorText = null
     } else {
-      selectedRecord = null; baseDefinition = null
+      selectedRecord = null; replaceBaseDefinition(null)
       draft = emptyDefinition()
       contentEditing = true; leaseLost = false; publishedCreateBufferPreserved = false; dirty = true
       draftRevision += 1; editorGeneration += 1
@@ -174,7 +176,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       draftRevision += 1
     } else {
       editLease = null; leaseView = null
-      selectedRecord = null; baseDefinition = null; draft = null
+      selectedRecord = null; replaceBaseDefinition(null); draft = null
       dirty = false; contentEditing = false; publishedCreateBufferPreserved = false; leaseLost = false
       editorGeneration += 1
     }
@@ -212,14 +214,17 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     if (!localIdentityMatches || record.revision !== 1) return false
     editLease = null; leaseView = null
     installRecord(record, false, true)
-    draft = cloneJsonValue(context.definition); baseDefinition = cloneJsonValue(record.definition); dirty = false
+    draft = cloneJsonValue(context.definition)
+    replaceBaseDefinition(cloneJsonValue(record.definition))
+    dirty = false
     errorText = 'macro_saved_but_edit_lease_not_retained:operation_context_changed'
     return true
   }
 
   function installRecord(record: MacroRecord, editing = false, preserveBuffer = false): void {
     selectedRecord = cloneJsonValue(record)
-    baseDefinition = cloneJsonValue(record.definition); draft = cloneJsonValue(record.definition)
+    replaceBaseDefinition(cloneJsonValue(record.definition))
+    draft = cloneJsonValue(record.definition)
     dirty = false; contentEditing = editing; leaseLost = false
     publishedCreateBufferPreserved = preserveBuffer
     draftRevision += 1; editorGeneration += 1
@@ -238,11 +243,13 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       rejectMutation(leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required')
       return
     }
-    const next = cloneJsonValue(draft)
-    mutator(next)
-    draft = next
+    dirty = draftMutations.apply(draft, mutator)
     draftRevision += 1
-    dirty = baseDefinition === null || JSON.stringify(next) !== JSON.stringify(baseDefinition)
+  }
+
+  function replaceBaseDefinition(definition: MacroDefinitionV5 | null): void {
+    baseDefinition = definition
+    draftMutations.replaceBase(definition)
   }
 
   function captureStartRecordSnapshot(): MacroStartRecordSnapshot | null {

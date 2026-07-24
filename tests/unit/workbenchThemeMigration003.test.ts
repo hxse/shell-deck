@@ -38,7 +38,7 @@ describe('Macro workbench theme contract', () => {
     }).toEqual({
       files: 25,
       entries: 746,
-      digest: '3226c9df3c01a80f8c4524fbde2745a0c65996fea6122e65ab5bf61783036745',
+      digest: 'a4abf1d58e232e37bba7212b20bd72d6da07ad338d8826b551faffdde54f4572',
     })
   })
 

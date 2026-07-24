@@ -46,7 +46,6 @@
     removeElifAt,
     removeElseAt,
     setForRangeMode,
-    textListItemEditorKey,
     insertTextListItem,
     updateTextListItem,
     removeTextListItem,
@@ -75,7 +74,6 @@
     removeElifAt: (bodyPath: BodyPath, index: number, branchIndex: number, nodeId: string) => void
     removeElseAt: (bodyPath: BodyPath, index: number, nodeId: string) => void
     setForRangeMode: (nodeId: string, mode: 'count' | 'forever' | 'text-list') => boolean
-    textListItemEditorKey: (nodeId: string, itemIndex: number) => string
     insertTextListItem: (nodeId: string, insertionIndex: number) => void
     updateTextListItem: (nodeId: string, itemIndex: number, field: keyof TextListItem, value: string) => void
     removeTextListItem: (nodeId: string, itemIndex: number) => void
@@ -141,7 +139,7 @@
   {#if node.range.kind === 'text-list'}
     <div class="text-list-items grid min-w-0 gap-2" data-testid="for-text-list-items">
       <div class="step-title flex min-w-0 items-center justify-between"><strong>Items</strong></div>
-      {#each node.range.items as item, itemIndex (textListItemEditorKey(node.id, itemIndex))}
+      {#each node.range.items as item, itemIndex (item)}
         <div class="message-part-row text-list-item-card card min-w-0 gap-2 bg-base-200/60 p-2 shadow-sm" data-testid="for-text-list-item-card">
           <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2"><strong data-testid="for-text-list-index">{itemIndex + 1}</strong><div class="inline-actions flex flex-wrap gap-1"><MacroIconButton kind="insert-above" testId="for-text-list-item-insert-above" onClick={() => insertTextListItem(node.id, itemIndex)} /><MacroIconButton kind="insert-below" testId="for-text-list-item-insert-below" onClick={() => insertTextListItem(node.id, itemIndex + 1)} /><MacroIconButton kind="up" disabled={itemIndex === 0} testId="for-text-list-item-up" onClick={() => moveTextListItem(node.id, itemIndex, -1)} /><MacroIconButton kind="down" disabled={itemIndex === node.range.items.length - 1} testId="for-text-list-item-down" onClick={() => moveTextListItem(node.id, itemIndex, 1)} /><MacroIconButton kind="remove" disabled={node.range.items.length <= 1} testId="for-text-list-item-remove" onClick={() => removeTextListItem(node.id, itemIndex)} /></div></div>
           <label>Key<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="for-text-list-key" value={item.key} oninput={(event) => updateTextListItem(node.id, itemIndex, 'key', event.currentTarget.value)} /></label>

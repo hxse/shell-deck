@@ -23,7 +23,7 @@ const structureBaseline = JSON.parse(readFileSync(
   files: Record<string, { count: number; digest: string; entryDigests?: string[] }>
 }
 
-const structuredJsonComponentFingerprints = {
+const currentComponentFingerprints = {
   'src/lib/components/macro/CaptureSourceEditor.svelte': {
     count: 89,
     digest: '24eefe047b00d5b0d799e56baf526daa89c75004506fd7d16161a4996ef938ac',
@@ -34,7 +34,7 @@ const structuredJsonComponentFingerprints = {
   },
   'src/lib/components/macro/MacroActionNodeEditor.svelte': {
     count: 82,
-    digest: 'bb4303fe877a27002b871c74cd32cf4026fd7a51fb0b06351af059c13a095902',
+    digest: '4447dbaa16043a1b6c83d6d4545108235a87d1d8dbbcb1eef1b85809e35372b4',
   },
   'src/lib/components/macro/MacroConditionEditor.svelte': {
     count: 70,
@@ -51,6 +51,10 @@ const structuredJsonComponentFingerprints = {
   'src/lib/components/macro/ParallelLaneTabs.svelte': {
     count: 57,
     digest: 'e2647db722d2f04b8b42f8fde0154fa2ce3e4e68ca0fc65925bc7c6f0d11b3f2',
+  },
+  'src/lib/components/macro/ParallelLaneActionEditor.svelte': {
+    count: 24,
+    digest: '9934e342136fc375b71f4530b1e1bea6a44bac1bf04c373ed783ed4e54b2fff4',
   },
 } as const
 
@@ -114,7 +118,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
         'src/lib/components/LibraryPanel.svelte',
         'src/lib/components/MacroPanel.svelte',
         'src/lib/components/macro/MacroEditorShell.svelte',
-        ...Object.keys(structuredJsonComponentFingerprints),
+        ...Object.keys(currentComponentFingerprints),
         'src/lib/components/macro/MacroFlowNodeList.svelte',
         'src/lib/components/macro/MacroTemplateSelector.svelte',
         'src/lib/components/macro/MacroWorkbenchChrome.svelte',
@@ -126,10 +130,10 @@ describe('20260722B.004 UI theme migration closeout', () => {
       })
     }
 
-    expect(Object.fromEntries(Object.keys(structuredJsonComponentFingerprints).map((path) => [
+    expect(Object.fromEntries(Object.keys(currentComponentFingerprints).map((path) => [
       path,
       { count: current[path].count, digest: current[path].digest },
-    ]))).toEqual(structuredJsonComponentFingerprints)
+    ]))).toEqual(currentComponentFingerprints)
 
     const appBaseline = structureBaseline.files['src/App.svelte']
     expect(appBaseline.entryDigests).toHaveLength(41)
@@ -190,7 +194,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
       )),
     }).toEqual({
       count: 22,
-      digest: '504a2ebf4fb51fb4ee0696c0fec78f2910ac9db12ee93b266e8ae2ee503935b2',
+      digest: '01ce3a29909c05fe6d64854a6063bf5324fbabe8bfaf88f234283ef3a572d8c2',
       controllerBinding: [
         "src/lib/components/macro/MacroFlowNodeList.svelte::Component:MacroInsertionPalette::anchored={insertion.paletteAnchored}|position={insertion.position}|{insertionPaletteMode}|summary={insertion.summary}|actionOnly={insertion.actionOnly}|allowsLoopControls={insertion.allowsLoopControls}|actionItems={insertion.actionPaletteItems}|flowItems={insertion.flowPaletteItems}|moveNodeId={insertion.moveNodeId}|movableNodeChoices={movableNodeChoices()}|blocked={insertion.notice.startsWith('Insertion failed:')}|bind:paletteElement={insertion.paletteElement}|onMoveNodeIdChange={insertion.setMoveNodeId}|onInsert={insertFromPalette}|onMoveExisting={moveExistingNodeFromPalette}|onCancel={cancelInsertion}",
       ],

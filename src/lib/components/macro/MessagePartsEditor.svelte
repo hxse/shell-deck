@@ -12,14 +12,14 @@
 
   let {
     message,
-    onChange,
+    onUpdate,
     choices,
     templateScope = null,
     testId = "message-parts-editor",
     textPartTestId = "message-text-part",
   } = $props<{
     message: MessageSpec
-    onChange: (message: MessageSpec) => void
+    onUpdate: (mutator: (message: MessageSpec) => void) => void
     choices: ArtifactChoice[]
     templateScope?: TextTemplateScope | null
     testId?: string
@@ -28,64 +28,53 @@
 
   let structureVersion = $state(0)
 
-  function cloneMessage(): MessageSpec {
-    return JSON.parse(JSON.stringify(message)) as MessageSpec
-  }
-
   function addTextPart() {
-    const next = cloneMessage()
     structureVersion += 1
-    next.parts.push({ kind: "text", text: "" })
-    onChange(next)
+    onUpdate((target: MessageSpec) => { target.parts.push({ kind: "text", text: "" }) })
   }
 
   function addArtifactPart() {
-    const next = cloneMessage()
     structureVersion += 1
-    next.parts.push({ kind: "artifact", source: { kind: 'unassigned' } })
-    onChange(next)
+    onUpdate((target: MessageSpec) => { target.parts.push({ kind: "artifact", source: { kind: 'unassigned' } }) })
   }
 
   function updateTextPart(index: number, text: string) {
-    const next = cloneMessage()
-    const part = next.parts[index]
-    if (part?.kind === "text") part.text = text
-    if (part?.kind === "template") part.template = text
-    onChange(next)
+    onUpdate((target: MessageSpec) => {
+      const part = target.parts[index]
+      if (part?.kind === "text") part.text = text
+      if (part?.kind === "template") part.template = text
+    })
   }
 
   function setTextPartTemplateEnabled(index: number, enabled: boolean) {
     if (enabled && !templateScope) return
-    const next = cloneMessage()
-    const part = next.parts[index]
-    if (part?.kind !== "text" && part?.kind !== "template") return
-    next.parts[index] = withMessagePartTemplateMode(part, enabled)
-    onChange(next)
+    onUpdate((target: MessageSpec) => {
+      const part = target.parts[index]
+      if (part?.kind !== "text" && part?.kind !== "template") return
+      target.parts[index] = withMessagePartTemplateMode(part, enabled)
+    })
   }
 
   function updateArtifactPart(index: number, key: string) {
-    const next = cloneMessage()
-    const part = next.parts[index]
-    if (part?.kind !== "artifact") return
-    part.source = artifactSourceFromKey(key)
-    onChange(next)
+    onUpdate((target: MessageSpec) => {
+      const part = target.parts[index]
+      if (part?.kind === "artifact") part.source = artifactSourceFromKey(key)
+    })
   }
 
   function removePart(index: number) {
     structureVersion += 1
-    const next = cloneMessage()
-    next.parts.splice(index, 1)
-    onChange(next)
+    onUpdate((target: MessageSpec) => { target.parts.splice(index, 1) })
   }
 
   function movePart(index: number, offset: number) {
     const target = index + offset
     if (target < 0 || target >= message.parts.length) return
-    const next = cloneMessage()
     structureVersion += 1
-    const [part] = next.parts.splice(index, 1)
-    next.parts.splice(target, 0, part)
-    onChange(next)
+    onUpdate((message: MessageSpec) => {
+      const [part] = message.parts.splice(index, 1)
+      message.parts.splice(target, 0, part)
+    })
   }
 
   function isTextConsumerPart(part: MessagePart): part is Extract<MessagePart, { kind: "text" | "template" }> {

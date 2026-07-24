@@ -168,7 +168,7 @@ describe('Macro record session extraction', () => {
       'record.revision !== 1',
       'installRecord(record, false, true)',
       'draft = cloneJsonValue(context.definition)',
-      'baseDefinition = cloneJsonValue(record.definition)',
+      'replaceBaseDefinition(cloneJsonValue(record.definition))',
       "errorText = 'macro_saved_but_edit_lease_not_retained:operation_context_changed'",
     ])
     for (const member of [

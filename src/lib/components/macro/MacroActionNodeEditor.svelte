@@ -4,7 +4,6 @@
     FlowV2ActionNode,
     FlowV2Node,
     MacroTerminalReference,
-    MessageSpec,
     NotificationLevel,
     NotifyChannel,
     ParallelNode,
@@ -153,7 +152,7 @@
   <label>Target tab
     <MacroTerminalSelect testId="send-terminal" reference={node.terminal} expectedType={expectedTerminalTypeAt(node.terminal)} choices={terminalChoices()} onChange={(terminal) => onUpdateTerminal(terminal, (item: FlowV2Node) => { if (item.type === 'send') item.terminal = terminal })} />
   </label>
-  <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => onUpdate((item: FlowV2Node) => { if (item.type === 'send') item.message = message })} choices={artifactChoices} {templateScope} />
+  <MessagePartsEditor message={node.message} onUpdate={(mutator) => onUpdate((item: FlowV2Node) => { if (item.type === 'send') mutator(item.message) })} choices={artifactChoices} {templateScope} />
   <TerminalInputDeliveryField value={node.delivery} onChange={(delivery: TerminalInputDelivery) => onUpdate((item: FlowV2Node) => { if (item.type === 'send') item.delivery = delivery })} testId="send-input-delivery" />
   <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => onUpdate((item: FlowV2Node) => { if (item.type === 'send') item.ending = ending })} testId="send-ending-sequence" />
 {:else if node.type === 'notify'}
@@ -162,7 +161,7 @@
     <label>On failure<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-on-failure" value={node.onFailure} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.onFailure = event.currentTarget.value as 'continue' | 'pause' | 'fail' })}><option value="continue">continue</option><option value="pause">pause</option><option value="fail">fail</option></select></label>
   </div>
   <TemplatableScalarField label="Title" value={node.title} onChange={(value) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.title = value })} {templateScope} testId="notify-title" />
-  <MessagePartsEditor message={node.message} onChange={(message: MessageSpec) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.message = message })} choices={artifactChoices} {templateScope} />
+  <MessagePartsEditor message={node.message} onUpdate={(mutator) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') mutator(item.message) })} choices={artifactChoices} {templateScope} />
   <div class="message-part-row card" data-testid="notify-channels">
     <div class="step-title"><strong>Channels</strong></div>
     <div class="macro-row">

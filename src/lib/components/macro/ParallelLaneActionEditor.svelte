@@ -1,7 +1,6 @@
 <script lang="ts">
   import type {
     CaptureSourceConfig,
-    MessageSpec,
     ParallelCaptureSourceConfig,
     ParallelLaneActionNode,
     TerminalEnding,
@@ -89,7 +88,7 @@
   <label>Action id<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-action-id-input" value={item.id} oninput={(event) => { if (!onSetId(event.currentTarget.value)) event.currentTarget.value = item.id }} /></label>
 
   {#if item.type === 'send'}
-    <MessagePartsEditor message={item.message} onChange={(message: MessageSpec) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'send') action.message = message })} choices={artifactChoices} {templateScope} testId="parallel-message-parts-editor" textPartTestId="parallel-message-text-part" />
+    <MessagePartsEditor message={item.message} onUpdate={(mutator) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'send') mutator(action.message) })} choices={artifactChoices} {templateScope} testId="parallel-message-parts-editor" textPartTestId="parallel-message-text-part" />
     <TerminalInputDeliveryField value={item.delivery} onChange={(delivery: TerminalInputDelivery) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'send') action.delivery = delivery })} testId="parallel-send-input-delivery" />
     <TerminalEndingField value={item.ending} onChange={(ending: TerminalEnding) => onUpdate((action: ParallelLaneActionNode) => { if (action.type === 'send') action.ending = ending })} testId="parallel-send-ending-sequence" />
   {:else if item.type === 'wait'}

@@ -221,6 +221,10 @@ test-20260724b:
     bun run test:20260724b
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/structuredJsonCapture20260724B.spec.ts
 
+test-20260724c:
+    bun run test:20260724c
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroEditorInputPerformance20260724C.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"
 

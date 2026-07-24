@@ -27,7 +27,6 @@ export function createMacroFlowTreeController(options: MacroFlowTreeControllerOp
   let collapsedNodeIds = $state<string[]>([])
   let collapsedIfBranchKeys = $state<string[]>([])
   let idEditNotice = $state('')
-  let textListStructureVersions = $state<Record<string, number>>({})
 
   function isNodeCollapsed(nodeId: string): boolean {
     return collapsedNodeIds.includes(nodeId)
@@ -207,26 +206,12 @@ export function createMacroFlowTreeController(options: MacroFlowTreeControllerOp
     return true
   }
 
-  function bumpTextListStructureVersion(nodeId: string): void {
-    textListStructureVersions = {
-      ...textListStructureVersions,
-      [nodeId]: (textListStructureVersions[nodeId] ?? 0) + 1,
-    }
-  }
-
-  function textListItemEditorKey(nodeId: string, itemIndex: number): string {
-    return nodeId + ':' + (textListStructureVersions[nodeId] ?? 0) + ':' + itemIndex
-  }
-
   function insertTextListItem(nodeId: string, insertionIndex: number): void {
-    let changed = false
     updateNode(nodeId, (node) => {
       if (node.type !== 'for' || node.range.kind !== 'text-list') return
       const targetIndex = Math.max(0, Math.min(insertionIndex, node.range.items.length))
       node.range.items.splice(targetIndex, 0, { key: '', value: '' })
-      changed = true
     })
-    if (changed) bumpTextListStructureVersion(nodeId)
   }
 
   function updateTextListItem(
@@ -243,26 +228,20 @@ export function createMacroFlowTreeController(options: MacroFlowTreeControllerOp
   }
 
   function removeTextListItem(nodeId: string, itemIndex: number): void {
-    let changed = false
     updateNode(nodeId, (node) => {
       if (node.type !== 'for' || node.range.kind !== 'text-list' || node.range.items.length <= 1) return
       node.range.items.splice(itemIndex, 1)
-      changed = true
     })
-    if (changed) bumpTextListStructureVersion(nodeId)
   }
 
   function moveTextListItem(nodeId: string, itemIndex: number, offset: -1 | 1): void {
-    let changed = false
     updateNode(nodeId, (node) => {
       if (node.type !== 'for' || node.range.kind !== 'text-list') return
       const target = itemIndex + offset
       if (target < 0 || target >= node.range.items.length) return
       const [item] = node.range.items.splice(itemIndex, 1)
       node.range.items.splice(target, 0, item)
-      changed = true
     })
-    if (changed) bumpTextListStructureVersion(nodeId)
   }
 
   return {
@@ -281,7 +260,6 @@ export function createMacroFlowTreeController(options: MacroFlowTreeControllerOp
     setNodeId,
     findNode,
     setForRangeMode,
-    textListItemEditorKey,
     insertTextListItem,
     updateTextListItem,
     removeTextListItem,
