@@ -13,6 +13,7 @@ import type {
 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import type { RoomControlGrant } from '../../src/lib/roomControl'
+import { serviceTracesForRoom } from '../helpers/macroTrace'
 
 test('structured JSON HTTP submission is Room-bound, schema-checked, single-consume, and typed', async () => {
   const harness = createHarness()
@@ -144,7 +145,7 @@ test('structured JSON HTTP submission is Room-bound, schema-checked, single-cons
     expect(jsonArtifact).toBeTruthy()
     expect(readFileSync(join(artifactDir, jsonArtifact!), 'utf8'))
       .toBe('{\n  "confidence": 0.9,\n  "decision": "retry"\n}\n')
-    const artifactEvent = harness.server.macroRunner.traces(roomA.roomId)[0].events
+    const artifactEvent = serviceTracesForRoom(harness.server.macroRunner, roomA.roomId)[0].events
       .find((event) => event.kind === 'artifact_created' && event.data.artifact === 'captured_json')
     expect(artifactEvent?.data).toMatchObject({
       stepId: 'capture_decision',

@@ -20,6 +20,9 @@ type RoomWorkspaceMessagePorts = {
   upsertTerminal(snapshot: TerminalSnapshot): void
   appendTerminalReplay(message: Extract<ServerMessage, { type: 'pty_output' }>): void
   replaceTerminalReplay(message: Extract<ServerMessage, { type: 'terminal_replay' }>): void
+  applyTerminalTextMutation(message: Extract<ServerMessage, { type: 'terminal_text_mutation' }>): void
+  applyTerminalTextSnapshot(message: Extract<ServerMessage, { type: 'terminal_text_snapshot' }>): void
+  requestTerminalTextRepair(message: Extract<ServerMessage, { type: 'terminal_text_resync_required' }>): void
   applyTerminalIndexMap(message: Extract<ServerMessage, { type: 'terminal_index_map' }>): void
   applyTerminalState(message: Extract<ServerMessage, { type: 'terminal_state' }>): void
   applyTerminalCwd(message: Extract<ServerMessage, { type: 'terminal_cwd' }>): void
@@ -84,6 +87,9 @@ export class RoomWorkspaceMessageCoordinator {
       ports.observeRoomRevision(message.roomRevision)
       ports.replaceTerminalReplay(message)
     }
+    if (message.type === 'terminal_text_mutation') ports.applyTerminalTextMutation(message)
+    if (message.type === 'terminal_text_snapshot') ports.applyTerminalTextSnapshot(message)
+    if (message.type === 'terminal_text_resync_required') ports.requestTerminalTextRepair(message)
     if (message.type === 'terminal_index_map') ports.applyTerminalIndexMap(message)
     if (message.type === 'terminal_error') {
       ports.mutationNotice(message.reason, message.terminalId ? message.terminalId + ': ' : '')

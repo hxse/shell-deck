@@ -4,6 +4,8 @@ export type WebSocketSendTarget = {
   send(data: string): number
 }
 
+type PendingFrame = { data: string; bytes: number }
+
 export type WebSocketSendQueueOptions = {
   target: WebSocketSendTarget
   maxPendingBytes?: number
@@ -16,7 +18,8 @@ export class WebSocketSendQueue {
   readonly #target: WebSocketSendTarget
   readonly #scheduleDrain: NonNullable<WebSocketSendQueueOptions['scheduleDrain']>
   readonly #onFatal: WebSocketSendQueueOptions['onFatal']
-  #pending: string[] = []
+  #pending: PendingFrame[] = []
+  #pendingHead = 0
   #pendingBytes = 0
   #blocked = false
   #drainScheduled = false
@@ -34,7 +37,7 @@ export class WebSocketSendQueue {
   }
 
   get pendingCount(): number {
-    return this.#pending.length
+    return this.#pending.length - this.#pendingHead
   }
 
   get pendingBytes(): number {
@@ -55,7 +58,7 @@ export class WebSocketSendQueue {
 
   send(data: string): void {
     if (this.#disposed) return
-    if (this.#blocked || this.#pending.length > 0) {
+    if (this.#blocked || this.pendingCount > 0) {
       this.enqueue(data)
       return
     }
@@ -64,7 +67,7 @@ export class WebSocketSendQueue {
   }
 
   notifyDrain(): void {
-    if (this.#disposed || this.#drainScheduled || (!this.#blocked && this.#pending.length === 0)) return
+    if (this.#disposed || this.#drainScheduled || (!this.#blocked && this.pendingCount === 0)) return
     this.#drainScheduled = true
     this.#scheduleDrain(() => {
       if (!this.#drainScheduled) return
@@ -76,17 +79,20 @@ export class WebSocketSendQueue {
   private flushPending(): void {
     if (this.#disposed) return
     this.#blocked = false
-    while (this.#pending.length > 0) {
-      const data = this.#pending[0]
-      const result = this.trySend(data)
+    while (this.#pendingHead < this.#pending.length) {
+      const frame = this.#pending[this.#pendingHead]
+      const result = this.trySend(frame.data)
       if (result === 'fatal') return
-      this.#pending.shift()
-      this.#pendingBytes -= Buffer.byteLength(data)
+      this.#pendingHead += 1
+      this.#pendingBytes -= frame.bytes
       if (result === 'blocked') {
         this.#blocked = true
+        this.compactPending()
         return
       }
     }
+    this.#pending = []
+    this.#pendingHead = 0
   }
 
   dispose(): void {
@@ -95,6 +101,7 @@ export class WebSocketSendQueue {
     this.#blocked = false
     this.#drainScheduled = false
     this.#pending = []
+    this.#pendingHead = 0
     this.#pendingBytes = 0
   }
 
@@ -104,8 +111,14 @@ export class WebSocketSendQueue {
       this.fail('websocket_send_queue_overflow')
       return
     }
-    this.#pending.push(data)
+    this.#pending.push({ data, bytes: dataBytes })
     this.#pendingBytes += dataBytes
+  }
+
+  private compactPending(): void {
+    if (this.#pendingHead < 1024 || this.#pendingHead * 2 < this.#pending.length) return
+    this.#pending = this.#pending.slice(this.#pendingHead)
+    this.#pendingHead = 0
   }
 
   private trySend(data: string): 'sent' | 'blocked' | 'fatal' {

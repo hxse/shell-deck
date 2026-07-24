@@ -38,10 +38,22 @@ export function shouldPruneEvidenceAt(eventSeq: number): boolean {
   return eventSeq > RUN_EVENT_RETENTION_LIMIT && (eventSeq - 1) % RUN_EVENT_SEGMENT_SIZE === 0
 }
 
+export function shouldCheckpointEvidenceAt(event: EvidenceEvent): boolean {
+  return event.eventSeq === 1
+    || event.eventSeq % RUN_EVENT_SEGMENT_SIZE === 0
+    || event.kind === 'run_completed'
+    || event.kind === 'run_failed'
+    || event.kind === 'run_stopped'
+}
+
 export class EvidenceSegmentStorage {
   constructor(
     private readonly runsRoot: string,
     private readonly deleteSegmentFile: (path: string) => PublishedFileMutationReceipt = publishPrivateFileDelete,
+    private readonly observe: {
+      segmentRead?(runId: string, start: number): void
+      segmentList?(runId: string): void
+    } = {},
   ) {}
 
   ensureEventsDirectory(runId: string): void {
@@ -68,12 +80,25 @@ export class EvidenceSegmentStorage {
     return events
   }
 
+  readRange(runId: string, firstEventSeq: number, lastEventSeq: number): EvidenceEvent[] {
+    if (lastEventSeq < firstEventSeq) return []
+    const firstSegment = segmentStart(firstEventSeq)
+    const lastSegment = segmentStart(lastEventSeq)
+    const starts: number[] = []
+    for (let start = firstSegment; start <= lastSegment; start += RUN_EVENT_SEGMENT_SIZE) starts.push(start)
+    return starts
+      .flatMap((start) => this.readSegment(runId, start))
+      .filter((event) => event.eventSeq >= firstEventSeq && event.eventSeq <= lastEventSeq)
+  }
+
   readSegment(runId: string, start: number): EvidenceEvent[] {
     const path = this.segmentPath(runId, start)
-    recoverPartialFinalLine(path)
     if (!existsSync(path)) return []
+    this.observe.segmentRead?.(runId, start)
+    const bytes = readCompleteBytes(path)
+    if (!bytes) return []
     const events: EvidenceEvent[] = []
-    for (const line of readFileSync(path, 'utf8').split('\n')) {
+    for (const line of bytes.toString('utf8').split('\n')) {
       if (!line.trim()) continue
       const event = assertEvidenceEvent(JSON.parse(line))
       if (event.runId !== runId || segmentStart(event.eventSeq) !== start) throw new Error('invalid_evidence_event_sequence')
@@ -95,6 +120,7 @@ export class EvidenceSegmentStorage {
   segmentStarts(runId: string): number[] {
     const directory = this.eventsDirectory(runId)
     if (!existsSync(directory)) return []
+    this.observe.segmentList?.(runId)
     return readdirSync(directory, { withFileTypes: true })
       .filter((entry) => entry.isFile() && /^\d{12}\.jsonl$/.test(entry.name))
       .map((entry) => Number(entry.name.slice(0, 12)))
@@ -153,15 +179,20 @@ function appendPrivateJsonLine(path: string, value: unknown, afterPublish: () =>
 }
 
 function recoverPartialFinalLine(path: string): void {
-  if (!existsSync(path)) return
+  void readCompleteBytes(path)
+}
+
+function readCompleteBytes(path: string): Buffer | null {
+  if (!existsSync(path)) return null
   const bytes = readFileSync(path)
-  if (bytes.length === 0 || bytes.at(-1) === 0x0a) return
+  if (bytes.length === 0 || bytes.at(-1) === 0x0a) return bytes
   const lastNewline = bytes.lastIndexOf(0x0a)
   const fd = openSync(path, 'r+')
   try {
     ftruncateSync(fd, lastNewline + 1)
     fsyncSync(fd)
   } finally { closeSync(fd) }
+  return bytes.subarray(0, lastNewline + 1)
 }
 
 function segmentStart(eventSeq: number): number {

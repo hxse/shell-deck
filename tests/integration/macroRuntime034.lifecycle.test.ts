@@ -18,6 +18,7 @@ import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDe
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
+import { storeTracesForRoom } from '../helpers/macroTrace'
 
 import { roomGrant, waitFor } from './macroRuntime034.helpers'
 
@@ -49,7 +50,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
     lostTicket.finish()
     expect(lostRunner.hasActiveRun(lostRoom.roomId, lostRoom.roomGeneration)).toBe(false)
     expect(manager.roomSnapshot(lostRoom.roomId).terminalStructureLocked).toBe(false)
-    const lostTrace = lostStore.listTracesForRoom(lostRoom.roomId)[0]
+    const lostTrace = storeTracesForRoom(lostStore, lostRoom.roomId)[0]
     expect(lostTrace.status).toBe('failed')
     expect(lostTrace.events.at(-1)).toMatchObject({ kind: 'run_failed', data: { code: 'room_control_lost_during_start' } })
 
@@ -70,7 +71,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
     destroyedTicket.finish()
     await destroying
     expect(destroyedRunner.hasActiveRun(destroyedRoom.roomId, destroyedRoom.roomGeneration)).toBe(false)
-    expect(destroyedStore.listTracesForRoom(destroyedRoom.roomId)).toEqual([])
+    expect(destroyedStore.traceSummariesForRoom(destroyedRoom.roomId, 1, null).items).toEqual([])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 

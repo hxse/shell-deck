@@ -24,6 +24,10 @@ const structureBaseline = JSON.parse(readFileSync(
 }
 
 const currentComponentFingerprints = {
+  'src/lib/components/TextBoxSlot.svelte': {
+    count: 10,
+    digest: 'e32b5856e150654d6cf89364a56a1c913eb70f9872d378162a3aadf4a9f7e2b4',
+  },
   'src/lib/components/macro/CaptureSourceEditor.svelte': {
     count: 89,
     digest: '24eefe047b00d5b0d799e56baf526daa89c75004506fd7d16161a4996ef938ac',
@@ -43,6 +47,10 @@ const currentComponentFingerprints = {
   'src/lib/components/macro/MacroControlNodeEditor.svelte': {
     count: 46,
     digest: '6789955a7f0968be8788895b88c84f204550c25f8abc709be8371e36345ac335',
+  },
+  'src/lib/components/macro/MacroTraceView.svelte': {
+    count: 20,
+    digest: '4c895618c052008c7b3a714908af75b90fecfc9cc7cf4a838b7a3de6292aafc5',
   },
   'src/lib/components/macro/MessagePartsEditor.svelte': {
     count: 22,
@@ -150,7 +158,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
       'src/App.svelte::RegularElement:span::',
       'src/App.svelte::RegularElement:select::data-testid="theme-select"|value={settings.theme}|onchange={(event) => { if (isThemePreference(event.currentTarget.value)) updateSettings({ theme: event.currentTarget.value }) }}',
       'src/App.svelte::RegularElement:option::value={theme}',
-      "src/App.svelte::Component:WorkspaceShell::client={workspace.client}|terminals={workspace.terminals}|activeTerminal={workspace.activeTerminal}|activeTerminalId={workspace.activeTerminalId}|draggingTerminalId={workspace.draggingTerminalId}|tabDragEnabled={settings.terminalDragEnabled}|sharedReadOnly={!workspace.canMutateShared}|macroVisible={settings.panels.macro.visible}|macroWidthPx={settings.panels.macro.widthPx}|canMutateShared={workspace.canMutateShared}|terminalStructureRevision={workspace.terminalStructureRevision}|terminalPositions={workspace.terminalPositions}|terminalStructureLocked={workspace.terminalStructureLocked}|runnerSnapshot={workspace.runnerSnapshot}|contentRecordChanges={workspace.contentRecordChanges}|contentEditLeaseChanges={workspace.contentEditLeaseChanges}|connectionGeneration={workspace.connectionGeneration}|insertionPaletteMode={settings.macroInsertionPlacement}|onMacroWidthChange={(widthPx) => updateMacroPanel(widthPx)}|onMacroDirtyChange={(dirty) => { macroDirty = dirty }}|onRoomSnapshot={workspace.applyRoomSnapshot}|onSelectTerminal={workspace.selectTerminal}|onCloseTerminal={workspace.closeTerminalTab}|onStartTabDrag={(event, terminalId) => workspace.startDrag(event, terminalId, settings.terminalDragEnabled)}|onDropOnTab={(event, terminal) => workspace.dropOnTab(event, terminal, settings.terminalDragEnabled)}|onTabDragEnd={workspace.finishTabDrag}|onTabKeydown={workspace.tabKeydown}|onMutationDenied={pushMutationNotice}",
+      "src/App.svelte::Component:WorkspaceShell::client={workspace.client}|terminals={workspace.terminals}|activeTerminal={workspace.activeTerminal}|activeTerminalId={workspace.activeTerminalId}|draggingTerminalId={workspace.draggingTerminalId}|tabDragEnabled={settings.terminalDragEnabled}|sharedReadOnly={!workspace.canMutateShared}|macroVisible={settings.panels.macro.visible}|macroWidthPx={settings.panels.macro.widthPx}|canMutateShared={workspace.canMutateShared}|terminalStructureRevision={workspace.terminalStructureRevision}|terminalPositions={workspace.terminalPositions}|terminalStructureLocked={workspace.terminalStructureLocked}|runnerSnapshot={workspace.runnerSnapshot}|contentRecordChanges={workspace.contentRecordChanges}|contentEditLeaseChanges={workspace.contentEditLeaseChanges}|connectionGeneration={workspace.connectionGeneration}|insertionPaletteMode={settings.macroInsertionPlacement}|onMacroWidthChange={(widthPx) => updateMacroPanel(widthPx)}|onMacroDirtyChange={(dirty) => { macroDirty = dirty }}|onRoomSnapshot={workspace.applyRoomSnapshot}|onSelectTerminal={workspace.selectTerminal}|onCloseTerminal={workspace.closeTerminalTab}|onStartTabDrag={(event, terminalId) => workspace.startDrag(event, terminalId, settings.terminalDragEnabled)}|onDropOnTab={(event, terminal, sourceTerminalId) => workspace.dropOnTab(event, terminal, settings.terminalDragEnabled, sourceTerminalId)}|onTabDragEnd={workspace.finishTabDrag}|onTabKeydown={workspace.tabKeydown}|onMutationDenied={pushMutationNotice}",
     ])
 
     const macroPanelBaseline = structureBaseline.files['src/lib/components/MacroPanel.svelte']
@@ -162,10 +170,12 @@ describe('20260722B.004 UI theme migration closeout', () => {
     expect(macroPanelDelta.removed).toEqual([
       '5cffe3ac292d09e5bd6250c990edc52f6ac634c116d4f1c2ea4916f8f2474284',
       '02a9ab3d43f0ccab21b77d0e594a6799edd9bb8a1f4559ffd77bee418c8358cc',
+      'a2e1e92633924c0b780e1ad6d07d109e593c3b9271e1269c26dcf388ea680ab5',
     ])
     expect(macroPanelDelta.added).toEqual([
       "src/lib/components/MacroPanel.svelte::Component:MacroWorkbenchChrome::{templates}|{filteredTemplates}|{draft}|{selectedRecord}|{templateSearch}|{dirty}|{contentEditing}|mutationAllowed={canMutateShared}|errorText={displayedErrorText}|{macroView}|{runner}|{statusText}|{runnerInput}|{runnerInputSyncing}|{preparing}|prepareDisabled={prepareState.disabled}|prepareDisabledReason={prepareState.reason}|startDisabled={startState.disabled}|startDisabledReason={startState.reason}|{jsonEditing}|{operationPending}|{runActive}|onTemplateSearchChange={(value) => { templateSearch = value }}|onSelectTemplate={selectTemplate}|onCreateTemplate={() => void createTemplate()}|onBeginEdit={() => void beginEdit()}|onSaveTemplate={() => void saveTemplate()}|onCancelEdit={() => void cancelEdit()}|onDeleteTemplate={() => void deleteTemplate()}|onUpdateDraft={updateDraft}|onResetWidth={onResetWidth}|onPrepare={() => void prepareTerminals()}|onRunnerInputChange={updateRunnerInput}|onSubmitRunnerInput={() => void submitRunnerInput()}|onRefreshRunner={() => void refreshRunner()}|onMacroControl={(action) => void controlRunner(action)}|onViewChange={(view) => { if (!jsonEditing) { macroView = view; if (view === 'trace') void refreshTraces() } }}",
       "src/lib/components/MacroPanel.svelte::Component:MacroEditorShell::{draft}|validation={portableValidation}|{runnableValidation}|runtimePositions={terminalPositions}|{insertionPaletteMode}|{telegramProfileIds}|{telegramProfilesError}|locked={editorLocked}|editorKey={`${selectedRecord?.id ?? 'new'}:${editorGeneration}`}|lockedReason={runActive ? 'macro_run_active' : !canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required'}|currentNodeId={runActive ? runner?.currentNodeId ?? null : null}|onBeginEdit={() => void beginEdit()}|{onMutationDenied}|onUpdateDraft={updateDraft}",
+      "src/lib/components/MacroPanel.svelte::Component:MacroTraceView::{runner}|summaries={traces}|eventsPage={traceEvents}|{selectedTraceRunId}|hasPreviousSummaryPage={runnerSession.hasPreviousTracePage}|hasNextSummaryPage={runnerSession.hasNextTracePage}|hasPreviousEventPage={runnerSession.hasPreviousTraceEventPage}|hasNextEventPage={runnerSession.hasNextTraceEventPage}|onSelectRun={(runId) => void runnerSession.selectTrace(runId)}|onPreviousSummaryPage={() => void runnerSession.previousTraceSummaryPage()}|onNextSummaryPage={() => void runnerSession.nextTraceSummaryPage()}|onPreviousEventPage={() => void runnerSession.previousTraceEventPage()}|onNextEventPage={() => void runnerSession.nextTraceEventPage()}",
     ])
 
     const editorBaseline = structureBaseline.files['src/lib/components/macro/MacroEditorShell.svelte']
@@ -194,7 +204,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
       )),
     }).toEqual({
       count: 22,
-      digest: '01ce3a29909c05fe6d64854a6063bf5324fbabe8bfaf88f234283ef3a572d8c2',
+      digest: 'de158d91d96e04f38dd550244d3d0a076fe8b59504b755d927a3dab6b4ae5433',
       controllerBinding: [
         "src/lib/components/macro/MacroFlowNodeList.svelte::Component:MacroInsertionPalette::anchored={insertion.paletteAnchored}|position={insertion.position}|{insertionPaletteMode}|summary={insertion.summary}|actionOnly={insertion.actionOnly}|allowsLoopControls={insertion.allowsLoopControls}|actionItems={insertion.actionPaletteItems}|flowItems={insertion.flowPaletteItems}|moveNodeId={insertion.moveNodeId}|movableNodeChoices={movableNodeChoices()}|blocked={insertion.notice.startsWith('Insertion failed:')}|bind:paletteElement={insertion.paletteElement}|onMoveNodeIdChange={insertion.setMoveNodeId}|onInsert={insertFromPalette}|onMoveExisting={moveExistingNodeFromPalette}|onCancel={cancelInsertion}",
       ],
@@ -221,11 +231,11 @@ describe('20260722B.004 UI theme migration closeout', () => {
     }).toEqual({
       selector: { count: 31, digest: '51c2d5d29b6e96ffb91f9a1ebfbb521794aad6df83d3ef740414acca705be1fa' },
       chrome: { count: 9, digest: 'b7652ac4db283c1c007c53f245aa6d95c05bb5e8c716139dbe4c720aa396383a' },
-      workspace: { count: 12, digest: 'b018a61cb44798178972b72f8a64ffa314b0c5c3e6cf97b5c1c0a96c95cce2fb' },
+      workspace: { count: 12, digest: '2a44c50cac4159cb82425e42350c99d9dea2fc13f99d2bcf121be7142ec8f10a' },
     })
 
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
-    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(849)
+    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(855)
 
     const app = readFileSync(resolve(projectRoot, 'src/App.svelte'), 'utf8')
     expect(app.match(/data-testid="theme-select"/g)).toHaveLength(1)

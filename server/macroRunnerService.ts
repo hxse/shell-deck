@@ -1,6 +1,11 @@
 import type { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
-import type { MacroRunnerSnapshot, MacroRunTrace } from '../src/lib/macro/runnerTypes'
+import type {
+  MacroRunEventPage,
+  MacroRunnerActionAck,
+  MacroRunnerSnapshot,
+  MacroRunSummaryPage,
+} from '../src/lib/macro/runnerTypes'
 import { MacroRunnerLifecycle } from './macroRunnerLifecycle'
 import type { MacroStartPreflight } from './macroRunnerLiveState'
 import type {
@@ -36,8 +41,12 @@ export class MacroRunnerService {
     return this.lifecycle.snapshot(roomId)
   }
 
-  traces(roomId: string): MacroRunTrace[] {
-    return this.lifecycle.traces(roomId)
+  traceSummaries(roomId: string, limit: number, cursor: string | null): MacroRunSummaryPage {
+    return this.lifecycle.traceSummaries(roomId, limit, cursor)
+  }
+
+  traceEvents(roomId: string, runId: string, limit: number, cursor: string | null): MacroRunEventPage {
+    return this.lifecycle.traceEvents(roomId, runId, limit, cursor)
   }
 
   preflightStart(templateId: string): MacroStartPreflight {
@@ -50,7 +59,7 @@ export class MacroRunnerService {
     expectedMacroRevision: number,
     expectedTerminalStructureRevision: number,
     preflight: MacroStartPreflight = this.preflightStart(templateId),
-  ): Promise<MacroRunnerSnapshot> {
+  ): Promise<MacroRunnerActionAck> {
     return this.lifecycle.start(
       ticket,
       templateId,
@@ -60,15 +69,15 @@ export class MacroRunnerService {
     )
   }
 
-  pause(roomId: string): MacroRunnerSnapshot {
+  pause(roomId: string): MacroRunnerActionAck {
     return this.lifecycle.pause(roomId)
   }
 
-  resume(roomId: string): MacroRunnerSnapshot {
+  resume(roomId: string): MacroRunnerActionAck {
     return this.lifecycle.resume(roomId)
   }
 
-  stop(roomId: string): MacroRunnerSnapshot {
+  stop(roomId: string): MacroRunnerActionAck {
     return this.lifecycle.stop(roomId)
   }
 
@@ -84,7 +93,7 @@ export class MacroRunnerService {
     invocationId: string,
     value: string,
     expectedInputRevision: number,
-  ): MacroRunnerSnapshot {
+  ): MacroRunnerActionAck {
     return this.lifecycle.updateInputDraft(roomId, invocationId, value, expectedInputRevision)
   }
 
@@ -93,7 +102,7 @@ export class MacroRunnerService {
     invocationId: string,
     value: string,
     expectedInputRevision: number,
-  ): MacroRunnerSnapshot {
+  ): MacroRunnerActionAck {
     return this.lifecycle.submitInput(roomId, invocationId, value, expectedInputRevision)
   }
 

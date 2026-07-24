@@ -121,6 +121,7 @@ function snapshot(replay: string[], overrides: Partial<TerminalSnapshot> = {}): 
     roomRevision: 1,
     terminalRevision: 1,
     textRevision: 0,
+    contentHash: null,
     outputActivityRevision: 0,
     ...overrides,
   }

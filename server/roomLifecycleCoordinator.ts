@@ -11,6 +11,7 @@ export type RoomClient = {
   roomId: string
   roomGeneration: string
   send(message: ServerMessage): void
+  sendSerialized?(payload: string): void
   close?(code: number, reason: string): void
   ping?(): void
   lastPongAtMs: number

@@ -26,12 +26,14 @@
     onMacroWidthChange: (widthPx: number) => void; onMacroDirtyChange: (dirty: boolean) => void
     onRoomSnapshot: (snapshot: RoomSnapshot) => void
     onSelectTerminal: (terminalId: string) => void; onCloseTerminal: (event: MouseEvent, terminal: TerminalSnapshot) => void
-    onStartTabDrag: (event: DragEvent, terminalId: string) => void; onDropOnTab: (event: DragEvent, terminal: TerminalSnapshot) => void
+    onStartTabDrag: (event: DragEvent, terminalId: string) => void
+    onDropOnTab: (event: DragEvent, terminal: TerminalSnapshot, sourceTerminalId?: string) => void
     onTabDragEnd: () => void; onTabKeydown: (event: KeyboardEvent, terminal: TerminalSnapshot) => void
     onMutationDenied: (reason: string) => void
   }>()
 
   let retainedTerminalIds = $state<string[]>([])
+  const textFlushers = new Map<string, () => Promise<void>>()
   const visibleTerminalId = $derived(activeTerminal?.terminalId ?? null)
   const retainedTerminalIdSet = $derived(new Set(retainedTerminalIds))
   const retainedTerminals = $derived(terminals.filter((terminal: TerminalViewSnapshot) =>
@@ -59,13 +61,65 @@
     window.addEventListener('pointerup', finish, { once: true })
   }
 
+  function registerTextFlush(terminalId: string, flush: () => Promise<void>): () => void {
+    textFlushers.set(terminalId, flush)
+    return () => {
+      if (textFlushers.get(terminalId) === flush) textFlushers.delete(terminalId)
+    }
+  }
+
+  async function flushTextTerminal(terminalId: string | null): Promise<void> {
+    if (!terminalId) return
+    await textFlushers.get(terminalId)?.()
+  }
+
+  async function flushAllTextTerminals(): Promise<void> {
+    for (const flush of textFlushers.values()) await flush()
+  }
+
+  async function selectTerminal(terminalId: string): Promise<void> {
+    try {
+      if (terminalId !== activeTerminalId) await flushTextTerminal(activeTerminalId)
+      onSelectTerminal(terminalId)
+    } catch (error) {
+      onMutationDenied(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async function closeTerminal(event: MouseEvent, terminal: TerminalSnapshot): Promise<void> {
+    event.stopPropagation()
+    try {
+      await flushTextTerminal(terminal.terminalId)
+      onCloseTerminal(event, terminal)
+    } catch (error) {
+      onMutationDenied(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async function dropOnTab(event: DragEvent, terminal: TerminalSnapshot): Promise<void> {
+    event.preventDefault()
+    const sourceTerminalId = event.dataTransfer?.getData('text/plain') || draggingTerminalId || undefined
+    try {
+      await flushTextTerminal(activeTerminalId)
+      onDropOnTab(event, terminal, sourceTerminalId)
+    } catch (error) {
+      event.preventDefault()
+      onMutationDenied(error instanceof Error ? error.message : String(error))
+    }
+  }
+
 </script>
 
 <section class="workspace-shell room-workspace flex min-h-0 flex-1 gap-0 overflow-hidden bg-base-200 p-0 [@media(max-width:980px)]:flex-col" data-testid="workspace-shell">
   <div class="terminal-room flex min-h-0 min-w-0 flex-[1_1_auto] flex-col overflow-hidden [@media(min-width:981px)_and_(max-width:1100px)]:min-w-[240px]" data-testid="terminal-room">
     <TerminalTabBar {terminals} {activeTerminalId} {draggingTerminalId} {tabDragEnabled} {sharedReadOnly}
-      onSelect={onSelectTerminal} onClose={onCloseTerminal} onStartDrag={onStartTabDrag} onDrop={onDropOnTab}
-      onDragEnd={onTabDragEnd} onTabKeydown={onTabKeydown} {onMutationDenied} />
+      onSelect={(terminalId) => { void selectTerminal(terminalId) }} onClose={(event, terminal) => { void closeTerminal(event, terminal) }} onStartDrag={onStartTabDrag} onDrop={(event, terminal) => { void dropOnTab(event, terminal) }}
+      onDragEnd={onTabDragEnd} onTabKeydown={(event, terminal) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          void selectTerminal(terminal.terminalId)
+        } else onTabKeydown(event, terminal)
+      }} {onMutationDenied} />
     <div class="terminal-stage flex min-h-0 min-w-0 flex-1 overflow-hidden p-3 [@media(max-width:640px)]:p-2">
       {#each retainedTerminals as terminal (terminal.terminalId)}
         <div
@@ -76,7 +130,7 @@
           aria-hidden={terminal.terminalId !== visibleTerminalId}
         >
           {#if terminal.backend === 'text'}
-            <TextBoxSlot {terminal} {client} readOnly={sharedReadOnly} {onMutationDenied} />
+            <TextBoxSlot {terminal} {client} readOnly={sharedReadOnly} {onMutationDenied} {registerTextFlush} />
           {:else}
             <TerminalSlot {terminal} {client} active={terminal.terminalId === visibleTerminalId} readOnly={sharedReadOnly} {onMutationDenied} />
           {/if}
@@ -92,7 +146,7 @@
     <div class="side-panel-scroll macro-workbench-shell box-border flex min-h-0 min-w-0 max-w-full flex-1 flex-col gap-2.5 overflow-hidden p-2.5">
       <MacroPanel roomClient={client} {canMutateShared} {terminalStructureRevision} {terminalPositions} {terminalStructureLocked}
         {runnerSnapshot} {contentRecordChanges} {contentEditLeaseChanges} {connectionGeneration} {insertionPaletteMode} {onRoomSnapshot} {onMutationDenied}
-        onDirtyChange={onMacroDirtyChange} onResetWidth={() => onMacroWidthChange(760)} />
+        flushPendingText={flushAllTextTerminals} onDirtyChange={onMacroDirtyChange} onResetWidth={() => onMacroWidthChange(760)} />
     </div>
   </section>
 </section>

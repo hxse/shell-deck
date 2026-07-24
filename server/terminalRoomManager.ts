@@ -2,7 +2,9 @@ import { assertGeneratedId, createGeneratedId } from '../src/lib/generatedId'
 import type { RoomSnapshot, ServerMessage, TerminalBackendKind, TerminalRuntimePosition, TerminalSnapshot } from '../src/lib/protocol'
 import type { RoomControlBearer, RoomControlContext, RoomControlGrant, RoomControlView } from '../src/lib/roomControl'
 import { createTerminalId, createTerminalLaunchId, type TerminalRef } from '../src/lib/terminalIdentity'
+import type { TextTerminalMutation } from '../src/lib/textTerminalMutation'
 import type { RoomClient, RoomLifecycle, RoomOperationTicket, RoomRuntime } from './roomLifecycleCoordinator'
+import { RoomBroadcastCoordinator } from './roomBroadcastCoordinator'
 import { RoomControlCoordinator, type RoomControlledOperationTicket } from './roomControlCoordinator'
 import type { TerminalBackendFactory } from './terminalBackend'
 import {
@@ -59,6 +61,7 @@ export class TerminalRoomManager {
   private readonly registryCoordinator: RoomRegistryLifecycleCoordinator
   private readonly controlCoordinator: RoomControlCoordinator
   private readonly backendCoordinator: TerminalBackendCoordinator
+  private readonly broadcasts: RoomBroadcastCoordinator
 
   constructor(options: TerminalRoomManagerOptions = {}) {
     const replayByteLimit = options.replayByteLimit ?? DEFAULT_REPLAY_BYTE_LIMIT
@@ -67,6 +70,7 @@ export class TerminalRoomManager {
     this.backendFactory = options.backendFactory ?? defaultBackendFactory
     this.serverInstanceId = assertGeneratedId((options.serverInstanceIdFactory ?? (() => createGeneratedId('serverInstance')))(), 'serverInstance')
     this.homeDirectory = resolveShellCwd(options.homeDirectory)
+    this.broadcasts = new RoomBroadcastCoordinator((clientId) => this.disconnectClient(clientId))
     this.registryCoordinator = new RoomRegistryLifecycleCoordinator({
       rooms: this.rooms,
       clients: this.clients,
@@ -91,7 +95,7 @@ export class TerminalRoomManager {
       admit: (roomId) => this.admit(roomId),
       activeRoomOrThrow: (roomId) => this.activeRoomOrThrow(roomId),
       roomOrThrow: (roomId) => this.roomOrThrow(roomId),
-      broadcast: (room, message) => this.broadcast(room, message),
+      broadcast: (room, message) => this.broadcasts.broadcast(room, message),
     })
     this.controlCoordinator = new RoomControlCoordinator({
       rooms: this.rooms,
@@ -155,8 +159,9 @@ export class TerminalRoomManager {
     send: (message: ServerMessage) => void,
     close?: (code: number, reason: string) => void,
     ping?: () => void,
+    sendSerialized?: (payload: string) => void,
   ): RoomClient {
-    return this.controlCoordinator.connectClient(roomId, send, close, ping)
+    return this.controlCoordinator.connectClient(roomId, send, close, ping, sendSerialized)
   }
 
   disconnectClient(clientId: string): void {
@@ -247,8 +252,14 @@ export class TerminalRoomManager {
     return this.backendCoordinator.input(roomId, ref, data)
   }
 
-  setTextContent(roomId: string, ref: TerminalRef | string | number, content: string) {
-    return this.backendCoordinator.setTextContent(roomId, ref, content)
+  mutateTextContent(
+    roomId: string,
+    ref: TerminalRef | string | number,
+    expectedTextRevision: number,
+    mutation: TextTerminalMutation,
+    resultHash: string,
+  ) {
+    return this.backendCoordinator.mutateTextContent(roomId, ref, expectedTextRevision, mutation, resultHash)
   }
 
   resize(roomId: string, ref: TerminalRef | string | number, cols: number, rows: number) {
@@ -267,7 +278,6 @@ export class TerminalRoomManager {
       this.backendCoordinator.terminalOrThrow(room, terminalId)
       if (!commitTerminalMove(room, terminalId, newIndex)) return
       this.backendCoordinator.broadcastIndexMap(room)
-      this.broadcast(room, this.roomSnapshot(roomId))
     } finally {
       ticket.finish()
     }
@@ -282,6 +292,8 @@ export class TerminalRoomManager {
     const terminal = this.resolveTerminal(roomId, ref)
     return projectTerminalReplayMessage(room, terminal)
   }
+
+  requestTextSnapshot(roomId: string, ref: TerminalRef | string | number): ServerMessage { return this.backendCoordinator.textSnapshot(roomId, ref) }
 
   roomSnapshot(roomId: string): RoomSnapshot {
     const room = this.activeRoomOrThrow(roomId)
@@ -310,6 +322,10 @@ export class TerminalRoomManager {
   async runTerminalStructureMutation<T>(ticket: RoomControlledOperationTicket, operation: () => Promise<T> | T): Promise<T> {
     const room = this.activeRoomOrThrow(ticket.roomId)
     return await runSerializedTerminalStructureMutation(room, ticket, operation)
+  }
+
+  async batchTerminalIndexMaps<T>(roomId: string, operation: () => Promise<T> | T): Promise<T> {
+    return await this.broadcasts.batchIndexMaps(this.activeRoomOrThrow(roomId), operation)
   }
 
   acquireRunStructureLock(roomId: string, runId: string): void {
@@ -352,7 +368,7 @@ export class TerminalRoomManager {
   }
 
   broadcastRoomMessage(roomId: string, message: ServerMessage): void {
-    this.broadcast(this.activeRoomOrThrow(roomId), message)
+    this.broadcasts.broadcast(this.activeRoomOrThrow(roomId), message)
   }
 
   broadcastAllClients(createMessage: (roomId: string, roomGeneration: string) => ServerMessage): void {
@@ -376,14 +392,6 @@ export class TerminalRoomManager {
 
   private roomOrThrow(roomId: string): RoomRuntime {
     return this.registryCoordinator.roomOrThrow(roomId)
-  }
-
-  private broadcast(room: RoomRuntime, message: ServerMessage): void {
-    if (room.lifecycle !== 'active') return
-    for (const client of [...room.clients.values()]) {
-      try { client.send(message) }
-      catch { this.disconnectClient(client.clientId) }
-    }
   }
 
 }

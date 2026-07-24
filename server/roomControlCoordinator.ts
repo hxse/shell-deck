@@ -74,8 +74,9 @@ export class RoomControlCoordinator {
     send: (message: ServerMessage) => void,
     close?: (code: number, reason: string) => void,
     ping?: () => void,
+    sendSerialized?: (payload: string) => void,
   ): RoomClient {
-    return this.presenceCoordinator.connectClient(roomId, send, close, ping)
+    return this.presenceCoordinator.connectClient(roomId, send, close, ping, sendSerialized)
   }
 
   disconnectClient(clientId: string): void {

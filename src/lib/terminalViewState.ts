@@ -12,6 +12,7 @@ export type TerminalRenderUpdate = {
 
 export type TerminalViewSnapshot = TerminalSnapshot & {
   renderUpdate: TerminalRenderUpdate
+  textRepairGeneration: number
 }
 
 type TerminalViewEntry = {
@@ -29,6 +30,12 @@ export class TerminalViewStateStore {
 
   clear(): void {
     this.#entries.clear()
+  }
+
+  retain(terminalIds: ReadonlySet<string>): void {
+    for (const terminalId of this.#entries.keys()) {
+      if (!terminalIds.has(terminalId)) this.#entries.delete(terminalId)
+    }
   }
 
   mergeRoom(snapshots: TerminalSnapshot[], current: TerminalViewSnapshot[]): TerminalViewSnapshot[] {
@@ -50,6 +57,7 @@ export class TerminalViewStateStore {
         ...snapshot,
         replay: entry.tail.snapshot(),
         renderUpdate: current.renderUpdate,
+        textRepairGeneration: current.textRepairGeneration,
       }
     }
     return this.#replaceSnapshot(snapshot, entry?.renderRevision ?? 0)
@@ -109,6 +117,7 @@ export class TerminalViewStateStore {
       ...snapshot,
       replay: tail.snapshot(),
       renderUpdate: { revision, kind: 'replace', data: tail.text() },
+      textRepairGeneration: 0,
     }
   }
 }

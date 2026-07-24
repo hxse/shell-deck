@@ -23,6 +23,11 @@ export type { MacroTerminalLayoutValidation } from './macroReferenceValidation'
 export type MacroDefinitionValidation =
   | { ok: true; value: MacroDefinitionV5 }
   | { ok: false; issues: MacroDefinitionIssue[] }
+export type MacroDefinitionDiagnostics = {
+  persistable: MacroDefinitionValidation
+  runnable: MacroDefinitionValidation
+}
+export type MacroDefinitionDiagnosticsMetrics = { nodeVisits: number }
 export type MacroDefinitionJsonValidation =
   | { ok: true; value: MacroDefinitionV5 }
   | { ok: false; error: InvalidJsonError }
@@ -35,18 +40,28 @@ export type MacroTerminalLayoutJsonValidation =
 const TOP_LEVEL_KEYS = ['schemaVersion', 'name', 'description', 'terminalLayout', 'body'] as const
 
 export function validateMacroDefinitionV5(input: unknown): MacroDefinitionValidation {
-  return validateMacroDefinition(input, 'persistable')
+  return diagnoseMacroDefinition(input, true).persistable
 }
 
 export function validateRunnableMacroDefinitionV5(input: unknown): MacroDefinitionValidation {
-  const persistable = validateMacroDefinition(input, 'persistable')
-  return persistable.ok ? validateMacroDefinition(persistable.value, 'runnable') : persistable
+  return diagnoseMacroDefinition(input, true).runnable
 }
 
-function validateMacroDefinition(input: unknown, mode: ValidationContext['mode']): MacroDefinitionValidation {
+export function diagnoseTrustedMacroDefinitionV5(
+  input: unknown,
+  metrics?: MacroDefinitionDiagnosticsMetrics,
+): MacroDefinitionDiagnostics {
+  return diagnoseMacroDefinition(input, false, metrics)
+}
+
+function diagnoseMacroDefinition(
+  input: unknown,
+  cloneSuccess: boolean,
+  metrics?: MacroDefinitionDiagnosticsMetrics,
+): MacroDefinitionDiagnostics {
   const issues: MacroDefinitionIssue[] = []
   const definition = object(input, issues, '')
-  if (!definition) return { ok: false, issues: finishIssues(issues) }
+  if (!definition) return failedDiagnostics(finishIssues(issues))
   exactKeys(definition, TOP_LEVEL_KEYS, issues, '')
   if (definition.schemaVersion !== 5) add(issues, 'invalid_literal', 'schemaVersion', 'schemaVersion must be 5')
   stringValue(definition.name, issues, 'name', { nonEmpty: true })
@@ -54,10 +69,34 @@ function validateMacroDefinition(input: unknown, mode: ValidationContext['mode']
   const layoutResult = validateMacroTerminalLayout(definition.terminalLayout)
   if (!layoutResult.ok) issues.push(...layoutResult.issues)
   const layout = new Map<number, TerminalType>(layoutResult.ok ? layoutResult.value.map((item) => [item.index, item.type]) : [])
-  const context: ValidationContext = { issues, layout, nodeIds: new Set(), artifactOutputs: new Map(), loopDepth: 0, templateScopeDepth: 0, mode }
+  const context: ValidationContext = {
+    issues,
+    layout,
+    nodeIds: new Set(),
+    artifactOutputs: new Map(),
+    loopDepth: 0,
+    templateScopeDepth: 0,
+    mode: 'runnable',
+    onNodeVisited: metrics ? () => { metrics.nodeVisits += 1 } : undefined,
+  }
   validateNodeList(definition.body, 'body', context, false, false)
-  if (issues.length > 0) return { ok: false, issues: finishIssues(issues) }
-  return { ok: true, value: cloneJsonValue(input) as MacroDefinitionV5 }
+  const ordered = finishIssues(issues)
+  const persistableIssues = ordered.filter((issue) => (
+    issue.code !== 'unassigned_terminal_reference'
+      && issue.code !== 'unassigned_artifact_reference'
+  ))
+  if (persistableIssues.length > 0) return failedDiagnostics(persistableIssues)
+  const value = cloneSuccess ? cloneJsonValue(input) as MacroDefinitionV5 : input as MacroDefinitionV5
+  const persistable: MacroDefinitionValidation = { ok: true, value }
+  const runnable: MacroDefinitionValidation = ordered.length > 0
+    ? { ok: false, issues: ordered }
+    : { ok: true, value }
+  return { persistable, runnable }
+}
+
+function failedDiagnostics(issues: MacroDefinitionIssue[]): MacroDefinitionDiagnostics {
+  const failed: MacroDefinitionValidation = { ok: false, issues }
+  return { persistable: failed, runnable: failed }
 }
 
 export function parseAndValidateMacroDefinitionJson(text: string): MacroDefinitionJsonValidation {

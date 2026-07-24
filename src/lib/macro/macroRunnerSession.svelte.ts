@@ -1,10 +1,6 @@
 import type { RoomSnapshot, TerminalRuntimePosition } from '../protocol'
 import type { TerminalRoomClient } from '../terminalRoomClient'
-import {
-  validateMacroDefinitionV5,
-  validateMacroTerminalLayout,
-  validateRunnableMacroDefinitionV5,
-} from './macroDefinitionValidation'
+import { validateMacroTerminalLayout } from './macroDefinitionValidation'
 import {
   formatMacroIssues,
   formatMacroJsonValidation,
@@ -14,7 +10,13 @@ import {
 import type { MacroRecordSession } from './macroRecordSession.svelte'
 import { validateMacroRuntimeBinding } from './macroRuntimeBinding'
 import { MacroRunnerClient } from './macroRunnerClient'
-import { isActiveMacroRunnerStatus, type MacroRunnerSnapshot, type MacroRunTrace } from './runnerTypes'
+import { createMacroRunnerInputSession } from './macroRunnerInputSession.svelte'
+import { validateMacroRunnerSnapshot } from './runnerSnapshotMerge'
+import {
+  isActiveMacroRunnerStatus,
+  type MacroRunnerSnapshot,
+} from './runnerTypes'
+import { createMacroTraceSession } from './macroTraceSession.svelte'
 
 type MacroRunnerSessionOptions = {
   roomClient(): TerminalRoomClient | null
@@ -26,37 +28,32 @@ type MacroRunnerSessionOptions = {
   record: MacroRecordSession
   json: MacroJsonEditSession
   onRoomSnapshot(snapshot: RoomSnapshot): void
+  flushPendingText(): Promise<void>
 }
 
 export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
   const runnerClient = new MacroRunnerClient(options.roomClient)
   let preparing = $state(false)
   let runner = $state<MacroRunnerSnapshot | null>(null)
-  let traces = $state<MacroRunTrace[]>([])
-  let runnerInput = $state('')
-  let runnerInputDirty = $state(false)
-  let runnerInputSyncing = $state(false)
-  let runnerInputFlushPromise: Promise<void> | null = null
-  let runnerInputEditGeneration = 0
-  let runnerInputAcknowledgedGeneration = 0
   let runnerRefreshGeneration = 0
+  const input = createMacroRunnerInputSession({
+    roomClient: options.roomClient,
+    canMutateShared: options.canMutateShared,
+    runner: () => runner,
+    runnerClient,
+    record: options.record,
+    refreshRunner: () => refreshRunner(false),
+  })
+  const trace = createMacroTraceSession({
+    runnerClient,
+    roomClient: options.roomClient,
+    reportError: (error) => options.record.setErrorText(error),
+  })
 
   $effect(() => {
     const next = options.runnerSnapshot()
     if (next) installRunnerSnapshot(next)
   })
-
-  $effect(() => {
-    if (options.canMutateShared()) return
-    const input = runner?.runtimeInput
-    runnerInput = input?.draft ?? ''
-    runnerInputDirty = false
-    runnerInputAcknowledgedGeneration = runnerInputEditGeneration
-  })
-
-  function mount(): void {
-    void refreshTraces()
-  }
 
   function resolvePrepareState(): { disabled: boolean; reason: string } {
     if (!options.record.draft && !options.json.editing) {
@@ -90,9 +87,9 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
     if (options.record.operationPending || options.json.editing) {
       return { disabled: true, reason: 'Save or cancel the pending edit first' }
     }
-    const portableValidation = validateMacroDefinitionV5(draft)
+    const portableValidation = options.record.diagnostics.persistable
     if (!portableValidation.ok) return { disabled: true, reason: 'Fix macro validation issues' }
-    const runnableValidation = validateRunnableMacroDefinitionV5(draft)
+    const runnableValidation = options.record.diagnostics.runnable
     if (!runnableValidation.ok) {
       const unassigned = runnableValidation.issues.filter((issue) =>
         issue.code === 'unassigned_terminal_reference' || issue.code === 'unassigned_artifact_reference',
@@ -117,6 +114,7 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
   }
 
   async function prepareTerminals(): Promise<void> {
+    options.record.flushDiagnostics()
     const roomClient = options.roomClient()
     if (!roomClient || !options.canMutateShared()) {
       options.record.rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected')
@@ -166,12 +164,12 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
     if (action !== 'start') {
       const token = options.record.beginOperation()
       try {
-        const nextRunner = action === 'pause'
+        const ack = action === 'pause'
           ? await runnerClient.pause()
           : action === 'resume'
             ? await runnerClient.resume()
             : await runnerClient.stop()
-        if (options.record.canCommit(token)) installRunnerSnapshot(nextRunner)
+        assertRunnerActionAck(ack, roomClient.roomId)
       } catch (error) {
         if (options.record.canCommit(token)) options.record.reportMutationError(error)
       } finally {
@@ -181,8 +179,15 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
     }
 
     const draft = options.record.draft
-    const portableValidation = validateMacroDefinitionV5(draft)
-    const runnableValidation = validateRunnableMacroDefinitionV5(draft)
+    try {
+      await options.flushPendingText()
+    } catch (error) {
+      options.record.rejectMutation(messageOf(error))
+      return
+    }
+    const diagnostics = options.record.flushDiagnostics()
+    const portableValidation = diagnostics.persistable
+    const runnableValidation = diagnostics.runnable
     const runtimeValidation = draft
       ? validateMacroRuntimeBinding(draft.terminalLayout, options.terminalPositions())
       : null
@@ -201,9 +206,9 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
     try {
       const record = await options.record.resolveStartRecord(token, snapshot)
       if (!record || !options.record.canCommit(token)) return
-      const nextRunner = await runnerClient.start(record.id, record.revision, structureRevision)
+      const ack = await runnerClient.start(record.id, record.revision, structureRevision)
+      assertRunnerActionAck(ack, roomClient.roomId)
       if (options.record.canCommit(token)) {
-        installRunnerSnapshot(nextRunner)
         options.record.setErrorText(null)
       }
     } catch (error) {
@@ -213,152 +218,29 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
     }
   }
 
-  async function submitRunnerInput(): Promise<void> {
-    const roomClient = options.roomClient()
-    if (!roomClient || !options.canMutateShared()) {
-      options.record.rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected')
-      return
-    }
-    if (options.record.operationPending) { options.record.rejectMutation('operation_pending'); return }
-    await flushRunnerInputDraft()
-    const input = runner?.runtimeInput
-    if (!input || runnerInputDirty) {
-      if (!input) options.record.rejectMutation('runner_not_waiting_input')
-      return
-    }
-    const token = options.record.beginOperation()
-    const value = runnerInput
-    try {
-      const nextRunner = await runnerClient.submitInput(input.invocationId, value, input.inputRevision)
-      if (options.record.canCommit(token)) installRunnerSnapshot(nextRunner)
-    } catch (error) {
-      if (options.record.canCommit(token)) {
-        options.record.reportMutationError(error)
-        if (messageOf(error) === 'runner_input_revision_conflict') await refreshRunner(false)
-      }
-    } finally {
-      options.record.endOperation(token)
-    }
-  }
-
-  function updateRunnerInput(value: string): void {
-    const roomClient = options.roomClient()
-    if (!roomClient || !options.canMutateShared()) {
-      options.record.rejectMutation(roomClient ? 'room_control_required' : 'room_disconnected')
-      return
-    }
-    if (!runner?.runtimeInput) { options.record.rejectMutation('runner_not_waiting_input'); return }
-    const requestInFlight = runnerInputFlushPromise !== null || runnerInputSyncing
-    runnerInputEditGeneration += 1
-    runnerInput = value
-    if (!requestInFlight && value === runner.runtimeInput.draft) {
-      runnerInputAcknowledgedGeneration = runnerInputEditGeneration
-      runnerInputDirty = false
-    } else {
-      runnerInputDirty = runnerInputEditGeneration > runnerInputAcknowledgedGeneration
-    }
-    if (runnerInputDirty) void flushRunnerInputDraft()
-  }
-
-  function flushRunnerInputDraft(): Promise<void> {
-    if (runnerInputFlushPromise) return runnerInputFlushPromise
-    const operation = (async () => {
-      runnerInputSyncing = true
-      try {
-        while (runnerInputEditGeneration > runnerInputAcknowledgedGeneration) {
-          if (!options.roomClient() || !options.canMutateShared()) break
-          const input = runner?.runtimeInput
-          if (!input) break
-          const desired = runnerInput
-          const sentGeneration = runnerInputEditGeneration
-          try {
-            const next = await runnerClient.updateInputDraft(input.invocationId, desired, input.inputRevision)
-            installRunnerSnapshot(next)
-            const acknowledged = next.runtimeInput
-            if (acknowledged?.invocationId === input.invocationId) {
-              runnerInputAcknowledgedGeneration = Math.max(runnerInputAcknowledgedGeneration, sentGeneration)
-              if (runnerInput === acknowledged.draft) {
-                runnerInputAcknowledgedGeneration = runnerInputEditGeneration
-              }
-              runnerInputDirty = runnerInputAcknowledgedGeneration < runnerInputEditGeneration
-            }
-          } catch (error) {
-            const reason = messageOf(error)
-            if (reason === 'runner_input_revision_conflict') {
-              const previousRevision = runner?.runtimeRevision
-              await refreshRunner(false)
-              if (runner?.runtimeRevision === previousRevision) {
-                options.record.reportMutationError(error)
-                break
-              }
-              continue
-            }
-            options.record.reportMutationError(error)
-            break
-          }
-        }
-      } finally {
-        runnerInputDirty = runnerInputAcknowledgedGeneration < runnerInputEditGeneration
-        runnerInputSyncing = false
-      }
-    })()
-    runnerInputFlushPromise = operation
-    void operation.finally(() => {
-      if (runnerInputFlushPromise === operation) runnerInputFlushPromise = null
-    })
-    return operation
-  }
-
   async function refreshRunner(report = true): Promise<void> {
     if (!options.roomClient()) return
     const generation = ++runnerRefreshGeneration
     try {
       const nextRunner = await runnerClient.snapshot()
-      if (generation === runnerRefreshGeneration) installRunnerSnapshot(nextRunner)
+      const validated = await validateMacroRunnerSnapshot(nextRunner)
+      if (validated.kind !== 'applied') throw new Error('runner_resync_invalid_snapshot')
+      if (generation === runnerRefreshGeneration) installRunnerSnapshot(validated.snapshot)
     } catch (error) {
       if (report) options.record.setErrorText(messageOf(error))
     }
   }
-
-  async function refreshTraces(report = true): Promise<void> {
-    if (!options.roomClient()) return
-    try {
-      traces = await runnerClient.traces()
-    } catch (error) {
-      if (report) options.record.setErrorText(messageOf(error))
-    }
-  }
-
   function installRunnerSnapshot(next: MacroRunnerSnapshot): void {
     if (runner && runner.roomGeneration === next.roomGeneration
       && next.runtimeRevision < runner.runtimeRevision) return
-    const previousInput = runner?.runtimeInput
     runner = next
-    const input = next.runtimeInput
-    if (!input) {
-      runnerInput = ''
-      runnerInputDirty = false
-      runnerInputEditGeneration = 0
-      runnerInputAcknowledgedGeneration = 0
-      return
-    }
-    if (previousInput?.invocationId !== input.invocationId) {
-      runnerInput = input.draft
-      runnerInputDirty = false
-      runnerInputEditGeneration = 0
-      runnerInputAcknowledgedGeneration = 0
-      return
-    }
-    const hasUnacknowledgedLocalEdit = runnerInputEditGeneration > runnerInputAcknowledgedGeneration
-    if (!hasUnacknowledgedLocalEdit || !options.canMutateShared() || runnerInput === input.draft) {
-      runnerInput = input.draft
-      runnerInputDirty = false
-      runnerInputAcknowledgedGeneration = runnerInputEditGeneration
-    } else {
-      runnerInputDirty = true
-    }
   }
 
+  function assertRunnerActionAck(ack: { roomId: string; runId: string; runtimeRevision: number }, roomId: string): void {
+    if (ack.roomId !== roomId || !ack.runId || !Number.isInteger(ack.runtimeRevision)) {
+      throw new Error('runner_action_ack_identity_mismatch')
+    }
+  }
   function definitionOperationIsCurrent(
     token: Parameters<MacroRecordSession['canCommit']>[0],
     source: 'visual' | 'json',
@@ -373,18 +255,28 @@ export function createMacroRunnerSession(options: MacroRunnerSessionOptions) {
   return {
     get preparing() { return preparing },
     get runner() { return runner },
-    get traces() { return traces },
-    get runnerInput() { return runnerInput },
-    get runnerInputSyncing() { return runnerInputSyncing },
+    get traces() { return trace.summaries },
+    get traceEvents() { return trace.events },
+    get selectedTraceRunId() { return trace.selectedRunId },
+    get hasPreviousTracePage() { return trace.hasPreviousSummaryPage },
+    get hasNextTracePage() { return trace.hasNextSummaryPage },
+    get hasPreviousTraceEventPage() { return trace.hasPreviousEventPage },
+    get hasNextTraceEventPage() { return trace.hasNextEventPage },
+    get runnerInput() { return input.value },
+    get runnerInputSyncing() { return input.syncing },
     get prepareState() { return resolvePrepareState() },
     get startState() { return resolveStartState() },
-    mount,
     prepareTerminals,
     controlRunner,
-    submitRunnerInput,
-    updateRunnerInput,
+    submitRunnerInput: input.submit,
+    updateRunnerInput: input.update,
     refreshRunner,
-    refreshTraces,
+    refreshTraces: trace.refresh,
+    selectTrace: trace.selectRun,
+    nextTraceSummaryPage: trace.nextSummaryPage,
+    previousTraceSummaryPage: trace.previousSummaryPage,
+    nextTraceEventPage: trace.nextEventPage,
+    previousTraceEventPage: trace.previousEventPage,
   }
 }
 

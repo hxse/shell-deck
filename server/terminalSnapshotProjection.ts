@@ -27,6 +27,7 @@ export function projectTerminalSnapshot(room: RoomRuntime, terminal: TerminalSlo
     backend: terminal.backendKind,
     cwd: terminal.cwd,
     replay: terminalReplayChunks(terminal),
+    contentHash: terminal.contentHash,
     exitCode: terminal.exitCode,
     signal: terminal.signal,
     ...terminalRevisionFields(room, terminal),
@@ -71,6 +72,22 @@ export function projectTerminalReplayMessage(room: RoomRuntime, terminal: Termin
     terminalId: terminal.terminalId,
     launchId: terminal.launchId,
     replay: terminalReplayChunks(terminal),
+    ...terminalRevisionFields(room, terminal),
+  }
+}
+
+export function projectTerminalTextSnapshotMessage(room: RoomRuntime, terminal: TerminalSlot): ServerMessage {
+  if (terminal.backendKind !== 'text' || !terminal.contentHash) {
+    throw new Error('terminal_not_text_box:' + terminal.terminalId)
+  }
+  return {
+    type: 'terminal_text_snapshot',
+    roomId: room.roomId,
+    roomGeneration: room.roomGeneration,
+    terminalId: terminal.terminalId,
+    launchId: terminal.launchId,
+    content: terminalReplayChunks(terminal).join(''),
+    resultHash: terminal.contentHash,
     ...terminalRevisionFields(room, terminal),
   }
 }

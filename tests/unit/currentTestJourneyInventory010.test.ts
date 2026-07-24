@@ -70,6 +70,19 @@ const oldPrimaryFiles = [
 const splitBaseline = JSON.parse(readProjectFile(
   'tests/test-baseline/20260723C.013/mutableTestInventory.json',
 )) as SplitBaseline
+const currentMacroComprehensive = {
+  ...splitBaseline.macroComprehensive,
+  postSplitSourceSha256: '050c619437911baabc9b4258cf723b481ffd4908cbc0df60ae662f492fbbd547',
+}
+const currentRoomLargeReplay = {
+  ...splitBaseline.roomLargeReplay,
+  postSplitSourceSha256: 'a00b81a502b7b9a0355e0ae652d053170c439252352fa280ec0d3830a64f0883',
+  caseHashes: {
+    ...splitBaseline.roomLargeReplay.caseHashes,
+    'visited terminal views survive Shell and Text tab switches without replaying long history':
+      '759f1b681dc9e9881fb345ff25287e299c9f28d12cefc68df0d3d6ad363ea500',
+  },
+}
 
 type CaseInventory = {
   title: string
@@ -113,10 +126,10 @@ test('current journeys preserve every attributed case, assertion and forced gate
 
   expect(inventory).toHaveLength(40)
   expect(new Set(inventory.map(({ title }) => title)).size).toBe(40)
-  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(449)
-  expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(17)
+  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(451)
+  expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(18)
   expect(inventory.reduce((total, item) => total + item.waits, 0)).toBe(20)
-  expect(aggregate).toBe('242a232cb0c97c795860b4fd1a761f0db9f5e0c6fa4b6b77e7720bcbf87f15b6')
+  expect(aggregate).toBe('27d48a84e4d74ebede4df23ed693aa8f9de7e99b4a33fc5f952045525a48beab')
 
   expect(roomFiles.flatMap(readCaseInventory)).toHaveLength(14)
   expect(macroFiles.flatMap(readCaseInventory)).toHaveLength(11)
@@ -165,28 +178,28 @@ test('mutable split groups preserve pre-split cases, attributed evidence and for
   const savedContent = readSourceGroupInventory(savedContentFiles)
 
   expect(sourceEvidence(macro)).toEqual({
-    titles: splitBaseline.macroComprehensive.titles,
-    steps: splitBaseline.macroComprehensive.steps,
-    expects: splitBaseline.macroComprehensive.expects,
-    routes: splitBaseline.macroComprehensive.routes,
-    waits: splitBaseline.macroComprehensive.waits,
-    waitForTimeouts: splitBaseline.macroComprehensive.waitForTimeouts,
-    forced: splitBaseline.macroComprehensive.forced,
-    sourceDigest: splitBaseline.macroComprehensive.postSplitSourceSha256,
+    titles: currentMacroComprehensive.titles,
+    steps: currentMacroComprehensive.steps,
+    expects: currentMacroComprehensive.expects,
+    routes: currentMacroComprehensive.routes,
+    waits: currentMacroComprehensive.waits,
+    waitForTimeouts: currentMacroComprehensive.waitForTimeouts,
+    forced: currentMacroComprehensive.forced,
+    sourceDigest: currentMacroComprehensive.postSplitSourceSha256,
   })
   expect({
     ...sourceEvidence(largeReplay),
     caseHashes: largeReplay.caseHashes,
   }).toEqual({
-    titles: Object.keys(splitBaseline.roomLargeReplay.caseHashes).sort(),
+    titles: Object.keys(currentRoomLargeReplay.caseHashes).sort(),
     steps: [],
-    expects: splitBaseline.roomLargeReplay.expects,
-    routes: splitBaseline.roomLargeReplay.routes,
-    waits: splitBaseline.roomLargeReplay.waits,
-    waitForTimeouts: splitBaseline.roomLargeReplay.waitForTimeouts,
-    forced: splitBaseline.roomLargeReplay.forced,
-    sourceDigest: splitBaseline.roomLargeReplay.postSplitSourceSha256,
-    caseHashes: splitBaseline.roomLargeReplay.caseHashes,
+    expects: currentRoomLargeReplay.expects,
+    routes: currentRoomLargeReplay.routes,
+    waits: currentRoomLargeReplay.waits,
+    waitForTimeouts: currentRoomLargeReplay.waitForTimeouts,
+    forced: currentRoomLargeReplay.forced,
+    sourceDigest: currentRoomLargeReplay.postSplitSourceSha256,
+    caseHashes: currentRoomLargeReplay.caseHashes,
   })
   expect({
     ...sourceEvidence(savedContent),

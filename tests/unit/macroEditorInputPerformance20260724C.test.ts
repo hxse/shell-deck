@@ -20,26 +20,23 @@ describe('20260724C Macro draft mutation hot path', () => {
     expect(draft).toBe(identity)
   })
 
-  test('serializes the immutable base only when the baseline changes', () => {
-    let serializations = 0
-    const tracker = createMacroDraftMutationTracker((value) => {
-      serializations += 1
-      return JSON.stringify(value)
-    })
+  test('tracks affected paths and becomes clean immediately after exact reversion', () => {
+    const tracker = createMacroDraftMutationTracker()
     const base = definition('Saved')
+    base.body = [{ id: 'wait', type: 'wait', mode: 'duration', durationMs: 1 }]
     const draft = structuredClone(base)
 
     tracker.replaceBase(base)
-    expect(serializations).toBe(1)
     expect(tracker.apply(draft, (value) => { value.description = 'one' })).toBe(true)
-    expect(tracker.apply(draft, (value) => { value.description = 'two' })).toBe(true)
-    expect(serializations).toBe(3)
-
-    tracker.replaceBase(null)
-    expect(tracker.apply(draft, (value) => { value.description = 'new' })).toBe(true)
-    expect(serializations).toBe(3)
-    tracker.replaceBase(draft)
-    expect(serializations).toBe(4)
+    expect(tracker.apply(draft, (value) => {
+      const wait = value.body[0]
+      if (wait.type === 'wait' && wait.mode === 'duration') wait.durationMs = 2
+    })).toBe(true)
+    expect(tracker.apply(draft, (value) => { value.description = '' })).toBe(true)
+    expect(tracker.apply(draft, (value) => {
+      const wait = value.body[0]
+      if (wait.type === 'wait' && wait.mode === 'duration') wait.durationMs = 1
+    })).toBe(false)
   })
 
   test('source keeps hot text edits on the shared in-place gateway', () => {

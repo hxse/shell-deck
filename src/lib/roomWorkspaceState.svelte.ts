@@ -15,6 +15,7 @@ import { TerminalRoomClient } from './terminalRoomClient'
 import { applyTerminalStateProjection, TerminalViewStateStore, type TerminalViewSnapshot } from './terminalViewState'
 import { RoomWorkspaceMessageCoordinator } from './roomWorkspaceMessageCoordinator'
 import { RoomWorkspaceReconnectCoordinator } from './roomWorkspaceReconnectCoordinator'
+import { TextTerminalProjectionCoordinator } from './textTerminalProjectionCoordinator'
 
 type RoomWorkspaceStateOptions = {
   roomId: string
@@ -59,6 +60,16 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     volume: options.notificationVolume,
     notice: options.notificationNotice,
   })
+  const textProjection = new TextTerminalProjectionCoordinator({
+    roomGeneration: () => roomGeneration,
+    client: () => client,
+    terminal: (terminalId) => terminals.find((item) => item.terminalId === terminalId),
+    install: (snapshot) => {
+      terminals = terminals.map((item) => item.terminalId === snapshot.terminalId ? snapshot : item)
+    },
+    observeRoomRevision,
+    notice: options.mutationNotice,
+  })
   const reconnect = new RoomWorkspaceReconnectCoordinator({
     roomId,
     identity: () => ({ active, connected, roomId, roomGeneration, controlView, controlPending, client }),
@@ -84,6 +95,9 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     upsertTerminal,
     appendTerminalReplay,
     replaceTerminalReplay,
+    applyTerminalTextMutation: (message) => { textProjection.applyMutation(message) },
+    applyTerminalTextSnapshot: (message) => { textProjection.applySnapshot(message) },
+    requestTerminalTextRepair: (message) => { textProjection.requestRepair(message) },
     applyTerminalIndexMap,
     applyTerminalState,
     applyTerminalCwd,
@@ -135,6 +149,7 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     contentRecordChanges = []
     contentEditLeaseChanges = []
     notificationDelivery.clear()
+    textProjection.reset()
     connected = false
     controlView = null
     controlPending = false
@@ -211,7 +226,10 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     terminalStructureRevision = message.terminalStructureRevision
     terminalPositions = message.terminalPositions
     terminalStructureLocked = message.terminalStructureLocked
-    terminals = terminals.map((terminal) => {
+    const retainedIds = new Set(message.items.map((item) => item.terminalId))
+    terminalViews.retain(retainedIds)
+    textProjection.retain(retainedIds)
+    terminals = terminals.filter((terminal) => retainedIds.has(terminal.terminalId)).map((terminal) => {
       const mapped = message.items.find((item) => item.terminalId === terminal.terminalId)
       return mapped ? { ...terminal, terminalIndex: mapped.index, visualOrder: mapped.index } : terminal
     }).sort((left, right) => left.terminalIndex - right.terminalIndex)
@@ -237,17 +255,25 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     terminalStructureRevision = snapshot.terminalStructureRevision
     terminalPositions = snapshot.terminalPositions
     terminalStructureLocked = snapshot.terminalStructureLocked
+    const previousById = new Map(terminals.map((terminal) => [terminal.terminalId, terminal]))
     terminals = terminalViews.mergeRoom(snapshot.terminals, terminals)
+    for (const terminal of terminals) {
+      if (terminal.backend === 'text' && terminal !== previousById.get(terminal.terminalId)) {
+        textProjection.validateTerminal(terminal.terminalId)
+      }
+    }
   }
 
   function upsertTerminal(snapshot: TerminalSnapshot) {
     const index = terminals.findIndex((terminal) => terminal.terminalId === snapshot.terminalId)
-    const view = terminalViews.mergeSnapshot(snapshot, index === -1 ? undefined : terminals[index])
+    const previous = index === -1 ? undefined : terminals[index]
+    const view = terminalViews.mergeSnapshot(snapshot, previous)
     if (index === -1) {
       terminals = [...terminals, view].sort((left, right) => left.terminalIndex - right.terminalIndex)
     } else {
       terminals = terminals.map((terminal) => terminal.terminalId === snapshot.terminalId ? view : terminal).sort((left, right) => left.terminalIndex - right.terminalIndex)
     }
+    if (snapshot.backend === 'text' && view !== previous) textProjection.validateTerminal(snapshot.terminalId)
   }
 
   function appendTerminalReplay(message: Extract<ServerMessage, { type: 'pty_output' }>) {
@@ -261,6 +287,7 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
       ? terminalViews.replaceReplay(terminal, message.replay, message)
       : terminal)
   }
+
 
   function observeRoomRevision(revision: number): void {
     roomRevisionGate.observeTerminal(revision)
@@ -281,9 +308,14 @@ export function createRoomWorkspaceState(options: RoomWorkspaceStateOptions) {
     event.dataTransfer?.setData('text/plain', terminalId)
   }
 
-  function dropOnTab(event: DragEvent, target: TerminalSnapshot, terminalDragEnabled: boolean) {
+  function dropOnTab(
+    event: DragEvent,
+    target: TerminalSnapshot,
+    terminalDragEnabled: boolean,
+    sourceTerminalId?: string,
+  ) {
     event.preventDefault()
-    const source = event.dataTransfer?.getData('text/plain') || draggingTerminalId
+    const source = sourceTerminalId || event.dataTransfer?.getData('text/plain') || draggingTerminalId
     draggingTerminalId = null
     if (!canMutateShared) { options.mutationNotice(connected ? 'room_control_required' : 'room_disconnected'); return }
     if (terminalStructureLocked) { options.mutationNotice('room_structure_locked_by_run'); return }

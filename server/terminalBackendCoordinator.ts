@@ -1,6 +1,10 @@
 import { assertGeneratedId } from '../src/lib/generatedId'
 import type { RoomSnapshot, ServerMessage, TerminalBackendKind, TerminalSnapshot } from '../src/lib/protocol'
 import { normalizeTerminalRef, type TerminalRef } from '../src/lib/terminalIdentity'
+import {
+  applyTextTerminalMutation,
+  type TextTerminalMutation,
+} from '../src/lib/textTerminalMutation'
 import { FakeTerminalBackend } from './fakeTerminalBackend'
 import { RealPtyBackend } from './realPtyBackend'
 import type {
@@ -32,7 +36,9 @@ import {
   projectTerminalIndexMapMessage,
   projectTerminalSnapshot,
   projectTerminalStateMessage,
+  projectTerminalTextSnapshotMessage,
 } from './terminalSnapshotProjection'
+import { textTerminalHash } from './textTerminalHash'
 
 export { resolveShellCwd }
 
@@ -171,19 +177,56 @@ export class TerminalBackendCoordinator {
     }
   }
 
-  setTextContent(roomId: string, ref: TerminalRef | string | number, content: string) {
+  mutateTextContent(
+    roomId: string,
+    ref: TerminalRef | string | number,
+    expectedTextRevision: number,
+    mutation: TextTerminalMutation,
+    resultHash: string,
+  ) {
     const ticket = this.options.admit(roomId)
     try {
       const room = this.options.roomOrThrow(roomId)
       const terminal = this.resolveTerminal(roomId, ref)
       if (terminal.backendKind !== 'text') throw new Error('terminal_not_text_box:' + terminal.terminalId)
+      if (terminal.textRevision !== expectedTextRevision) {
+        return { ok: false as const, reason: 'text_revision_conflict' as const, terminal }
+      }
+      let content: string
+      try {
+        content = applyTextTerminalMutation(terminal.replay.join(''), mutation)
+      } catch {
+        return { ok: false as const, reason: 'invalid_text_patch' as const, terminal }
+      }
+      const verifiedHash = textTerminalHash(content)
+      if (verifiedHash !== resultHash) {
+        return { ok: false as const, reason: 'text_result_hash_mismatch' as const, terminal }
+      }
       replaceTerminalReplay(terminal, content)
+      terminal.contentHash = verifiedHash
       this.advanceTerminalRevision(room, terminal, { text: true, outputActivity: true })
-      this.options.broadcast(room, this.terminalSnapshot(terminal))
-      return { ok: true as const }
+      this.options.broadcast(room, {
+        type: 'terminal_text_mutation',
+        roomId: room.roomId,
+        roomGeneration: room.roomGeneration,
+        terminalId: terminal.terminalId,
+        launchId: terminal.launchId,
+        mutation,
+        resultHash: verifiedHash,
+        roomRevision: room.roomRevision,
+        terminalRevision: terminal.terminalRevision,
+        textRevision: terminal.textRevision,
+        outputActivityRevision: terminal.outputActivityRevision,
+      })
+      return { ok: true as const, terminal }
     } finally {
       ticket.finish()
     }
+  }
+
+  textSnapshot(roomId: string, ref: TerminalRef | string | number): ServerMessage {
+    const room = this.options.activeRoomOrThrow(roomId)
+    return projectTerminalTextSnapshotMessage(room, this.resolveTerminal(roomId, ref))
   }
 
   resize(roomId: string, ref: TerminalRef | string | number, cols: number, rows: number) {
@@ -265,7 +308,6 @@ export class TerminalBackendCoordinator {
       this.beginBackendClose(room, terminal.backend)
       commitTerminalClose(room, terminal.terminalId)
       this.broadcastIndexMap(room)
-      this.options.broadcast(room, this.roomSnapshot(room))
       return { ok: true as const }
     } finally {
       ticket.finish()

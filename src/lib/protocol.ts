@@ -1,6 +1,11 @@
 import type { ContentEditLeaseView, ContentResourceKey } from './contentEditLease'
 import type { MacroRunnerDelta, MacroRunnerSnapshot } from './macro/runnerTypes'
 import type { RoomControlGrant, RoomControlView } from './roomControl'
+import {
+  assertTextTerminalMutation,
+  isSha256TextHash,
+  type TextTerminalMutation,
+} from './textTerminalMutation'
 
 export type TerminalBackendKind = 'fake' | 'real' | 'text'
 export type TerminalStatus = 'starting' | 'running' | 'closed' | 'failed'
@@ -37,6 +42,7 @@ export type TerminalSnapshot = TerminalRevisionFields & {
   backend: TerminalBackendKind
   cwd: string | null
   replay: string[]
+  contentHash: string | null
   exitCode: number | null
   signal: string | null
 }
@@ -108,6 +114,9 @@ export type ServerMessage =
   | { type: 'terminal_error'; roomId: string; roomGeneration: string; terminalId?: string; reason: string }
   | (TerminalRevisionFields & { type: 'terminal_replay'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; replay: string[] })
   | { type: 'input_rejected'; roomId: string; roomGeneration: string; terminalId: string; reason: string }
+  | (TerminalRevisionFields & { type: 'terminal_text_mutation'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; mutation: TextTerminalMutation; resultHash: string })
+  | (TerminalRevisionFields & { type: 'terminal_text_snapshot'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; content: string; resultHash: string })
+  | { type: 'terminal_text_resync_required'; roomId: string; roomGeneration: string; terminalId: string; launchId: string; textRevision: number; reason: 'text_revision_conflict' | 'text_result_hash_mismatch' | 'invalid_text_patch' }
   | { type: 'runner_snapshot'; snapshot: MacroRunnerSnapshot }
   | { type: 'runner_delta'; delta: MacroRunnerDelta }
   | ContentRecordChangedMessage
@@ -117,12 +126,13 @@ export type ServerMessage =
 export type ClientMessage =
   | { type: 'create_terminal'; backend?: TerminalBackendKind; cols?: number; rows?: number; cwd?: string; cwdSource?: 'last-shell' }
   | { type: 'terminal_input'; terminalId?: string; terminalIndex?: number; data: string }
-  | { type: 'set_terminal_text'; terminalId?: string; terminalIndex?: number; content: string }
+  | { type: 'mutate_terminal_text'; terminalId?: string; terminalIndex?: number; expectedTextRevision: number; mutation: TextTerminalMutation; resultHash: string }
   | { type: 'terminal_resize'; terminalId?: string; terminalIndex?: number; cols: number; rows: number }
   | { type: 'reorder_terminal'; terminalId: string; newIndex: number }
   | { type: 'close_terminal'; terminalId?: string; terminalIndex?: number }
   | { type: 'reset_terminal'; terminalId?: string; terminalIndex?: number; backend?: TerminalBackendKind }
   | { type: 'request_replay'; terminalId?: string; terminalIndex?: number }
+  | { type: 'request_text_snapshot'; terminalId?: string; terminalIndex?: number }
   | { type: 'request_snapshot' }
 
 export function parseClientMessage(raw: string | Buffer): ClientMessage {
@@ -135,12 +145,13 @@ export function parseClientMessage(raw: string | Buffer): ClientMessage {
   const fields: Record<string, string[]> = {
     create_terminal: ['type', 'backend', 'cols', 'rows', 'cwd', 'cwdSource'],
     terminal_input: ['type', 'terminalId', 'terminalIndex', 'data'],
-    set_terminal_text: ['type', 'terminalId', 'terminalIndex', 'content'],
+    mutate_terminal_text: ['type', 'terminalId', 'terminalIndex', 'expectedTextRevision', 'mutation', 'resultHash'],
     terminal_resize: ['type', 'terminalId', 'terminalIndex', 'cols', 'rows'],
     reorder_terminal: ['type', 'terminalId', 'newIndex'],
     close_terminal: ['type', 'terminalId', 'terminalIndex'],
     reset_terminal: ['type', 'terminalId', 'terminalIndex', 'backend'],
     request_replay: ['type', 'terminalId', 'terminalIndex'],
+    request_text_snapshot: ['type', 'terminalId', 'terminalIndex'],
     request_snapshot: ['type'],
   }
   const allowed = typeof type === 'string' ? fields[type] : undefined
@@ -157,7 +168,11 @@ export function parseClientMessage(raw: string | Buffer): ClientMessage {
     if (record.rows !== undefined && (!Number.isInteger(record.rows) || (record.rows as number) < 2)) throw new Error('invalid_terminal_size')
   }
   if (type === 'terminal_input' && typeof record.data !== 'string') throw new Error('invalid_terminal_input')
-  if (type === 'set_terminal_text' && typeof record.content !== 'string') throw new Error('invalid_terminal_text')
+  if (type === 'mutate_terminal_text') {
+    if (!Number.isInteger(record.expectedTextRevision) || (record.expectedTextRevision as number) < 0) throw new Error('invalid_text_revision')
+    record.mutation = assertTextTerminalMutation(record.mutation)
+    if (!isSha256TextHash(record.resultHash)) throw new Error('invalid_text_result_hash')
+  }
   if (type === 'terminal_resize' && (!Number.isInteger(record.cols) || !Number.isInteger(record.rows))) throw new Error('invalid_terminal_size')
   if (type === 'reorder_terminal' && (typeof record.terminalId !== 'string' || !Number.isInteger(record.newIndex))) throw new Error('invalid_terminal_reorder')
   return value as ClientMessage

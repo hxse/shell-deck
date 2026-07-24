@@ -13,12 +13,33 @@ import type {
 export type ArtifactChoice = { label: string; source: FlowV2StepArtifactSource }
 export type TextArtifactChoice = { label: string; source: FlowV2TextStepArtifactSource }
 export type JsonArtifactChoice = { label: string; source: Extract<FlowV2StepArtifactSource, { artifact: 'captured_json' }> }
+export type ArtifactChoiceIndex = {
+  before(nodeId: string): ArtifactChoice[]
+}
+
+type ArtifactScope = {
+  parent: ArtifactScope | null
+  choice: ArtifactChoice | null
+  cached: ArtifactChoice[] | null
+}
+
+export function buildArtifactChoiceIndex(template: MacroDefinitionV5): ArtifactChoiceIndex {
+  const root: ArtifactScope = { parent: null, choice: null, cached: [] }
+  const scopes = new Map<string, ArtifactScope>()
+  indexArtifactScopes(template.body, root, scopes)
+  return {
+    before(nodeId) {
+      const scope = scopes.get(nodeId)
+      return scope ? materializeArtifactScope(scope) : []
+    },
+  }
+}
 
 export function artifactChoicesBefore(
   template: MacroDefinitionV5,
   nodeId: string,
 ): ArtifactChoice[] {
-  return collectArtifactChoicesBefore(template.body, nodeId, []).choices
+  return buildArtifactChoiceIndex(template).before(nodeId)
 }
 
 export function laneArtifactChoices(
@@ -94,34 +115,32 @@ export function parallelOutputSourceFromKey(key: string): ParallelOutputSource {
   return source && source.artifact !== 'captured_json' ? source : { kind: 'none' }
 }
 
-function collectArtifactChoicesBefore(
+function indexArtifactScopes(
   nodes: FlowV2Node[],
-  targetNodeId: string,
-  visible: ArtifactChoice[],
-): { choices: ArtifactChoice[]; found: boolean } {
-  const choices = [...visible]
+  visible: ArtifactScope,
+  scopes: Map<string, ArtifactScope>,
+): void {
+  let current = visible
   for (const node of nodes) {
-    if (node.id === targetNodeId) return { choices, found: true }
+    if (!scopes.has(node.id)) scopes.set(node.id, current)
     if (node.type === 'if') {
-      for (const branch of node.branches) {
-        const result = collectArtifactChoicesBefore(branch.body, targetNodeId, choices)
-        if (result.found) return result
-      }
-      if (node.else) {
-        const result = collectArtifactChoicesBefore(node.else, targetNodeId, choices)
-        if (result.found) return result
-      }
+      for (const branch of node.branches) indexArtifactScopes(branch.body, current, scopes)
+      if (node.else) indexArtifactScopes(node.else, current, scopes)
     } else if (node.type === 'for') {
-      const result = collectArtifactChoicesBefore(node.body, targetNodeId, choices)
-      if (result.found) return result
+      indexArtifactScopes(node.body, current, scopes)
     } else if (isControlTerminalNode(node) && node.body) {
-      const result = collectArtifactChoicesBefore(node.body, targetNodeId, choices)
-      if (result.found) return result
+      indexArtifactScopes(node.body, current, scopes)
     }
     const output = artifactOutputForNode(node)
-    if (output) choices.push(output)
+    if (output) current = { parent: current, choice: output, cached: null }
   }
-  return { choices, found: false }
+}
+
+function materializeArtifactScope(scope: ArtifactScope): ArtifactChoice[] {
+  if (scope.cached) return scope.cached
+  const parent = scope.parent ? materializeArtifactScope(scope.parent) : []
+  scope.cached = scope.choice ? [...parent, scope.choice] : parent
+  return scope.cached
 }
 
 function artifactOutputForNode(node: FlowV2Node): ArtifactChoice | null {

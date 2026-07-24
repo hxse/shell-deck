@@ -18,6 +18,7 @@ import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDe
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
+import { storeTracesForRoom } from '../helpers/macroTrace'
 
 import { acquireMacroLease, replayFromManager, request, roomGrant, waitFor } from './macroRuntime034.helpers'
 
@@ -52,7 +53,7 @@ test('published runner events stay successful when summary maintenance fails aft
     await waitFor(() => runner.snapshot(terminalRoom.roomId).status === 'completed')
     const terminalRunId = runner.snapshot(terminalRoom.roomId).runId!
     expect(store.readEvents(terminalRunId).map((event) => event.kind)).toEqual(['run_started', 'run_completed'])
-    expect(store.listTracesForRoom(terminalRoom.roomId)[0]).toMatchObject({ status: 'completed' })
+    expect(storeTracesForRoom(store, terminalRoom.roomId)[0]).toMatchObject({ status: 'completed' })
 
     const checkpointRoom = manager.createRoom()
     const checkpointGrant = roomGrant(manager, checkpointRoom.roomId)
@@ -68,7 +69,7 @@ test('published runner events stay successful when summary maintenance fails aft
     finally { checkpointTicket.finish() }
     await waitFor(() => runner.snapshot(checkpointRoom.roomId).status === 'completed')
     expect(failSequence100).toBe(false)
-    expect(store.listTracesForRoom(checkpointRoom.roomId)[0]).toMatchObject({ status: 'completed' })
+    expect(storeTracesForRoom(store, checkpointRoom.roomId)[0]).toMatchObject({ status: 'completed' })
 
     const inputRoom = manager.createRoom()
     const inputTerminal = manager.createTerminal(inputRoom.roomId, { backend: 'text' })
@@ -94,7 +95,7 @@ test('published runner events stay successful when summary maintenance fails aft
     expect(() => runner.submitInput(inputRoom.roomId, runtimeInput.invocationId, 'submitted', runtimeInput.inputRevision)).not.toThrow()
     await waitFor(() => runner.snapshot(inputRoom.roomId).status === 'completed')
     expect(replayFromManager(manager, inputRoom.roomId, inputTerminal.terminalId)).toBe('submitted')
-    expect(store.listTracesForRoom(inputRoom.roomId)[0]).toMatchObject({ status: 'completed' })
+    expect(storeTracesForRoom(store, inputRoom.roomId)[0]).toMatchObject({ status: 'completed' })
 
     const stopRoom = manager.createRoom()
     manager.createTerminal(stopRoom.roomId, { backend: 'text' })
@@ -106,7 +107,7 @@ test('published runner events stay successful when summary maintenance fails aft
     failKinds.add('run_stopped')
     expect(() => runner.stop(stopRoom.roomId)).not.toThrow()
     await waitFor(() => runner.snapshot(stopRoom.roomId).status === 'stopped')
-    expect(store.listTracesForRoom(stopRoom.roomId)[0]).toMatchObject({ status: 'stopped' })
+    expect(storeTracesForRoom(store, stopRoom.roomId)[0]).toMatchObject({ status: 'stopped' })
   } finally {
     await manager.destroyAllRooms()
     rmSync(root, { recursive: true, force: true })

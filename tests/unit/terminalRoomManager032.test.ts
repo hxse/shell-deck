@@ -7,6 +7,7 @@ import { parseClientMessage, type ServerMessage } from '../../src/lib/protocol'
 import { normalizeTerminalRef } from '../../src/lib/terminalIdentity'
 import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } from '../../server/terminalBackend'
 import { MAX_LIVE_ROOMS, TerminalRoomManager } from '../../server/terminalRoomManager'
+import { setTextTerminalContent } from '../helpers/textTerminal'
 
 test('Room lifecycle keeps runtime isolated and revisiting a token creates a new generation', async () => {
   const manager = new TerminalRoomManager()
@@ -157,9 +158,9 @@ test('terminal revisions distinguish equal-length output activity and Text write
   expect(manager.terminalOutputActivityRevision(room.roomId, room.roomGeneration, shell.terminalId, shell.launchId)).toBe(second.outputActivityRevision)
 
   const text = manager.createTerminal(room.roomId, { backend: 'text' })
-  manager.setTextContent(room.roomId, text.terminalId, 'a')
+  setTextTerminalContent(manager, room.roomId, text.terminalId, 'a')
   const textA = manager.roomSnapshot(room.roomId).terminals[1]
-  manager.setTextContent(room.roomId, text.terminalId, 'ab')
+  setTextTerminalContent(manager, room.roomId, text.terminalId, 'ab')
   const textAb = manager.roomSnapshot(room.roomId).terminals[1]
   expect(textAb.textRevision).toBe(textA.textRevision + 1)
   expect(textAb.terminalRevision).toBeGreaterThan(textA.terminalRevision)

@@ -235,7 +235,7 @@ test('persistable unassigned references round-trip through Macro CRUD but Start 
       issues: expectedIssues,
     })
     expect(server.macroRunner.hasActiveRun(room.roomId, room.roomGeneration)).toBe(false)
-    expect(server.macroRunner.traces(room.roomId)).toEqual([])
+    expect(server.macroRunner.traceSummaries(room.roomId, 1, null).items).toEqual([])
     expect(server.manager.roomSnapshot(room.roomId)).toEqual(before)
   } finally {
     await server.stop()

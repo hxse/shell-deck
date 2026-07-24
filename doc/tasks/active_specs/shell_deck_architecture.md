@@ -36,15 +36,15 @@ server实现中`TerminalRoomManager`是Room/terminal domain的唯一公开facade
 
 production Macro采用`MacroDefinitionV5`与`MacroRecord` envelope分层。definition只表达portable Flow、连续terminal index/type及exact assigned/unassigned logical references；record metadata由user-global store生成。Macro selection是单个browser的editor状态，新Room默认null selection，不改变Room terminal。
 
-`macroDefinitionValidation.ts`是definition value/JSON validation的唯一production gateway；`macroNodeValidation.ts`只按source order执行body traversal及`object -> ID -> type -> actionOnly -> type-specific` dispatch。Action与Control validator同步追加同一`ValidationContext.issues`，recursive body继续经node facade进入；共享text matcher只是pure field validator，不建立第二份issue collection或partial validation入口。
+`macroDefinitionValidation.ts`是definition value/JSON validation的唯一production gateway；`macroNodeValidation.ts`只按source order执行body traversal及`object -> ID -> type -> actionOnly -> type-specific` dispatch。Action与Control validator同步追加同一`ValidationContext.issues`，recursive body继续经node facade进入；共享text matcher只是pure field validator，不建立第二份issue collection或partial validation入口。Visual trusted draft的persistable/runnable diagnostics在一次clone-free traversal内同时生成，同一draft revision共享结果；JSON/persistence/Start边界继续strict validate。dirty由exact path journal对immutable base增量比较，不为每次输入clone、遍历或serialize完整definition；recording Proxy在写入边界递归unwrap，不能进入唯一draft或改变node identity。
 
 terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
 
-runner把manifest、append-only events和typed text/JSON artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、pending structured Capture、run snapshot和structure lock只在live process内。日志从不恢复runner。
+runner把manifest、append-only events和typed text/JSON artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、pending structured Capture、run snapshot和structure lock只在live process内。日志从不恢复runner。live Runner在Start时建立并复用唯一deep-frozen definition projection，普通delta只发送mutable state/new events并以revision加full logical-state hash验证；action HTTP只返回compact ack。Trace通过derived room/run index先分页summary，再按selected run分页event；多server process以cross-process lock合并index，valid summary不读取segment，event page只读覆盖页的segment，不再聚合扫描所有run与event tail。
 
 Shell启动时除AgentEvent hook context外还注入structured-result URL、同一memory-only ingest token与当前checkout canonical `SHELL_DECK_JUSTFILE`。`just -f "$SHELL_DECK_JUSTFILE" submit-json`从stdin提交当前Room generation与terminal launch的JSON；现有HTTP server按token、exact body、path Room/membership顺序只交给该Room live runner当前唯一matching waiter，不增加端口、step id或queue。Capture冻结JSON Schema 2020-12，成功后产生typed `captured_json`；JSON If通过JSON Pointer与typed matcher消费。Send/Notify message、Input default、Extract Text与`text_match`作为textual boundary可读取JSON，并统一得到key排序、compact、无末尾换行的canonical JSON；这不产生第二份text artifact。Parallel final Output仍只接受lane-local text。
 
-正常runner UI不polling。连接/重连收到完整、revisioned runner snapshot，后续状态由server push；Running Macro是Room共享的冻结只读配置，不覆盖各browser本地正在查看或编辑的Macro。runtime input draft也由server内存持有并在single-controller takeover后继续。
+正常runner UI不polling。连接/重连收到完整、revisioned/hash-verified runner snapshot，后续状态由server push增量并在合并后验证全量state hash；Running Macro是Room共享的冻结只读配置，不覆盖各browser本地正在查看或编辑的Macro。runtime input draft也由server内存持有并在single-controller takeover后继续。Text full projection以monotonic token隔离异步hash，reset/reconnect后的旧结果不得覆盖current terminal truth。
 
 ## UI presentation
 

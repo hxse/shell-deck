@@ -3,6 +3,7 @@ import type { ServerMessage, TerminalBackendKind } from '../../src/lib/protocol'
 import { FakeTerminalBackend } from '../../server/fakeTerminalBackend'
 import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } from '../../server/terminalBackend'
 import { DEFAULT_REPLAY_BYTE_LIMIT, TerminalRoomManager } from '../../server/terminalRoomManager'
+import { setTextTerminalContent } from '../helpers/textTerminal'
 
 class ManualOutputBackend implements TerminalBackend {
   readonly inputChannel = 'helper-stdin-pipe' as const
@@ -32,7 +33,7 @@ test('Room replay limit is byte-bounded, UTF-8 safe and Text remains unbounded',
 
   const text = manager.createTerminal(room.roomId, { backend: 'text' })
   const content = 'prefix😀multiline\nvalue'
-  manager.setTextContent(room.roomId, text.terminalId, content)
+  setTextTerminalContent(manager, room.roomId, text.terminalId, content)
   expect(manager.roomSnapshot(room.roomId).terminals[1].replay).toEqual([content])
   await manager.destroyAllRooms()
 })
@@ -74,7 +75,7 @@ test('Room clients synchronize Fake/Text output while different Rooms remain iso
   expect(outputText(rightClient, other.terminalId)).not.toContain('first')
 
   const text = manager.createTerminal(left.roomId, { backend: 'text' })
-  manager.setTextContent(left.roomId, text.terminalId, 'manual edit')
+  setTextTerminalContent(manager, left.roomId, text.terminalId, 'manual edit')
   expect(manager.roomSnapshot(left.roomId).terminals.find((item) => item.terminalId === text.terminalId)?.replay).toEqual(['manual edit'])
   await manager.destroyAllRooms()
 })

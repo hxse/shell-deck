@@ -4,7 +4,7 @@ import {
   type RoomRuntime,
 } from './roomLifecycleCoordinator'
 import type { TerminalBackend } from './terminalBackend'
-import { appendTerminalReplay } from './terminalReplayBuffer'
+import { appendTerminalReplay, replaceTerminalReplay } from './terminalReplayBuffer'
 import {
   markTerminalRuntimeClosed,
   markTerminalRuntimeFailed,
@@ -14,6 +14,7 @@ import {
   projectTerminalStateMessage,
   terminalRevisionFields,
 } from './terminalSnapshotProjection'
+import { textTerminalHash } from './textTerminalHash'
 
 export type TerminalBackendCandidate = {
   terminal: TerminalSlot
@@ -80,6 +81,24 @@ export class TerminalBackendLifecycle {
   private emitOutput(terminal: TerminalSlot, data: string): void {
     if (!isCurrentTerminal(this.options.rooms, terminal)) return
     const room = this.options.rooms.get(terminal.roomId)!
+    if (terminal.backendKind === 'text') {
+      const base = terminal.replay.join('')
+      const content = base + data
+      replaceTerminalReplay(terminal, content)
+      terminal.contentHash = textTerminalHash(content)
+      this.options.advanceTerminalRevision(room, terminal, { text: true, outputActivity: true })
+      this.options.broadcast(room, {
+        type: 'terminal_text_mutation',
+        roomId: room.roomId,
+        roomGeneration: room.roomGeneration,
+        terminalId: terminal.terminalId,
+        launchId: terminal.launchId,
+        mutation: { kind: 'patch', start: base.length, deleteCount: 0, insert: data },
+        resultHash: terminal.contentHash,
+        ...terminalRevisionFields(room, terminal),
+      })
+      return
+    }
     appendTerminalReplay(terminal, data, this.options.replayByteLimit)
     this.options.advanceTerminalRevision(room, terminal, { outputActivity: true })
     this.options.broadcast(room, {

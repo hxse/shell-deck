@@ -10,6 +10,8 @@ Macro `capture-source`只能消费与frozen run snapshot的serverInstanceId、ro
 
 AgentEvent Capture必须显式保存`waitLimit`。`{kind:"unbounded"}`无限等待匹配结果，直到成功、用户Stop、Room/launch失效、server restart或matching `agent.error`；不存在隐藏server timeout。`{kind:"timeout",timeoutMs}`只计算active waiting time，Pause期间冻结，超时以`agent_event_capture_timeout:<terminalId>` fail loudly。matching hook error以`agent_event_hook_error:<terminalId>`立即失败。迟到event只保留为evidence，不复活终态run；下一次Start的baseline必须忽略它。
 
+每份current Room/generation JSONL在本进程第一次访问时完整读取、解析并严格验证一次，随后由同一store维护eventId、terminal/launch、agent/event kind与adapter索引。append以Set做duplicate ID检查，按line append → file fsync → 首次创建时parent fsync → publish in-memory index/version的顺序提交；durability失败不能让waiter观察到event。Capture等待store version notification，新append立即唤醒；100ms heartbeat只检查Pause/abort/active timeout，version未变化时不重扫index或日志。
+
 成功capture写入run artifact与`artifact_created` evidence，但AgentEvent、artifact和Trace永不用于恢复Room或runner。server restart、Room generation或launch变化后，旧event不能满足新run capture。
 
 ## Structured JSON submission

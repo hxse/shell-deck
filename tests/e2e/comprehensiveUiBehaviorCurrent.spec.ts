@@ -95,7 +95,11 @@ test('current Macro-only UI journey preserves Room interactions and exercises au
     const text = Array.from({ length: 160 }, (_, index) => `offline line ${index + 1}`).join('\n')
     await first.getByTestId('text-box-editor').fill(text)
     covered.add('text-box-editor')
-    await expect(first.getByTestId('text-box-line-number-list').locator(':scope > div')).toHaveCount(160)
+    await first.getByTestId('text-box-editor').evaluate(() => (
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    ))
+    const renderedLineNumbers = await first.getByTestId('text-box-line-number-list').locator(':scope > div').count()
+    expect(renderedLineNumbers > 0 && renderedLineNumbers < 160).toBe(true)
     await first.getByTestId('text-box-editor').evaluate((element) => {
       element.scrollTop = 24
       element.dispatchEvent(new Event('scroll'))

@@ -54,29 +54,39 @@ export async function waitForMacroAgentEventCapture(
 ): Promise<{ text: string; raw: unknown; events: AgentEvent[] }> {
   const startedAtMs = performance.now()
   const pausedAtStartMs = context.totalPausedMs(startedAtMs)
+  const logIdentity = {
+    serverInstanceId: context.serverInstanceId,
+    roomId: context.roomId,
+    roomGeneration: context.roomGeneration,
+  }
+  let observedVersion = -1
   while (true) {
     await context.checkpoint()
     context.validateBinding(binding.index)
-    const hookError = context.agentEvents.nextMatching(
-      agentEventMatch(context, binding, 'agent.error'),
-      context.baselines.get(agentEventBaselineKey(stepId, 'agent.error')) ?? 0,
-      context.consumedEventIds,
-    )
-    if (hookError) {
-      context.consumedEventIds.add(hookError.eventId)
-      throw new Error('agent_event_hook_error:' + binding.terminalId)
-    }
-    const captured = agentEventsForCapture(context, stepId, binding, captureMode)
-    if (captured) {
-      for (const event of captured.events) context.consumedEventIds.add(event.eventId)
-      return captured
+    const currentVersion = context.agentEvents.version(logIdentity)
+    if (currentVersion !== observedVersion) {
+      observedVersion = currentVersion
+      const hookError = context.agentEvents.nextMatching(
+        agentEventMatch(context, binding, 'agent.error'),
+        context.baselines.get(agentEventBaselineKey(stepId, 'agent.error')) ?? 0,
+        context.consumedEventIds,
+      )
+      if (hookError) {
+        context.consumedEventIds.add(hookError.eventId)
+        throw new Error('agent_event_hook_error:' + binding.terminalId)
+      }
+      const captured = agentEventsForCapture(context, stepId, binding, captureMode)
+      if (captured) {
+        for (const event of captured.events) context.consumedEventIds.add(event.eventId)
+        return captured
+      }
     }
     const remaining = waitLimit.kind === 'timeout'
       ? waitLimit.timeoutMs - activeElapsedMs(context, startedAtMs, pausedAtStartMs)
       : null
     if (remaining !== null && remaining <= 0) throw new Error('agent_event_capture_timeout:' + binding.terminalId)
     const slice = remaining === null ? 100 : Math.min(100, remaining)
-    await abortableDelay(slice, context.abortSignal)
+    await context.agentEvents.waitForChange(logIdentity, observedVersion, slice, context.abortSignal)
   }
 }
 
@@ -169,14 +179,4 @@ function agentEventBaselineKey(stepId: string, eventKind: CaptureAgentEventKind)
 function activeElapsedMs(context: MacroAgentCaptureWaitContext, startedAtMs: number, pausedAtStartMs: number): number {
   const now = performance.now()
   return now - startedAtMs - (context.totalPausedMs(now) - pausedAtStartMs)
-}
-
-function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) { reject(new Error('run_stopped')); return }
-    const timer = setTimeout(done, ms)
-    signal.addEventListener('abort', aborted, { once: true })
-    function done() { signal.removeEventListener('abort', aborted); resolve() }
-    function aborted() { clearTimeout(timer); reject(new Error('run_stopped')) }
-  })
 }

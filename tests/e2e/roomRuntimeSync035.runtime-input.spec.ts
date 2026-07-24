@@ -95,7 +95,10 @@ test('runtime input coalescing submits the latest local generation when it retur
   const context = await browser.newContext()
   const firstDraftEntered = deferred<void>()
   const releaseFirstDraft = deferred<void>()
+  const submitEntered = deferred<void>()
+  const releaseSubmit = deferred<void>()
   let draftRequestCount = 0
+  let submitRequestCount = 0
   const draftValues: string[] = []
   let submittedValue: string | null = null
 
@@ -108,9 +111,12 @@ test('runtime input coalescing submits the latest local generation when it retur
     }
     await route.continue()
   })
-  context.on('request', (event) => {
-    if (!event.url().endsWith('/runner/input')) return
-    submittedValue = (event.postDataJSON() as { value?: string } | null)?.value ?? null
+  await context.route('**/runner/input', async (route) => {
+    submitRequestCount += 1
+    submittedValue = (route.request().postDataJSON() as { value?: string } | null)?.value ?? null
+    submitEntered.resolve()
+    await releaseSubmit.promise
+    await route.continue()
   })
 
   const page = await context.newPage()
@@ -136,6 +142,10 @@ test('runtime input coalescing submits the latest local generation when it retur
   await expect.poll(() => draftValues).toEqual(['A', 'D'])
   await expect(page.getByTestId('macro-run-input-text')).toHaveValue('D')
   await page.getByTestId('macro-run-input-submit').click()
+  await submitEntered.promise
+  await page.getByTestId('macro-run-input-submit').dispatchEvent('click')
+  expect(submitRequestCount).toBe(1)
+  releaseSubmit.resolve()
 
   await expect(page.getByTestId('macro-run-status').locator('strong')).toHaveText('completed', { timeout: 5_000 })
   expect(submittedValue).toBe('D')

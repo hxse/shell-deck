@@ -132,7 +132,7 @@ test('delayed Text own echo coalesces rapid edits without rolling the textarea b
           let delay = 0
           try {
             const message = JSON.parse(String(event.data))
-            if (message.type === 'terminal_snapshot' && message.backend === 'text' && message.textRevision === 1) delay = 250
+            if (message.type === 'terminal_text_mutation' && message.textRevision === 1) delay = 250
           } catch {}
           window.setTimeout(() => this.dispatchEvent(new MessageEvent('message', { data: event.data })), delay)
         })
@@ -149,7 +149,11 @@ test('delayed Text own echo coalesces rapid edits without rolling the textarea b
         if (typeof data === 'string') {
           try {
             const message = JSON.parse(data)
-            if (message.type === 'set_terminal_text') (window as typeof window & { __textWrites: string[] }).__textWrites.push(message.content)
+            if (message.type === 'mutate_terminal_text') {
+              const mutation = message.mutation as { kind: string; insert?: string; content?: string }
+              ;(window as typeof window & { __textWrites: string[] }).__textWrites
+                .push(mutation.kind === 'replace' ? mutation.content ?? '' : mutation.insert ?? '')
+            }
           } catch {}
         }
         this.#socket.send(data)
@@ -166,7 +170,7 @@ test('delayed Text own echo coalesces rapid edits without rolling the textarea b
   await editor.fill('ab')
   await editor.fill('a')
   await expect(editor).toHaveValue('a')
-  await expect.poll(async () => page.evaluate(() => (window as typeof window & { __textWrites?: string[] }).__textWrites)).toEqual(['a', 'a'])
+  await expect.poll(async () => page.evaluate(() => (window as typeof window & { __textWrites?: string[] }).__textWrites)).toEqual(['a'])
   await expect(editor).toHaveValue('a')
 })
 

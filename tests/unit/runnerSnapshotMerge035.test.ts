@@ -1,42 +1,86 @@
 import { expect, test } from 'bun:test'
+import { canonicalJsonStringify } from '../../src/lib/canonicalJson'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import { mergeMacroRunnerDelta } from '../../src/lib/macro/runnerSnapshotMerge'
+import { mergeMacroRunnerDelta, validateMacroRunnerSnapshot } from '../../src/lib/macro/runnerSnapshotMerge'
+import { canonicalRunnerState } from '../../src/lib/macro/runnerStateProjection'
 import type { MacroRunEvent, MacroRunnerDelta, MacroRunnerSnapshot } from '../../src/lib/macro/runnerTypes'
 import { RoomNotificationDelivery } from '../../src/lib/roomNotificationDelivery'
 import { RunnerRepairCoordinator } from '../../src/lib/runnerRepairCoordinator'
 import type { MacroNotificationMessage } from '../../src/lib/protocol'
+import { sha256Text } from '../../src/lib/textHash'
 
 const ROOM_ID = createGeneratedId('room')
 const ROOM_GENERATION = createGeneratedId('roomGeneration')
 const RUN_ID = createGeneratedId('run')
 
-test('runner delta appends each absolute event once and trims the discarded prefix', () => {
-  const current = snapshot([event(1), event(2)], { runtimeRevision: 2, lastEventSeq: 2, totalEventCount: 2 })
-  const delta = runnerDelta([event(3)], {
+test('runner delta appends each absolute event once and trims the discarded prefix', async () => {
+  const current = await snapshot([event(1), event(2)], { runtimeRevision: 2, lastEventSeq: 2, totalEventCount: 2 })
+  const delta = await runnerDelta(current, [event(3)], {
     runtimeRevision: 4,
     firstAvailableEventSeq: 2,
     lastEventSeq: 3,
     totalEventCount: 3,
     discardedEventCount: 1,
   })
-  const merged = mergeMacroRunnerDelta(current, delta)
+  const merged = await mergeMacroRunnerDelta(current, delta)
   expect(merged.kind).toBe('applied')
   expect(merged.snapshot?.events.map((item) => item.eventSeq)).toEqual([2, 3])
   expect(merged.snapshot).toMatchObject({ runtimeRevision: 4, firstAvailableEventSeq: 2, discardedEventCount: 1 })
-  expect(mergeMacroRunnerDelta(merged.snapshot, delta).kind).toBe('stale')
+  expect((await mergeMacroRunnerDelta(merged.snapshot, delta)).kind).toBe('stale')
 })
 
-test('runner delta requests a full resync on an event gap', () => {
-  const current = snapshot([event(1), event(2)], { runtimeRevision: 2, lastEventSeq: 2, totalEventCount: 2 })
-  const gap = runnerDelta([event(4)], { runtimeRevision: 3, lastEventSeq: 4, totalEventCount: 4 })
-  expect(mergeMacroRunnerDelta(current, gap)).toMatchObject({ kind: 'resync_required', snapshot: current })
+test('runner delta requests a full resync on an event gap', async () => {
+  const current = await snapshot([event(1), event(2)], { runtimeRevision: 2, lastEventSeq: 2, totalEventCount: 2 })
+  const gap = await runnerDelta(current, [event(4)], {
+    runtimeRevision: 3,
+    lastEventSeq: 4,
+    totalEventCount: 4,
+  })
+  expect(await mergeMacroRunnerDelta(current, gap)).toMatchObject({ kind: 'resync_required', snapshot: current })
+})
+
+test('runner state and frozen definition hashes reject quietly divergent projections', async () => {
+  const current = await snapshot([event(1)], {
+    runtimeRevision: 2,
+    lastEventSeq: 1,
+    totalEventCount: 1,
+  })
+  const delta = await runnerDelta(current, [event(2)], {
+    runtimeRevision: 3,
+    lastEventSeq: 2,
+    totalEventCount: 2,
+  })
+  expect(await mergeMacroRunnerDelta(current, {
+    ...delta,
+    stateHash: 'sha256:' + '0'.repeat(64),
+  })).toMatchObject({ kind: 'resync_required', snapshot: current })
+  expect(await validateMacroRunnerSnapshot({
+    ...current,
+    runningMacro: {
+      ...current.runningMacro!,
+      definitionHash: 'sha256:' + '1'.repeat(64),
+    },
+  })).toEqual({ kind: 'resync_required', snapshot: null })
+})
+
+test('runner state hash matches the JSON wire projection of event data', async () => {
+  const current = await snapshot([{
+    ...event(1),
+    data: { kept: 'wire value', omitted: undefined },
+  }], {
+    runtimeRevision: 2,
+    lastEventSeq: 1,
+    totalEventCount: 1,
+  })
+  const wire = JSON.parse(JSON.stringify(current)) as MacroRunnerSnapshot
+  expect((await validateMacroRunnerSnapshot(wire)).kind).toBe('applied')
 })
 
 test('runner repair retries one transient failure and ignores a suspended connection generation', async () => {
   const identity = { active: true, connected: true, roomId: ROOM_ID, roomGeneration: ROOM_GENERATION, connectionGeneration: 1 }
-  let current: MacroRunnerSnapshot | null = snapshot([], { runtimeRevision: 1 })
+  let current: MacroRunnerSnapshot | null = await snapshot([], { runtimeRevision: 1 })
   let fetchCount = 0
-  const repaired = snapshot([event(1)], { runtimeRevision: 3 })
+  const repaired = await snapshot([event(1)], { runtimeRevision: 3 })
   const coordinator = new RunnerRepairCoordinator({
     identity: () => identity,
     snapshot: () => current,
@@ -65,7 +109,7 @@ test('runner repair retries one transient failure and ignores a suspended connec
   await waitUntil(() => typeof resolveFetch === 'function')
   identity.connectionGeneration += 1
   suspended.suspend()
-  resolveFetch(Response.json({ ok: true, runner: snapshot([], { runtimeRevision: 4 }) }))
+  resolveFetch(Response.json({ ok: true, runner: await snapshot([], { runtimeRevision: 4 }) }))
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(current?.runtimeRevision).toBe(3)
   coordinator.dispose()
@@ -130,8 +174,13 @@ test('browser notification delivery repeats App presentation on interval and cle
   expect(notices).toEqual(['Repeated browser toast', 'Repeated browser toast'])
 })
 
-function snapshot(events: MacroRunEvent[], overrides: Partial<MacroRunnerSnapshot> = {}): MacroRunnerSnapshot {
-  return {
+async function snapshot(
+  events: MacroRunEvent[],
+  overrides: Partial<MacroRunnerSnapshot> = {},
+): Promise<MacroRunnerSnapshot> {
+  const definition = { schemaVersion: 5 as const, name: 'merge', description: '', terminalLayout: [], body: [] }
+  const definitionHash = await sha256Text(canonicalJsonStringify(definition))
+  const value: MacroRunnerSnapshot = {
     roomId: ROOM_ID,
     roomGeneration: ROOM_GENERATION,
     runtimeRevision: 1,
@@ -139,7 +188,8 @@ function snapshot(events: MacroRunEvent[], overrides: Partial<MacroRunnerSnapsho
     runningMacro: {
       recordId: createGeneratedId('macroTemplate'),
       recordRevision: 1,
-      definition: { schemaVersion: 5, name: 'merge', description: '', terminalLayout: [], body: [] },
+      definition,
+      definitionHash,
     },
     status: 'running',
     currentNodeId: null,
@@ -150,12 +200,52 @@ function snapshot(events: MacroRunEvent[], overrides: Partial<MacroRunnerSnapsho
     lastEventSeq: events.at(-1)?.eventSeq ?? 0,
     totalEventCount: events.at(-1)?.eventSeq ?? 0,
     discardedEventCount: 0,
+    stateHash: '',
     ...overrides,
   }
+  value.stateHash = await stateHash(value)
+  return value
 }
 
-function runnerDelta(events: MacroRunEvent[], overrides: Partial<MacroRunnerDelta>): MacroRunnerDelta {
-  return { ...snapshot(events), ...overrides }
+async function runnerDelta(
+  current: MacroRunnerSnapshot,
+  events: MacroRunEvent[],
+  overrides: Partial<MacroRunnerDelta>,
+): Promise<MacroRunnerDelta> {
+  if (!current.runId || !current.runningMacro) throw new Error('active snapshot required')
+  const delta: MacroRunnerDelta = {
+    roomId: current.roomId,
+    roomGeneration: current.roomGeneration,
+    runId: current.runId,
+    definitionHash: current.runningMacro.definitionHash,
+    expectedRuntimeRevision: current.runtimeRevision,
+    runtimeRevision: current.runtimeRevision + 1,
+    status: current.status,
+    currentNodeId: current.currentNodeId,
+    error: current.error,
+    runtimeInput: current.runtimeInput,
+    events,
+    firstAvailableEventSeq: current.firstAvailableEventSeq,
+    lastEventSeq: events.at(-1)?.eventSeq ?? current.lastEventSeq,
+    totalEventCount: events.at(-1)?.eventSeq ?? current.totalEventCount,
+    discardedEventCount: current.discardedEventCount,
+    stateHash: '',
+    ...overrides,
+  }
+  const retained = [...current.events, ...events]
+    .filter((item) => item.eventSeq >= delta.firstAvailableEventSeq)
+  delta.stateHash = await sha256Text(canonicalRunnerState({
+    ...delta,
+    events: retained,
+  }))
+  return delta
+}
+
+function stateHash(snapshot: MacroRunnerSnapshot): Promise<string> {
+  return sha256Text(canonicalRunnerState({
+    ...snapshot,
+    definitionHash: snapshot.runningMacro?.definitionHash ?? null,
+  }))
 }
 
 function event(eventSeq: number): MacroRunEvent {

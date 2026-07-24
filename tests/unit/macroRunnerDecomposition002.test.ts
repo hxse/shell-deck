@@ -52,7 +52,8 @@ describe('Macro runner lifecycle decomposition', () => {
     for (const method of [
       'hasActiveRun',
       'snapshot',
-      'traces',
+      'traceSummaries',
+      'traceEvents',
       'preflightStart',
       'start',
       'pause',
@@ -95,10 +96,11 @@ describe('Macro runner lifecycle decomposition', () => {
       "pending.resolve({ kind: 'submitted', value })",
     ])
     expectOrdered(publication, [
-      'const canSendDelta = run.publishedEventSeq >= snapshot.firstAvailableEventSeq - 1',
+      'const window = this.runStore.readEventWindowView(run.runId)',
+      'const canSendDelta = run.hasPublishedSnapshot',
       "type: 'runner_snapshot'",
       "type: 'runner_delta'",
-      'run.publishedEventSeq = snapshot.lastEventSeq',
+      'run.publishedEventSeq = window.lastEventSeq',
     ])
     expect(service).toContain('async start(')
     expect(publication).toContain('}, 25)')

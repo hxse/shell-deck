@@ -11,7 +11,7 @@ import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import type { NotificationDispatcher } from '../../server/notificationService'
 import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot } from '../../src/lib/macro/runnerTypes'
-import { mergeMacroRunnerDelta } from '../../src/lib/macro/runnerSnapshotMerge'
+import { mergeMacroRunnerDelta, validateMacroRunnerSnapshot } from '../../src/lib/macro/runnerSnapshotMerge'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
 
@@ -27,8 +27,8 @@ test('Room websocket pushes one authoritative run and runtime input across takeo
     sockets.push(first.ws, second.ws)
     const firstGrant = requiredGrant(first.messages)
 
-    expect(latestRunner(first.messages)).toMatchObject({ status: 'idle', runtimeRevision: 0, runningMacro: null })
-    expect(latestRunner(second.messages)).toMatchObject({ status: 'idle', runtimeRevision: 0, runningMacro: null })
+    expect(await latestRunner(first.messages)).toMatchObject({ status: 'idle', runtimeRevision: 0, runningMacro: null })
+    expect(await latestRunner(second.messages)).toMatchObject({ status: 'idle', runtimeRevision: 0, runningMacro: null })
 
     const created = await mutate(server.url, '/api/templates', firstGrant, { definition: waitingDefinition() })
     expect(created.status).toBe(201)
@@ -41,9 +41,18 @@ test('Room websocket pushes one authoritative run and runtime input across takeo
       expectedTerminalStructureRevision: 1,
     })
     expect(started.status).toBe(201)
-    await waitFor(() => latestRunner(first.messages).status === 'waiting_input' && latestRunner(second.messages).status === 'waiting_input')
-    const waiting = latestRunner(second.messages)
-    expect(waiting.runningMacro).toEqual({ recordId: record.id, recordRevision: 1, definition: waitingDefinition() })
+    expect(started.body).toMatchObject({
+      ok: true,
+      ack: { status: 'running', runtimeRevision: expect.any(Number) },
+    })
+    expect(Object.hasOwn(started.body, 'runner')).toBe(false)
+    expect(Object.hasOwn(started.body.ack as object, 'events')).toBe(false)
+    expect(Object.hasOwn(started.body.ack as object, 'runningMacro')).toBe(false)
+    await waitFor(async () => (await latestRunner(first.messages)).status === 'waiting_input'
+      && (await latestRunner(second.messages)).status === 'waiting_input')
+    const waiting = await latestRunner(second.messages)
+    expect(waiting.runningMacro).toMatchObject({ recordId: record.id, recordRevision: 1, definition: waitingDefinition() })
+    expect(waiting.runningMacro?.definitionHash).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(waiting.runtimeInput).toMatchObject({ prompt: 'Shared prompt', defaultText: '', draft: '', inputRevision: 0, status: 'waiting' })
 
     const takeover = await fetch(server.url + `/api/rooms/${room.roomId}/control/take-over`, {
@@ -60,8 +69,25 @@ test('Room websocket pushes one authoritative run and runtime input across takeo
       expectedInputRevision: 0,
     })
     expect(draft.status).toBe(200)
-    await waitFor(() => latestRunner(first.messages).runtimeInput?.draft === 'shared draft' && latestRunner(second.messages).runtimeInput?.draft === 'shared draft')
-    expect(latestRunner(first.messages).runtimeInput?.inputRevision).toBe(1)
+    expect(draft.body).toMatchObject({
+      ok: true,
+      ack: {
+        status: 'waiting_input',
+        runtimeInput: {
+          invocationId: waiting.runtimeInput!.invocationId,
+          inputRevision: 1,
+          status: 'waiting',
+        },
+      },
+    })
+    expect(Object.hasOwn(draft.body, 'runner')).toBe(false)
+    const draftInputAck = (draft.body as { ack: { runtimeInput: object } }).ack.runtimeInput
+    expect(Object.hasOwn(draftInputAck, 'draft')).toBe(false)
+    expect(Object.hasOwn(draftInputAck, 'prompt')).toBe(false)
+    expect(Object.hasOwn(draftInputAck, 'defaultText')).toBe(false)
+    await waitFor(async () => (await latestRunner(first.messages)).runtimeInput?.draft === 'shared draft'
+      && (await latestRunner(second.messages)).runtimeInput?.draft === 'shared draft')
+    expect((await latestRunner(first.messages)).runtimeInput?.inputRevision).toBe(1)
 
     const staleRevision = await mutate(server.url, `/api/rooms/${room.roomId}/runner/input-draft`, secondGrant, {
       invocationId: waiting.runtimeInput!.invocationId,
@@ -87,17 +113,25 @@ test('Room websocket pushes one authoritative run and runtime input across takeo
       expectedInputRevision: 1,
     })
     expect(submitted.status).toBe(200)
-    await waitFor(() => latestRunner(first.messages).status === 'completed' && latestRunner(second.messages).status === 'completed')
-    expect(latestRunner(first.messages).runId).toBe(latestRunner(second.messages).runId)
+    expect(submitted.body).toMatchObject({ ok: true, ack: { runtimeInput: null } })
+    await waitFor(async () => (await latestRunner(first.messages)).status === 'completed'
+      && (await latestRunner(second.messages)).status === 'completed')
+    expect((await latestRunner(first.messages)).runId).toBe((await latestRunner(second.messages)).runId)
     expect(strictlyIncreasing(runnerRevisions(first.messages))).toBe(true)
     expect(strictlyIncreasing(runnerRevisions(second.messages))).toBe(true)
-    expect(first.messages.filter((message) => message.type === 'runner_snapshot')).toHaveLength(1)
+    expect(first.messages.filter((message) => message.type === 'runner_snapshot')).toHaveLength(2)
     expect(first.messages.some((message) => message.type === 'runner_delta')).toBe(true)
-    const deliveredEventSeqs = first.messages
+    const deltas = first.messages
       .filter((message): message is Extract<ServerMessage, { type: 'runner_delta' }> => message.type === 'runner_delta')
+    for (const message of deltas) {
+      expect(Object.hasOwn(message.delta, 'definition')).toBe(false)
+      expect(Object.hasOwn(message.delta, 'runningMacro')).toBe(false)
+      expect(message.delta.definitionHash).toMatch(/^sha256:[0-9a-f]{64}$/)
+    }
+    const deliveredEventSeqs = deltas
       .flatMap((message) => message.delta.events.map((event) => event.eventSeq))
     expect(new Set(deliveredEventSeqs).size).toBe(deliveredEventSeqs.length)
-    const inputRequested = latestRunner(first.messages).events.find((event) => event.kind === 'runner_input_requested')
+    const inputRequested = (await latestRunner(first.messages)).events.find((event) => event.kind === 'runner_input_requested')
     expect(inputRequested?.data).toEqual({
       invocationId: waiting.runtimeInput!.invocationId,
       inputRevision: 0,
@@ -111,8 +145,8 @@ test('Room websocket pushes one authoritative run and runtime input across takeo
 
     const late = await connect(server.url, room.roomId)
     sockets.push(late.ws)
-    expect(latestRunner(late.messages)).toMatchObject({
-      runId: latestRunner(first.messages).runId,
+    expect(await latestRunner(late.messages)).toMatchObject({
+      runId: (await latestRunner(first.messages)).runId,
       status: 'completed',
       runningMacro: { recordId: record.id, recordRevision: 1 },
       runtimeInput: null,
@@ -239,15 +273,20 @@ function requiredGrant(messages: ServerMessage[]): RoomControlGrant {
   return message.grant
 }
 
-function latestRunner(messages: ServerMessage[]): MacroRunnerSnapshot {
+async function latestRunner(messages: ServerMessage[]): Promise<MacroRunnerSnapshot> {
   let current: MacroRunnerSnapshot | null = null
   for (const message of messages) {
     if (message.type === 'runner_snapshot') {
-      if (!current || current.roomGeneration !== message.snapshot.roomGeneration || message.snapshot.runtimeRevision > current.runtimeRevision) current = message.snapshot
+      if (!current || current.roomGeneration !== message.snapshot.roomGeneration
+        || message.snapshot.runtimeRevision > current.runtimeRevision) {
+        const validated = await validateMacroRunnerSnapshot(message.snapshot)
+        if (validated.kind !== 'applied') throw new Error('runner_snapshot_hash_mismatch')
+        current = validated.snapshot
+      }
       continue
     }
     if (message.type !== 'runner_delta') continue
-    const merged = mergeMacroRunnerDelta(current, message.delta)
+    const merged = await mergeMacroRunnerDelta(current, message.delta)
     if (merged.kind === 'resync_required') throw new Error('runner_delta_gap')
     current = merged.snapshot
   }
@@ -278,9 +317,9 @@ function closeWebSocket(socket: WebSocket): Promise<void> {
   })
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
-  while (!predicate()) {
+  while (!await predicate()) {
     if (Date.now() >= deadline) throw new Error('timeout')
     await Bun.sleep(10)
   }

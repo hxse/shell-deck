@@ -62,7 +62,8 @@ describe('Terminal backend and CWD lifecycle decomposition', () => {
       'setTerminalEnvProvider',
       'createTerminal',
       'input',
-      'setTextContent',
+      'mutateTextContent',
+      'textSnapshot',
       'resize',
       'resetTerminal',
       'closeTerminal',
@@ -134,7 +135,6 @@ describe('Terminal backend and CWD lifecycle decomposition', () => {
       'this.beginBackendClose(room, terminal.backend)',
       'commitTerminalClose(room, terminal.terminalId)',
       'this.broadcastIndexMap(room)',
-      'this.options.broadcast(room, this.roomSnapshot(room))',
       'ticket.finish()',
     ])
   })

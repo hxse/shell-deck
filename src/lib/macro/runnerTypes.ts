@@ -59,6 +59,7 @@ export type MacroRunnerSnapshot = MacroRunEventWindow & {
     recordId: string
     recordRevision: number
     definition: MacroDefinitionV5
+    definitionHash: string
   } | null
   status: MacroRunnerStatus
   currentNodeId: string | null
@@ -71,17 +72,68 @@ export type MacroRunnerSnapshot = MacroRunEventWindow & {
     inputRevision: number
     status: 'waiting'
   } | null
+  stateHash: string
 }
 
-export type MacroRunnerDelta = Omit<MacroRunnerSnapshot, 'events'> & {
+export type MacroRunnerDelta = MacroRunEventWindow & {
+  roomId: string
+  roomGeneration: string
+  runId: string
+  definitionHash: string
+  expectedRuntimeRevision: number
+  runtimeRevision: number
+  status: MacroRunnerStatus
+  currentNodeId: string | null
+  error: string | null
+  runtimeInput: MacroRunnerSnapshot['runtimeInput']
   events: MacroRunEvent[]
+  stateHash: string
 }
 
-export type MacroRunTrace = MacroRunEventWindow & {
+export type MacroRunnerInputAck = {
+  invocationId: string
+  inputRevision: number
+  status: 'waiting'
+}
+
+export type MacroRunnerActionAck = {
+  roomId: string
+  roomGeneration: string
+  runId: string
+  runtimeRevision: number
+  status: MacroRunnerStatus
+  runtimeInput: MacroRunnerInputAck | null
+}
+
+export type MacroRunSummary = {
   runId: string
   createdAt: string
   macroRecord: { id: string; revision: number }
   roomId: string
   roomGeneration: string
   status: 'completed' | 'failed' | 'stopped' | 'interrupted'
+  firstAvailableEventSeq: number
+  lastEventSeq: number
+  totalEventCount: number
+  discardedEventCount: number
+}
+
+export type MacroRunSummaryPage = {
+  items: MacroRunSummary[]
+  nextCursor: string | null
+}
+
+export type MacroRunEventPage = MacroRunEventWindow & {
+  runId: string
+  nextCursor: string | null
+}
+
+export function traceEventWindow(
+  runner: MacroRunnerSnapshot | null,
+  selectedRunId: string | null,
+  persisted: MacroRunEventPage | null,
+): MacroRunEventWindow | null {
+  return runner?.runId === selectedRunId
+    ? runner
+    : persisted
 }

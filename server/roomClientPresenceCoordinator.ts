@@ -29,6 +29,7 @@ export class RoomClientPresenceCoordinator {
     send: (message: ServerMessage) => void,
     close?: (code: number, reason: string) => void,
     ping?: () => void,
+    sendSerialized?: (payload: string) => void,
   ): RoomClient {
     const room = this.options.activeRoomOrThrow(roomId)
     let clientId: string | undefined
@@ -46,6 +47,7 @@ export class RoomClientPresenceCoordinator {
       roomId: room.roomId,
       roomGeneration: room.roomGeneration,
       send,
+      sendSerialized,
       close,
       ping,
       lastPongAtMs: now,

@@ -15,7 +15,7 @@ import {
 import {
   EvidenceSegmentStorage,
   retainedFirstEventSeq,
-  RUN_EVENT_SEGMENT_SIZE,
+  shouldCheckpointEvidenceAt,
   shouldPruneEvidenceAt,
 } from './evidenceSegmentStorage'
 import {
@@ -33,22 +33,16 @@ export {
   RUN_EVENT_RETENTION_LIMIT,
   RUN_EVENT_SEGMENT_SIZE,
 } from './evidenceSegmentStorage'
-export type {
-  EvidenceEvent,
-  EvidenceRunSummary,
-  RunProvenance,
-} from './evidenceRecordValidation'
-
-export type EvidenceEventWindow = {
-  summary: EvidenceRunSummary
-  events: EvidenceEvent[]
-}
+export type { EvidenceEvent, EvidenceRunSummary, RunProvenance } from './evidenceRecordValidation'
+export type EvidenceEventWindow = { summary: EvidenceRunSummary; events: EvidenceEvent[] }
 
 export type EvidenceStoreOptions = {
   eventIdFactory?: () => string
   afterEventPublish?: (event: EvidenceEvent) => void
   deleteSegment?: (path: string) => PublishedFileMutationReceipt
   writeSummary?: (path: string, bytes: string) => void
+  onSegmentRead?: (runId: string, start: number) => void
+  onSegmentList?: (runId: string) => void
 }
 
 export class EvidenceStore {
@@ -59,6 +53,7 @@ export class EvidenceStore {
   private readonly segmentStorage: EvidenceSegmentStorage
   private readonly appendCursors = new Map<string, { provenance: RunProvenance; nextEventSeq: number }>()
   private readonly maintenanceDebt = new Set<string>()
+  private readonly traceSummaryFresh = new Set<string>()
 
   constructor(
     root?: string,
@@ -69,9 +64,11 @@ export class EvidenceStore {
     this.eventIdFactory = options.eventIdFactory ?? (() => createGeneratedId('runEvent'))
     this.afterEventPublish = options.afterEventPublish ?? (() => {})
     this.writeSummaryFile = options.writeSummary ?? writePrivateFileAtomic
-    this.segmentStorage = new EvidenceSegmentStorage(this.runsRoot, options.deleteSegment)
+    this.segmentStorage = new EvidenceSegmentStorage(this.runsRoot, options.deleteSegment, {
+      segmentRead: options.onSegmentRead,
+      segmentList: options.onSegmentList,
+    })
   }
-
   createRun(provenance: RunProvenance, data: Record<string, unknown> = {}): string {
     const normalized = assertRunProvenance(provenance)
     for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -97,7 +94,6 @@ export class EvidenceStore {
     }
     throw new Error('run_id_collision')
   }
-
   initializeRun(runId: string, provenance: RunProvenance, data: Record<string, unknown> = {}): EvidenceEvent {
     const id = assertGeneratedId(runId, 'run')
     const normalized = assertRunProvenance(provenance)
@@ -126,13 +122,11 @@ export class EvidenceStore {
       throw error
     }
   }
-
   append(runId: string, kind: string, data: Record<string, unknown> = {}): EvidenceEvent {
     const id = assertGeneratedId(runId, 'run')
     const cursor = this.cursorForRun(id)
     return this.appendAtSequence(id, kind, data, cursor.provenance, cursor.nextEventSeq)
   }
-
   appendAtSequence(
     runId: string,
     kind: string,
@@ -165,18 +159,15 @@ export class EvidenceStore {
       throw error
     }
   }
-
   hasStarted(runId: string): boolean {
     const id = assertGeneratedId(runId, 'run')
     return existsSync(this.summaryPath(id)) || Boolean(this.segmentStorage.eventAtSequence(id, 1))
   }
-
   read(runId: string): EvidenceEvent[] {
     const id = assertGeneratedId(runId, 'run')
     this.repairMaintenanceDebt(id)
     return this.segmentStorage.read(id)
   }
-
   window(runId: string): EvidenceEventWindow {
     const id = assertGeneratedId(runId, 'run')
     this.repairMaintenanceDebt(id)
@@ -188,15 +179,37 @@ export class EvidenceStore {
     }
     return { summary, events }
   }
-
-  summary(runId: string): EvidenceRunSummary {
+  page(runId: string, afterEventSeq: number, limit: number): EvidenceEventWindow {
     const id = assertGeneratedId(runId, 'run')
     this.repairMaintenanceDebt(id)
-    const summary = this.readSummaryOrRecover(id)
+    const summary = this.readSummaryOrRecover(id, false)
+    if (!summary) throw new Error('run_evidence_not_found:' + id)
+    if (afterEventSeq > summary.lastEventSeq) throw new Error('invalid_trace_event_cursor')
+    const first = Math.max(summary.firstAvailableEventSeq, afterEventSeq + 1)
+    const last = Math.min(summary.lastEventSeq, first + limit - 1)
+    const events = this.segmentStorage.readRange(id, first, last)
+    if (last >= first && (events[0]?.eventSeq !== first || events.at(-1)?.eventSeq !== last)) throw new Error('invalid_evidence_event_sequence')
+    return { events, summary }
+  }
+  summary(runId: string): EvidenceRunSummary { return this.loadSummary(runId, true) }
+  traceSummary(runId: string): EvidenceRunSummary {
+    const id = assertGeneratedId(runId, 'run')
+    const verify = !this.traceSummaryFresh.has(id)
+    let repairPublished = true
+    const summary = this.loadSummary(id, verify, (recovered) => {
+      try { this.persistSummary(recovered) }
+      catch { repairPublished = false; this.maintenanceDebt.add(id) }
+    })
+    if (verify && repairPublished) this.traceSummaryFresh.add(id)
+    return summary
+  }
+  private loadSummary(runId: string, verifySegments: boolean, repair?: (summary: EvidenceRunSummary) => void): EvidenceRunSummary {
+    const id = assertGeneratedId(runId, 'run')
+    this.repairMaintenanceDebt(id)
+    const summary = this.readSummaryOrRecover(id, verifySegments, repair)
     if (!summary) throw new Error('run_evidence_not_found:' + id)
     return summary
   }
-
   listRuns(): string[] {
     return readdirSync(this.runsRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
@@ -233,7 +246,8 @@ export class EvidenceStore {
     if (!persisted || !sameEventIntent(persisted, event.kind, event.data, event)) {
       throw new Error('evidence_event_publish_state_unknown')
     }
-    if (this.maintenanceDebt.has(runId) || shouldPruneEvidenceAt(event.eventSeq) || shouldCheckpointSummary(event, false)) {
+    this.traceSummaryFresh.delete(runId)
+    if (this.maintenanceDebt.has(runId) || shouldPruneEvidenceAt(event.eventSeq) || shouldCheckpointEvidenceAt(event)) {
       this.attemptMaintenance(runId, persisted)
     }
     return persisted
@@ -254,6 +268,7 @@ export class EvidenceStore {
       const summary = this.readSummaryOrRecover(runId)
       this.persistSummary(this.nextSummary(event, summary ?? undefined))
       this.maintenanceDebt.delete(runId)
+      this.traceSummaryFresh.add(runId)
     } catch {
       this.maintenanceDebt.add(runId)
     }
@@ -298,22 +313,24 @@ export class EvidenceStore {
     }
   }
 
-  private readSummaryOrRecover(runId: string): EvidenceRunSummary | null {
+  private readSummaryOrRecover(runId: string, verifySegments = true, repair?: (summary: EvidenceRunSummary) => void): EvidenceRunSummary | null {
     const path = this.summaryPath(runId)
     let stored: EvidenceRunSummary | null = null
     if (existsSync(path)) {
       try { stored = assertEvidenceSummary(JSON.parse(readPrivateFile(path).toString('utf8')), runId) }
       catch { stored = null }
     }
+    if (stored && !verifySegments) return stored
     const starts = this.segmentStorage.segmentStarts(runId)
     const firstStart = starts[0]
     const lastStart = starts.at(-1)
     if (firstStart === undefined || lastStart === undefined) return null
-    const first = this.segmentStorage.readSegment(runId, firstStart)[0]
-    const last = this.segmentStorage.readSegment(runId, lastStart).at(-1)
+    const firstEvents = this.segmentStorage.readSegment(runId, firstStart)
+    const first = firstEvents[0]
+    const last = firstStart === lastStart ? firstEvents.at(-1) : this.segmentStorage.readSegment(runId, lastStart).at(-1)
     if (!first || !last) return null
     if (stored?.firstAvailableEventSeq === first.eventSeq && stored.lastEventSeq === last.eventSeq) return stored
-    return {
+    const recovered: EvidenceRunSummary = {
       schemaVersion: 1,
       runId,
       serverInstanceId: first.serverInstanceId,
@@ -327,6 +344,8 @@ export class EvidenceStore {
       discardedEventCount: first.eventSeq - 1,
       lastEventKind: last.kind,
     }
+    repair?.(recovered)
+    return recovered
   }
 
   private createEvent(
@@ -373,15 +392,6 @@ export class EvidenceStore {
     this.appendCursors.set(runId, cursor)
     return cursor
   }
-}
-
-function shouldCheckpointSummary(event: EvidenceEvent, pruned: boolean): boolean {
-  return event.eventSeq === 1
-    || event.eventSeq % RUN_EVENT_SEGMENT_SIZE === 0
-    || pruned
-    || event.kind === 'run_completed'
-    || event.kind === 'run_failed'
-    || event.kind === 'run_stopped'
 }
 
 function isNodeError(error: unknown, code: string): boolean {

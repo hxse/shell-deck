@@ -193,7 +193,7 @@
       onSelectTerminal={workspace.selectTerminal}
       onCloseTerminal={workspace.closeTerminalTab}
       onStartTabDrag={(event, terminalId) => workspace.startDrag(event, terminalId, settings.terminalDragEnabled)}
-      onDropOnTab={(event, terminal) => workspace.dropOnTab(event, terminal, settings.terminalDragEnabled)}
+      onDropOnTab={(event, terminal, sourceTerminalId) => workspace.dropOnTab(event, terminal, settings.terminalDragEnabled, sourceTerminalId)}
       onTabDragEnd={workspace.finishTabDrag}
       onTabKeydown={workspace.tabKeydown}
       onMutationDenied={pushMutationNotice}

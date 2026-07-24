@@ -1,6 +1,10 @@
 import type { MacroDefinitionIssue } from '../src/lib/macro/macroDefinitionValidation'
 import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
-import type { FrozenTerminalBinding, MacroRunnerSnapshot } from '../src/lib/macro/runnerTypes'
+import type {
+  FrozenTerminalBinding,
+  MacroRunnerActionAck,
+  MacroRunnerSnapshot,
+} from '../src/lib/macro/runnerTypes'
 import type { TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
 import type { StructuredJsonValidator, JsonValue } from '../src/lib/macro/structuredJson'
 import type { MacroArtifactMap } from './macroTextEvaluation'
@@ -33,6 +37,9 @@ export type LiveRun = {
   recordRevision: number
   runtimeRevision: number
   publishedEventSeq: number
+  publishedRuntimeRevision: number
+  hasPublishedSnapshot: boolean
+  definitionHash: string
   publishTimer: ReturnType<typeof setTimeout> | null
   definition: MacroDefinitionV5
   bindings: Map<number, FrozenTerminalBinding>
@@ -72,12 +79,16 @@ export function createLiveRun(input: {
   recordId: string
   recordRevision: number
   runtimeRevision: number
+  definitionHash: string
   definition: MacroDefinitionV5
   bindings: FrozenTerminalBinding[]
 }): LiveRun {
+  freezeDefinitionProjection(input.definition)
   return {
     ...input,
     publishedEventSeq: 0,
+    publishedRuntimeRevision: 0,
+    hasPublishedSnapshot: false,
     publishTimer: null,
     bindings: new Map(input.bindings.map((binding) => [binding.index, binding])),
     status: 'running',
@@ -100,6 +111,38 @@ export function createLiveRun(input: {
   }
 }
 
+function freezeDefinitionProjection(value: unknown): void {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return
+  for (const child of Object.values(value)) freezeDefinitionProjection(child)
+  Object.freeze(value)
+}
+
 export function isActiveRunStatus(status: MacroRunnerSnapshot['status']): boolean {
   return ['starting', 'running', 'paused', 'waiting_input', 'stopping'].includes(status)
+}
+
+export function liveRunRuntimeInput(run: LiveRun): MacroRunnerSnapshot['runtimeInput'] {
+  return run.pendingInput ? {
+    invocationId: run.pendingInput.invocationId,
+    prompt: run.pendingInput.prompt,
+    defaultText: run.pendingInput.defaultText,
+    draft: run.pendingInput.draft,
+    inputRevision: run.pendingInput.inputRevision,
+    status: 'waiting',
+  } : null
+}
+
+export function liveRunActionAck(run: LiveRun): MacroRunnerActionAck {
+  return {
+    roomId: run.roomId,
+    roomGeneration: run.roomGeneration,
+    runId: run.runId,
+    runtimeRevision: run.runtimeRevision,
+    status: run.status,
+    runtimeInput: run.pendingInput ? {
+      invocationId: run.pendingInput.invocationId,
+      inputRevision: run.pendingInput.inputRevision,
+      status: 'waiting',
+    } : null,
+  }
 }

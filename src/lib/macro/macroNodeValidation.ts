@@ -25,6 +25,7 @@ export function validateNodeList(value: unknown, path: string, context: Validati
 }
 
 function validateNode(value: unknown, path: string, context: ValidationContext, actionOnly: boolean, inheritedTerminalIndex: number | null | undefined): void {
+  context.onNodeVisited?.()
   const node = object(value, context.issues, path)
   if (!node) return
   validateIdentifier(node.id, context.issues, `${path}.id`, context.nodeIds)

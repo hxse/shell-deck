@@ -36,6 +36,7 @@ export type ValidationContext = {
   loopDepth: number
   templateScopeDepth: number
   mode: 'persistable' | 'runnable'
+  onNodeVisited?: () => void
 }
 
 export function add(issues: MacroDefinitionIssue[], code: MacroDefinitionIssueCode, path: string, message: string): void {

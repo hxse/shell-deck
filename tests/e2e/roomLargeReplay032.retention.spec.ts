@@ -1,4 +1,5 @@
 import { expect, test } from 'playwright/test'
+import { createHash } from 'node:crypto'
 import { XTERM_DARK_THEME, XTERM_LIGHT_THEME } from '../../src/lib/terminal/xtermTheme'
 import {
   createTerminal,
@@ -78,7 +79,13 @@ test('visited terminal views survive Shell and Text tab switches without replayi
   await expect(shellHost).toBeVisible()
   await expect(textPane).toHaveCount(0)
   await sendTerminalMessages(page, [
-    { type: 'set_terminal_text', terminalId: text.terminalId, content: textContent },
+    {
+      type: 'mutate_terminal_text',
+      terminalId: text.terminalId,
+      expectedTextRevision: 0,
+      mutation: { kind: 'patch', start: 0, deleteCount: 0, insert: textContent },
+      resultHash: 'sha256:' + createHash('sha256').update(textContent).digest('hex'),
+    },
     { type: 'terminal_input', terminalId: shell.terminalId, data: 'h'.repeat(160_000) + historyMarker + '\r' },
   ])
   await expect(shellHost).toHaveAttribute('data-rendered-tail', new RegExp(historyMarker), { timeout: 30_000 })

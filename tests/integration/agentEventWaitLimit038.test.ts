@@ -12,6 +12,7 @@ import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import type { CaptureWaitLimit, MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import type { RoomControlGrant } from '../../src/lib/roomControl'
+import { serviceTracesForRoom } from '../helpers/macroTrace'
 
 test('unbounded AgentEvent capture waits for a matching output and Stop still cancels it', async () => {
   const first = await createHarness({ kind: 'unbounded' })
@@ -38,7 +39,7 @@ test('explicit AgentEvent timeout fails once and a late output is baseline-isola
   try {
     await waitFor(() => harness.runner.snapshot(harness.roomId).status === 'failed')
     expect(harness.runner.snapshot(harness.roomId).error).toBe('agent_event_capture_timeout:' + harness.terminalId)
-    expect(harness.runner.traces(harness.roomId)[0].events.filter((event) => event.kind === 'run_failed')).toHaveLength(1)
+    expect(serviceTracesForRoom(harness.runner, harness.roomId)[0].events.filter((event) => event.kind === 'run_failed')).toHaveLength(1)
     expect(ingestAgentEvent(agentOutput(harness, 'late-turn'), 'token', ingestOptions(harness))).toMatchObject({ ok: true })
 
     const nextRecord = await harness.records.create(definition({ kind: 'unbounded' }))

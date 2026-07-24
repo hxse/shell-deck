@@ -2,15 +2,31 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { assertGeneratedId, createGeneratedId } from '../src/lib/generatedId'
+import { canonicalJsonStringify } from '../src/lib/canonicalJson'
 import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
-import type { MacroRunEvent, MacroRunEventWindow, MacroRunTrace, RunManifestV1 } from '../src/lib/macro/runnerTypes'
+import type {
+  MacroRunEvent,
+  MacroRunEventPage,
+  MacroRunEventWindow,
+  MacroRunSummary,
+  MacroRunSummaryPage,
+  RunManifestV1,
+} from '../src/lib/macro/runnerTypes'
 import { EvidenceStore, retainedFirstEventSeq, type EvidenceRunSummary, type RunProvenance } from './evidenceStore'
 import { ensurePrivateDirectory, fsyncDirectory, initializeUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
+import {
+  decodeEventCursor,
+  encodeEventCursor,
+  MacroRunTraceIndex,
+} from './macroRunTraceIndex'
+
+export { canonicalJsonStringify } from '../src/lib/canonicalJson'
 
 export class MacroRunStore {
   readonly root: string
   private readonly evidence: EvidenceStore
   private readonly idFactory: () => string
+  private readonly traceIndex: MacroRunTraceIndex
   private readonly eventCursors = new Map<string, { provenance: RunProvenance; nextEventSeq: number }>()
   private readonly liveEventWindows = new Map<string, MacroRunEventWindow>()
 
@@ -23,6 +39,7 @@ export class MacroRunStore {
     this.root = initializeUserDataRoot(dataRoot).runs
     this.evidence = evidenceStore ?? new EvidenceStore(dataRoot, now)
     this.idFactory = idFactory
+    this.traceIndex = new MacroRunTraceIndex(this.root)
   }
 
   reserveRunId(): string {
@@ -51,10 +68,13 @@ export class MacroRunStore {
     if (existsSync(join(runDir, 'manifest.json'))) throw new Error('run_id_conflict')
     try {
       writePrivateFileAtomic(join(runDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+      this.traceIndex.recordManifest(manifest)
       fsyncDirectory(this.root)
       return `${runId}/manifest.json`
     } catch (error) {
       rmSync(runDir, { recursive: true, force: true })
+      try { this.traceIndex.removeRun(runId) }
+      catch { this.traceIndex.invalidate() }
       fsyncDirectory(this.root)
       throw error
     }
@@ -64,6 +84,7 @@ export class MacroRunStore {
     const id = assertGeneratedId(runId, 'run')
     if (this.evidence.hasStarted(id)) return
     rmSync(this.runDir(id), { recursive: true, force: true })
+    this.traceIndex.removeRun(id)
     this.eventCursors.delete(id)
     this.liveEventWindows.delete(id)
     fsyncDirectory(this.root)
@@ -123,6 +144,21 @@ export class MacroRunStore {
     }
   }
 
+  readEventWindowView(runId: string): Readonly<MacroRunEventWindow> {
+    const id = assertGeneratedId(runId, 'run')
+    const cached = this.liveEventWindows.get(id)
+    if (cached) return cached
+    const window = this.readEventWindow(id)
+    this.liveEventWindows.set(id, window)
+    return window
+  }
+
+  releaseLiveRun(runId: string): void {
+    const id = assertGeneratedId(runId, 'run')
+    this.eventCursors.delete(id)
+    this.liveEventWindows.delete(id)
+  }
+
   readManifest(runId: string): RunManifestV1 {
     return JSON.parse(readFileSync(join(this.runDir(assertGeneratedId(runId, 'run')), 'manifest.json'), 'utf8')) as RunManifestV1
   }
@@ -133,28 +169,46 @@ export class MacroRunStore {
     return this.evidence.writeArtifactFile(id, prefix, content, extension)
   }
 
-  listTracesForRoom(roomId: string): MacroRunTrace[] {
-    const traces: MacroRunTrace[] = []
-    for (const runId of this.listRunIds()) {
-      try {
-        const manifest = this.readManifest(runId)
-        if (manifest.runtime.roomId !== roomId) continue
-        const window = this.readEventWindow(runId)
-        const summary = this.evidence.summary(runId)
-        traces.push({
-          runId,
-          createdAt: manifest.createdAt,
-          macroRecord: manifest.macroRecord,
-          roomId: manifest.runtime.roomId,
-          roomGeneration: manifest.runtime.roomGeneration,
-          status: derivedTraceStatus(summary),
-          ...window,
-        })
-      } catch {
-        // Current-schema Trace ignores incomplete or foreign evidence directories.
+  traceSummariesForRoom(roomId: string, limit: number, cursor: string | null): MacroRunSummaryPage {
+    const page = this.traceIndex.page(roomId, limit, cursor)
+    const items: MacroRunSummary[] = page.entries.map((entry) => {
+      const summary = this.evidence.traceSummary(entry.runId)
+      return {
+        ...entry,
+        status: derivedTraceStatus(summary),
+        firstAvailableEventSeq: summary.firstAvailableEventSeq,
+        lastEventSeq: summary.lastEventSeq,
+        totalEventCount: summary.totalEventCount,
+        discardedEventCount: summary.discardedEventCount,
       }
+    })
+    return { items, nextCursor: page.nextCursor }
+  }
+
+  traceEventsForRoom(
+    roomId: string,
+    runId: string,
+    limit: number,
+    cursor: string | null,
+  ): MacroRunEventPage {
+    const id = assertGeneratedId(runId, 'run')
+    const manifest = this.readManifest(id)
+    if (manifest.runtime.roomId !== roomId) throw new Error('run_not_found_for_room')
+    const after = cursor ? decodeEventCursor(cursor, id) : 0
+    const page = this.evidence.page(id, after, limit)
+    const events = page.events as MacroRunEvent[]
+    const lastReturned = events.at(-1)?.eventSeq ?? after
+    return {
+      runId: id,
+      events,
+      firstAvailableEventSeq: page.summary.firstAvailableEventSeq,
+      lastEventSeq: page.summary.lastEventSeq,
+      totalEventCount: page.summary.totalEventCount,
+      discardedEventCount: page.summary.discardedEventCount,
+      nextCursor: lastReturned < page.summary.lastEventSeq
+        ? encodeEventCursor(id, lastReturned)
+        : null,
     }
-    return traces.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
   }
 
   listRunIds(): string[] {
@@ -199,28 +253,13 @@ function isNodeError(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === code
 }
 
-function derivedTraceStatus(summary: EvidenceRunSummary): MacroRunTrace['status'] {
+function derivedTraceStatus(summary: EvidenceRunSummary): MacroRunSummary['status'] {
   if (summary.lastEventKind === 'run_completed') return 'completed'
   if (summary.lastEventKind === 'run_stopped') return 'stopped'
   if (summary.lastEventKind === 'run_failed') return 'failed'
   return 'interrupted'
 }
 
-export function canonicalJsonStringify(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value)
-  if (Array.isArray(value)) return '[' + value.map(canonicalJsonStringify).join(',') + ']'
-  const record = value as Record<string, unknown>
-  const keys = Object.keys(record).sort(compareCodePoints)
-  return '{' + keys.map((key) => JSON.stringify(key) + ':' + canonicalJsonStringify(record[key])).join(',') + '}'
-}
-
 export function macroDefinitionHash(definition: MacroDefinitionV5): string {
   return createHash('sha256').update(Buffer.from(canonicalJsonStringify(definition), 'utf8')).digest('hex')
-}
-
-function compareCodePoints(left: string, right: string): number {
-  const a = [...left].map((value) => value.codePointAt(0)!)
-  const b = [...right].map((value) => value.codePointAt(0)!)
-  for (let index = 0; index < Math.min(a.length, b.length); index += 1) if (a[index] !== b[index]) return a[index] - b[index]
-  return a.length - b.length
 }

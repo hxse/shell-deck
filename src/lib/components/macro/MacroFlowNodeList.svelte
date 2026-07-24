@@ -5,7 +5,7 @@
     MacroDefinitionV5,
     ParallelNode,
   } from '../../macro/macroDefinitionTypes'
-  import { artifactChoicesBefore } from '../../macro/macroArtifactChoices'
+  import { buildArtifactChoiceIndex } from '../../macro/macroArtifactChoices'
   import type { BodyPath } from '../../macro/flowV2EditorCommands'
   import { LOOP_INDEX_TEMPLATE_TOKEN, LOOP_KEY_TEMPLATE_TOKEN, LOOP_VALUE_TEMPLATE_TOKEN } from '../../macro/scopedTextTemplate'
   import type { TextTemplateScope } from '../../macro/scopedTextTemplateEditor'
@@ -58,6 +58,7 @@
     updateDraft: (mutator) => updateDraft(mutator),
     setInsertionNotice: insertion.setNotice,
   })
+  const artifactChoiceIndex = $derived(buildArtifactChoiceIndex(draft))
   const idEditNotice = $derived(tree.idEditNotice)
   const isNodeCollapsed = tree.isNodeCollapsed
   const toggleNodeCollapsed = tree.toggleNodeCollapsed
@@ -148,7 +149,7 @@
         {#if isActionEditorNode(node)}
           <MacroActionNodeEditor
             {node}
-            artifactChoices={artifactChoicesBefore(draft, node.id)}
+            artifactChoices={artifactChoiceIndex.before(node.id)}
             {templateScope}
             {terminalChoices}
             {expectedTerminalTypeAt}
@@ -165,7 +166,7 @@
             {allowLoopControls}
             {templateScope}
             {depth}
-            artifactChoices={artifactChoicesBefore(draft, node.id)}
+            artifactChoices={artifactChoiceIndex.before(node.id)}
             {isIfBranchCollapsed}
             {toggleIfBranchCollapsed}
             {addElifAt}

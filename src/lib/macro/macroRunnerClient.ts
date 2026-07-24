@@ -1,5 +1,10 @@
 import type { MacroTerminalLayoutItem } from './macroDefinitionTypes'
-import type { MacroRunnerSnapshot, MacroRunTrace } from './runnerTypes'
+import type {
+  MacroRunEventPage,
+  MacroRunnerActionAck,
+  MacroRunnerSnapshot,
+  MacroRunSummaryPage,
+} from './runnerTypes'
 import type { RoomSnapshot } from '../protocol'
 import type { TerminalRoomClient } from '../terminalRoomClient'
 
@@ -22,31 +27,38 @@ export class MacroRunnerClient {
     return (await requestJson(`/api/rooms/${encodeURIComponent(client.roomId)}/runner`)).runner as MacroRunnerSnapshot
   }
 
-  async traces(): Promise<MacroRunTrace[]> {
+  async traceSummaries(cursor: string | null = null): Promise<MacroRunSummaryPage> {
     const client = this.client()
-    return (await requestJson(`/api/rooms/${encodeURIComponent(client.roomId)}/runner/traces`)).traces as MacroRunTrace[]
+    const query = cursor ? `?limit=20&cursor=${encodeURIComponent(cursor)}` : '?limit=20'
+    return (await requestJson(`/api/rooms/${encodeURIComponent(client.roomId)}/runner/traces${query}`)).page as MacroRunSummaryPage
   }
 
-  async start(templateId: string, expectedMacroRevision: number, expectedTerminalStructureRevision: number): Promise<MacroRunnerSnapshot> {
+  async traceEvents(runId: string, cursor: string | null = null): Promise<MacroRunEventPage> {
+    const client = this.client()
+    const query = cursor ? `?limit=100&cursor=${encodeURIComponent(cursor)}` : '?limit=100'
+    return (await requestJson(`/api/rooms/${encodeURIComponent(client.roomId)}/runner/traces/${encodeURIComponent(runId)}/events${query}`)).page as MacroRunEventPage
+  }
+
+  async start(templateId: string, expectedMacroRevision: number, expectedTerminalStructureRevision: number): Promise<MacroRunnerActionAck> {
     return await this.action('start', { templateId, expectedMacroRevision, expectedTerminalStructureRevision })
   }
 
-  async pause(): Promise<MacroRunnerSnapshot> { return await this.action('pause', {}) }
-  async resume(): Promise<MacroRunnerSnapshot> { return await this.action('resume', {}) }
-  async stop(): Promise<MacroRunnerSnapshot> { return await this.action('stop', {}) }
-  async updateInputDraft(invocationId: string, value: string, expectedInputRevision: number): Promise<MacroRunnerSnapshot> {
+  async pause(): Promise<MacroRunnerActionAck> { return await this.action('pause', {}) }
+  async resume(): Promise<MacroRunnerActionAck> { return await this.action('resume', {}) }
+  async stop(): Promise<MacroRunnerActionAck> { return await this.action('stop', {}) }
+  async updateInputDraft(invocationId: string, value: string, expectedInputRevision: number): Promise<MacroRunnerActionAck> {
     return await this.action('input-draft', { invocationId, value, expectedInputRevision })
   }
 
-  async submitInput(invocationId: string, value: string, expectedInputRevision: number): Promise<MacroRunnerSnapshot> {
+  async submitInput(invocationId: string, value: string, expectedInputRevision: number): Promise<MacroRunnerActionAck> {
     return await this.action('input', { invocationId, value, expectedInputRevision })
   }
 
-  private async action(action: string, body: Record<string, unknown>): Promise<MacroRunnerSnapshot> {
+  private async action(action: string, body: Record<string, unknown>): Promise<MacroRunnerActionAck> {
     const client = this.client()
     return (await requestJson(`/api/rooms/${encodeURIComponent(client.roomId)}/runner/${action}`, {
       method: 'POST', headers: client.controlHeaders(), body: JSON.stringify(body),
-    })).runner as MacroRunnerSnapshot
+    })).ack as MacroRunnerActionAck
   }
 
   private client(): TerminalRoomClient {

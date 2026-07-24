@@ -108,6 +108,7 @@ describe('Macro record session extraction', () => {
       'operationPending',
       'errorText',
       'templateListProblem',
+      'diagnostics',
     ])
     expect(sessionSource.match(/\$effect\(/g)).toHaveLength(4)
     for (const coordinator of [mutationSource, remoteSyncSource, navigationSource, editSource]) {

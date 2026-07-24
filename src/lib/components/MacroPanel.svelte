@@ -3,7 +3,6 @@
   import type { ContentEditLeaseChangedMessage, ContentRecordChangedMessage, RoomSnapshot, TerminalRuntimePosition } from '../protocol'
   import type { TerminalRoomClient } from '../terminalRoomClient'
   import type { MacroInsertionPaletteMode } from '../workspace/uiLayoutTypes'
-  import { validateMacroDefinitionV5, validateRunnableMacroDefinitionV5 } from '../macro/macroDefinitionValidation'
   import { createMacroJsonEditSession, messageOf } from '../macro/macroJsonEditSession.svelte'
   import { createMacroRecordSession } from '../macro/macroRecordSession.svelte'
   import { createMacroRunnerSession } from '../macro/macroRunnerSession.svelte'
@@ -30,6 +29,7 @@
     onRoomSnapshot,
     onDirtyChange,
     onMutationDenied,
+    flushPendingText = async () => {},
     onResetWidth,
   } = $props<{
     roomClient: TerminalRoomClient | null
@@ -45,6 +45,7 @@
     onRoomSnapshot: (snapshot: RoomSnapshot) => void
     onDirtyChange: (dirty: boolean) => void
     onMutationDenied: (reason: string) => void
+    flushPendingText?: () => Promise<void>
     onResetWidth?: () => void
   }>()
 
@@ -75,6 +76,7 @@
     record: recordSession,
     json: jsonSession,
     onRoomSnapshot: (snapshot) => onRoomSnapshot(snapshot),
+    flushPendingText: () => flushPendingText(),
   })
 
   const templates = $derived(recordSession.templates)
@@ -92,13 +94,15 @@
   const runner = $derived(runnerSession.runner)
   const runActive = $derived(isActiveMacroRunnerStatus(runner?.status))
   const traces = $derived(runnerSession.traces)
+  const traceEvents = $derived(runnerSession.traceEvents)
+  const selectedTraceRunId = $derived(runnerSession.selectedTraceRunId)
   const runnerInput = $derived(runnerSession.runnerInput)
   const runnerInputSyncing = $derived(runnerSession.runnerInputSyncing)
   const preparing = $derived(runnerSession.preparing)
-  const portableValidation = $derived(validateMacroDefinitionV5(draft))
-  const runnableValidation = $derived(validateRunnableMacroDefinitionV5(draft))
+  const portableValidation = $derived(recordSession.diagnostics.persistable)
+  const runnableValidation = $derived(recordSession.diagnostics.runnable)
   const runtimeValidation = $derived(draft ? validateMacroRuntimeBinding(draft.terminalLayout, terminalPositions) : null)
-  const jsonPreview = $derived(draft ? JSON.stringify(draft, null, 2) : '')
+  const jsonPreview = $derived(macroView === 'json' && draft ? JSON.stringify(draft, null, 2) : '')
   const statusText = $derived(runtimeValidation?.code ?? 'no_macro_selected')
   const editorLocked = $derived(runActive || !canMutateShared || operationPending || (selectedRecord !== null && !contentEditing))
   const prepareState = $derived(runnerSession.prepareState)
@@ -111,7 +115,6 @@
 
   onMount(() => {
     const disposeRecordSession = recordSession.mount()
-    runnerSession.mount()
     void loadNotificationProfiles()
     return disposeRecordSession
   })
@@ -193,7 +196,14 @@
         {operationPending} onStartEdit={startJsonBuffer} onEditTextChange={updateJsonText} onSave={saveJson} onCancel={cancelJson}
         onCopyResult={(error) => { recordSession.setErrorText(error) }} />
     {:else}
-      <MacroTraceView {runner} {traces} />
+      <MacroTraceView {runner} summaries={traces} eventsPage={traceEvents} {selectedTraceRunId}
+        hasPreviousSummaryPage={runnerSession.hasPreviousTracePage} hasNextSummaryPage={runnerSession.hasNextTracePage}
+        hasPreviousEventPage={runnerSession.hasPreviousTraceEventPage} hasNextEventPage={runnerSession.hasNextTraceEventPage}
+        onSelectRun={(runId) => void runnerSession.selectTrace(runId)}
+        onPreviousSummaryPage={() => void runnerSession.previousTraceSummaryPage()}
+        onNextSummaryPage={() => void runnerSession.nextTraceSummaryPage()}
+        onPreviousEventPage={() => void runnerSession.previousTraceEventPage()}
+        onNextEventPage={() => void runnerSession.nextTraceEventPage()} />
     {/if}
   </div>
 </section>

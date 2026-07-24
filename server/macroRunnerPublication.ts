@@ -1,6 +1,7 @@
 import type { MacroRunnerDelta, MacroRunnerSnapshot } from '../src/lib/macro/runnerTypes'
+import { macroRunnerStateHash } from './macroRunnerStateHash'
 import type { MacroRunStore } from './macroRunStore'
-import type { LiveRun } from './macroRunnerLiveState'
+import { liveRunRuntimeInput, type LiveRun } from './macroRunnerLiveState'
 import type { TerminalRoomManager } from './terminalRoomManager'
 
 export class MacroRunnerPublication {
@@ -18,6 +19,7 @@ export class MacroRunnerPublication {
     if (!run || run.roomGeneration !== room.roomGeneration) {
       return idleSnapshot(room.roomId, room.roomGeneration, this.runtimeRevisions.get(room.roomId) ?? 0)
     }
+    const window = this.runStore.readEventWindow(run.runId)
     return {
       roomId: run.roomId,
       roomGeneration: run.roomGeneration,
@@ -26,20 +28,15 @@ export class MacroRunnerPublication {
       runningMacro: {
         recordId: run.recordId,
         recordRevision: run.recordRevision,
-        definition: structuredClone(run.definition),
+        definition: run.definition,
+        definitionHash: run.definitionHash,
       },
       status: run.status,
       currentNodeId: run.currentNodeId,
       error: run.error,
-      runtimeInput: run.pendingInput ? {
-        invocationId: run.pendingInput.invocationId,
-        prompt: run.pendingInput.prompt,
-        defaultText: run.pendingInput.defaultText,
-        draft: run.pendingInput.draft,
-        inputRevision: run.pendingInput.inputRevision,
-        status: 'waiting',
-      } : null,
-      ...this.runStore.readEventWindow(run.runId),
+      runtimeInput: liveRunRuntimeInput(run),
+      ...window,
+      stateHash: this.stateHash(run, window),
     }
   }
 
@@ -59,20 +56,40 @@ export class MacroRunnerPublication {
     try {
       const room = this.manager.roomSummaryById(run.roomId)
       if (room.roomGeneration !== run.roomGeneration || this.currentRun(run.roomId) !== run) return
-      const snapshot = this.snapshot(run.roomId)
-      const canSendDelta = run.publishedEventSeq >= snapshot.firstAvailableEventSeq - 1
+      const window = this.runStore.readEventWindowView(run.runId)
+      const canSendDelta = run.hasPublishedSnapshot
+        && run.publishedEventSeq >= window.firstAvailableEventSeq - 1
       if (!canSendDelta) {
+        const snapshot = this.snapshot(run.roomId)
         this.manager.broadcastRoomMessage(run.roomId, { type: 'runner_snapshot', snapshot })
       } else {
         const delta: MacroRunnerDelta = {
-          ...snapshot,
-          events: snapshot.events.filter((event) => event.eventSeq > run.publishedEventSeq),
+          roomId: run.roomId,
+          roomGeneration: run.roomGeneration,
+          runId: run.runId,
+          definitionHash: run.definitionHash,
+          expectedRuntimeRevision: run.publishedRuntimeRevision,
+          runtimeRevision: run.runtimeRevision,
+          status: run.status,
+          currentNodeId: run.currentNodeId,
+          error: run.error,
+          runtimeInput: liveRunRuntimeInput(run),
+          events: window.events.filter((event) => event.eventSeq > run.publishedEventSeq),
+          firstAvailableEventSeq: window.firstAvailableEventSeq,
+          lastEventSeq: window.lastEventSeq,
+          totalEventCount: window.totalEventCount,
+          discardedEventCount: window.discardedEventCount,
+          stateHash: this.stateHash(run, window),
         }
         this.manager.broadcastRoomMessage(run.roomId, { type: 'runner_delta', delta })
       }
-      run.publishedEventSeq = snapshot.lastEventSeq
+      run.hasPublishedSnapshot = true
+      run.publishedEventSeq = window.lastEventSeq
+      run.publishedRuntimeRevision = run.runtimeRevision
     } catch {
       // Destroy closes mutation admission and owns final client teardown.
+    } finally {
+      if (run.terminalized) this.runStore.releaseLiveRun(run.runId)
     }
   }
 
@@ -92,10 +109,26 @@ export class MacroRunnerPublication {
     }, 25)
     run.publishTimer.unref?.()
   }
+
+  private stateHash(run: LiveRun, window: Readonly<ReturnType<MacroRunStore['readEventWindow']>>): string {
+    return macroRunnerStateHash({
+      runId: run.runId,
+      definitionHash: run.definitionHash,
+      status: run.status,
+      currentNodeId: run.currentNodeId,
+      error: run.error,
+      runtimeInput: liveRunRuntimeInput(run),
+      events: window.events,
+      firstAvailableEventSeq: window.firstAvailableEventSeq,
+      lastEventSeq: window.lastEventSeq,
+      totalEventCount: window.totalEventCount,
+      discardedEventCount: window.discardedEventCount,
+    })
+  }
 }
 
 function idleSnapshot(roomId: string, roomGeneration: string, runtimeRevision: number): MacroRunnerSnapshot {
-  return {
+  const snapshot: MacroRunnerSnapshot = {
     roomId,
     roomGeneration,
     runtimeRevision,
@@ -110,5 +143,11 @@ function idleSnapshot(roomId: string, roomGeneration: string, runtimeRevision: n
     lastEventSeq: 0,
     totalEventCount: 0,
     discardedEventCount: 0,
+    stateHash: '',
   }
+  snapshot.stateHash = macroRunnerStateHash({
+    ...snapshot,
+    definitionHash: null,
+  })
+  return snapshot
 }

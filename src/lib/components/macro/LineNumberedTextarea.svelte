@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte"
+  import { countTextLines, visibleLineWindow } from "../../visibleLineWindow"
 
   export type TextareaInsertAction = {
     text: string
@@ -43,7 +44,10 @@
   let resizeObserver: ResizeObserver | null = null
   let hasMeasured = false
   let mounted = false
-  const lineCount = $derived(Math.max(1, value.split("\n").length))
+  let lineCount = $state(1)
+  let measuredLineHeight = $state(20)
+  let viewportHeight = $state(20)
+  const lineWindow = $derived(visibleLineWindow(lineCount, scrollTop, viewportHeight, measuredLineHeight))
   const overflowY = $derived(displayHeight !== null && contentHeight > displayHeight + RESIZE_TOLERANCE_PX ? "auto" : "hidden")
   const textareaStyle = $derived(displayHeight === null
     ? "max-height: 60vh;"
@@ -86,6 +90,9 @@
     contentHeight = measuredContentHeight
     autoHeight = nextAutoHeight
     displayHeight = nextDisplayHeight
+    lineCount = countTextLines(value)
+    measuredLineHeight = lineHeight
+    viewportHeight = nextDisplayHeight
     expectedWidth = textarea.clientWidth
     textarea.style.height = nextDisplayHeight + "px"
     hasMeasured = true
@@ -135,6 +142,7 @@
     const clampedHeight = Math.min(rect.height, hardMaxHeight())
     temporaryManualHeight = clampedHeight > autoHeight + RESIZE_TOLERANCE_PX ? clampedHeight : null
     displayHeight = temporaryManualHeight ?? autoHeight
+    viewportHeight = displayHeight
     textarea.style.height = displayHeight + "px"
   }
 
@@ -196,6 +204,7 @@
 <div
   class="line-numbered-textarea grid min-w-0 max-w-full grid-cols-[36px_minmax(0,1fr)] overflow-hidden rounded-md border border-base-300 bg-base-100 [--line-number-height:1.45em] [&.without-line-numbers]:grid-cols-1"
   class:without-line-numbers={!showLineNumbers}
+  style={`--measured-line-height: ${measuredLineHeight}px`}
   data-testid={testId ? testId + "-line-editor" : undefined}
   data-adaptive-textarea="true"
   data-auto-max-rows={maxRows}
@@ -209,10 +218,10 @@
     </div>
   {/if}
   {#if showLineNumbers}
-    <div class="line-number-gutter relative min-w-0 select-none overflow-hidden border-r border-base-300 bg-base-200/70 font-mono text-base-content/50 text-[var(--line-number-font-size,12px)] leading-[var(--line-number-height)]" aria-hidden="true" data-testid={testId ? testId + "-line-numbers" : undefined}>
-      <div class="line-number-list absolute top-[7px] right-[7px] left-1 text-right will-change-transform [&>div]:h-[var(--line-number-height)]" style={`transform: translateY(-${scrollTop}px)`}>
-        {#each Array.from({ length: lineCount }) as _, index}
-          <div>{index + 1}</div>
+    <div class="line-number-gutter relative min-w-0 select-none overflow-hidden border-r border-base-300 bg-base-200/70 font-mono text-base-content/50 text-[var(--line-number-font-size,12px)] leading-[var(--measured-line-height)]" aria-hidden="true" data-testid={testId ? testId + "-line-numbers" : undefined}>
+      <div class="line-number-list absolute top-[7px] right-[7px] left-1 text-right will-change-transform [&>div]:h-[var(--measured-line-height)]" style={`transform: translateY(${lineWindow.offsetPx}px)`}>
+        {#each Array.from({ length: lineWindow.end - lineWindow.start }) as _, index}
+          <div>{lineWindow.start + index + 1}</div>
         {/each}
       </div>
     </div>

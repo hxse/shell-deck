@@ -61,6 +61,7 @@ export function createRoomWebSocketHandler(context: RoomWebSocketContext): Bun.W
             try { ws.close(code, reason) } catch {}
           },
           () => ws.ping(),
+          (payload) => sender.send(payload),
         )
         if (client.roomGeneration !== ws.data.roomGeneration) throw new Error('room_generation_conflict')
         ws.data.clientId = client.clientId
@@ -93,7 +94,7 @@ export function createRoomWebSocketHandler(context: RoomWebSocketContext): Bun.W
 }
 
 async function handleClientMessage(manager: TerminalRoomManager, clientId: string, roomId: string, message: ClientMessage, send: (message: ServerMessage) => void): Promise<void> {
-  if (message.type !== 'request_replay' && message.type !== 'request_snapshot') {
+  if (message.type !== 'request_replay' && message.type !== 'request_text_snapshot' && message.type !== 'request_snapshot') {
     if (isTerminalStructureMessage(message)) {
       await manager.runControlledClientOperation(clientId, async (ticket) => (
         await manager.runTerminalStructureMutation(ticket, () => handleMutatingClientMessage(manager, roomId, message, send))
@@ -102,6 +103,7 @@ async function handleClientMessage(manager: TerminalRoomManager, clientId: strin
     return
   }
   if (message.type === 'request_replay') send(manager.requestReplay(roomId, terminalRefFromMessage(message)))
+  else if (message.type === 'request_text_snapshot') send(manager.requestTextSnapshot(roomId, terminalRefFromMessage(message)))
   else send(manager.roomSnapshot(roomId))
 }
 
@@ -109,7 +111,7 @@ function isTerminalStructureMessage(message: ClientMessage): boolean {
   return message.type === 'create_terminal' || message.type === 'reorder_terminal' || message.type === 'close_terminal' || message.type === 'reset_terminal'
 }
 
-function handleMutatingClientMessage(manager: TerminalRoomManager, roomId: string, message: Exclude<ClientMessage, { type: 'request_replay' | 'request_snapshot' }>, send: (message: ServerMessage) => void): void {
+function handleMutatingClientMessage(manager: TerminalRoomManager, roomId: string, message: Exclude<ClientMessage, { type: 'request_replay' | 'request_text_snapshot' | 'request_snapshot' }>, send: (message: ServerMessage) => void): void {
   switch (message.type) {
     case 'create_terminal': {
       const terminal = manager.createTerminal(roomId, { backend: message.backend, cols: message.cols, rows: message.rows, cwd: message.cwd, cwdSource: message.cwdSource })
@@ -119,9 +121,25 @@ function handleMutatingClientMessage(manager: TerminalRoomManager, roomId: strin
     case 'terminal_input':
       manager.input(roomId, terminalRefFromMessage(message), message.data)
       return
-    case 'set_terminal_text':
-      manager.setTextContent(roomId, terminalRefFromMessage(message), message.content)
+    case 'mutate_terminal_text': {
+      const result = manager.mutateTextContent(
+        roomId,
+        terminalRefFromMessage(message),
+        message.expectedTextRevision,
+        message.mutation,
+        message.resultHash,
+      )
+      if (!result.ok) send({
+        type: 'terminal_text_resync_required',
+        roomId: result.terminal.roomId,
+        roomGeneration: result.terminal.roomGeneration,
+        terminalId: result.terminal.terminalId,
+        launchId: result.terminal.launchId,
+        textRevision: result.terminal.textRevision,
+        reason: result.reason,
+      })
       return
+    }
     case 'terminal_resize':
       manager.resize(roomId, terminalRefFromMessage(message), message.cols, message.rows)
       return

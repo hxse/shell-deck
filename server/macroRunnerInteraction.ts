@@ -1,13 +1,17 @@
 import { performance } from 'node:perf_hooks'
 import { createGeneratedId } from '../src/lib/generatedId'
-import type { MacroRunnerSnapshot } from '../src/lib/macro/runnerTypes'
-import type { LiveRun, PendingInput, PendingInputResult } from './macroRunnerLiveState'
+import type { MacroRunnerActionAck } from '../src/lib/macro/runnerTypes'
+import {
+  liveRunActionAck,
+  type LiveRun,
+  type PendingInput,
+  type PendingInputResult,
+} from './macroRunnerLiveState'
 
 const COOPERATIVE_CHECKPOINT_BUDGET = 64
 
 export type MacroRunnerInteractionPorts = {
   activeRun: (roomId: string) => LiveRun
-  snapshot: (roomId: string) => MacroRunnerSnapshot
   appendEvent: (run: LiveRun, kind: string, data?: Record<string, unknown>) => void
   bumpAndPublish: (run: LiveRun) => void
 }
@@ -15,24 +19,24 @@ export type MacroRunnerInteractionPorts = {
 export class MacroRunnerInteraction {
   constructor(private readonly ports: MacroRunnerInteractionPorts) {}
 
-  pause(roomId: string): MacroRunnerSnapshot {
+  pause(roomId: string): MacroRunnerActionAck {
     const run = this.ports.activeRun(roomId)
     if (run.status !== 'running') throw new Error('run_not_running')
     this.ports.appendEvent(run, 'run_paused')
     this.enterPaused(run)
-    return this.ports.snapshot(roomId)
+    return liveRunActionAck(run)
   }
 
-  resume(roomId: string): MacroRunnerSnapshot {
+  resume(roomId: string): MacroRunnerActionAck {
     const run = this.ports.activeRun(roomId)
     if (run.status !== 'paused') throw new Error('run_not_paused')
     this.ports.appendEvent(run, 'run_resumed')
     this.leavePaused(run)
     for (const resolve of run.pauseWaiters.splice(0)) resolve()
-    return this.ports.snapshot(roomId)
+    return liveRunActionAck(run)
   }
 
-  stop(roomId: string): MacroRunnerSnapshot {
+  stop(roomId: string): MacroRunnerActionAck {
     const run = this.ports.activeRun(roomId)
     try { this.ports.appendEvent(run, 'run_stopping') }
     catch { run.error = 'run_event_append_failed' }
@@ -41,7 +45,7 @@ export class MacroRunnerInteraction {
     for (const resolve of run.pauseWaiters.splice(0)) resolve()
     this.cancelPendingInput(run)
     this.ports.bumpAndPublish(run)
-    return this.ports.snapshot(roomId)
+    return liveRunActionAck(run)
   }
 
   updateInputDraft(
@@ -49,13 +53,13 @@ export class MacroRunnerInteraction {
     invocationId: string,
     value: string,
     expectedInputRevision: number,
-  ): MacroRunnerSnapshot {
+  ): MacroRunnerActionAck {
     const run = this.ports.activeRun(roomId)
     const pending = this.assertPendingInput(run, invocationId, expectedInputRevision)
     pending.draft = value
     pending.inputRevision += 1
     this.ports.bumpAndPublish(run)
-    return this.ports.snapshot(roomId)
+    return liveRunActionAck(run)
   }
 
   submitInput(
@@ -63,7 +67,7 @@ export class MacroRunnerInteraction {
     invocationId: string,
     value: string,
     expectedInputRevision: number,
-  ): MacroRunnerSnapshot {
+  ): MacroRunnerActionAck {
     const run = this.ports.activeRun(roomId)
     const pending = this.assertPendingInput(run, invocationId, expectedInputRevision)
     const nextInputRevision = pending.inputRevision + 1
@@ -77,7 +81,7 @@ export class MacroRunnerInteraction {
     run.pendingInput = null
     run.status = 'running'
     pending.resolve({ kind: 'submitted', value })
-    return this.ports.snapshot(roomId)
+    return liveRunActionAck(run)
   }
 
   async pauseRun(run: LiveRun, reason: string, stepId: string): Promise<void> {

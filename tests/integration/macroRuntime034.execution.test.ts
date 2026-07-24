@@ -15,9 +15,15 @@ import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/u
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
 import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
-import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
+import type {
+  MacroRunEventPage,
+  MacroRunnerActionAck,
+  MacroRunSummaryPage,
+  RunManifestV1,
+} from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
+import { setTextTerminalContent } from '../helpers/textTerminal'
 
 import { replay, request, roomGrant, runnableDefinition, waitFor } from './macroRuntime034.helpers'
 
@@ -41,12 +47,12 @@ test('Start freezes record and terminal binding, Pause resumes in-place, and art
 
     const started = await request(server.url, `/api/rooms/${room.roomId}/runner/start`, grant, { templateId: record.id, expectedMacroRevision: record.revision, expectedTerminalStructureRevision: structureRevision })
     expect(started.status).toBe(201)
-    const runId = ((started.body as { runner: MacroRunnerSnapshot }).runner).runId!
+    const runId = ((started.body as { ack: MacroRunnerActionAck }).ack).runId
     await waitFor(() => replay(server, room.roomId, shell.terminalId).includes('ECHO:one'))
 
     expect(() => server.manager.moveTerminal(room.roomId, shell.terminalId, 1)).toThrow('room_structure_locked_by_run')
     const paused = await request(server.url, `/api/rooms/${room.roomId}/runner/pause`, grant, {})
-    expect(paused.body).toMatchObject({ ok: true, runner: { status: 'paused', runId } })
+    expect(paused.body).toMatchObject({ ok: true, ack: { status: 'paused', runId } })
 
     await server.macroStore.update(record.id, record.revision, runnableDefinition('CHANGED'))
     await Bun.sleep(500)
@@ -54,7 +60,7 @@ test('Start freezes record and terminal binding, Pause resumes in-place, and art
     expect(replay(server, room.roomId, shell.terminalId)).not.toContain('ECHO:CHANGED')
 
     const resumed = await request(server.url, `/api/rooms/${room.roomId}/runner/resume`, grant, {})
-    expect(resumed.body).toMatchObject({ ok: true, runner: { status: 'running', runId } })
+    expect(resumed.body).toMatchObject({ ok: true, ack: { status: 'running', runId } })
     await waitFor(() => server.macroRunner.snapshot(room.roomId).status === 'completed')
     const output = replay(server, room.roomId, shell.terminalId)
     expect(output).toContain('ECHO:two')
@@ -70,10 +76,13 @@ test('Start freezes record and terminal binding, Pause resumes in-place, and art
 
     const traceResponse = await fetch(server.url + `/api/rooms/${room.roomId}/runner/traces`)
     expect(traceResponse.status).toBe(200)
-    const traceBody = await traceResponse.json() as { traces: Array<{ runId: string; status: string; events: Array<{ kind: string; data: Record<string, unknown> }> }> }
-    expect(traceBody.traces[0]).toMatchObject({ runId, status: 'completed' })
-    expect(traceBody.traces[0].events.some((event) => event.kind === 'artifact_created')).toBe(true)
-    const sent = traceBody.traces[0].events.find((event) => event.kind === 'terminal_input_sent')
+    const traceBody = await traceResponse.json() as { page: MacroRunSummaryPage }
+    expect(traceBody.page.items[0]).toMatchObject({ runId, status: 'completed' })
+    const eventResponse = await fetch(server.url + `/api/rooms/${room.roomId}/runner/traces/${runId}/events?limit=200`)
+    expect(eventResponse.status).toBe(200)
+    const eventBody = await eventResponse.json() as { page: MacroRunEventPage }
+    expect(eventBody.page.events.some((event) => event.kind === 'artifact_created')).toBe(true)
+    const sent = eventBody.page.events.find((event) => event.kind === 'terminal_input_sent')
     expect(sent?.data).toMatchObject({ configuredTerminalIndex: 1, currentTerminalIndex: 1, terminalId: shell.terminalId, launchId: shell.launchId })
   } finally {
     await server.stop()
@@ -87,7 +96,7 @@ test('input.defaultSource is exposed as editable live input without becoming per
   try {
     const room = server.manager.createRoom()
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
-    server.manager.setTextContent(room.roomId, text.terminalId, 'captured draft')
+    setTextTerminalContent(server.manager, room.roomId, text.terminalId, 'captured draft')
     const grant = roomGrant(server.manager, room.roomId)
     const definition: MacroDefinitionV5 = {
       schemaVersion: 5,
@@ -187,7 +196,7 @@ test('extract_text keeps the current negative index syntax and sends the selecte
   try {
     const room = server.manager.createRoom()
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
-    server.manager.setTextContent(room.roomId, text.terminalId, 'first\nlast')
+    setTextTerminalContent(server.manager, room.roomId, text.terminalId, 'first\nlast')
     const grant = roomGrant(server.manager, room.roomId)
     const definition: MacroDefinitionV5 = {
       schemaVersion: 5,

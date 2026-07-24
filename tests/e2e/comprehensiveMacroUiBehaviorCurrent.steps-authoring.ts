@@ -86,7 +86,9 @@ export async function operateWorkspace(page: Page, state: MacroJourneyState): Pr
   const textEditor = page.getByTestId('text-box-editor')
   const textSeed = Array.from({ length: 160 }, (_, index) => `dogfood text line ${index + 1}`).join('\n')
   await textEditor.fill(textSeed)
-  await expect(page.getByTestId('text-box-line-number-list').locator(':scope > div')).toHaveCount(160)
+  await textEditor.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
+  const renderedLineNumbers = await page.getByTestId('text-box-line-number-list').locator(':scope > div').count()
+  expect(renderedLineNumbers > 0 && renderedLineNumbers < 160).toBe(true)
   await textEditor.evaluate((element) => {
     element.scrollTop = 18
     element.dispatchEvent(new Event('scroll'))

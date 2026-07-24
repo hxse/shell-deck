@@ -2,6 +2,11 @@ import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEdit
 import { cloneJsonValue } from '../jsonClone'
 import type { ContentEditLeaseChangedMessage } from '../protocol'
 import type { TerminalRoomClient } from '../terminalRoomClient'
+import { MacroDiagnosticsScheduler } from './macroDiagnosticsScheduler'
+import {
+  diagnoseTrustedMacroDefinitionV5,
+  type MacroDefinitionDiagnostics,
+} from './macroDefinitionValidation'
 import { createMacroDraftMutationTracker } from './macroDraftMutation'
 import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
 import { MacroRecordEditOrchestrator, type MacroDefinitionOperationContext, type MacroEditCommitOutcome, type MacroStartRecordSnapshot } from './macroRecordEditOrchestrator'
@@ -46,8 +51,13 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   let operationPending = $state(false)
   let errorText = $state<string | null>(null)
   let templateListProblem = $state<string | null>(null)
+  let diagnostics = $state<MacroDefinitionDiagnostics>(diagnoseTrustedMacroDefinitionV5(null))
   let handledContentLeaseChangeSequence = 0
   const draftMutations = createMacroDraftMutationTracker()
+  const diagnosticsScheduler = new MacroDiagnosticsScheduler(
+    () => ({ definition: draft, revision: draftRevision }),
+    (value) => { diagnostics = value },
+  )
   const mutations = new MacroRecordMutationWorkflow({
     roomClient: options.roomClient, selectedRecord: () => selectedRecord,
     editLease: () => editLease, contentEditing: () => contentEditing,
@@ -114,6 +124,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     return () => {
       window.removeEventListener('focus', focus)
       remoteSync.dispose()
+      diagnosticsScheduler.dispose()
       void edit.releaseEditLease()
     }
   }
@@ -144,13 +155,13 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       dirty = false; contentEditing = false; leaseLost = false; publishedCreateBufferPreserved = false
       options.json.clearSelection()
       options.showEditor()
-      draftRevision += 1; editorGeneration += 1
+      advanceDraftRevision(true); editorGeneration += 1
       errorText = null
     } else {
       selectedRecord = null; replaceBaseDefinition(null)
       draft = emptyDefinition()
       contentEditing = true; leaseLost = false; publishedCreateBufferPreserved = false; dirty = true
-      draftRevision += 1; editorGeneration += 1
+      advanceDraftRevision(true); editorGeneration += 1
       errorText = null
       options.showEditor()
     }
@@ -165,7 +176,10 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       if (outcome.enterJson) openJsonBuffer()
     } else if (outcome.kind === 'cancel_edit') {
       options.json.closeAfterRecordInstall()
-      if (baseDefinition) draft = cloneJsonValue(baseDefinition)
+      if (baseDefinition) {
+        draft = cloneJsonValue(baseDefinition)
+        draftMutations.replaceBase(baseDefinition)
+      }
       else {
         selectedRecord = null
         draft = null
@@ -173,7 +187,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
         editorGeneration += 1
       }
       dirty = false; contentEditing = false; publishedCreateBufferPreserved = false; leaseLost = false
-      draftRevision += 1
+      advanceDraftRevision(true)
     } else {
       editLease = null; leaseView = null
       selectedRecord = null; replaceBaseDefinition(null); draft = null
@@ -217,6 +231,8 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     draft = cloneJsonValue(context.definition)
     replaceBaseDefinition(cloneJsonValue(record.definition))
     dirty = false
+    diagnosticsScheduler.invalidate()
+    diagnosticsScheduler.flush()
     errorText = 'macro_saved_but_edit_lease_not_retained:operation_context_changed'
     return true
   }
@@ -227,7 +243,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     draft = cloneJsonValue(record.definition)
     dirty = false; contentEditing = editing; leaseLost = false
     publishedCreateBufferPreserved = preserveBuffer
-    draftRevision += 1; editorGeneration += 1
+    advanceDraftRevision(true); editorGeneration += 1
     options.json.closeAfterRecordInstall()
     errorText = null
   }
@@ -244,7 +260,13 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
       return
     }
     dirty = draftMutations.apply(draft, mutator)
+    advanceDraftRevision(false)
+  }
+
+  function advanceDraftRevision(immediate: boolean): void {
     draftRevision += 1
+    if (immediate) diagnosticsScheduler.flush()
+    else diagnosticsScheduler.schedule()
   }
 
   function replaceBaseDefinition(definition: MacroDefinitionV5 | null): void {
@@ -332,6 +354,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     get leaseLost() { return leaseLost }, get publishedCreateBufferPreserved() { return publishedCreateBufferPreserved },
     get editLease() { return editLease },
     get dirty() { return dirty },
+    get diagnostics() { return diagnostics },
     get operationPending() { return operationPending },
     get errorText() { return errorText },
     get templateListProblem() { return templateListProblem },
@@ -340,12 +363,13 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     createTemplate: () => navigation.createTemplate(),
     beginEdit: (enterJson = false) => edit.beginEdit(enterJson),
     cancelEdit: () => edit.cancelEdit(),
-    saveTemplate: () => edit.saveTemplate(),
+    saveTemplate: () => { diagnosticsScheduler.flush(); return edit.saveTemplate() },
     deleteTemplate: () => edit.deleteTemplate(),
     updateDraft,
-    startJsonBuffer: () => edit.startJsonBuffer(),
+    startJsonBuffer: () => { diagnosticsScheduler.flush(); return edit.startJsonBuffer() },
     saveJson: () => edit.saveJson(),
     captureStartRecordSnapshot,
+    flushDiagnostics: () => diagnosticsScheduler.flush(),
     resolveStartRecord: (token: MacroOperationToken, snapshot: MacroStartRecordSnapshot) => edit.resolveStartRecord(token, snapshot),
     beginOperation,
     endOperation,

@@ -8,7 +8,14 @@ import {
   validateRunnableMacroDefinitionV5,
 } from '../src/lib/macro/macroDefinitionValidation'
 import { validateMacroRuntimeBinding } from '../src/lib/macro/macroRuntimeBinding'
-import type { FrozenTerminalBinding, MacroRunnerSnapshot, MacroRunTrace, RunManifestV1 } from '../src/lib/macro/runnerTypes'
+import type {
+  FrozenTerminalBinding,
+  MacroRunEventPage,
+  MacroRunnerActionAck,
+  MacroRunnerSnapshot,
+  MacroRunSummaryPage,
+  RunManifestV1,
+} from '../src/lib/macro/runnerTypes'
 import { executeMacroAction, type MacroActionRuntimeContext } from './macroActionRuntime'
 import { initializeMacroAgentEventBaselines, waitForMacroAgentEventCapture } from './macroAgentCapture'
 import { executeMacroFlow, MacroFlowSignal } from './macroFlowExecutor'
@@ -17,6 +24,7 @@ import { MacroRunnerArtifacts } from './macroRunnerArtifacts'
 import {
   createLiveRun,
   isActiveRunStatus,
+  liveRunActionAck,
   MacroNotRunnableError,
   type LiveRun,
   type MacroStartPreflight,
@@ -38,7 +46,6 @@ export class MacroRunnerLifecycle {
   private readonly publication: MacroRunnerPublication
   private readonly interaction: MacroRunnerInteraction
   private readonly artifacts: MacroRunnerArtifacts
-
   constructor(
     private readonly manager: TerminalRoomManager,
     private readonly records: MacroRecordStore<MacroDefinitionV5>,
@@ -49,7 +56,6 @@ export class MacroRunnerLifecycle {
     this.publication = new MacroRunnerPublication(manager, runStore, (roomId) => this.runs.get(roomId))
     this.interaction = new MacroRunnerInteraction({
       activeRun: (roomId) => this.activeRun(roomId),
-      snapshot: (roomId) => this.publication.snapshot(roomId),
       appendEvent: (run, kind, data) => this.appendEvent(run, kind, data),
       bumpAndPublish: (run) => this.publication.bumpAndPublish(run),
     })
@@ -65,9 +71,9 @@ export class MacroRunnerLifecycle {
     return this.publication.snapshot(roomId)
   }
 
-  traces(roomId: string): MacroRunTrace[] {
-    return this.runStore.listTracesForRoom(roomId)
-  }
+  traceSummaries(roomId: string, limit: number, cursor: string | null): MacroRunSummaryPage { return this.runStore.traceSummariesForRoom(roomId, limit, cursor) }
+
+  traceEvents(roomId: string, runId: string, limit: number, cursor: string | null): MacroRunEventPage { return this.runStore.traceEventsForRoom(roomId, runId, limit, cursor) }
 
   preflightStart(templateId: string): MacroStartPreflight {
     const record = this.records.read(templateId) as MacroRecord
@@ -88,7 +94,7 @@ export class MacroRunnerLifecycle {
     expectedMacroRevision: number,
     expectedTerminalStructureRevision: number,
     preflight: MacroStartPreflight,
-  ): MacroRunnerSnapshot {
+  ): MacroRunnerActionAck {
     if (!Number.isInteger(expectedMacroRevision) || expectedMacroRevision < 1) throw new Error('invalid_macro_revision')
     const existing = this.runs.get(ticket.roomId)
     if (existing && isActiveRunStatus(existing.status)) throw new Error('run_already_active')
@@ -117,7 +123,7 @@ export class MacroRunnerLifecycle {
       structureLocked = true
       ticket.assertAuthorized()
       const room = this.manager.roomSummaryById(ticket.roomId)
-      const hash = macroDefinitionHash(definition)
+      const hash = preflight.definitionHash
       const manifest: RunManifestV1 = {
         schemaVersion: 1,
         runId,
@@ -154,6 +160,7 @@ export class MacroRunnerLifecycle {
         recordId: record.id,
         recordRevision: record.revision,
         runtimeRevision: this.publication.nextRuntimeRevision(room.roomId),
+        definitionHash: 'sha256:' + preflight.definitionHash,
         definition,
         bindings,
       })
@@ -168,25 +175,26 @@ export class MacroRunnerLifecycle {
       this.runs.set(room.roomId, live)
       this.publication.publishSnapshot(live)
       queueMicrotask(() => void this.execute(live))
-      return this.snapshot(room.roomId)
+      return liveRunActionAck(live)
     } catch (error) {
       if (started) {
         try { this.runStore.append(runId, 'run_failed', { code: startFailureEvidenceCode(error) }) } catch {}
+        this.runStore.releaseLiveRun(runId)
       } else this.runStore.removeUnstarted(runId)
       if (structureLocked) this.manager.releaseRunStructureLock(ticket.roomId, runId)
       throw error
     }
   }
 
-  pause(roomId: string): MacroRunnerSnapshot {
+  pause(roomId: string): MacroRunnerActionAck {
     return this.interaction.pause(roomId)
   }
 
-  resume(roomId: string): MacroRunnerSnapshot {
+  resume(roomId: string): MacroRunnerActionAck {
     return this.interaction.resume(roomId)
   }
 
-  stop(roomId: string): MacroRunnerSnapshot {
+  stop(roomId: string): MacroRunnerActionAck {
     const snapshot = this.interaction.stop(roomId)
     const run = this.runs.get(roomId)
     if (run) run.pendingStructuredCapture = null
@@ -205,7 +213,7 @@ export class MacroRunnerLifecycle {
     invocationId: string,
     value: string,
     expectedInputRevision: number,
-  ): MacroRunnerSnapshot {
+  ): MacroRunnerActionAck {
     return this.interaction.updateInputDraft(roomId, invocationId, value, expectedInputRevision)
   }
 
@@ -214,7 +222,7 @@ export class MacroRunnerLifecycle {
     invocationId: string,
     value: string,
     expectedInputRevision: number,
-  ): MacroRunnerSnapshot {
+  ): MacroRunnerActionAck {
     return this.interaction.submitInput(roomId, invocationId, value, expectedInputRevision)
   }
 
@@ -227,6 +235,7 @@ export class MacroRunnerLifecycle {
     this.interaction.cancelPendingInput(run)
     try { this.finish(run, 'failed', 'run_failed', { code: 'room_destroyed' }, 'room_destroyed') } catch {}
     this.publication.clearPublishTimer(run)
+    this.runStore.releaseLiveRun(run.runId)
     this.runs.delete(roomId)
     this.publication.deleteRuntimeRevision(roomId)
   }

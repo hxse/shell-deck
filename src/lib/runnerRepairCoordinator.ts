@@ -1,4 +1,4 @@
-import { mergeMacroRunnerDelta } from './macro/runnerSnapshotMerge'
+import { mergeMacroRunnerDelta, validateMacroRunnerSnapshot } from './macro/runnerSnapshotMerge'
 import type { MacroRunnerDelta, MacroRunnerSnapshot } from './macro/runnerTypes'
 
 type RunnerRepairIdentity = {
@@ -33,6 +33,7 @@ export class RunnerRepairCoordinator {
   #timer: ReturnType<typeof setTimeout> | null = null
   #abort: AbortController | null = null
   #resyncInFlightToken: number | null = null
+  #projectionTail: Promise<void> = Promise.resolve()
 
   constructor(options: RunnerRepairCoordinatorOptions) {
     this.#options = options
@@ -43,10 +44,12 @@ export class RunnerRepairCoordinator {
   get roomGeneration(): string { return this.#roomGeneration }
 
   handleDelta(delta: MacroRunnerDelta): void {
-    const merged = mergeMacroRunnerDelta(this.#options.snapshot(), delta)
-    if (merged.kind === 'applied') this.#options.install(merged.snapshot)
-    else if (merged.kind === 'resync_required') this.request(delta.roomGeneration)
-    if (this.#pending) this.resume()
+    void this.#queueProjection(async () => {
+      const merged = await mergeMacroRunnerDelta(this.#options.snapshot(), delta)
+      if (merged.kind === 'applied') this.#options.install(merged.snapshot)
+      else if (merged.kind === 'resync_required') this.request(delta.roomGeneration)
+      if (this.#pending) this.resume()
+    }).catch(() => this.request(delta.roomGeneration))
   }
 
   request(expectedRoomGeneration: string): void {
@@ -77,20 +80,22 @@ export class RunnerRepairCoordinator {
   }
 
   installFull(snapshot: MacroRunnerSnapshot): void {
-    const validated = mergeMacroRunnerDelta(null, snapshot)
-    if (validated.kind !== 'applied') {
-      this.request(snapshot.roomGeneration)
-      return
-    }
-    const current = this.#options.snapshot()
-    const mayInstall = !current
-      || current.roomGeneration !== snapshot.roomGeneration
-      || snapshot.runtimeRevision > current.runtimeRevision
-      || (this.#pending && snapshot.runtimeRevision === current.runtimeRevision)
-    if (!mayInstall) return
-    this.#options.install(validated.snapshot)
-    const identity = this.#options.identity()
-    if (this.#pending && this.#roomId === identity.roomId && this.#roomGeneration === snapshot.roomGeneration) this.clear()
+    void this.#queueProjection(async () => {
+      const validated = await validateMacroRunnerSnapshot(snapshot)
+      if (validated.kind !== 'applied') {
+        this.request(snapshot.roomGeneration)
+        return
+      }
+      const current = this.#options.snapshot()
+      const mayInstall = !current
+        || current.roomGeneration !== snapshot.roomGeneration
+        || snapshot.runtimeRevision > current.runtimeRevision
+        || (this.#pending && snapshot.runtimeRevision === current.runtimeRevision)
+      if (!mayInstall) return
+      this.#options.install(validated.snapshot)
+      const identity = this.#options.identity()
+      if (this.#pending && this.#roomId === identity.roomId && this.#roomGeneration === snapshot.roomGeneration) this.clear()
+    }).catch(() => this.request(snapshot.roomGeneration))
   }
 
   suspend(): void {
@@ -145,13 +150,15 @@ export class RunnerRepairCoordinator {
       if (!response.ok || body.ok !== true || !body.runner) throw new Error(body.error ?? 'runner_resync_failed')
       if (!this.#identityMatches(expectedToken, expectedRoomId, expectedRoomGeneration, expectedConnectionGeneration)) return
       if (body.runner.roomId !== expectedRoomId || body.runner.roomGeneration !== expectedRoomGeneration) throw new Error('runner_resync_identity_mismatch')
-      const validated = mergeMacroRunnerDelta(null, body.runner)
-      if (validated.kind !== 'applied') throw new Error('runner_resync_invalid_snapshot')
-      const current = this.#options.snapshot()
-      if (current?.roomGeneration === body.runner.roomGeneration && body.runner.runtimeRevision < current.runtimeRevision) {
-        throw new Error('runner_resync_stale_snapshot')
-      }
-      this.#options.install(validated.snapshot)
+      await this.#queueProjection(async () => {
+        const validated = await validateMacroRunnerSnapshot(body.runner!)
+        if (validated.kind !== 'applied') throw new Error('runner_resync_invalid_snapshot')
+        const current = this.#options.snapshot()
+        if (current?.roomGeneration === body.runner!.roomGeneration && body.runner!.runtimeRevision < current.runtimeRevision) {
+          throw new Error('runner_resync_stale_snapshot')
+        }
+        this.#options.install(validated.snapshot)
+      })
       this.clear()
     } catch (error) {
       if (abort.signal.aborted || !this.#identityMatches(expectedToken, expectedRoomId, expectedRoomGeneration, expectedConnectionGeneration)) return
@@ -186,6 +193,12 @@ export class RunnerRepairCoordinator {
       && this.#roomId === expectedRoomId
       && this.#roomGeneration === expectedRoomGeneration
       && identity.connectionGeneration === expectedConnectionGeneration
+  }
+
+  #queueProjection(operation: () => Promise<void>): Promise<void> {
+    const next = this.#projectionTail.then(operation, operation)
+    this.#projectionTail = next.catch(() => {})
+    return next
   }
 }
 

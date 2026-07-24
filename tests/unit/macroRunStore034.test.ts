@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { appendFileSync, lstatSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGeneratedId } from '../../src/lib/generatedId'
@@ -7,7 +7,9 @@ import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes
 import type { RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import { EvidenceStore, RUN_EVENT_RETENTION_LIMIT } from '../../server/evidenceStore'
 import { canonicalJsonStringify, macroDefinitionHash, MacroRunStore } from '../../server/macroRunStore'
+import { MacroRunTraceIndex } from '../../server/macroRunTraceIndex'
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
+import { storeTracesForRoom } from '../helpers/macroTrace'
 
 test('RunManifest uses canonical definition hash and private persistent artifact/Trace files', () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-store-034-'))
@@ -34,7 +36,7 @@ test('RunManifest uses canonical definition hash and private persistent artifact
     expect(lstatSync(join(runDir, 'events', '000000000001.jsonl')).mode & 0o777).toBe(0o600)
     expect(lstatSync(join(runDir, artifactRef)).mode & 0o777).toBe(0o600)
     expect(readFileSync(join(runDir, artifactRef), 'utf8')).toBe('hello')
-    expect(store.listTracesForRoom(manifest.runtime.roomId)[0]).toMatchObject({ runId: manifest.runId, status: 'completed', macroRecord: manifest.macroRecord })
+    expect(storeTracesForRoom(store, manifest.runtime.roomId)[0]).toMatchObject({ runId: manifest.runId, status: 'completed', macroRecord: manifest.macroRecord })
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -46,7 +48,102 @@ test('a durable run_started without a terminal event is derived as interrupted, 
     const manifest = runManifest(store.reserveRunId(), definition)
     store.publishManifest(manifest)
     store.append(manifest.runId, 'run_started')
-    expect(store.listTracesForRoom(manifest.runtime.roomId)[0]?.status).toBe('interrupted')
+    expect(storeTracesForRoom(store, manifest.runtime.roomId)[0]?.status).toBe('interrupted')
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('cold Trace repairs a stale valid summary once, then returns to zero-segment reads', () => {
+  const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-trace-summary-034-'))
+  try {
+    let failTerminalSummary = true
+    const writerEvidence = new EvidenceStore(root, undefined, {
+      writeSummary(path, bytes) {
+        const summary = JSON.parse(bytes) as { lastEventKind: string }
+        if (summary.lastEventKind === 'run_failed' && failTerminalSummary) {
+          failTerminalSummary = false
+          throw new Error('synthetic_terminal_summary_failure')
+        }
+        writePrivateFileAtomic(path, bytes)
+      },
+    })
+    const writer = new MacroRunStore(root, undefined, () => createGeneratedId('run'), writerEvidence)
+    const manifest = runManifest(writer.reserveRunId(), {
+      schemaVersion: 5, name: 'stale summary', description: '', terminalLayout: [], body: [],
+    })
+    writer.publishManifest(manifest)
+    writer.append(manifest.runId, 'run_started')
+    writer.append(manifest.runId, 'step_completed')
+    writer.append(manifest.runId, 'run_failed')
+
+    const segmentReads: number[] = []
+    let segmentLists = 0
+    const coldEvidence = new EvidenceStore(root, undefined, {
+      onSegmentRead: (_runId, start) => segmentReads.push(start),
+      onSegmentList: () => { segmentLists += 1 },
+    })
+    const cold = new MacroRunStore(root, undefined, () => createGeneratedId('run'), coldEvidence)
+    const first = cold.traceSummariesForRoom(manifest.runtime.roomId, 20, null).items[0]
+    expect(first).toMatchObject({ status: 'failed', lastEventSeq: 3, totalEventCount: 3 })
+    expect({ segmentReads, segmentLists }).toEqual({ segmentReads: [1], segmentLists: 1 })
+
+    segmentReads.length = 0
+    segmentLists = 0
+    expect(cold.traceSummariesForRoom(manifest.runtime.roomId, 20, null).items[0])
+      .toMatchObject({ status: 'failed', lastEventSeq: 3 })
+    expect({ segmentReads, segmentLists }).toEqual({ segmentReads: [], segmentLists: 0 })
+    expect(JSON.parse(readFileSync(join(root, 'runs', manifest.runId, 'summary.json'), 'utf8')))
+      .toMatchObject({ lastEventKind: 'run_failed', lastEventSeq: 3 })
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('removing an unstarted manifest invalidates its derived Trace entry', () => {
+  const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-unstarted-034-'))
+  try {
+    const store = new MacroRunStore(root)
+    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'unstarted', description: '', terminalLayout: [], body: [] }
+    const manifest = runManifest(store.reserveRunId(), definition)
+    store.publishManifest(manifest)
+    store.removeUnstarted(manifest.runId)
+    expect(store.traceSummariesForRoom(manifest.runtime.roomId, 20, null)).toEqual({
+      items: [],
+      nextCursor: null,
+    })
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('known Trace index add and remove never parse all manifests', () => {
+  const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-trace-index-034-'))
+  try {
+    const definition: MacroDefinitionV5 = {
+      schemaVersion: 5, name: 'index scale', description: '', terminalLayout: [], body: [],
+    }
+    const seed = new MacroRunStore(root)
+    for (let index = 0; index < 20; index += 1) {
+      const manifest = runManifest(seed.reserveRunId(), definition)
+      seed.publishManifest(manifest)
+    }
+    let manifestParses = 0
+    const traceIndex = new MacroRunTraceIndex(seed.root, {
+      manifestParse: () => { manifestParses += 1 },
+    })
+    const added = runManifest(createGeneratedId('run'), definition)
+    writeManifestDirectory(seed.root, added)
+    traceIndex.recordManifest(added)
+    expect(manifestParses).toBe(0)
+    expect(traceIndex.page(added.runtime.roomId, 50, null).entries.map((entry) => entry.runId))
+      .toEqual([added.runId])
+
+    rmSync(join(seed.root, added.runId), { recursive: true })
+    traceIndex.removeRun(added.runId)
+    expect(manifestParses).toBe(0)
+    expect(traceIndex.page(added.runtime.roomId, 50, null).entries).toEqual([])
+
+    const unindexed = runManifest(createGeneratedId('run'), definition)
+    const known = runManifest(createGeneratedId('run'), definition)
+    writeManifestDirectory(seed.root, unindexed)
+    writeManifestDirectory(seed.root, known)
+    traceIndex.recordManifest(known)
+    expect(manifestParses).toBe(22)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -211,4 +308,10 @@ function runManifest(runId: string, definition: MacroDefinitionV5): RunManifestV
     runtime: { serverInstanceId: createGeneratedId('serverInstance'), roomId: createGeneratedId('room'), roomGeneration: createGeneratedId('roomGeneration'), terminalStructureRevision: 0 },
     terminalBindings: [],
   }
+}
+
+function writeManifestDirectory(runsRoot: string, manifest: RunManifestV1): void {
+  const directory = join(runsRoot, manifest.runId)
+  mkdirSync(directory, { mode: 0o700 })
+  writePrivateFileAtomic(join(directory, 'manifest.json'), JSON.stringify(manifest))
 }

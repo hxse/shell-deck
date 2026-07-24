@@ -17,6 +17,7 @@ type TerminalRuntimeBase = TerminalReplayState & {
   terminalRevision: number
   textRevision: number
   outputActivityRevision: number
+  contentHash: string | null
 }
 
 export type ShellTerminalRuntime = TerminalRuntimeBase & {
@@ -60,6 +61,9 @@ export function createTerminalRuntimeState(input: TerminalRuntimeStateInput): Te
     terminalRevision: 1,
     textRevision: 0,
     outputActivityRevision: 0,
+    contentHash: input.backendKind === 'text'
+      ? 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+      : null,
   }
   return input.backendKind === 'text'
     ? { ...runtime, backendKind: 'text', cwd: null }
@@ -82,6 +86,9 @@ export function restartTerminalRuntimeState(
     terminalRevision: terminal.terminalRevision + 1,
     textRevision: terminal.textRevision + 1,
     outputActivityRevision: terminal.outputActivityRevision + 1,
+    contentHash: input.backendKind === 'text'
+      ? 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+      : null,
   }
   return input.backendKind === 'text'
     ? { ...runtime, backendKind: 'text', cwd: null }

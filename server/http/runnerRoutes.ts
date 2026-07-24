@@ -26,7 +26,8 @@ export async function handleRunnerRoutes(req: Request, url: URL, context: HttpCo
     if (!layout.ok) return json({ ok: false, error: 'invalid_terminal_layout', issues: layout.issues }, 400)
     const expectedRevision = assertTerminalStructureRevision(body.expectedTerminalStructureRevision)
     const result = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
-      await manager.runTerminalStructureOperation(ticket, expectedRevision, async () => {
+      await manager.runTerminalStructureOperation(ticket, expectedRevision, async () => (
+        await manager.batchTerminalIndexMaps(roomId, async () => {
         for (const required of layout.value) {
           ticket.assertAuthorized()
           const positions = manager.terminalPositions(roomId)
@@ -44,20 +45,30 @@ export async function handleRunnerRoutes(req: Request, url: URL, context: HttpCo
           }
           ticket.assertAuthorized()
         }
-        return { ok: true as const, snapshot: manager.roomSnapshot(roomId) }
-      })
+          return { ok: true as const, snapshot: manager.roomSnapshot(roomId) }
+        })
+      ))
     ), roomId)
     return json(result, result.ok ? 200 : 409)
   }
 
   const runnerRoute = /^\/api\/rooms\/([^/]+)\/runner(?:\/(start|pause|resume|stop|input-draft|input))?$/.exec(url.pathname)
+  const runnerTraceEventsRoute = /^\/api\/rooms\/([^/]+)\/runner\/traces\/([^/]+)\/events$/.exec(url.pathname)
   const runnerTracesRoute = /^\/api\/rooms\/([^/]+)\/runner\/traces$/.exec(url.pathname)
+  if (runnerTraceEventsRoute) {
+    if (req.method !== 'GET') return methodNotAllowed(['GET'])
+    const roomId = assertRoomRouteToken(decodeURIComponent(runnerTraceEventsRoute[1]))
+    const runId = assertGeneratedId(decodeURIComponent(runnerTraceEventsRoute[2]), 'run')
+    manager.roomSummaryById(roomId)
+    const page = pagination(url, 100, 200)
+    return json({ ok: true, page: macroRunner.traceEvents(roomId, runId, page.limit, page.cursor) })
+  }
   if (runnerTracesRoute) {
-    assertNoQuery(url)
     if (req.method !== 'GET') return methodNotAllowed(['GET'])
     const roomId = assertRoomRouteToken(decodeURIComponent(runnerTracesRoute[1]))
     manager.roomSummaryById(roomId)
-    return json({ ok: true, traces: macroRunner.traces(roomId) })
+    const page = pagination(url, 20, 50)
+    return json({ ok: true, page: macroRunner.traceSummaries(roomId, page.limit, page.cursor) })
   }
   if (runnerRoute) {
     assertNoQuery(url)
@@ -74,17 +85,17 @@ export async function handleRunnerRoutes(req: Request, url: URL, context: HttpCo
       const expectedMacroRevision = assertPositiveRevision(body.expectedMacroRevision)
       const expectedStructureRevision = assertTerminalStructureRevision(body.expectedTerminalStructureRevision)
       const preflight = macroRunner.preflightStart(templateId)
-      const runner = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
+      const ack = await manager.runControlledBearerOperation(roomControlBearer(req), async (ticket) => (
         await manager.runTerminalStructureOperation(ticket, expectedStructureRevision, async () => (
           await macroRunner.start(ticket, templateId, expectedMacroRevision, expectedStructureRevision, preflight)
         ))
       ), roomId)
-      return json({ ok: true, runner }, 201)
+      return json({ ok: true, ack }, 201)
     }
     const body = action === 'input' || action === 'input-draft'
       ? await exactObject(req, ['invocationId', 'value', 'expectedInputRevision'])
       : await exactObject(req, [])
-    const runner = await manager.runControlledBearerOperation(roomControlBearer(req), (ticket) => {
+    const ack = await manager.runControlledBearerOperation(roomControlBearer(req), (ticket) => {
       ticket.assertAuthorized()
       if (action === 'pause') return macroRunner.pause(roomId)
       if (action === 'resume') return macroRunner.resume(roomId)
@@ -96,8 +107,22 @@ export async function handleRunnerRoutes(req: Request, url: URL, context: HttpCo
         ? macroRunner.updateInputDraft(roomId, invocationId, body.value, expectedInputRevision)
         : macroRunner.submitInput(roomId, invocationId, body.value, expectedInputRevision)
     }, roomId)
-    return json({ ok: true, runner })
+    return json({ ok: true, ack })
   }
 
   return null
+}
+
+function pagination(url: URL, defaultLimit: number, maxLimit: number): { limit: number; cursor: string | null } {
+  const unknown = [...url.searchParams.keys()].find((key) => key !== 'limit' && key !== 'cursor')
+  if (unknown) throw new Error('invalid_pagination_query')
+  if (url.searchParams.getAll('limit').length > 1 || url.searchParams.getAll('cursor').length > 1) {
+    throw new Error('invalid_pagination_query')
+  }
+  const rawLimit = url.searchParams.get('limit')
+  const limit = rawLimit === null ? defaultLimit : Number(rawLimit)
+  if (!Number.isInteger(limit) || limit < 1 || limit > maxLimit) throw new Error('invalid_pagination_limit')
+  const cursor = url.searchParams.get('cursor')
+  if (cursor !== null && !cursor) throw new Error('invalid_pagination_cursor')
+  return { limit, cursor }
 }
