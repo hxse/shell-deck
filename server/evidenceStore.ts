@@ -6,6 +6,7 @@ import {
   assertEvidenceSummary,
   assertEventKind,
   assertRunProvenance,
+  createEvidenceEvent,
   sameEventIntent,
   sameRunProvenance,
   type EvidenceEvent,
@@ -38,6 +39,7 @@ export type EvidenceEventWindow = { summary: EvidenceRunSummary; events: Evidenc
 
 export type EvidenceStoreOptions = {
   eventIdFactory?: () => string
+  admitWrite?: <T>(incomingBytes: number, publish: () => T) => T
   afterEventPublish?: (event: EvidenceEvent) => void
   deleteSegment?: (path: string) => PublishedFileMutationReceipt
   writeSummary?: (path: string, bytes: string) => void
@@ -48,6 +50,7 @@ export type EvidenceStoreOptions = {
 export class EvidenceStore {
   readonly runsRoot: string
   private readonly eventIdFactory: () => string
+  private readonly admitWrite: <T>(incomingBytes: number, publish: () => T) => T
   private readonly afterEventPublish: (event: EvidenceEvent) => void
   private readonly writeSummaryFile: (path: string, bytes: string) => void
   private readonly segmentStorage: EvidenceSegmentStorage
@@ -62,6 +65,7 @@ export class EvidenceStore {
   ) {
     this.runsRoot = initializeUserDataRoot(root).runs
     this.eventIdFactory = options.eventIdFactory ?? (() => createGeneratedId('runEvent'))
+    this.admitWrite = options.admitWrite ?? ((_incomingBytes, publish) => publish())
     this.afterEventPublish = options.afterEventPublish ?? (() => {})
     this.writeSummaryFile = options.writeSummary ?? writePrivateFileAtomic
     this.segmentStorage = new EvidenceSegmentStorage(this.runsRoot, options.deleteSegment, {
@@ -109,7 +113,7 @@ export class EvidenceStore {
       this.appendCursors.set(id, { provenance: normalized, nextEventSeq: summary.lastEventSeq + 1 })
       return existing
     }
-    const event = this.createEvent(id, 'run_started', data, normalized, 1)
+    const event = createEvidenceEvent(id, 'run_started', data, normalized, 1, this.eventIdFactory(), this.now())
     try {
       const published = this.publishEvent(id, event)
       this.appendCursors.set(id, { provenance: normalized, nextEventSeq: 2 })
@@ -148,7 +152,7 @@ export class EvidenceStore {
       return existing
     }
     if (eventSeq !== cursor.nextEventSeq) throw new Error('invalid_evidence_event_sequence')
-    const event = this.createEvent(id, kind, data, normalized, eventSeq)
+    const event = createEvidenceEvent(id, kind, data, normalized, eventSeq, this.eventIdFactory(), this.now())
     try {
       const published = this.publishEvent(id, event)
       cursor.nextEventSeq += 1
@@ -237,6 +241,12 @@ export class EvidenceStore {
   }
 
   private publishEvent(runId: string, event: EvidenceEvent): EvidenceEvent {
+    const eventBytes = Buffer.byteLength(JSON.stringify(event) + '\n')
+    const summaryBytes = Buffer.byteLength(JSON.stringify(this.nextSummary(event), null, 2) + '\n')
+    return this.admitWrite(eventBytes + summaryBytes, () => this.publishAdmittedEvent(runId, event))
+  }
+
+  private publishAdmittedEvent(runId: string, event: EvidenceEvent): EvidenceEvent {
     const receipt = this.segmentStorage.append(runId, event, () => this.afterEventPublish(event))
     const persisted = receipt.durability === 'confirmed'
       ? event
@@ -301,7 +311,7 @@ export class EvidenceStore {
   private persistSummary(summary: EvidenceRunSummary): void {
     const path = this.summaryPath(summary.runId)
     const bytes = JSON.stringify(summary, null, 2) + '\n'
-    try { this.writeSummaryFile(path, bytes) }
+    try { this.admitWrite(Buffer.byteLength(bytes), () => this.writeSummaryFile(path, bytes)) }
     catch (error) {
       try {
         const current = assertEvidenceSummary(JSON.parse(readPrivateFile(path).toString('utf8')), summary.runId)
@@ -327,7 +337,8 @@ export class EvidenceStore {
     const first = firstEvents[0]
     const last = firstStart === lastStart ? firstEvents.at(-1) : this.segmentStorage.readSegment(runId, lastStart).at(-1)
     if (!first || !last) return null
-    if (stored?.firstAvailableEventSeq === first.eventSeq && stored.lastEventSeq === last.eventSeq) return stored
+    if (stored?.firstAvailableEventSeq === first.eventSeq && stored.lastEventSeq === last.eventSeq && stored.lastEventKind === last.kind && stored.updatedAt === last.createdAt
+      && stored.totalEventCount === last.eventSeq && stored.discardedEventCount === first.eventSeq - 1 && stored.serverInstanceId === first.serverInstanceId && stored.roomId === first.roomId && stored.roomGeneration === first.roomGeneration) return stored
     const recovered: EvidenceRunSummary = {
       schemaVersion: 1,
       runId,
@@ -344,26 +355,6 @@ export class EvidenceStore {
     }
     repair?.(recovered)
     return recovered
-  }
-
-  private createEvent(
-    runId: string,
-    kind: string,
-    data: Record<string, unknown>,
-    provenance: RunProvenance,
-    eventSeq: number,
-  ): EvidenceEvent {
-    assertEventKind(kind)
-    return {
-      schemaVersion: 1,
-      eventId: assertGeneratedId(this.eventIdFactory(), 'runEvent'),
-      eventSeq,
-      runId,
-      kind,
-      createdAt: this.now(),
-      ...provenance,
-      data,
-    }
   }
 
   private runDir(runId: string): string {

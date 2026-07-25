@@ -237,6 +237,17 @@ test-20260725b:
     HISTFILE=/dev/null bun test tests/unit/serverConsistency20260725B.test.ts tests/unit/fileSizeGate014.test.ts tests/unit/roomControlDecomposition004.test.ts tests/unit/terminalRoomDecomposition008.test.ts tests/unit/contentEditLeaseStateStore003.test.ts
     HISTFILE=/dev/null bun test tests/integration/incrementalTransport20260724D.test.ts tests/integration/terminalRoomWebSocket032.test.ts tests/integration/singleWriter033.test.ts
 
+test-20260725c:
+    HISTFILE=/dev/null bun test tests/unit/logStorageRetention20260725C.test.ts
+    HISTFILE=/dev/null bun test tests/unit/macroRunStore034.test.ts
+    HISTFILE=/dev/null bun test tests/unit/fullStackHotPaths20260724D.test.ts
+    HISTFILE=/dev/null bun test tests/unit/agentEvent032.test.ts
+    HISTFILE=/dev/null bun test tests/unit/serverCli032.test.ts
+    HISTFILE=/dev/null bun test tests/integration/logStorageRetention20260725C.test.ts
+    HISTFILE=/dev/null bun test tests/integration/agentEventWaitLimit038.test.ts
+    HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
+    HISTFILE=/dev/null bun test tests/integration/incrementalTransport20260724D.test.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"
 

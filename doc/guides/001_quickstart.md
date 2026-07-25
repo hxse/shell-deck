@@ -78,6 +78,8 @@ server只接受当前run在该terminal等待的第一份schema-valid JSON。sche
 
 User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord、run/artifact evidence、AgentEvent evidence和notification config都在这里；它们不属于 Room 或 terminal cwd。current runtime只管理`macros/`、`runs/`、`agent-events/`与`.locks/`。
 
+`runs/`中的Trace/events/artifacts与`agent-events/`raw logs默认共享2 GiB配额。可在启动前设置positive integer bytes，例如`SHELL_DECK_LOG_STORAGE_LIMIT_BYTES=4294967296 just start`改为4 GiB；变量若存在但为空或不是positive integer会直接报错，MacroRecord与notification config不计入。达到上限后server清理到约90%：先删除最旧的completed/failed/stopped run整个目录，再删除已经关闭的旧AgentEvent segment。当前Room仍显示的最近一次run、active/interrupted run和仍可追加的open segment不会删除；下一次Start替换或Room Destroy后，旧current run才进入普通历史回收。没有安全候选时会明确报告`log_storage_limit_reached`。AgentEvent current layout是8 MiB编号segment，每条event写入前都检查配额；旧的单个`<generation>.jsonl`日志不迁移、不读取。
+
 notification 配置可用以下命令初始化：
 
 ```bash
@@ -121,4 +123,6 @@ just test-20260724b
 just test-20260724c
 just test-20260724d
 just test-20260725a
+just test-20260725b
+just test-20260725c
 ```

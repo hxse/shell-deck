@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { assertGeneratedId, createGeneratedId } from '../src/lib/generatedId'
+import { assertGeneratedId, assertRoomRouteToken, createGeneratedId } from '../src/lib/generatedId'
 import { canonicalJsonStringify } from '../src/lib/canonicalJson'
 import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
 import type {
@@ -13,6 +13,10 @@ import type {
   RunManifestV1,
 } from '../src/lib/macro/runnerTypes'
 import { EvidenceStore, retainedFirstEventSeq, type EvidenceRunSummary, type RunProvenance } from './evidenceStore'
+import {
+  type LogStorageRetention,
+  type RetentionRunCandidate,
+} from './logStorageRetention'
 import { ensurePrivateDirectory, fsyncDirectory, initializeUserDataRoot, writePrivateFileAtomic } from './userDataRoot'
 import {
   decodeEventCursor,
@@ -27,22 +31,35 @@ export class MacroRunStore {
   private readonly evidence: EvidenceStore
   private readonly idFactory: () => string
   private readonly traceIndex: MacroRunTraceIndex
+  private readonly retention?: LogStorageRetention
   private readonly eventCursors = new Map<string, { provenance: RunProvenance; nextEventSeq: number }>()
   private readonly liveEventWindows = new Map<string, MacroRunEventWindow>()
+  private readonly currentRoomRuns = new Map<string, string>()
 
   constructor(
     dataRoot?: string,
     now: () => string = () => new Date().toISOString(),
     idFactory: () => string = () => createGeneratedId('run'),
     evidenceStore?: EvidenceStore,
+    retention?: LogStorageRetention,
   ) {
     this.root = initializeUserDataRoot(dataRoot).runs
-    this.evidence = evidenceStore ?? new EvidenceStore(dataRoot, now)
+    this.retention = retention
+    this.evidence = evidenceStore ?? new EvidenceStore(dataRoot, now, {
+      admitWrite: (incomingBytes, publish) => this.admitAndPublish(incomingBytes, publish),
+    })
     this.idFactory = idFactory
-    this.traceIndex = new MacroRunTraceIndex(this.root)
+    this.traceIndex = new MacroRunTraceIndex(this.root, retention ? {
+      admitWrite: (incomingBytes, publish) => retention.admitAndPublishComputed(incomingBytes, publish),
+    } : {})
+    retention?.setRunAdapter({
+      candidates: () => this.retentionCandidates(),
+      remove: (runId) => this.removeRetainedRun(runId),
+    })
   }
 
   reserveRunId(): string {
+    this.retention?.enforce()
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const runId = assertGeneratedId(this.idFactory(), 'run')
       const runDir = this.runDir(runId)
@@ -66,11 +83,14 @@ export class MacroRunStore {
     const runDir = this.runDir(runId)
     if (!existsSync(runDir)) throw new Error('run_id_not_reserved')
     if (existsSync(join(runDir, 'manifest.json'))) throw new Error('run_id_conflict')
+    const content = JSON.stringify(manifest, null, 2) + '\n'
     try {
-      writePrivateFileAtomic(join(runDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
-      this.traceIndex.recordManifest(manifest)
-      fsyncDirectory(this.root)
-      return `${runId}/manifest.json`
+      return this.admitAndPublish(Buffer.byteLength(content), () => {
+        writePrivateFileAtomic(join(runDir, 'manifest.json'), content)
+        this.traceIndex.recordManifest(manifest)
+        fsyncDirectory(this.root)
+        return `${runId}/manifest.json`
+      })
     } catch (error) {
       rmSync(runDir, { recursive: true, force: true })
       try { this.traceIndex.removeRun(runId) }
@@ -153,10 +173,35 @@ export class MacroRunStore {
     return window
   }
 
-  releaseLiveRun(runId: string): void {
+  retainCurrentRoomRun(roomId: string, runId: string): void {
+    const room = assertRoomRouteToken(roomId)
     const id = assertGeneratedId(runId, 'run')
-    this.eventCursors.delete(id)
-    this.liveEventWindows.delete(id)
+    const previous = this.currentRoomRuns.get(room)
+    if (previous === id) return
+    this.retention?.protectRun(id)
+    try {
+      if (previous) this.retention?.unprotectRun(previous)
+    } catch (error) {
+      try { this.retention?.unprotectRun(id) } catch {}
+      throw error
+    }
+    this.currentRoomRuns.set(room, id)
+  }
+
+  releaseLiveRun(runId: string, currentRoomId?: string): void {
+    const id = assertGeneratedId(runId, 'run')
+    const cursorReleased = this.eventCursors.delete(id)
+    const windowReleased = this.liveEventWindows.delete(id)
+    let currentReleased = false
+    if (currentRoomId !== undefined) {
+      const roomId = assertRoomRouteToken(currentRoomId)
+      if (this.currentRoomRuns.get(roomId) === id) {
+        this.retention?.unprotectRun(id)
+        this.currentRoomRuns.delete(roomId)
+        currentReleased = true
+      }
+    }
+    if (cursorReleased || windowReleased || currentReleased) this.retention?.afterRunTerminal()
   }
 
   readManifest(runId: string): RunManifestV1 {
@@ -166,7 +211,10 @@ export class MacroRunStore {
   writeArtifact(runId: string, prefix: string, content: string, extension = 'txt'): string {
     const id = assertGeneratedId(runId, 'run')
     if (!existsSync(join(this.runDir(id), 'manifest.json'))) throw new Error('run_manifest_not_found')
-    return this.evidence.writeArtifactFile(id, prefix, content, extension)
+    return this.admitAndPublish(
+      Buffer.byteLength(content),
+      () => this.evidence.writeArtifactFile(id, prefix, content, extension),
+    )
   }
 
   traceSummariesForRoom(roomId: string, limit: number, cursor: string | null): MacroRunSummaryPage {
@@ -217,6 +265,42 @@ export class MacroRunStore {
 
   private runDir(runId: string): string { return join(this.root, assertGeneratedId(runId, 'run')) }
 
+  private admitAndPublish<T>(incomingBytes: number, publish: () => T): T {
+    return this.retention?.admitAndPublish(incomingBytes, publish) ?? publish()
+  }
+
+  private retentionCandidates(): RetentionRunCandidate[] {
+    const candidates: RetentionRunCandidate[] = []
+    for (const runId of this.evidence.listRuns()) {
+      if (this.eventCursors.has(runId) || !this.evidence.hasStarted(runId)) continue
+      const summary = this.evidence.traceSummary(runId)
+      if (!isTerminalRunKind(summary.lastEventKind)) continue
+      candidates.push({ runId, completedAt: summary.updatedAt })
+    }
+    return candidates
+  }
+
+  private removeRetainedRun(runId: string): void {
+    const id = assertGeneratedId(runId, 'run')
+    if (this.eventCursors.has(id)) throw new Error('log_storage_run_not_collectable')
+    const summary = this.evidence.traceSummary(id)
+    if (!isTerminalRunKind(summary.lastEventKind)) throw new Error('log_storage_run_not_collectable')
+    const tombstone = join(this.root, '.gc-' + id)
+    if (existsSync(tombstone)) rmSync(tombstone, { recursive: true, force: true })
+    renameSync(this.runDir(id), tombstone)
+    fsyncDirectory(this.root)
+    try { this.traceIndex.removeRun(id) }
+    catch (error) {
+      this.traceIndex.invalidate()
+      throw error
+    } finally {
+      this.eventCursors.delete(id)
+      this.liveEventWindows.delete(id)
+      rmSync(tombstone, { recursive: true, force: true })
+      fsyncDirectory(this.root)
+    }
+  }
+
   private advanceLiveEventWindow(runId: string, event: MacroRunEvent): void {
     const current = this.liveEventWindows.get(runId)
     if (!current) {
@@ -258,6 +342,10 @@ function derivedTraceStatus(summary: EvidenceRunSummary): MacroRunSummary['statu
   if (summary.lastEventKind === 'run_stopped') return 'stopped'
   if (summary.lastEventKind === 'run_failed') return 'failed'
   return 'interrupted'
+}
+
+function isTerminalRunKind(kind: string): boolean {
+  return kind === 'run_completed' || kind === 'run_failed' || kind === 'run_stopped'
 }
 
 export function macroDefinitionHash(definition: MacroDefinitionV5): string {

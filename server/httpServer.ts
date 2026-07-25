@@ -10,6 +10,7 @@ import { errorResponse, json } from './http/httpPrimitives'
 import { handlePageRoutes } from './http/pageRoutes'
 import { handleRoomRoutes } from './http/roomRoutes'
 import { handleRunnerRoutes } from './http/runnerRoutes'
+import { LogStorageRetention } from './logStorageRetention'
 import { MacroRunStore } from './macroRunStore'
 import { MacroRunnerService } from './macroRunnerService'
 import { relocateNotificationConfig } from './notificationConfigRelocation'
@@ -42,6 +43,7 @@ export type StartOptions = {
   port?: number
   manager?: TerminalRoomManager
   dataRoot?: string
+  logStorageLimitBytes?: number
   contentEditLeaseOptions?: ContentEditLeaseServiceOptions
   macroStoreOptions?: SharedContentStoreOptions
 }
@@ -59,6 +61,9 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   const userDataRoot = resolve(options.dataRoot ?? resolveUserDataRoot())
   initializeUserDataRoot(userDataRoot, (warning) => console.warn(warning.code + ':' + warning.path))
   const manager = options.manager ?? new TerminalRoomManager()
+  const logStorage = new LogStorageRetention(userDataRoot, {
+    limitBytes: options.logStorageLimitBytes,
+  })
   const contentEditLeases = new ContentEditLeaseService(userDataRoot, manager, {
     ...options.contentEditLeaseOptions,
     onChanged: (resourceKey, view) => {
@@ -74,9 +79,6 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   manager.setControlLostHook(async (context) => await contentEditLeases.releaseForController(context))
   manager.setControlHeartbeatHook(async (context) => await contentEditLeases.renewForController(context))
   manager.addDestroyHook(async (roomId, roomGeneration) => await contentEditLeases.releaseForRoom(roomId, roomGeneration))
-  const agentEventStore = new AgentEventStore(userDataRoot)
-  const ingestToken = createGeneratedSuffix() + createGeneratedSuffix()
-
   let notificationError: string | null = null
   try {
     const relocationEnv = options.dataRoot === undefined
@@ -90,10 +92,25 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }
   const notificationService = new NotificationService(userDataRoot, fetch, 10_000, notificationError)
   const macroStore = new MacroRecordStore<MacroDefinitionV5>(userDataRoot, options.macroStoreOptions)
-  const macroRunStore = new MacroRunStore(userDataRoot)
+  const macroRunStore = new MacroRunStore(
+    userDataRoot,
+    undefined,
+    undefined,
+    undefined,
+    logStorage,
+  )
+  const agentEventStore = new AgentEventStore(userDataRoot, {
+    admitAppend: (incomingBytes, publish) => logStorage.admitAndPublish(incomingBytes, publish),
+    afterStreamClose: () => logStorage.afterAgentSegmentClose(),
+  })
+  logStorage.enforce()
+  const ingestToken = createGeneratedSuffix() + createGeneratedSuffix()
   const macroRunner = new MacroRunnerService(manager, macroStore, macroRunStore, notificationService, agentEventStore)
   manager.setActiveRunProvider((roomId, roomGeneration) => macroRunner.hasActiveRun(roomId, roomGeneration))
   manager.addDestroyHook((roomId, roomGeneration) => macroRunner.destroyRoom(roomId, roomGeneration))
+  manager.addDestroyHook((roomId, roomGeneration) => {
+    agentEventStore.closeRoom(manager.serverInstanceId, roomId, roomGeneration)
+  })
 
   const httpContext: HttpContext = {
     manager,
@@ -166,6 +183,7 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
         clearInterval(heartbeatTimer)
         const transportStop = Promise.resolve(server.stop(true))
         await manager.destroyAllRooms()
+        agentEventStore.close()
         await finishHttpTransportStop(server, transportStop)
       })()
       return stopPromise

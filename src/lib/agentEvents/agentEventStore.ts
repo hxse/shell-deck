@@ -1,18 +1,5 @@
-import {
-  closeSync,
-  existsSync,
-  fchmodSync,
-  fstatSync,
-  fsyncSync,
-  ftruncateSync,
-  openSync,
-  readFileSync,
-  unlinkSync,
-  writeSync,
-} from 'node:fs'
-import { dirname, join } from 'node:path'
-import { assertGeneratedId, assertRoomRouteToken } from '../generatedId'
-import { assertManagedRegularFile, ensurePrivateDirectory, fsyncDirectory, initializeUserDataRoot, PRIVATE_FILE_MODE } from '../../../server/userDataRoot'
+import { initializeUserDataRoot } from '../../../server/userDataRoot'
+import { AgentEventSegmentStorage } from './agentEventSegmentStorage'
 import { assertValidAgentEvent } from './agentEventSchema'
 import type { AgentEvent, AgentEventMatch } from './agentEventTypes'
 
@@ -25,24 +12,44 @@ type AgentEventIndex = {
   waiters: Set<() => void>
 }
 
+export type AgentEventStoreOptions = {
+  segmentTargetBytes?: number
+  admitAppend?: <T>(incomingBytes: number, publish: () => T) => T
+  afterStreamClose?: () => void
+}
+
+type AgentEventStreamIdentity = Pick<
+  AgentEvent,
+  'serverInstanceId' | 'roomId' | 'roomGeneration'
+>
+
 export class AgentEventStore {
   readonly evidenceRoot: string
+  readonly #segments: AgentEventSegmentStorage
   readonly #indexes = new Map<string, AgentEventIndex>()
+  readonly #openStreams = new Map<string, AgentEventStreamIdentity>()
 
-  constructor(root?: string) {
+  constructor(root?: string, options: AgentEventStoreOptions = {}) {
     this.evidenceRoot = initializeUserDataRoot(root).agentEvents
+    this.#segments = new AgentEventSegmentStorage(this.evidenceRoot, {
+      targetBytes: options.segmentTargetBytes,
+      admitAppend: options.admitAppend,
+      afterStreamClose: options.afterStreamClose,
+    })
   }
 
   append(event: AgentEvent): AgentEvent {
     const valid = assertValidAgentEvent(event)
-    const path = this.eventsPath(valid.serverInstanceId, valid.roomId, valid.roomGeneration)
-    const index = this.index(path)
+    const identity = streamIdentity(valid)
+    const key = streamKey(identity)
+    const index = this.index(identity)
     if (index.eventIds.has(valid.eventId)) throw new Error('duplicate_agent_event_id:' + valid.eventId)
-    try { appendJsonLine(path, valid) }
+    try { this.#segments.append(identity, valid) }
     catch (error) {
-      this.#indexes.delete(path)
+      this.#indexes.delete(key)
       throw error
     }
+    this.#openStreams.set(key, identity)
     indexEvent(index, valid)
     index.version += 1
     for (const wake of [...index.waiters]) wake()
@@ -50,8 +57,7 @@ export class AgentEventStore {
   }
 
   list(serverInstanceId: string, roomId: string, roomGeneration: string): AgentEvent[] {
-    const path = this.eventsPath(serverInstanceId, roomId, roomGeneration)
-    return [...this.index(path).events]
+    return [...this.index({ serverInstanceId, roomId, roomGeneration }).events]
   }
 
   matching(match: AgentEventMatch): AgentEvent[] {
@@ -114,19 +120,24 @@ export class AgentEventStore {
   }
 
   eventsPath(serverInstanceId: string, roomId: string, roomGeneration: string): string {
-    const server = assertGeneratedId(serverInstanceId, 'serverInstance')
-    const room = assertRoomRouteToken(roomId)
-    const generation = assertGeneratedId(roomGeneration, 'roomGeneration')
-    const dir = join(this.evidenceRoot, server, room)
-    ensurePrivateDirectory(join(this.evidenceRoot, server))
-    ensurePrivateDirectory(dir)
-    return join(dir, generation + '.jsonl')
+    return this.#segments.activePath({ serverInstanceId, roomId, roomGeneration })
+  }
+
+  closeRoom(serverInstanceId: string, roomId: string, roomGeneration: string): void {
+    const identity = { serverInstanceId, roomId, roomGeneration }
+    this.#segments.close(identity)
+    this.#openStreams.delete(streamKey(identity))
+  }
+
+  close(): void {
+    for (const identity of [...this.#openStreams.values()]) this.#segments.close(identity)
+    this.#openStreams.clear()
   }
 
   private matchIndex(
     match: Pick<AgentEventMatch, 'serverInstanceId' | 'roomId' | 'roomGeneration'>,
   ): AgentEventIndex {
-    return this.index(this.eventsPath(match.serverInstanceId, match.roomId, match.roomGeneration))
+    return this.index(match)
   }
 
   private matchingView(match: AgentEventMatch): AgentEvent[] {
@@ -137,8 +148,9 @@ export class AgentEventStore {
       .filter((event) => matchesAgentEvent(event, match))
   }
 
-  private index(path: string): AgentEventIndex {
-    const cached = this.#indexes.get(path)
+  private index(identity: AgentEventStreamIdentity): AgentEventIndex {
+    const key = streamKey(identity)
+    const cached = this.#indexes.get(key)
     if (cached) return cached
     const index: AgentEventIndex = {
       events: [],
@@ -148,47 +160,10 @@ export class AgentEventStore {
       version: 0,
       waiters: new Set(),
     }
-    if (existsSync(path)) {
-      for (const event of readEventsFromJsonl(path)) indexEvent(index, event)
-      index.version = index.events.length
-    }
-    this.#indexes.set(path, index)
+    for (const event of this.#segments.read(identity, assertValidAgentEvent)) indexEvent(index, event)
+    index.version = index.events.length
+    this.#indexes.set(key, index)
     return index
-  }
-}
-
-function readEventsFromJsonl(path: string): AgentEvent[] {
-  const events: AgentEvent[] = []
-  for (const [index, line] of readFileSync(path, 'utf8').split('\n').entries()) {
-    if (!line.trim()) continue
-    try { events.push(assertValidAgentEvent(JSON.parse(line))) }
-    catch (error) { throw new Error(path + ':' + (index + 1) + ':' + (error instanceof Error ? error.message : String(error))) }
-  }
-  return events
-}
-
-function appendJsonLine(path: string, value: unknown): void {
-  assertManagedRegularFile(path)
-  const createdDirectoryEntry = !existsSync(path)
-  let fd = openSync(path, 'a+', PRIVATE_FILE_MODE)
-  const originalSize = fstatSync(fd).size
-  try {
-    fchmodSync(fd, PRIVATE_FILE_MODE)
-    const buffer = Buffer.from(JSON.stringify(value) + '\n')
-    let offset = 0
-    while (offset < buffer.length) offset += writeSync(fd, buffer, offset, buffer.length - offset)
-    fsyncSync(fd)
-    closeSync(fd)
-    fd = -1
-    if (createdDirectoryEntry) fsyncDirectory(dirname(path))
-  } catch (error) {
-    rollbackAppend(path, fd, originalSize, createdDirectoryEntry)
-    fd = -1
-    throw error
-  } finally {
-    if (fd !== -1) {
-      try { closeSync(fd) } catch {}
-    }
   }
 }
 
@@ -200,24 +175,6 @@ function indexEvent(index: AgentEventIndex, event: AgentEvent): void {
   appendBucket(index.byCaptureKey, captureKey(event), event)
 }
 
-function rollbackAppend(path: string, fd: number, originalSize: number, created: boolean): void {
-  try {
-    const target = fd === -1 ? openSync(path, 'r+') : fd
-    ftruncateSync(target, originalSize)
-    fsyncSync(target)
-    closeSync(target)
-  } catch {
-    if (fd !== -1) {
-      try { closeSync(fd) } catch {}
-    }
-  }
-  if (!created) return
-  try {
-    unlinkSync(path)
-    fsyncDirectory(dirname(path))
-  } catch {}
-}
-
 function appendBucket(index: Map<string, AgentEvent[]>, key: string, event: AgentEvent): void {
   const bucket = index.get(key)
   if (bucket) bucket.push(event)
@@ -226,6 +183,18 @@ function appendBucket(index: Map<string, AgentEvent[]>, key: string, event: Agen
 
 function terminalLaunchKey(terminalId: string, launchId: string): string {
   return `${terminalId}\0${launchId}`
+}
+
+function streamIdentity(event: AgentEvent): AgentEventStreamIdentity {
+  return {
+    serverInstanceId: event.serverInstanceId,
+    roomId: event.roomId,
+    roomGeneration: event.roomGeneration,
+  }
+}
+
+function streamKey(identity: AgentEventStreamIdentity): string {
+  return [identity.serverInstanceId, identity.roomId, identity.roomGeneration].join('\0')
 }
 
 function captureKey(event: AgentEvent): string {

@@ -6,6 +6,8 @@
 
 POSIX 新建目录使用 `0700`，文件使用 `0600`；managed path 不接受 symlink。atomic replace 在 rename 前设置 mode 并 fsync file/directory。notification secret 文件权限过宽时 fail closed；其他已有 root 权限过宽至少 warning。
 
+`runs/`与`agent-events/`全部regular file受统一log storage quota约束，默认2 GiB；`SHELL_DECK_LOG_STORAGE_LIMIT_BYTES`只有缺失才回退默认，present empty/whitespace或非positive safe integer失败。`macros/`、notification config与`.locks/`不计入。达到limit后在`.locks/log-storage-gc.lock`内删除oldest terminalized whole run，再按持久化close mtime删除oldest closed AgentEvent segment，目标水位精确为`floor(limit * 9 / 10)`且不使用失去safe-integer精度的乘法中间值；active/interrupted/reserved run、current Room run pin与open segment受保护。无候选时以`log_storage_limit_reached`fail loudly，不截断或覆盖受保护truth。GC lock覆盖fresh scan到durable publish，manifest、Trace index known mutation/cold rebuild、artifact、run event/summary与AgentEvent line都不得在admission后脱锁写入；Trace写入固定按quota → trace取得锁，并在GC后从剩余manifest重新计算index。
+
 共享record的filesystem publish point是成功的`rename`或`unlink`。phase-aware primitive将此前错误作为未发布失败，将此后parent-directory fsync错误标为durability uncertain；record store在resource guard内重读核对exact intended bytes或确认path已不存在。核对成功必须返回authoritative success并由API广播，不得以失败响应诱导重复Create、revision-conflicting Update或phantom Delete。canonical SQLite transaction只充当advisory lock，成功operation之后的lock-release错误同样不能反转业务提交。需要保留迁移source的notification严格写入仍可拒绝uncertain durability。
 
 ## Shared content

@@ -1,8 +1,5 @@
 import type { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
-import type {
-  MacroDefinitionV5,
-  MacroRecord,
-} from '../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV5, MacroRecord } from '../src/lib/macro/macroDefinitionTypes'
 import {
   validateMacroDefinitionV5,
   validateRunnableMacroDefinitionV5,
@@ -141,7 +138,7 @@ export class MacroRunnerLifecycle {
       }
       let manifestRef: string
       try { manifestRef = this.runStore.publishManifest(manifest) }
-      catch { throw new Error('run_manifest_write_failed') }
+      catch (error) { if (errorMessage(error) === 'log_storage_limit_reached') throw error; throw new Error('run_manifest_write_failed') }
       try {
         ticket.assertAuthorized()
         this.runStore.append(runId, 'run_started', { manifestRef, definitionHash: hash, terminalBindings: bindings })
@@ -172,6 +169,7 @@ export class MacroRunnerLifecycle {
         baselines: live.agentEventBaselines,
         consumedEventIds: live.consumedAgentEventIds,
       }, live.definition.body, live.bindings)
+      this.runStore.retainCurrentRoomRun(live.roomId, live.runId)
       this.runs.set(room.roomId, live)
       this.publication.publishSnapshot(live)
       queueMicrotask(() => void this.execute(live))
@@ -235,7 +233,7 @@ export class MacroRunnerLifecycle {
     this.interaction.cancelPendingInput(run)
     try { this.finish(run, 'failed', 'run_failed', { code: 'room_destroyed' }, 'room_destroyed') } catch {}
     this.publication.clearPublishTimer(run)
-    this.runStore.releaseLiveRun(run.runId)
+    this.runStore.releaseLiveRun(run.runId, roomId)
     this.runs.delete(roomId)
     this.publication.deleteRuntimeRevision(roomId)
   }

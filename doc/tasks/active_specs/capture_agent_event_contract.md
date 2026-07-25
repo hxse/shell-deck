@@ -10,7 +10,9 @@ Macro `capture-source`只能消费与frozen run snapshot的serverInstanceId、ro
 
 AgentEvent Capture必须显式保存`waitLimit`。`{kind:"unbounded"}`无限等待匹配结果，直到成功、用户Stop、Room/launch失效、server restart或matching `agent.error`；不存在隐藏server timeout。`{kind:"timeout",timeoutMs}`只计算active waiting time，Pause期间冻结，超时以`agent_event_capture_timeout:<terminalId>` fail loudly。matching hook error以`agent_event_hook_error:<terminalId>`立即失败。迟到event只保留为evidence，不复活终态run；下一次Start的baseline必须忽略它。
 
-每份current Room/generation JSONL在本进程第一次访问时完整读取、解析并严格验证一次，随后由同一store维护eventId、terminal/launch、agent/event kind与adapter索引。append以Set做duplicate ID检查，按line append → file fsync → 首次创建时parent fsync → publish in-memory index/version的顺序提交；durability失败不能让waiter观察到event。Capture等待store version notification，新append立即唤醒；100ms heartbeat只检查Pause/abort/active timeout，version未变化时不重扫index或日志。
+每份current Room/generation使用`agent-events/<server>/<room>/<generation>/`下编号JSONL segment；最多一个`.open.jsonl`，默认8 MiB target，line不拆分。每条line都让统一GC lock覆盖quota admission、必要rotation与durable append；既有open segment不能绕过quota继续增长。current非空segment无法容纳下一line时在同一admission内关闭旧segment并建立下一open segment。Room Destroy与normal server stop在open filename仍受保护时先把mtime更新为close time，再atomic rename为closed segment；GC按close mtime只删除closed segment，crash遗留open保持受保护。旧`<generation>.jsonl` flat layout以`legacy_agent_event_log_unsupported`失败，不迁移或dual-read。
+
+同一stream在本进程第一次访问时按segment number完整读取、解析并严格验证一次，随后由同一store维护eventId、terminal/launch、agent/event kind与adapter索引。append以Set做duplicate ID检查，按complete line append → file fsync → 首次创建时parent fsync → publish in-memory index/version的顺序提交；durability失败不能让waiter观察到event。Capture等待store version notification，新append立即唤醒；100ms heartbeat只检查Pause/abort/active timeout，version未变化时不重扫index或日志。
 
 成功capture写入run artifact与`artifact_created` evidence，但AgentEvent、artifact和Trace永不用于恢复Room或runner。server restart、Room generation或launch变化后，旧event不能满足新run capture。
 

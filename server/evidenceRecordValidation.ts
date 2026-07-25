@@ -41,6 +41,28 @@ export function assertEventKind(kind: string): void {
   if (!/^[a-z][a-z0-9_]{0,63}$/.test(kind)) throw new Error('invalid_evidence_event_kind')
 }
 
+export function createEvidenceEvent(
+  runId: string,
+  kind: string,
+  data: Record<string, unknown>,
+  provenance: RunProvenance,
+  eventSeq: number,
+  eventId: string,
+  createdAt: string,
+): EvidenceEvent {
+  assertEventKind(kind)
+  return {
+    schemaVersion: 1,
+    eventId: assertGeneratedId(eventId, 'runEvent'),
+    eventSeq,
+    runId: assertGeneratedId(runId, 'run'),
+    kind,
+    createdAt,
+    ...assertRunProvenance(provenance),
+    data,
+  }
+}
+
 export function sameEventIntent(
   event: EvidenceEvent,
   kind: string,

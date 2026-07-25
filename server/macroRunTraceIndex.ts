@@ -19,6 +19,7 @@ type TraceIndexFile = {
 
 type TraceIndexObserver = {
   manifestParse?(runId: string): void
+  admitWrite?<T>(incomingBytes: () => number, publish: () => T): T
 }
 
 export class MacroRunTraceIndex {
@@ -38,16 +39,12 @@ export class MacroRunTraceIndex {
 
   recordManifest(manifest: RunManifestV1): void {
     const entry = manifestEntry(manifest)
-    withFileLockSync(this.#lockPath, () => {
-      this.#write(this.#entriesForMutation((entries) => upsertEntry(entries, entry)))
-    })
+    this.#publishEntries(() => this.#entriesForMutation((entries) => upsertEntry(entries, entry)))
   }
 
   removeRun(runId: string): void {
     const id = assertGeneratedId(runId, 'run')
-    withFileLockSync(this.#lockPath, () => {
-      this.#write(this.#entriesForMutation((entries) => entries.filter((entry) => entry.runId !== id)))
-    })
+    this.#publishEntries(() => this.#entriesForRemoval(id))
   }
 
   invalidate(): void {
@@ -83,11 +80,9 @@ export class MacroRunTraceIndex {
       this.#install(loaded.entries, loaded.version)
       return loaded.entries
     }
-    return withFileLockSync(this.#lockPath, () => {
-      const entries = this.#freshEntries()
-      this.#write(entries)
-      return entries
-    })
+    const entries = this.#publishEntries(() => this.#freshEntries())
+    if (!entries) throw new Error('trace_index_rebuild_failed')
+    return entries
   }
 
   #freshEntries(): TraceIndexEntry[] {
@@ -107,6 +102,14 @@ export class MacroRunTraceIndex {
       if (sameRunIds(candidate, runIds)) return candidate
     }
     return sortEntries(mutate(rebuildEntries(this.runsRoot, runIds, this.observe.manifestParse)))
+  }
+
+  #entriesForRemoval(runId: string): TraceIndexEntry[] | null {
+    const runIds = currentManifestRunIds(this.runsRoot)
+    const loaded = this.#readIndex(indexVersion(this.#path))
+    if (!loaded) return null
+    const candidate = sortEntries(loaded.entries.filter((entry) => entry.runId !== runId))
+    return sameRunIds(candidate, runIds) ? candidate : null
   }
 
   #readValidated(version: string | null): { entries: TraceIndexEntry[]; version: string } | null {
@@ -132,13 +135,33 @@ export class MacroRunTraceIndex {
   }
 
   #write(entries: TraceIndexEntry[]): void {
-    writePrivateFileAtomic(this.#path, JSON.stringify({
-      schemaVersion: 1,
-      entries,
-    } satisfies TraceIndexFile, null, 2) + '\n')
+    writePrivateFileAtomic(this.#path, serializeIndex(entries))
     const version = indexVersion(this.#path)
     if (!version) throw new Error('trace_index_publish_missing')
     this.#install(entries, version)
+  }
+
+  #publishEntries(build: () => TraceIndexEntry[] | null): TraceIndexEntry[] | null {
+    if (!this.observe.admitWrite) {
+      return withFileLockSync(this.#lockPath, () => this.#buildAndWrite(build))
+    }
+    return this.observe.admitWrite(
+      () => withFileLockSync(this.#lockPath, () => {
+        const entries = build()
+        return entries ? indexGrowthBytes(this.#path, entries) : 0
+      }),
+      () => withFileLockSync(this.#lockPath, () => this.#buildAndWrite(build)),
+    )
+  }
+
+  #buildAndWrite(build: () => TraceIndexEntry[] | null): TraceIndexEntry[] | null {
+    const entries = build()
+    if (!entries) {
+      this.invalidate()
+      return null
+    }
+    this.#write(entries)
+    return entries
   }
 
   #install(entries: TraceIndexEntry[], version: string): void {
@@ -165,6 +188,19 @@ export function decodeEventCursor(cursor: string, runId: string): number {
   } catch {
     throw new Error('invalid_trace_event_cursor')
   }
+}
+
+function serializeIndex(entries: TraceIndexEntry[]): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    entries,
+  } satisfies TraceIndexFile, null, 2) + '\n'
+}
+
+function indexGrowthBytes(path: string, entries: TraceIndexEntry[]): number {
+  const nextBytes = Buffer.byteLength(serializeIndex(entries))
+  try { return Math.max(0, nextBytes - statSync(path).size) }
+  catch { return nextBytes }
 }
 
 function rebuildEntries(
