@@ -11,7 +11,9 @@ import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import {
   countLogicalLines,
+  FILE_SIZE_ADVISORY_LIMIT,
   FILE_SIZE_LIMIT,
+  formatFileSizeAdvisory,
   formatFileSizeIssue,
   NON_PROJECT_DIRECTORY_NAMES,
   PROJECT_CODE_EXTENSIONS,
@@ -27,6 +29,33 @@ afterEach(() => {
 })
 
 describe('20260723C.014 file-size Gate', () => {
+  test('350 lines produce a soft advisory while 401 remains the hard failure', () => {
+    const root = createProject()
+    writeSource(root, 'src/below.ts', lines(349, '\n'))
+    writeSource(root, 'src/advisory.ts', lines(350, '\n'))
+    writeSource(root, 'src/hard-edge.ts', lines(400, '\n'))
+    writeSource(root, 'src/violation.ts', lines(401, '\n'))
+
+    const result = scanFileSizes(root)
+    expect(result.advisories).toEqual([
+      {
+        path: 'src/advisory.ts',
+        actual: 350,
+        advisoryLimit: FILE_SIZE_ADVISORY_LIMIT,
+        hardLimit: FILE_SIZE_LIMIT,
+      },
+      {
+        path: 'src/hard-edge.ts',
+        actual: 400,
+        advisoryLimit: FILE_SIZE_ADVISORY_LIMIT,
+        hardLimit: FILE_SIZE_LIMIT,
+      },
+    ])
+    expect(formatFileSizeAdvisory(result.advisories[0]))
+      .toBe('src/advisory.ts:350:350:400: file approaches hard line limit')
+    expect(result.issues.map(({ path }) => path)).toEqual(['src/violation.ts'])
+  })
+
   test('logical line counting accepts 400, rejects 401 and treats CRLF or trailing newline exactly', () => {
     expect(countLogicalLines('')).toBe(0)
     expect(countLogicalLines('one')).toBe(1)
@@ -121,6 +150,8 @@ describe('20260723C.014 file-size Gate', () => {
   test('the current project is exception-free and includes root, CSS and C sources', () => {
     const result = scanFileSizes(projectRoot)
     expect(result.issues).toEqual([])
+    expect(result.advisories.every(({ actual }) => actual >= FILE_SIZE_ADVISORY_LIMIT && actual <= FILE_SIZE_LIMIT))
+      .toBe(true)
     const paths = result.files.map(({ path }) => path)
     for (const path of [
       'playwright.config.ts',

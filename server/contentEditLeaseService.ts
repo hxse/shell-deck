@@ -1,4 +1,5 @@
 import { join } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import {
   assertContentResourceKey,
   contentResourceKeyString,
@@ -93,8 +94,7 @@ export class ContentEditLeaseService {
       this.stateStore.writeState(recordPath, next)
       return next
     }, ticket.signal)
-    ticket.assertAuthorized()
-    this.trackOwned(result, recordPath, ticket.context)
+    await this.authorizeAndTrackPublishedLease(result, recordPath, ticket)
     const view = leaseView(result)
     this.onChanged(result.resourceKey, view)
     return { view, grant: leaseGrant(result) }
@@ -120,9 +120,7 @@ export class ContentEditLeaseService {
       this.stateStore.writeState(recordPath, next)
       return next
     }, ticket.signal)
-    ticket.assertAuthorized()
-    this.removeTrackedResource(key)
-    this.trackOwned(result, recordPath, ticket.context)
+    await this.authorizeAndTrackPublishedLease(result, recordPath, ticket, true)
     const view = leaseView(result)
     this.onChanged(result.resourceKey, view)
     return { view, grant: leaseGrant(result) }
@@ -267,6 +265,33 @@ export class ContentEditLeaseService {
     } finally {
       this.owned.delete(editLeaseId)
     }
+  }
+
+  private async authorizeAndTrackPublishedLease(
+    state: HeldLeaseState,
+    recordPath: string,
+    ticket: RoomControlledOperationTicket,
+    replaceTrackedResource = false,
+  ): Promise<void> {
+    try { ticket.assertAuthorized() }
+    catch (error) {
+      if (await this.rollbackPublishedLease(state, recordPath)) this.removeTrackedResource(state.resourceKey)
+      throw error
+    }
+    if (replaceTrackedResource) this.removeTrackedResource(state.resourceKey)
+    this.trackOwned(state, recordPath, ticket.context)
+  }
+
+  private async rollbackPublishedLease(published: HeldLeaseState, recordPath: string): Promise<boolean> {
+    const view = await this.transactions.run(recordPath, () => {
+      const current = this.stateStore.readState(recordPath, published.resourceKey)
+      if (current.mode !== 'held' || !isDeepStrictEqual(current, published)) return null
+      const available = availableState(current.resourceKey, current.leaseEpoch, this.now())
+      this.stateStore.writeState(recordPath, available)
+      return leaseView(available)
+    })
+    if (view) this.onChanged(published.resourceKey, view)
+    return view !== null
   }
 
   private createHeldState(

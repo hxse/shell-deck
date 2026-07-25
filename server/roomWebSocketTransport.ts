@@ -62,8 +62,8 @@ export function createRoomWebSocketHandler(context: RoomWebSocketContext): Bun.W
           },
           () => ws.ping(),
           (payload) => sender.send(payload),
+          ws.data.roomGeneration,
         )
-        if (client.roomGeneration !== ws.data.roomGeneration) throw new Error('room_generation_conflict')
         ws.data.clientId = client.clientId
         sender.send(JSON.stringify({ type: 'runner_snapshot', snapshot: macroRunner.snapshot(ws.data.roomId) } satisfies ServerMessage))
       } catch (error) {

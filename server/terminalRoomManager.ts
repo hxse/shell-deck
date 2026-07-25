@@ -160,8 +160,9 @@ export class TerminalRoomManager {
     close?: (code: number, reason: string) => void,
     ping?: () => void,
     sendSerialized?: (payload: string) => void,
+    expectedRoomGeneration?: string,
   ): RoomClient {
-    return this.controlCoordinator.connectClient(roomId, send, close, ping, sendSerialized)
+    return this.controlCoordinator.connectClient(roomId, send, close, ping, sendSerialized, expectedRoomGeneration)
   }
 
   disconnectClient(clientId: string): void {

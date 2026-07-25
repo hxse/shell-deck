@@ -30,8 +30,13 @@ export class RoomClientPresenceCoordinator {
     close?: (code: number, reason: string) => void,
     ping?: () => void,
     sendSerialized?: (payload: string) => void,
+    expectedRoomGeneration?: string,
   ): RoomClient {
     const room = this.options.activeRoomOrThrow(roomId)
+    if (expectedRoomGeneration !== undefined
+      && room.roomGeneration !== assertGeneratedId(expectedRoomGeneration, 'roomGeneration')) {
+      throw new Error('room_generation_conflict')
+    }
     let clientId: string | undefined
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const candidate = assertGeneratedId(this.options.clientIdFactory(), 'client')
@@ -56,13 +61,15 @@ export class RoomClientPresenceCoordinator {
     }
     room.clients.set(clientId, client)
     this.options.clients.set(clientId, client)
+    let rollbackController = () => {}
     try {
       send({ type: 'client_registered', clientId, roomId: room.roomId, roomGeneration: room.roomGeneration, serverInstanceId: this.options.serverInstanceId })
-      this.controller.connectClient(room, client, now)
+      rollbackController = this.controller.connectClient(room, client, now)
       send(this.options.roomSnapshot(room.roomId))
     } catch (error) {
       room.clients.delete(clientId)
       this.options.clients.delete(clientId)
+      rollbackController()
       throw error
     }
     return client

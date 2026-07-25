@@ -2,6 +2,7 @@ import { lstatSync, readdirSync, readFileSync, type Dirent } from 'node:fs'
 import { extname, relative, resolve, sep } from 'node:path'
 
 export const FILE_SIZE_LIMIT = 400
+export const FILE_SIZE_ADVISORY_LIMIT = 350
 export const PROJECT_CODE_EXTENSIONS = [
   '.astro',
   '.bash',
@@ -92,8 +93,16 @@ export type FileSizeIssue = {
   reason: string
 }
 
+export type FileSizeAdvisory = {
+  path: string
+  actual: number
+  advisoryLimit: number
+  hardLimit: number
+}
+
 export type FileSizeScanResult = {
   files: FileSizeEntry[]
+  advisories: FileSizeAdvisory[]
   issues: FileSizeIssue[]
 }
 
@@ -109,6 +118,7 @@ export function countLogicalLines(source: string): number {
 export function scanFileSizes(projectRoot = resolve(import.meta.dir, '..')): FileSizeScanResult {
   const resolvedProjectRoot = resolve(projectRoot)
   const candidates: string[] = []
+  const advisories: FileSizeAdvisory[] = []
   const issues: FileSizeIssue[] = []
   collectDirectory(resolvedProjectRoot, resolvedProjectRoot, candidates, issues)
 
@@ -132,15 +142,27 @@ export function scanFileSizes(projectRoot = resolve(import.meta.dir, '..')): Fil
     files.push(entry)
     if (entry.lines > FILE_SIZE_LIMIT) {
       issues.push(issue(path, entry.lines, 'file exceeds line limit'))
+    } else if (entry.lines >= FILE_SIZE_ADVISORY_LIMIT) {
+      advisories.push({
+        path,
+        actual: entry.lines,
+        advisoryLimit: FILE_SIZE_ADVISORY_LIMIT,
+        hardLimit: FILE_SIZE_LIMIT,
+      })
     }
   }
 
+  advisories.sort((left, right) => compareText(left.path, right.path))
   issues.sort((left, right) => compareText(left.path, right.path) || compareText(left.reason, right.reason))
-  return { files, issues }
+  return { files, advisories, issues }
 }
 
 export function formatFileSizeIssue(value: FileSizeIssue): string {
   return `${value.path}:${value.actual ?? 'unknown'}:${value.limit}: ${value.reason}`
+}
+
+export function formatFileSizeAdvisory(value: FileSizeAdvisory): string {
+  return `${value.path}:${value.actual}:${value.advisoryLimit}:${value.hardLimit}: file approaches hard line limit`
 }
 
 function collectDirectory(
@@ -235,6 +257,9 @@ function compareText(left: string, right: string): number {
 
 if (import.meta.main) {
   const result = scanFileSizes()
+  for (const value of result.advisories) {
+    console.log(`file-size advisory: ${formatFileSizeAdvisory(value)}`)
+  }
   if (result.issues.length > 0) {
     for (const value of result.issues) console.error(formatFileSizeIssue(value))
     console.error(`file-size: ${result.issues.length} violation(s)`)
@@ -242,6 +267,7 @@ if (import.meta.main) {
   }
   console.log(
     `file-size: clean; scanned=${result.files.length}; limit=${FILE_SIZE_LIMIT}; `
+    + `advisory-limit=${FILE_SIZE_ADVISORY_LIMIT}; advisories=${result.advisories.length}; `
     + 'scope=project-authored-code; exceptions=0',
   )
 }

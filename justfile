@@ -233,6 +233,10 @@ test-20260725a:
     HISTFILE=/dev/null bun test tests/unit/macroStructuralIcons20260725A.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/uiThemeCloseout004.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts
 
+test-20260725b:
+    HISTFILE=/dev/null bun test tests/unit/serverConsistency20260725B.test.ts tests/unit/fileSizeGate014.test.ts tests/unit/roomControlDecomposition004.test.ts tests/unit/terminalRoomDecomposition008.test.ts tests/unit/contentEditLeaseStateStore003.test.ts
+    HISTFILE=/dev/null bun test tests/integration/incrementalTransport20260724D.test.ts tests/integration/terminalRoomWebSocket032.test.ts tests/integration/singleWriter033.test.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"
 

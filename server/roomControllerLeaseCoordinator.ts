@@ -67,10 +67,25 @@ export class RoomControllerLeaseCoordinator {
     this.controlHeartbeatHook = hook
   }
 
-  connectClient(room: RoomRuntime, client: RoomClient, now: number): void {
+  connectClient(room: RoomRuntime, client: RoomClient, now: number): () => void {
     this.expireControllerIfNeeded(room, now)
-    if (room.controller === null && room.controlEpoch === 0) this.assignController(room, client, now)
-    else this.sendControlState(room, client)
+    if (room.controller === null && room.controlEpoch === 0) {
+      const previousEpoch = room.controlEpoch
+      const grant = this.assignControllerState(room, client, now)
+      const rollback = () => {
+        const owner = room.controller
+        if (owner?.clientId !== client.clientId
+          || owner.controlLeaseId !== grant.controlLeaseId
+          || owner.controlEpoch !== grant.controlEpoch) return
+        room.controller = null
+        room.controlEpoch = previousEpoch
+      }
+      try { this.sendControlState(room, client, true) }
+      catch (error) { rollback(); throw error }
+      return rollback
+    }
+    this.sendControlState(room, client)
+    return () => {}
   }
 
   disconnectClient(room: RoomRuntime | undefined, clientId: string): void {
@@ -310,16 +325,17 @@ export class RoomControllerLeaseCoordinator {
     if (room.lifecycle !== 'active' || client.roomGeneration !== room.roomGeneration || !room.clients.has(client.clientId)) {
       throw new Error('room_control_lost')
     }
-    room.controlEpoch += 1
-    client.lostControlEpoch = null
     const controlLeaseId = assertGeneratedId(this.options.controlLeaseIdFactory(), 'roomControlLease')
+    room.controlEpoch += 1
+    const controlEpoch = room.controlEpoch
+    client.lostControlEpoch = null
     room.controller = {
       serverInstanceId: this.options.serverInstanceId,
       roomId: room.roomId,
       roomGeneration: room.roomGeneration,
       clientId: client.clientId,
       controlLeaseId,
-      controlEpoch: room.controlEpoch,
+      controlEpoch,
       acquiredAtMs: now,
       expiresAtMs: now + ROOM_CONTROL_TTL_MS,
     }

@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { assertGeneratedId, assertRoomRouteToken } from '../src/lib/generatedId'
 import type { RunManifestV1 } from '../src/lib/macro/runnerTypes'
-import { withFileLockSync, writePrivateFileAtomic } from './userDataRoot'
+import { userDataPaths, withFileLockSync, writePrivateFileAtomic } from './userDataRoot'
 
 export type TraceIndexEntry = {
   runId: string
@@ -33,7 +33,7 @@ export class MacroRunTraceIndex {
     private readonly observe: TraceIndexObserver = {},
   ) {
     this.#path = join(runsRoot, 'trace-index.json')
-    this.#lockPath = join(dirname(runsRoot), 'locks', 'trace-index.lock')
+    this.#lockPath = join(userDataPaths(dirname(runsRoot)).locks, 'trace-index.lock')
   }
 
   recordManifest(manifest: RunManifestV1): void {

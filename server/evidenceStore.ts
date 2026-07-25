@@ -181,9 +181,7 @@ export class EvidenceStore {
   }
   page(runId: string, afterEventSeq: number, limit: number): EvidenceEventWindow {
     const id = assertGeneratedId(runId, 'run')
-    this.repairMaintenanceDebt(id)
-    const summary = this.readSummaryOrRecover(id, false)
-    if (!summary) throw new Error('run_evidence_not_found:' + id)
+    const summary = this.traceSummary(id)
     if (afterEventSeq > summary.lastEventSeq) throw new Error('invalid_trace_event_cursor')
     const first = Math.max(summary.firstAvailableEventSeq, afterEventSeq + 1)
     const last = Math.min(summary.lastEventSeq, first + limit - 1)

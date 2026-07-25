@@ -20,6 +20,8 @@ saved Macro record使用user-global、跨Room/process的per-record edit lease；
 
 lease state位于`<user-root>/.locks/content-edit/`，只保存crash-expiring coordination state，不保存正文、不写Trace。acquire/takeover/renew/release与后继record update/delete都使用由同一canonical record path派生的`.032` transaction guard；OS lock只覆盖短事务，不覆盖整个编辑会话。owner server根据live Room WebSocket每10秒续期，TTL为30秒；Save只更新revision并保留当前Edit session/lease，显式Done/Cancel、切换或New其他内容、Delete、editor unmount、Room control丢失或Destroy才立即尽力release，process crash由TTL回收。New首次Create若继续编辑fresh record，必须随后取得其lease。leaseEpoch只在新owner取得或takeover时递增，release/expiry保留epoch并进入available，等待者不会自动晋升。
 
+Acquire/takeover在held state durable publish后复核controller authorization。若控制权在事务提交与复核之间丢失，service必须在返回authorization error前进入同一record transaction：只有current held state全部持久化字段仍与刚发布state完全相同才写回同epoch available并发布changed view；若其他process/owner已安装不同state则no-op。失败请求不得返回grant或登记新的owned lease，takeover回滚成功时旧的同resource tracking也必须清理。
+
 record atomic replace/unlink是正文commit的point-of-no-return。此前controller/lease/revision不匹配保证零写入；此后lease coordination文件刷新失败不能把已发布正文报告成失败。commit返回authoritative value与`retained/released/lost` lease outcome；`lost`时Save/Delete仍成功并必须广播，当前editor转只读且旧editLeaseId不可重用。
 
 production ownership保持单向：`ContentEditLeaseService`是HTTP与Macro的唯一业务入口，唯一持有owned lease、controller authorization和commit transaction；internal state store只负责SHA-256 path、exact codec、missing/expired state、private atomic write/delete与record revision读取。state store不得持有Room context、owned lease或broadcast callback，其他production consumer不得直接import。

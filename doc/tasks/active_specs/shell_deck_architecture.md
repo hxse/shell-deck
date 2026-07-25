@@ -40,7 +40,7 @@ production Macro采用`MacroDefinitionV5`与`MacroRecord` envelope分层。defin
 
 terminal layout只有用户点击Macro面板的`Prepare terminals`才会调整；Settings、selection、Save、Start和terminal event都不隐式Prepare。Save只做portable validation。Start在authoritative structure queue内复核record revision、terminal structure revision、type与readiness，并冻结完整definition及index到terminalId/launchId映射；运行中不重读record或live index。
 
-runner把manifest、append-only events和typed text/JSON artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、pending structured Capture、run snapshot和structure lock只在live process内。日志从不恢复runner。live Runner在Start时建立并复用唯一deep-frozen definition projection，普通delta只发送mutable state/new events并以revision加full logical-state hash验证；action HTTP只返回compact ack。Trace通过derived room/run index先分页summary，再按selected run分页event；多server process以cross-process lock合并index，valid summary不读取segment，event page只读覆盖页的segment，不再聚合扫描所有run与event tail。
+runner把manifest、append-only events和typed text/JSON artifacts持久化为只读Trace evidence，但cursor、Pause/Resume状态、pending input、pending structured Capture、run snapshot和structure lock只在live process内。日志从不恢复runner。live Runner在Start时建立并复用唯一deep-frozen definition projection，普通delta只发送mutable state/new events并以revision加full logical-state hash验证；action HTTP只返回compact ack。Trace通过derived room/run index先分页summary，再按selected run分页event；多server process以`.locks/trace-index.lock`合并index。每个process/run首次从summary或event入口访问都会验证并修复stale summary，warm summary不读取segment，warm event page只读覆盖页的segment，不再聚合扫描所有run与event tail。
 
 Shell启动时除AgentEvent hook context外还注入structured-result URL、同一memory-only ingest token与当前checkout canonical `SHELL_DECK_JUSTFILE`。`just -f "$SHELL_DECK_JUSTFILE" submit-json`从stdin提交当前Room generation与terminal launch的JSON；现有HTTP server按token、exact body、path Room/membership顺序只交给该Room live runner当前唯一matching waiter，不增加端口、step id或queue。Capture冻结JSON Schema 2020-12，成功后产生typed `captured_json`；JSON If通过JSON Pointer与typed matcher消费。Send/Notify message、Input default、Extract Text与`text_match`作为textual boundary可读取JSON，并统一得到key排序、compact、无末尾换行的canonical JSON；这不产生第二份text artifact。Parallel final Output仍只接受lane-local text。
 
@@ -60,7 +60,7 @@ test evidence同样遵守400行边界。current comprehensive Macro仍只有一�
 
 `just check`首先运行唯一`just file-size` scanner，再顺序运行UI style residue、TypeScript与Svelte检查。scanner从repo root递归发现project-authored code，覆盖root config/entry、JS/TS variants、Svelte、CSS、HTML、native C/C++、shell/Nix及其他显式source extension；`justfile`、`package.json`与`tsconfig.json`等extensionless/exact config同样进入。VCS metadata、dependency、runtime cache与build/test output不是authored source，按明确directory set跳过；不按业务path、digest、fixture、generated名称或historical名称豁免任何authored code。
 
-每个被发现的regular source最多400 logical lines；400合法、401失败，CRLF与末尾换行按logical line精确计数。invalid UTF-8、unreadable path、symlink、非regular entry或枚举失败都阻断，不能静默跳过。scanner及其unit自身在同一发现范围内，当前没有任何file exception。
+每个被发现的regular source最多400 logical lines；400合法、401失败，CRLF与末尾换行按logical line精确计数。达到350且不超过400行的source进入non-blocking file-size advisory并打印path、actual、soft/hard limit，帮助在hard failure前安排拆分；它不属于TypeScript/Svelte/build warning，也不放宽400行Gate。invalid UTF-8、unreadable path、symlink、非regular entry或枚举失败都阻断，不能静默跳过。scanner及其unit自身在同一发现范围内，当前没有任何file exception。
 
 ## 启动与安全
 

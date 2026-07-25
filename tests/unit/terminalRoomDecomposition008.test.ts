@@ -53,7 +53,9 @@ describe('Terminal Room manager extraction', () => {
     expect((managerSource + controlSource + backendSource).match(/clients\s*=\s*new Map/g)).toHaveLength(1)
     expect(managerSource).not.toContain('const pendingData: string[]')
     expect(managerSource).not.toContain('expiresAtMs = now +')
-    expect(managerSource).toContain('return this.controlCoordinator.connectClient(roomId, send, close, ping, sendSerialized)')
+    expect(managerSource).toContain(
+      'return this.controlCoordinator.connectClient(roomId, send, close, ping, sendSerialized, expectedRoomGeneration)',
+    )
     expect(managerSource).toContain('return this.backendCoordinator.createTerminal(roomId, options)')
 
     const facadeMethods = [
