@@ -29,8 +29,8 @@ test('Macro authoring exposes local item insertion, compact loop tokens and opti
   expect(await forNode.getByTestId('for-text-list-key').evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value)))
     .toEqual(['first', 'second', 'third'])
   await expect(forNode.getByTestId('for-text-list-add')).toHaveCount(0)
-  await expect(items.first().getByTestId('for-text-list-item-insert-above')).toHaveAttribute('aria-label', 'Insert item above')
-  await expect(items.first().getByTestId('for-text-list-item-insert-below')).toHaveAttribute('aria-label', 'Insert item below')
+  await expect(items.first().getByTestId('for-text-list-item-insert-above')).toHaveAttribute('aria-label', 'Insert item before')
+  await expect(items.first().getByTestId('for-text-list-item-insert-below')).toHaveAttribute('aria-label', 'Insert item after')
 
   const forBody = flowBody(page, 'for body')
   await forBody.getByTestId('empty-body-add').click()
@@ -41,6 +41,8 @@ test('Macro authoring exposes local item insertion, compact loop tokens and opti
   await expect(loopSend.getByTestId('message-template-source')).toHaveCount(0)
   await expect(loopSend).not.toContainText('Available:')
   await assertCompactTokenButtons(loopSend, 'message-template')
+  await expect(loopSend.getByTestId('node-add-before')).toHaveAttribute('aria-label', 'Insert before')
+  await expect(loopSend.getByTestId('node-add-after')).toHaveAttribute('aria-label', 'Insert after')
 
   await nodeControl(loopSend, 'node-add-after').click()
   await page.getByTestId('add-step-notify').click()
@@ -62,6 +64,22 @@ test('Macro authoring exposes local item insertion, compact loop tokens and opti
 
   await parallel.getByTestId('parallel-lane-add-before-output').click()
   await page.getByTestId('parallel-add-capture').click()
+  let laneActions = parallel.getByTestId('parallel-lane-action')
+  let captureAction = parallel.locator(
+    '[data-testid="parallel-lane-action"][data-parallel-action-type="capture-source"]',
+  ).first()
+  await expect(captureAction.getByTestId('parallel-lane-add-before')).toHaveAttribute('aria-label', 'Insert before')
+  await expect(captureAction.getByTestId('parallel-lane-add-after')).toHaveAttribute('aria-label', 'Insert after')
+  await captureAction.getByTestId('parallel-lane-add-before').click()
+  await page.getByTestId('parallel-add-wait').click()
+  captureAction = parallel.locator(
+    '[data-testid="parallel-lane-action"][data-parallel-action-type="capture-source"]',
+  ).first()
+  await captureAction.getByTestId('parallel-lane-add-after').click()
+  await page.getByTestId('parallel-add-wait').click()
+  laneActions = parallel.getByTestId('parallel-lane-action')
+  expect(await laneActions.evaluateAll((actions) => actions.map((action) => action.getAttribute('data-parallel-action-type'))))
+    .toEqual(['wait', 'capture-source', 'wait'])
   await parallel.getByTestId('parallel-collect-lane-text').check()
   await expect(parallel.getByTestId('parallel-collect-lane-text')).toBeChecked()
   await expect(parallel.getByTestId('parallel-output-source')).toHaveValue('capture_source:captured_text')

@@ -42,19 +42,7 @@
   <MacroIconButton kind={collapsed ? "expand" : "collapse"} active={collapsed} expanded={!collapsed} testId={toggleTestId} onClick={onToggle} />
   <MacroIconButton kind="up" label="Move up" disabled={moveUpDisabled} testId={moveUpTestId} onClick={onMoveUp} />
   <MacroIconButton kind="down" label="Move down" disabled={moveDownDisabled} testId={moveDownTestId} onClick={onMoveDown} />
-  <button class="macro-icon-button btn btn-square btn-primary btn-xs !size-6 !min-h-6 !min-w-6 !p-0 leading-none" type="button" data-testid={addBeforeTestId} title="Add before" aria-label="Add before" onclick={onAddBefore}>
-    <svg class="block size-[15px] shrink-0 fill-none stroke-current stroke-[1.75] [stroke-linecap:round] [stroke-linejoin:round]" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M3 3.5h10" />
-      <path d="M8 7v6" />
-      <path d="M5 10h6" />
-    </svg>
-  </button>
-  <button class="macro-icon-button btn btn-square btn-primary btn-xs !size-6 !min-h-6 !min-w-6 !p-0 leading-none" type="button" data-testid={addAfterTestId} title="Add after" aria-label="Add after" onclick={onAddAfter}>
-    <svg class="block size-[15px] shrink-0 fill-none stroke-current stroke-[1.75] [stroke-linecap:round] [stroke-linejoin:round]" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      <path d="M3 12.5h10" />
-      <path d="M8 3v6" />
-      <path d="M5 6h6" />
-    </svg>
-  </button>
+  <MacroIconButton kind="insert-before" testId={addBeforeTestId} onClick={onAddBefore} />
+  <MacroIconButton kind="insert-after" testId={addAfterTestId} onClick={onAddAfter} />
   <MacroIconButton kind="remove" testId={removeTestId} onClick={onRemove} />
 </div>

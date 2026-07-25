@@ -90,6 +90,8 @@ just notification-config-init
 
 新Room默认不选择Macro。点击Macro面板的New创建client-local draft；Save只校验并保存portable、persistable的`MacroDefinitionV5`，不要求当前Room已有匹配terminal。definition只保存连续terminal index/type，不保存terminalId、cwd或Room identity。terminal target与必填artifact source使用exact tagged reference；新slot默认`{kind:"unassigned"}`，可Save但不可Start，旧primitive `terminalIndex`与空`stepId`写法会直接失败。
 
+Macro结构操作栏中，`↑`/`↓`移动当前项，`+↑`在当前项之前插入，`+↓`在当前项之后插入；Flow node、Parallel lane action与For text-list item使用同一套含义。插入按钮仍打开对应位置的action/flow palette，移动按钮不会创建新项。
+
 AgentEvent与structured JSON Capture提供`Enable timeout`。默认关闭并保存`waitLimit:{kind:"unbounded"}`，一直等待结果或用户Stop；开启后保存显式duration，Pause期间不计算超时时间。server不存在隐藏的10分钟Capture超时。
 
 需要调整当前Room terminal顺序/类型时，显式点击Start左侧的`Prepare terminals`。它读取当前visual draft或JSON Edit buffer的terminal layout；切换Macro、Save、Start和terminal变化都不会自动Prepare。Prepare只keep/move/create/insert，不删除或修复failed/exited terminal。
@@ -118,4 +120,5 @@ just test-20260724a
 just test-20260724b
 just test-20260724c
 just test-20260724d
+just test-20260725a
 ```

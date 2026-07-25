@@ -46,7 +46,15 @@ const currentComponentFingerprints = {
   },
   'src/lib/components/macro/MacroControlNodeEditor.svelte': {
     count: 46,
-    digest: '6789955a7f0968be8788895b88c84f204550c25f8abc709be8371e36345ac335',
+    digest: 'd3f47fa64189c29291738a5f4b3debf6698ba346a09f9c18aaa37e03d6e0e11d',
+  },
+  'src/lib/components/macro/MacroIconButton.svelte': {
+    count: 19,
+    digest: '0b8c1020b602de00623b0ea0e2ad13ca398e495a0c76263f57ecc4e3b438b1c9',
+  },
+  'src/lib/components/macro/NodeActionControls.svelte': {
+    count: 7,
+    digest: '3fd73e7bed428e834f2de6e07d35760e5ecabc84f52aae4b6bccedbad69b28cc',
   },
   'src/lib/components/macro/MacroTraceView.svelte': {
     count: 20,
@@ -235,7 +243,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
     })
 
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
-    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(855)
+    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(847)
 
     const app = readFileSync(resolve(projectRoot, 'src/App.svelte'), 'utf8')
     expect(app.match(/data-testid="theme-select"/g)).toHaveLength(1)

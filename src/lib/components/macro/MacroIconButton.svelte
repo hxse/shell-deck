@@ -1,5 +1,5 @@
 <script lang="ts">
-  type IconKind = "collapse" | "expand" | "up" | "down" | "insert-above" | "insert-below" | "remove"
+  type IconKind = "collapse" | "expand" | "up" | "down" | "insert-before" | "insert-after" | "remove"
 
   let {
     kind,
@@ -24,15 +24,15 @@
   function defaultLabel(value: IconKind): string {
     if (value === "collapse") return "Collapse"
     if (value === "expand") return "Expand"
-    if (value === "up") return "Up"
-    if (value === "down") return "Down"
-    if (value === "insert-above") return "Insert item above"
-    if (value === "insert-below") return "Insert item below"
+    if (value === "up") return "Move up"
+    if (value === "down") return "Move down"
+    if (value === "insert-before") return "Insert before"
+    if (value === "insert-after") return "Insert after"
     return "Remove"
   }
 </script>
 
-<button class="macro-icon-button btn btn-square btn-xs !size-6 !min-h-6 !min-w-6 !p-0 leading-none disabled:opacity-60 {kind === 'remove' ? 'btn-error' : kind === 'insert-above' || kind === 'insert-below' || active ? 'btn-primary' : 'btn-ghost'}" class:active type="button" data-testid={testId} title={label} aria-label={label} aria-expanded={expanded} {disabled} onclick={onClick}>
+<button class="macro-icon-button btn btn-square btn-xs !size-6 !min-h-6 !min-w-6 !p-0 leading-none disabled:opacity-60 {kind === 'remove' ? 'btn-error' : kind === 'insert-before' || kind === 'insert-after' || active ? 'btn-primary' : 'btn-ghost'}" class:active type="button" data-testid={testId} title={label} aria-label={label} aria-expanded={expanded} {disabled} onclick={onClick}>
   <svg class="block size-[15px] shrink-0 fill-none stroke-current stroke-[1.75] [stroke-linecap:round] [stroke-linejoin:round]" viewBox={kind === "remove" ? "0 0 24 24" : "0 0 16 16"} aria-hidden="true" focusable="false">
     {#if kind === "collapse"}
       <path d="m3.5 5.75 4.5 4.5 4.5-4.5" />
@@ -44,14 +44,14 @@
     {:else if kind === "down"}
       <path d="M8 3v10" />
       <path d="m4.5 9.5 3.5 3.5 3.5-3.5" />
-    {:else if kind === "insert-above"}
-      <path d="M3 11.5h10" />
-      <path d="M8 2.5v6" />
-      <path d="M5 5.5h6" />
-    {:else if kind === "insert-below"}
-      <path d="M3 4.5h10" />
-      <path d="M8 7.5v6" />
-      <path d="M5 10.5h6" />
+    {:else if kind === "insert-before"}
+      <path d="M1.5 8h5.5" />
+      <path d="M4.25 5.25v5.5" />
+      <path d="M11.5 13V3m-3 3 3-3 3 3" />
+    {:else if kind === "insert-after"}
+      <path d="M1.5 8h5.5" />
+      <path d="M4.25 5.25v5.5" />
+      <path d="M11.5 3v10m-3-3 3 3 3-3" />
     {:else}
       <path d="M3 6h18" />
       <path d="M8 6V4h8v2" />

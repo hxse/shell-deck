@@ -65,7 +65,9 @@ unassigned使用amber局部warning并明确“Save is allowed, Start requires as
 
 结构Add/Move只受body/branch/lane结构规则约束。If/Elif/Extract没有earlier artifact时仍必须插入，并以unassigned source成为可保存但不可运行的draft。结构变更令既有assigned source失效时保留错误引用并显示persistable issue，直到用户修复或显式改为Unassigned。
 
-For text-list不提供header级`Add item`；每个item以icon-only `Insert item above`/`Insert item below`在当前index或`index + 1`插入exact empty item，并继续保留Move/Remove。in-scope scalar Title/Prompt与Message text part启用`Use loop template`后只显示紧凑的exact `{{index}}`、`{{key}}`、`{{value}}`插入按钮，不显示`Available...from...`source提示。
+Macro结构操作使用统一glyph：`↑`/`↓`只移动当前项，`+↑`在当前项之前插入，`+↓`在当前项之后插入。普通与嵌套Flow node、Parallel lane action和For text-list共享同一icon component；before/after插入不得各自维护另一套横线/加号图形。按钮顺序、24px shell、15px SVG、DaisyUI theme状态、focus/palette与既有test id保持。
+
+For text-list不提供header级`Add item`；每个item以icon-only `Insert item before`/`Insert item after`在当前index或`index + 1`插入exact empty item，并继续保留Move/Remove。in-scope scalar Title/Prompt与Message text part启用`Use loop template`后只显示紧凑的exact `{{index}}`、`{{key}}`、`{{value}}`插入按钮，不显示`Available...from...`source提示。
 
 Parallel schema、validator与runner不因authoring简化而变化，每条lane仍有且仅有一个final Output。UI以`Collect lane text`映射现有`output.source`：unchecked写入`{kind:"none"}`并隐藏id/source；checked只在存在earlier lane-local Capture/Extract时选择最靠后的artifact，否则保持unchecked并提示。只有任一lane收集text时显示merge separator与include-empty controls，`onLaneFail`始终可见。
 

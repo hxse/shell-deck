@@ -229,6 +229,10 @@ test-20260724d:
     bun run test:20260724d
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/fullStackHotPaths20260724D.spec.ts tests/e2e/roomHome032.spec.ts tests/e2e/roomRuntimeSync035.runtime-input.spec.ts
 
+test-20260725a:
+    HISTFILE=/dev/null bun test tests/unit/macroStructuralIcons20260725A.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/uiThemeCloseout004.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts
+
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"
 
