@@ -9,7 +9,7 @@ test('stop script terminates only the exact server process recorded in the priva
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-032-stop-'))
   const pidFile = join(root, 'server.pid')
   const port = await availablePort()
-  const server = spawn(process.execPath, ['run', resolve(import.meta.dir, '../../server/httpServer.ts'), '--port', String(port), '--data-root', root, '--pid-file', pidFile], {
+  const server = spawn(process.execPath, ['run', resolve(import.meta.dir, '../../server/httpServer.ts'), '--access-mode', 'guest', '--listen-mode', 'local', '--port', String(port), '--data-root', root, '--pid-file', pidFile], {
     cwd: resolve(import.meta.dir, '../..'),
     env: { ...process.env, HISTFILE: '/dev/null' },
     stdio: ['ignore', 'pipe', 'pipe'],

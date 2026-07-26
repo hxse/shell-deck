@@ -66,4 +66,4 @@ test evidence同样遵守400行边界。current comprehensive Macro仍只有一�
 
 ## 启动与安全
 
-所有入口通过 `justfile`。`just start` 先构建 production assets；`just dev` 使用 Vite HMR 并把 API/Room WebSocket 交给 Bun server。`.032` 不暴露尚未接入 runner 的 mock/real parser server mode。默认只绑定 `127.0.0.1`；非本地 bind 必须显式设置 `SHELL_DECK_ALLOW_LAN=1`，当前没有认证。
+所有入口通过 `justfile`。Production使用`sgl/sgn/sal/san`，development使用`dgl/dgn/dal/dan`；它们是Just原生concrete recipe alias，不由shell解析mode。Production recipe先构建assets，development由Vite承载HMR、Bun承载API/Room WebSocket。Local只绑定`127.0.0.1`，LAN只绑定`0.0.0.0`；Guest LAN是明确选择并打印警告的完整能力模式。Authenticated每次process生成临时token换HttpOnly browser session。全部browser HTTP/WS在Room mutation前执行同源admission；详细真值见`access_control_contract.md`。

@@ -7,7 +7,7 @@ import { startShellDeckServer } from '../../server/httpServer'
 
 test('two Room websocket clients share exact output, replay and dynamic index order', async () => {
   const dataRoot = mkdtempSync(join(tmpdir(), 'shell-deck-room-ws-'))
-  const server = startShellDeckServer({ port: 0, dataRoot })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot })
   const sockets: WebSocket[] = []
   try {
     const room = server.manager.createRoom()

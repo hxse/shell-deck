@@ -40,7 +40,7 @@ test('run structure lock transitions advance the monotonic Room revision', () =>
 
 test('Prepare is explicit, revision-bound and keeps partial Room identity instead of rebuilding terminals', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-prepare-034-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const room = server.manager.createRoom()
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
@@ -99,7 +99,7 @@ test('Prepare reports the authoritative partial Room when a real backend create 
       return new FakeTerminalBackend(options)
     },
   })
-  const server = startShellDeckServer({ port: 0, dataRoot: root, manager })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root, manager })
   try {
     const room = manager.createRoom()
     const grant = roomGrant(manager, room.roomId)
@@ -124,7 +124,7 @@ test('Prepare reports the authoritative partial Room when a real backend create 
 
 test('Macro Create rechecks Room control inside the canonical record transaction', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-create-control-boundary-034-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const room = server.manager.createRoom()
     const grant = roomGrant(server.manager, room.roomId)
@@ -156,7 +156,7 @@ test('Macro Create rechecks Room control inside the canonical record transaction
 
 test('persistable unassigned references round-trip through Macro CRUD but Start fails before installing a run', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-unassigned-037-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const room = server.manager.createRoom()
     const grant = roomGrant(server.manager, room.roomId)

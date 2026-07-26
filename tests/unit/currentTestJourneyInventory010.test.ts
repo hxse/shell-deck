@@ -129,7 +129,7 @@ test('current journeys preserve every attributed case, assertion and forced gate
   expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(451)
   expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(18)
   expect(inventory.reduce((total, item) => total + item.waits, 0)).toBe(20)
-  expect(aggregate).toBe('27d48a84e4d74ebede4df23ed693aa8f9de7e99b4a33fc5f952045525a48beab')
+  expect(aggregate).toBe('f9ebdd11e4a8ea82502e71cc4d6908ec5cae92559e944fa4c370f9bf5f7dabe1')
 
   expect(roomFiles.flatMap(readCaseInventory)).toHaveLength(14)
   expect(macroFiles.flatMap(readCaseInventory)).toHaveLength(11)

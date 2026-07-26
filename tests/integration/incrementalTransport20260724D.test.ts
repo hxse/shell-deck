@@ -119,7 +119,7 @@ test('structure broadcasts are pre-encoded once, authoritative, and batched', as
 
 test('Prepare returns one final snapshot and coalesces intermediate structure maps', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-prepare-20260724D-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const room = server.manager.createRoom()
     const messages: ServerMessage[] = []

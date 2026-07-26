@@ -11,7 +11,7 @@ import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomCon
 
 test('same-Room observer is rejected server-side and explicit takeover revokes the old writer', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-single-writer-http-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   const sockets: WebSocket[] = []
   try {
     const room = server.manager.createRoom()
@@ -87,7 +87,7 @@ test('same-Room observer is rejected server-side and explicit takeover revokes t
 
 test('content lease HTTP API excludes the same record across Rooms while different records remain independent', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-content-http-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   const sockets: WebSocket[] = []
   try {
     const firstRoom = server.manager.createRoom()

@@ -17,7 +17,7 @@ import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomCon
 
 test('Room websocket pushes one authoritative run and runtime input across takeover and reconnect', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-runtime-sync-035-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   const sockets: WebSocket[] = []
   try {
     const room = server.manager.createRoom()

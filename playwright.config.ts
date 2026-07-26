@@ -20,7 +20,7 @@ export default defineConfig({
     ...(browserLibraryPath ? { launchOptions: { env: { ...process.env, LD_LIBRARY_PATH: browserLibraryPath } } } : {}),
   },
   webServer: {
-    command: `bun run build && bun run server/httpServer.ts --host ${host} --port ${port}`,
+    command: `bun run build && bun run server/httpServer.ts --access-mode guest --listen-mode local --port ${port}`,
     env: webServerEnvironment,
     url: `${baseURL}/health`,
     reuseExistingServer: false,

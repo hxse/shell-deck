@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path'
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { createGeneratedSuffix } from '../src/lib/generatedId'
 import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
+import { ServerAccessController, assertAccessMode, assertListenMode, listenHost, type AccessMode, type ListenMode } from './accessControl'
 import { ContentEditLeaseService, type ContentEditLeaseServiceOptions } from './contentEditLeaseService'
 import { handleContentRoutes } from './http/contentRoutes'
 import type { HttpContext } from './http/httpContext'
@@ -30,6 +31,7 @@ const SHELL_DECK_JUSTFILE = realpathSync(resolve(import.meta.dir, '../justfile')
 export type ShellDeckServer = {
   url: string
   port: number
+  loginToken: string | null
   manager: TerminalRoomManager
   contentEditLeases: ContentEditLeaseService
   macroStore: MacroRecordStore<MacroDefinitionV5>
@@ -39,8 +41,10 @@ export type ShellDeckServer = {
 }
 
 export type StartOptions = {
-  host?: string
+  accessMode: AccessMode
+  listenMode: ListenMode
   port?: number
+  devFrontendPort?: number
   manager?: TerminalRoomManager
   dataRoot?: string
   logStorageLimitBytes?: number
@@ -49,15 +53,21 @@ export type StartOptions = {
 }
 
 export type ServerCliOptions = {
-  host: string
+  accessMode: AccessMode
+  listenMode: ListenMode
   port: number
   dataRoot?: string
   pidFile?: string
 }
 
-export function startShellDeckServer(options: StartOptions = {}): ShellDeckServer {
-  const host = options.host ?? '127.0.0.1'
-  if (host !== '127.0.0.1' && process.env.SHELL_DECK_ALLOW_LAN !== '1') throw new Error('lan_bind_requires_explicit_enable')
+export function startShellDeckServer(options: StartOptions): ShellDeckServer {
+  if (!options || options.accessMode === undefined) throw new Error('server_access_mode_required')
+  if (options.listenMode === undefined) throw new Error('server_listen_mode_required')
+  if (process.env.SHELL_DECK_ALLOW_LAN !== undefined) throw new Error('legacy_shell_deck_allow_lan_unsupported')
+  const accessMode = assertAccessMode(options.accessMode)
+  const listenMode = assertListenMode(options.listenMode)
+  const host = listenHost(listenMode)
+  const access = new ServerAccessController(accessMode, listenMode, options.devFrontendPort)
   const userDataRoot = resolve(options.dataRoot ?? resolveUserDataRoot())
   initializeUserDataRoot(userDataRoot, (warning) => console.warn(warning.code + ':' + warning.path))
   const manager = options.manager ?? new TerminalRoomManager()
@@ -130,10 +140,12 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
     port: options.port ?? 5177,
     async fetch(req, bunServer) {
       const url = new URL(req.url)
-      const websocketUpgrade = handleRoomWebSocketUpgrade(req, url, bunServer, httpContext)
-      if (websocketUpgrade.handled) return websocketUpgrade.response
-
       try {
+        const accessResponse = await access.admit(req, url)
+        if (accessResponse) return accessResponse
+        const websocketUpgrade = handleRoomWebSocketUpgrade(req, url, bunServer, httpContext)
+        if (websocketUpgrade.handled) return websocketUpgrade.response
+
         const roomResponse = await handleRoomRoutes(req, url, httpContext)
         if (roomResponse) return roomResponse
 
@@ -171,8 +183,9 @@ export function startShellDeckServer(options: StartOptions = {}): ShellDeckServe
   }))
 
   return {
-    url: 'http://' + server.hostname + ':' + server.port,
+    url: 'http://127.0.0.1:' + server.port,
     port: server.port ?? 0,
+    loginToken: access.loginToken,
     manager,
     contentEditLeases,
     macroStore,
@@ -208,7 +221,10 @@ async function finishHttpTransportStop(server: { unref(): void }, stopping: Prom
 
 if (import.meta.main) {
   const cli = parseServerCliArgs(process.argv.slice(2))
-  const server = startShellDeckServer({ host: cli.host, port: cli.port, dataRoot: cli.dataRoot })
+  const devPortText = process.env.SHELL_DECK_DEV_FRONTEND_PORT
+  const server = startShellDeckServer({ ...cli,
+    devFrontendPort: devPortText === undefined ? undefined : Number(devPortText),
+  })
   const pidFile = cli.pidFile ?? join(initializeUserDataRoot(server.userDataRoot).locks, 'server-' + cli.port + '.pid')
   const pidRecord = createServerPidRecord(process.pid, server.manager.serverInstanceId)
   writePrivateFileAtomic(pidFile, JSON.stringify(pidRecord) + '\n')
@@ -225,17 +241,24 @@ if (import.meta.main) {
   }
   process.once('SIGINT', () => { void stop(130) })
   process.once('SIGTERM', () => { void stop(143) })
-  console.log('shell-deck listening on ' + server.url)
+  console.log('shell-deck listening on http://' + listenHost(cli.listenMode) + ':' + server.port)
+  if (server.loginToken) console.log('shell-deck login token: ' + server.loginToken)
+  if (cli.accessMode === 'guest' && cli.listenMode === 'lan') {
+    console.warn('WARNING: guest LAN grants every device that can reach this port full shell-deck capability.')
+  }
   console.log('shell-deck pid file ' + pidFile)
 }
 
 export function parseServerCliArgs(args: string[]): ServerCliOptions {
-  const values = parseExactValueFlags(args, ['--host', '--port', '--data-root', '--pid-file'])
+  const values = parseExactValueFlags(args, ['--access-mode', '--listen-mode', '--port', '--data-root', '--pid-file'])
+  if (!values.has('--access-mode')) throw new Error('server_access_mode_required')
+  if (!values.has('--listen-mode')) throw new Error('server_listen_mode_required')
   const portText = values.get('--port') ?? '5177'
   const port = Number(portText)
   if (!Number.isInteger(port) || port < 0 || port > 65_535) throw new Error('invalid_server_port')
   return {
-    host: values.get('--host') ?? '127.0.0.1',
+    accessMode: assertAccessMode(values.get('--access-mode')),
+    listenMode: assertListenMode(values.get('--listen-mode')),
     port,
     ...(values.has('--data-root') ? { dataRoot: values.get('--data-root')! } : {}),
     ...(values.has('--pid-file') ? { pidFile: values.get('--pid-file')! } : {}),

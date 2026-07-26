@@ -6,7 +6,7 @@ import { startShellDeckServer } from '../../server/httpServer'
 
 test('removed content endpoints use the generic unknown-API response while Macro listing remains live', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-removed-content-http-20260724a-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     for (const [path, init] of [
       ['/api/library/items?kind=note', undefined],

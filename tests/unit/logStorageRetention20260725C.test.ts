@@ -257,6 +257,8 @@ test('new run, artifact, AgentEvent segment, and server startup source keep fail
     expect(() => agentStore.append(agentEvent(identity, 1))).toThrow('log_storage_limit_reached')
     expect(existsSync(protectedPath)).toBe(true)
     expect(() => startShellDeckServer({
+      accessMode: 'guest',
+      listenMode: 'local',
       dataRoot: root,
       port: 0,
       logStorageLimitBytes: limit,

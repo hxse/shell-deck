@@ -14,7 +14,7 @@ const quotaWorker = join(import.meta.dir, '..', 'fixtures', 'logStorageQuotaWork
 
 test('current Room terminal run survives quota GC, HTTP snapshot, and WebSocket reconnect until Destroy', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-current-run-pin-20260725c-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   let socket: WebSocket | null = null
   try {
     const room = server.manager.createRoom()

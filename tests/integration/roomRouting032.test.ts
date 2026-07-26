@@ -11,7 +11,7 @@ let root: string
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'shell-deck-032-http-'))
-  server = startShellDeckServer({ port: await freePort(), dataRoot: root })
+  server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: await freePort(), dataRoot: root })
 })
 
 afterAll(async () => {
@@ -69,7 +69,7 @@ test('concurrent first entry has one creator and same token stays process-local'
   expect(entries.map((response) => response.status).sort()).toEqual([200, 302])
   const room = (await json(server.url + '/api/rooms')).rooms[0]
 
-  const second = startShellDeckServer({ port: await freePort(), dataRoot: root })
+  const second = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: await freePort(), dataRoot: root })
   try {
     expect((await fetch(second.url + '/' + room.roomId)).status).toBe(200)
     const isolated = (await json(second.url + '/api/rooms')).rooms[0]

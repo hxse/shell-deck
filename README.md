@@ -33,17 +33,20 @@ Quickstart: `doc/guides/001_quickstart.md`.
 Primary commands:
 
 ```bash
-just start                 # production build + local Room server
-just dev                   # Vite HMR frontend plus Bun API/WebSocket server
-just stop                  # stop the default local server pid
-just test-032              # Room/user-storage foundation gate
-just test-033              # Room controller/content edit lease gate
-just test-034              # Macro editor/Prepare/runner regression gate
-just test-035              # server-authoritative Room runtime sync gate
-just test-037              # Macro unassigned-reference regression gate
-just test-038              # Macro V5 explicit AgentEvent wait-limit gate
-just test-039              # retained terminal view lifecycle gate
-just test-20260724a        # removed Library domain + Macro-only saved-content gate
+just sgl                 # production build + guest/local access
+just san                 # production build + authenticated/LAN access
+just dgl                 # Vite HMR + Bun API/WebSocket, guest/local
+just start               # show every production/development launch alias
+just fw-open             # NixOS: temporarily open TCP 5177 for LAN access
+just stop                # stop the default local server pid
+just test-032            # Room/user-storage foundation gate
+just test-033            # Room controller/content edit lease gate
+just test-034            # Macro editor/Prepare/runner regression gate
+just test-035            # server-authoritative Room runtime sync gate
+just test-037            # Macro unassigned-reference regression gate
+just test-038            # Macro V5 explicit AgentEvent wait-limit gate
+just test-039            # retained terminal view lifecycle gate
+just test-20260724a      # removed Library domain + Macro-only saved-content gate
 ```
 
 V0 phase tasks:

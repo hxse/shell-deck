@@ -203,7 +203,7 @@ function createHarness() {
       return new FakeTerminalBackend(options)
     },
   })
-  const server = startShellDeckServer({ port: 0, dataRoot: root, manager })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root, manager })
   return {
     root,
     server,

@@ -3,16 +3,87 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 default:
     just --list
 
-# Build the production UI, then start the local-only shell-deck server.
-start *args: build
-    bun run server/httpServer.ts {{args}}
+# Show the official launch recipes and aliases.
+start *args:
+    @just _launch-usage
+
+dev *args:
+    @just _launch-usage
+
+# Production launch recipes.
+start-guest-local *args: build
+    bun run server/httpServer.ts --access-mode guest --listen-mode local {{args}}
+
+start-guest-lan *args: build
+    bun run server/httpServer.ts --access-mode guest --listen-mode lan {{args}}
+
+start-auth-local *args: build
+    bun run server/httpServer.ts --access-mode authenticated --listen-mode local {{args}}
+
+start-auth-lan *args: build
+    bun run server/httpServer.ts --access-mode authenticated --listen-mode lan {{args}}
 
 stop *args:
     bun run scripts/stop-server.ts {{args}}
 
-# Vite serves the Svelte UI with HMR; Bun serves API and Room WebSocket traffic.
-dev *args:
-    bun run scripts/dev.ts {{args}}
+# Temporarily open shell-deck's TCP port through the NixOS firewall.
+fw-open port="5177":
+    sudo nixos-firewall-tool open tcp {{quote(port)}}
+
+# Show the current NixOS firewall rules.
+fw-show:
+    sudo nixos-firewall-tool show
+
+# Restore every temporary NixOS firewall change to the declarative system configuration.
+[confirm("Reset all temporary NixOS firewall changes?")]
+fw-reset:
+    sudo nixos-firewall-tool reset
+
+# Vite HMR launch recipes.
+dev-guest-local *args:
+    bun run scripts/dev.ts --access-mode guest --listen-mode local {{args}}
+
+dev-guest-lan *args:
+    bun run scripts/dev.ts --access-mode guest --listen-mode lan {{args}}
+
+dev-auth-local *args:
+    bun run scripts/dev.ts --access-mode authenticated --listen-mode local {{args}}
+
+dev-auth-lan *args:
+    bun run scripts/dev.ts --access-mode authenticated --listen-mode lan {{args}}
+
+alias sgl := start-guest-local
+alias sgn := start-guest-lan
+alias sal := start-auth-local
+alias san := start-auth-lan
+alias dgl := dev-guest-local
+alias dgn := dev-guest-lan
+alias dal := dev-auth-local
+alias dan := dev-auth-lan
+
+_launch-usage:
+    @printf '%s\n' \
+      'shell-deck 启动组合（Just 官方 recipe alias）：' \
+      '' \
+      'Production：' \
+      '  just sgl  # guest + local' \
+      '  just sgn  # guest + LAN/network' \
+      '  just sal  # authenticated + local' \
+      '  just san  # authenticated + LAN/network' \
+      '' \
+      'Development：' \
+      '  just dgl  # guest + local' \
+      '  just dgn  # guest + LAN/network' \
+      '  just dal  # authenticated + local' \
+      '  just dan  # authenticated + LAN/network' \
+      '' \
+      '缩写：s=start，d=dev，g=guest，a=authenticated，l=local，n=LAN/network。' \
+      'server options 直接追加，例如：just san --port 5177' \
+      '' \
+      'NixOS临时防火墙（不会由LAN启动自动执行）：' \
+      '  just fw-open [port]  # 默认临时开放TCP 5177' \
+      '  just fw-show         # 查看当前规则' \
+      '  just fw-reset        # 确认后清除全部临时规则'
 
 check: file-size ui-style-residue check-ts check-svelte
 
@@ -247,6 +318,22 @@ test-20260725c:
     HISTFILE=/dev/null bun test tests/integration/agentEventWaitLimit038.test.ts
     HISTFILE=/dev/null bun test tests/integration/macroRuntime034.durability.test.ts
     HISTFILE=/dev/null bun test tests/integration/incrementalTransport20260724D.test.ts
+
+test-20260726a:
+    just start --help | rg --fixed-strings 'just sgl  # guest + local'
+    just dev | rg --fixed-strings 'just dgl  # guest + local'
+    just --dry-run sgl --port 5197 2>&1 | rg --fixed-strings -- '--access-mode guest --listen-mode local --port 5197'
+    just --dry-run sgn --port 5197 2>&1 | rg --fixed-strings -- '--access-mode guest --listen-mode lan --port 5197'
+    just --dry-run sal --port 5197 2>&1 | rg --fixed-strings -- '--access-mode authenticated --listen-mode local --port 5197'
+    just --dry-run san --port 5197 2>&1 | rg --fixed-strings -- '--access-mode authenticated --listen-mode lan --port 5197'
+    just --dry-run dgl --port 5197 2>&1 | rg --fixed-strings -- '--access-mode guest --listen-mode local --port 5197'
+    just --dry-run dgn --port 5197 2>&1 | rg --fixed-strings -- '--access-mode guest --listen-mode lan --port 5197'
+    just --dry-run dal --port 5197 2>&1 | rg --fixed-strings -- '--access-mode authenticated --listen-mode local --port 5197'
+    just --dry-run dan --port 5197 2>&1 | rg --fixed-strings -- '--access-mode authenticated --listen-mode lan --port 5197'
+    just --dry-run fw-open 5197 2>&1 | rg --fixed-strings "sudo nixos-firewall-tool open tcp '5197'"
+    just --dry-run fw-show 2>&1 | rg --fixed-strings 'sudo nixos-firewall-tool show'
+    just --yes --dry-run fw-reset 2>&1 | rg --fixed-strings 'sudo nixos-firewall-tool reset'
+    HISTFILE=/dev/null bun test tests/unit/serverCli032.test.ts tests/integration/accessControl20260726A.test.ts
 
 test-20260722b-002-terminal-retention:
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/roomLargeReplay032.retention.spec.ts --grep "historical terminal queries"

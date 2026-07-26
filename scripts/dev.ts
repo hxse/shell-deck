@@ -1,16 +1,20 @@
 export {}
 
 const serverArgs = process.argv.slice(2)
-const backendHost = argValue(serverArgs, '--host') ?? '127.0.0.1'
+const listenMode = argValue(serverArgs, '--listen-mode')
+const backendHost = listenMode === 'lan' ? '0.0.0.0' : '127.0.0.1'
 const backendPort = argValue(serverArgs, '--port') ?? '5177'
 const backendOrigin = 'http://' + proxyHost(backendHost) + ':' + backendPort
+const frontendPort = '5173'
 
 const children = [
-  spawn(['bun', 'run', 'server/httpServer.ts', ...serverArgs]),
+  spawn(['bun', 'run', 'server/httpServer.ts', ...serverArgs], {
+    SHELL_DECK_DEV_FRONTEND_PORT: frontendPort,
+  }),
   spawn(['bun', 'x', 'vite'], {
     SHELL_DECK_DEV_BACKEND_ORIGIN: backendOrigin,
     SHELL_DECK_DEV_HOST: backendHost,
-    VITE_SHELL_DECK_DEV_BACKEND_HOST: backendHost,
+    SHELL_DECK_DEV_LISTEN_MODE: listenMode ?? '',
     VITE_SHELL_DECK_DEV_BACKEND_PORT: backendPort,
   }),
 ]

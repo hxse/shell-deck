@@ -9,7 +9,7 @@ test('notification profile endpoint returns user-root profile ids without secret
   let server: ReturnType<typeof startShellDeckServer> | null = null
   try {
     writeConfig(root, JSON.stringify({ telegram: { profiles: { default: { botToken: 'secret-token', channelId: '-1001' }, ops: { botToken: 'ops-token', channelId: '-1002' } } } }))
-    server = startShellDeckServer({ port: 0, dataRoot: root })
+    server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
     const response = await fetch(server.url + '/api/notification-profiles/telegram')
     expect(response.status).toBe(200)
     const body = await response.json() as { profiles: string[] }
@@ -27,7 +27,7 @@ test('notification profile endpoint fails closed on invalid user config', async 
   let server: ReturnType<typeof startShellDeckServer> | null = null
   try {
     writeConfig(root, '{bad json')
-    server = startShellDeckServer({ port: 0, dataRoot: root })
+    server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
     const response = await fetch(server.url + '/api/notification-profiles/telegram')
     expect(response.status).toBe(400)
     expect(await response.json()).toEqual({ ok: false, error: 'notification_profiles_invalid_json' })

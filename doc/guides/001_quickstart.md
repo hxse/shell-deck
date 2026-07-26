@@ -5,16 +5,43 @@
 在仓库根目录运行：
 
 ```bash
-just start
+just sgl
 ```
 
-production entry 会先执行 Vite build，再由 Bun server 提供静态资源、HTTP API 与 WebSocket。开发时使用：
+production entry会先执行Vite build，再由Bun server提供静态资源、HTTP API与WebSocket。八个短命令是Just原生recipe alias，不经过shell参数解析：
 
 ```bash
-just dev
+just sgl  # start + guest + local
+just sgn  # start + guest + LAN/network
+just sal  # start + authenticated + local
+just san  # start + authenticated + LAN/network
 ```
 
-`just dev` 使用 Vite HMR，Bun 继续承载 API/WebSocket。默认监听 `127.0.0.1:5177`；只有明确设置 `SHELL_DECK_ALLOW_LAN=1` 才允许非本地 bind。
+缩写中`s/d`表示production start/development，`g/a`表示guest/authenticated，`l/n`表示local/LAN network。运行`just start`、`just dev`或对应的`--help`形式会打印完整映射且不会先build；额外server option直接追加，例如`just san --port 5177`。可发现的长recipe（例如`just start-auth-lan`）与短alias由Just自身解析，不存在应用层mode alias或自定义参数分派。
+
+`local`只允许本机访问；`lan`监听`0.0.0.0`，同一Wi-Fi中的手机使用电脑LAN IP，例如`http://192.168.1.23:5177`。Server不检测手机IP，只读取电脑自身网卡地址与machine hostname建立Host allowlist；API与WebSocket沿用页面hostname。防火墙仍需允许该端口。`guest lan`让能访问端口的设备拥有完整shell能力，因此启动时会打印醒目警告。
+
+NixOS可用显式helper临时开放默认TCP端口：
+
+```bash
+just fw-open        # sudo nixos-firewall-tool open tcp 5177
+just fw-open 5197   # 自定义端口
+just fw-show
+just fw-reset       # 确认后恢复声明式配置
+```
+
+LAN启动不会自动调用`sudo`或改写host firewall，因此这些helper不作为`sgn/san/dgn/dan`的dependency。`fw-reset`调用NixOS原生reset，会清除当前机器的全部临时firewall修改，而不只shell-deck端口；Just会先要求确认。它不写Nix配置，重启、防火墙reload或`nixos-rebuild switch`也会丢弃临时规则。非NixOS没有兼容fallback，会按缺少`nixos-firewall-tool`明确失败。
+
+`authenticated`每次server启动生成并打印一个新token。未登录browser会进入token表单；成功后以HttpOnly cookie保存当前process的session。同一browser profile与hostname下刷新、重开或多tab无需重复输入，手机、另一browser/hostname或server restart需要重新输入。Token不会进入应用URL或cookie。
+
+开发时使用相同mode：
+
+```bash
+just dgl  # dev + guest + local
+just dan  # dev + authenticated + LAN/network
+```
+
+development recipe使用Vite HMR，Bun继续承载API/WebSocket。Authenticated dev下，Room page与Vite source/asset都先经过同一个Bun session gate；登录后正常加载，未登录不会暴露source。Vite与Bun共享LAN hostname allowlist并关闭clear-screen，因此machine hostname可访问，启动终端中只打印一次的token也会保持可见。旧`--host`与`SHELL_DECK_ALLOW_LAN`已删除；底层server缺少access/listen mode会直接失败，旧环境变量即使为空也会直接报错。
 
 ## Room URL
 
@@ -78,7 +105,7 @@ server只接受当前run在该terminal等待的第一份schema-valid JSON。sche
 
 User Data Root 的解析顺序为：显式 root、`SHELL_DECK_DATA_ROOT`、`XDG_DATA_HOME/shell-deck`、`$HOME/.local/share/shell-deck`。MacroRecord、run/artifact evidence、AgentEvent evidence和notification config都在这里；它们不属于 Room 或 terminal cwd。current runtime只管理`macros/`、`runs/`、`agent-events/`与`.locks/`。
 
-`runs/`中的Trace/events/artifacts与`agent-events/`raw logs默认共享2 GiB配额。可在启动前设置positive integer bytes，例如`SHELL_DECK_LOG_STORAGE_LIMIT_BYTES=4294967296 just start`改为4 GiB；变量若存在但为空或不是positive integer会直接报错，MacroRecord与notification config不计入。达到上限后server清理到约90%：先删除最旧的completed/failed/stopped run整个目录，再删除已经关闭的旧AgentEvent segment。当前Room仍显示的最近一次run、active/interrupted run和仍可追加的open segment不会删除；下一次Start替换或Room Destroy后，旧current run才进入普通历史回收。没有安全候选时会明确报告`log_storage_limit_reached`。AgentEvent current layout是8 MiB编号segment，每条event写入前都检查配额；旧的单个`<generation>.jsonl`日志不迁移、不读取。
+`runs/`中的Trace/events/artifacts与`agent-events/`raw logs默认共享2 GiB配额。可在启动前设置positive integer bytes，例如`SHELL_DECK_LOG_STORAGE_LIMIT_BYTES=4294967296 just sgl`改为4 GiB；变量若存在但为空或不是positive integer会直接报错，MacroRecord与notification config不计入。达到上限后server清理到约90%：先删除最旧的completed/failed/stopped run整个目录，再删除已经关闭的旧AgentEvent segment。当前Room仍显示的最近一次run、active/interrupted run和仍可追加的open segment不会删除；下一次Start替换或Room Destroy后，旧current run才进入普通历史回收。没有安全候选时会明确报告`log_storage_limit_reached`。AgentEvent current layout是8 MiB编号segment，每条event写入前都检查配额；旧的单个`<generation>.jsonl`日志不迁移、不读取。
 
 notification 配置可用以下命令初始化：
 

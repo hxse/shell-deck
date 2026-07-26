@@ -263,13 +263,11 @@ export class TerminalRoomClient {
 
 function defaultWsUrl(roomId: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const devBackendHost = import.meta.env.VITE_SHELL_DECK_DEV_BACKEND_HOST
   const devBackendPort = import.meta.env.VITE_SHELL_DECK_DEV_BACKEND_PORT
-  const host = devBackendHost && devBackendPort ? browserReachableHost(devBackendHost) + ':' + devBackendPort : location.host
+  const host = devBackendPort ? browserReachableHost(location.hostname) + ':' + devBackendPort : location.host
   return proto + '//' + host + '/ws/rooms/' + encodeURIComponent(roomId)
 }
 
 function browserReachableHost(configuredHost: string): string {
-  if (configuredHost === '0.0.0.0' || configuredHost === '::') return location.hostname
   return configuredHost.includes(':') && !configuredHost.startsWith('[') ? '[' + configuredHost + ']' : configuredHost
 }

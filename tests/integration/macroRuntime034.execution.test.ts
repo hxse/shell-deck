@@ -29,7 +29,7 @@ import { replay, request, roomGrant, runnableDefinition, waitFor } from './macro
 
 test('Start freezes record and terminal binding, Pause resumes in-place, and artifacts remain read-only Trace evidence', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-runner-034-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const room = server.manager.createRoom()
     const shell = server.manager.createTerminal(room.roomId, { backend: 'fake' })
@@ -92,7 +92,7 @@ test('Start freezes record and terminal binding, Pause resumes in-place, and art
 
 test('input.defaultSource is exposed as editable live input without becoming persisted cursor state', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-default-034-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const room = server.manager.createRoom()
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
@@ -133,7 +133,7 @@ test('input.defaultSource is exposed as editable live input without becoming per
 
 test('Stop and Room Destroy cancel pending Input without terminal writes or duplicate terminal events', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-cancel-034-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const definition: MacroDefinitionV5 = {
       schemaVersion: 5,
@@ -192,7 +192,7 @@ test('Stop and Room Destroy cancel pending Input without terminal writes or dupl
 
 test('extract_text keeps the current negative index syntax and sends the selected tail value', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-negative-select-034-'))
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
     const room = server.manager.createRoom()
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })

@@ -14,7 +14,7 @@ test('Macro list keeps valid V5 records visible and reports invalid V4 records w
   const legacy = await store.create({ schemaVersion: 4, name: 'Legacy V4', description: '', terminalLayout: [], body: [] } as unknown as MacroDefinitionV5)
   const malformedId = createGeneratedId('macroTemplate')
   writeFileSync(store.recordPath(malformedId), '{', { mode: 0o600 })
-  const server = startShellDeckServer({ port: 0, dataRoot: root })
+  const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
 
   try {
     const response = await fetch(server.url + '/api/templates')

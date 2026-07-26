@@ -121,6 +121,8 @@ test('published Macro create/update/delete stay successful after record or lease
   let failWrite = false
   let failDelete = false
   const server = startShellDeckServer({
+    accessMode: 'guest',
+    listenMode: 'local',
     port: 0,
     dataRoot: root,
     macroStoreOptions: {
