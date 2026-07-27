@@ -111,6 +111,11 @@ test-integration:
 test-e2e:
     bun run test:e2e
 
+test-20260727a:
+    HISTFILE=/dev/null bun test tests/unit/qrTokenLogin20260727A.test.ts
+    HISTFILE=/dev/null bun test tests/integration/accessControl20260726A.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/qrTokenLogin20260727A.spec.ts
+
 test-032:
     bun run test:032
 

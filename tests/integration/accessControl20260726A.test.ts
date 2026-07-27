@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { createServer } from 'vite'
 import { ServerAccessController } from '../../server/accessControl'
 import { startShellDeckServer } from '../../server/httpServer'
+import { LOGIN_QR_ASSET_PATH, LOGIN_STYLE_ASSET_PATH } from '../../src/lib/loginToken'
 test('authenticated mode gates navigation, API and websocket before Room mutation', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-access-20260726a-'))
   const server = startShellDeckServer({ accessMode: 'authenticated', listenMode: 'local', port: 0, dataRoot: root })
@@ -12,7 +13,31 @@ test('authenticated mode gates navigation, API and websocket before Room mutatio
     expect(server.loginToken?.length).toBeGreaterThanOrEqual(22)
     const navigation = await fetch(server.url + '/', { headers: { accept: 'text/html' }, redirect: 'manual' })
     expect(navigation.status).toBe(302); expect(navigation.headers.get('location')).toBe('/login?next=%2F')
-    expect((await fetch(server.url + '/login')).headers.get('referrer-policy')).toBe('same-origin')
+    const loginPage = await fetch(server.url + '/login')
+    expect(loginPage.headers.get('referrer-policy')).toBe('same-origin')
+    expect(loginPage.headers.get('content-security-policy')).toContain("script-src 'self'")
+    expect(loginPage.headers.get('content-security-policy')).toContain("style-src 'self'")
+    const loginHtml = await loginPage.text()
+    expect(loginHtml).toContain('<html lang="en" data-theme="business">')
+    expect(loginHtml).toContain('class="card relative')
+    expect(loginHtml).toContain('class="input input-lg')
+    expect(loginHtml).toContain('href="' + LOGIN_STYLE_ASSET_PATH + '"')
+    expect(loginHtml).toContain('<div id="upload-login-qr"')
+    expect(loginHtml).toContain('id="login-qr-file" class="file-input file-input-ghost file-input-secondary file-input-md')
+    expect(loginHtml).toContain('type="file" accept="image/*" aria-label="Upload QR image"')
+    expect(loginHtml).toContain('id="login-qr-capture-file" class="file-input file-input-ghost')
+    expect(loginHtml).toContain('accept="image/*" capture="environment" aria-label="Take QR photo"')
+    expect(loginHtml).toContain('id="scan-login-qr-live" class="btn btn-secondary btn-md')
+    expect(loginHtml).toContain('id="login-qr-status-shell"')
+    expect(loginHtml).toContain('id="login-qr-camera-dialog"')
+    expect(loginHtml).toContain('id="login-qr-camera-video"')
+    expect(loginHtml).toContain('id="login-qr-camera-status"')
+    expect(loginHtml).toContain('id="login-debug-shell"')
+    expect(loginHtml).toContain('id="login-debug-output"')
+    expect(loginHtml).toContain('id="copy-login-debug"')
+    expect(loginHtml).toContain('id="select-login-debug"')
+    expect(loginHtml).toContain('id="clear-login-debug"')
+    expect(loginHtml).toContain('src="' + LOGIN_QR_ASSET_PATH + '"')
     expect((await fetch(server.url + '/api/rooms', { headers: { accept: 'text/html' } })).status).toBe(401)
     expect((await fetch(server.url + '/assets/missing.js', { headers: { accept: 'text/html' } })).status).toBe(401)
     expect((await fetch(server.url + '/ws/rooms/room_invalid')).status).toBe(401)
@@ -66,6 +91,19 @@ test('development exception accepts only the fixed frontend port on the request 
   const rebound = new URL('http://attacker.invalid:5177/api/rooms')
   expect((await access.admit(new Request(rebound, { headers: { origin: rebound.origin } }), rebound))?.status).toBe(403)
 })
+test('only exact same-origin login UI assets bypass browser session', async () => {
+  const access = new ServerAccessController('authenticated', 'local')
+  for (const path of [LOGIN_QR_ASSET_PATH, LOGIN_STYLE_ASSET_PATH]) {
+    const target = new URL('http://127.0.0.1:5177' + path)
+    expect(await access.admit(new Request(target), target)).toBeNull()
+    expect((await access.admit(new Request(target + '?v=1'), new URL(target + '?v=1')))?.status).toBe(401)
+    expect((await access.admit(new Request(target, {
+      headers: { origin: 'http://attacker.invalid', 'sec-fetch-site': 'cross-site' },
+    }), target))?.status).toBe(403)
+  }
+  const applicationAsset = new URL('http://127.0.0.1:5177/assets/index.js')
+  expect((await access.admit(new Request(applicationAsset), applicationAsset))?.status).toBe(401)
+})
 test('Vite dev admission preserves browser guards, authentication and LAN hosts', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-vite-access-'))
   const backend = startShellDeckServer({ accessMode: 'authenticated', listenMode: 'lan', port: 0, dataRoot: root, devFrontendPort: 5173 })
@@ -83,6 +121,22 @@ test('Vite dev admission preserves browser guards, authentication and LAN hosts'
     expect(attack.status).toBe(403)
     expect(backend.manager.listRooms()).toEqual([])
     expect((await fetch(url + '/src/main.ts')).status).toBe(401)
+    const loginAsset = await fetch(url + LOGIN_QR_ASSET_PATH)
+    expect(loginAsset.status).toBe(200)
+    const loginAssetSource = await loginAsset.text()
+    expect(loginAssetSource).toContain('login_qr_payload_invalid')
+    expect(loginAssetSource).not.toMatch(/from\s+["'][./]/)
+    const loginStyle = await fetch(url + LOGIN_STYLE_ASSET_PATH)
+    expect(loginStyle.status).toBe(200)
+    expect(loginStyle.headers.get('content-type')).toContain('text/css')
+    expect(await loginStyle.text()).toContain('.btn')
+    expect((await fetch(url + LOGIN_QR_ASSET_PATH, {
+      headers: { origin: 'http://attacker.invalid', 'sec-fetch-site': 'cross-site' },
+    })).status).toBe(403)
+    expect((await fetch(url + LOGIN_STYLE_ASSET_PATH, {
+      headers: { origin: 'http://attacker.invalid', 'sec-fetch-site': 'cross-site' },
+    })).status).toBe(403)
+    expect((await fetch(url + '/src/loginQrClient.ts')).status).toBe(401)
     expect((await fetch(url + '/', { headers: { accept: 'text/html', host: hostname() + ':' + address.port, origin: 'http://' + hostname() + ':5173' }, redirect: 'manual' })).status).toBe(302)
     const accepted = await login(backend.url, backend.loginToken!, '/')
     const cookie = accepted.headers.get('set-cookie')!.split(';', 1)[0]
@@ -93,4 +147,4 @@ test('Vite dev admission preserves browser guards, authentication and LAN hosts'
     rmSync(root, { recursive: true, force: true })
     for (const name of env) delete process.env[name]
   }
-})
+}, 20_000)

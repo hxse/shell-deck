@@ -32,7 +32,19 @@ just fw-reset       # 确认后恢复声明式配置
 
 LAN启动不会自动调用`sudo`或改写host firewall，因此这些helper不作为`sgn/san/dgn/dan`的dependency。`fw-reset`调用NixOS原生reset，会清除当前机器的全部临时firewall修改，而不只shell-deck端口；Just会先要求确认。它不写Nix配置，重启、防火墙reload或`nixos-rebuild switch`也会丢弃临时规则。非NixOS没有兼容fallback，会按缺少`nixos-firewall-tool`明确失败。
 
-`authenticated`每次server启动生成并打印一个新token。未登录browser会进入token表单；成功后以HttpOnly cookie保存当前process的session。同一browser profile与hostname下刷新、重开或多tab无需重复输入，手机、另一browser/hostname或server restart需要重新输入。Token不会进入应用URL或cookie。
+`authenticated`每次server启动生成一个新token，终端同时显示可复制文字和内容相同的QR。Server会先用与browser相同的decoder在多个module scale自检并选择可读mask，不会直接打印library auto-mask结果；因此scanner修复后必须重启server并使用新QR。未登录browser保留手工token，同时提供两个明确入口：
+
+* `Upload QR image`：使用页面上始终可见的theme-native file input从相册或文件选择已保存图片，本地解析后自动提交；不要求browser在普通picker内附带camera，也不使用透明overlay。原生Browse selector使用daisyUI `file-input-ghost file-input-secondary file-input-md`，与旁边的`btn-secondary btn-md`实时扫码按钮共享theme、完整圆角和尺寸，不另写file-selector CSS。每次打开picker前都会清掉browser可能恢复的上一次File selection，因此server重启后重新选择同名照片也会再次处理；mobile browser发送`input`或`change`都可进入同一条去重扫描，漏发选择与返回事件时，页面从点击起也会以500ms低频轮询`input.files`、最长两分钟。页面从打开picker开始就在顶部toast显示状态；没有返回照片、格式无法读取或三遍有界扫描仍未发现QR都会明确说明。若Android在外部activity期间回收并重载login页，新页面会提示这次File已丢失。
+* `Take QR photo`：在Android browser显示，使用独立的标准`accept="image/*" capture="environment"`原生file input请求系统后置camera。它拍摄单张照片而非实时scan，不依赖Secure Context；返回的File复用与Upload完全相同的本地bitmap、三遍QR decode和token submit路径。Android Chrome与Firefox实机均已确认该explicit capture路径可以拍照、识别并登录，不再显示browser-specific warning。
+* `Scan with camera`：打开实时预览并持续识别，成功后自动关闭camera并登录。
+
+若手机仍出现“选择图片后没有反应”，直接打开`http://<电脑LAN-IP>:5177/login#debug`。页面会展开`Login diagnostics`并记录picker、File、bitmap、三遍decode、form submit与page lifecycle；日志跨login reload和server restart保留在当前tab。点击`Copy debug log`会先尝试无需Clipboard API的同步copy，再尝试现代API；若plain HTTP LAN仍不能复制，点击`Select all`后使用手机的复制菜单。日志不会包含token、文件名、图片内容或cookie，也不会上传到server；完成排查后点击`Clear`。
+
+实时camera受browser Secure Context限制：`http://localhost`与loopback可用，普通手机LAN地址如`http://192.168.1.23:5177`通常不可用，页面会明确提示改用HTTPS/localhost。当前server不内置LAN TLS，因此plain HTTP LAN应使用图片上传或手工token。图片和camera frame都不会上传；上传照片会依次扫描完整画面、center-square和两个中心放大区域，以适应高分辨率照片中占比较小的terminal QR。超过20 MiB、camera未返回File、格式无法读取、未找到QR或不是shell-deck token都会在固定顶部toast给出明确错误。
+
+实时识别不会按camera原始帧率满速运行：camera以720p为目标，decoder frame最长边限制为720 pixels，同一时间只处理一帧，最快约8 FPS并在慢设备上自适应降频。取消、离开页面或切到后台都会立即停止camera track。
+
+登录成功后以HttpOnly cookie保存当前process的session。同一browser profile与hostname下刷新、重开或多tab无需重复输入，手机、另一browser/hostname或server restart需要重新输入。Token不会进入应用URL或cookie；相机/图片不可用时手工输入始终是正式fallback。
 
 开发时使用相同mode：
 
@@ -41,7 +53,7 @@ just dgl  # dev + guest + local
 just dan  # dev + authenticated + LAN/network
 ```
 
-development recipe使用Vite HMR，Bun继续承载API/WebSocket。Authenticated dev下，Room page与Vite source/asset都先经过同一个Bun session gate；登录后正常加载，未登录不会暴露source。Vite与Bun共享LAN hostname allowlist并关闭clear-screen，因此machine hostname可访问，启动终端中只打印一次的token也会保持可见。旧`--host`与`SHELL_DECK_ALLOW_LAN`已删除；底层server缺少access/listen mode会直接失败，旧环境变量即使为空也会直接报错。
+development recipe使用Vite HMR，Bun继续承载API/WebSocket。Authenticated dev下，Room page与Vite source/asset都先经过同一个Bun session gate；登录后正常加载，未登录不会暴露source。仅login页自身的QR bundle与固定stylesheet route允许未登录读取：前者只做本地图片/camera frame解析，不含token且不上传内容，后者复用现有compiled app CSS；直接访问对应TypeScript/CSS source仍返回401。Vite与Bun共享LAN hostname allowlist并关闭clear-screen，因此machine hostname可访问，启动终端中的token与QR会保持可见。旧`--host`与`SHELL_DECK_ALLOW_LAN`已删除；底层server缺少access/listen mode会直接失败，旧环境变量即使为空也会直接报错。
 
 ## Room URL
 

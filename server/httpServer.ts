@@ -12,6 +12,7 @@ import { handlePageRoutes } from './http/pageRoutes'
 import { handleRoomRoutes } from './http/roomRoutes'
 import { handleRunnerRoutes } from './http/runnerRoutes'
 import { LogStorageRetention } from './logStorageRetention'
+import { formatLoginTokenForTerminal } from './loginTokenPresentation'
 import { MacroRunStore } from './macroRunStore'
 import { MacroRunnerService } from './macroRunnerService'
 import { relocateNotificationConfig } from './notificationConfigRelocation'
@@ -242,7 +243,7 @@ if (import.meta.main) {
   process.once('SIGINT', () => { void stop(130) })
   process.once('SIGTERM', () => { void stop(143) })
   console.log('shell-deck listening on http://' + listenHost(cli.listenMode) + ':' + server.port)
-  if (server.loginToken) console.log('shell-deck login token: ' + server.loginToken)
+  if (server.loginToken) console.log(formatLoginTokenForTerminal(server.loginToken))
   if (cli.accessMode === 'guest' && cli.listenMode === 'lan') {
     console.warn('WARNING: guest LAN grants every device that can reach this port full shell-deck capability.')
   }

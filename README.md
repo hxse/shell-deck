@@ -14,6 +14,7 @@ Core V0 behavior:
 - user-level Macro/evidence storage is independent from Room URLs and terminal cwd
 - saved Macro records use per-record cross-Room/process edit leases plus optimistic revision; different records remain independent
 - no role system and no Codex pre-injected prompts
+- authenticated startup prints one process-local token as text and terminal QR; the login page can decode an uploaded image or a secure-context live camera locally without uploading either
 - `just codex` only runs inside a shell-deck-created Shell with complete Room context; external terminals fail loudly
 - AgentEvent ingest normalizes Codex hook callbacks; Codex session ids are trace data, not macro template state
 - AgentEvent capture defaults to explicit unbounded waiting; users may opt into a persisted duration timeout
@@ -47,6 +48,7 @@ just test-037            # Macro unassigned-reference regression gate
 just test-038            # Macro V5 explicit AgentEvent wait-limit gate
 just test-039            # retained terminal view lifecycle gate
 just test-20260724a      # removed Library domain + Macro-only saved-content gate
+just test-20260727a      # authenticated terminal QR + image/live-camera login gate
 ```
 
 V0 phase tasks:

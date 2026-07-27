@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { extname, resolve } from 'node:path'
 import { assertRoomRouteToken } from '../../src/lib/generatedId'
+import { LOGIN_QR_ASSET_PATH, LOGIN_STYLE_ASSET_PATH } from '../../src/lib/loginToken'
 import type { HttpContext, HttpRouteResult } from './httpContext'
 import { assertNoQuery, methodNotAllowed, notFoundPage } from './httpPrimitives'
 
@@ -31,11 +32,25 @@ export function handlePageRoutes(req: Request, url: URL, context: HttpContext): 
 }
 
 function serveStaticAsset(pathname: string): Response | null {
-  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico') return null
+  if (!pathname.startsWith('/assets/') && pathname !== '/favicon.ico'
+    && pathname !== LOGIN_QR_ASSET_PATH && pathname !== LOGIN_STYLE_ASSET_PATH) return null
   const dist = resolve(import.meta.dir, '..', '..', 'dist')
-  const target = resolve(dist, '.' + pathname)
+  const target = pathname === LOGIN_STYLE_ASSET_PATH
+    ? compiledApplicationStylesheet(dist)
+    : resolve(dist, '.' + pathname)
+  if (!target) return null
   if (!target.startsWith(dist + '/') || !existsSync(target)) return null
-  return new Response(Bun.file(target), { headers: { 'content-type': contentType(target) } })
+  return new Response(Bun.file(target), { headers: {
+    'content-type': contentType(target),
+    ...((pathname === LOGIN_QR_ASSET_PATH || pathname === LOGIN_STYLE_ASSET_PATH) ? { 'cache-control': 'no-store' } : {}),
+  } })
+}
+
+function compiledApplicationStylesheet(dist: string): string | null {
+  const assets = resolve(dist, 'assets')
+  if (!existsSync(assets)) return null
+  const matches = readdirSync(assets).filter((name) => /^index-[A-Za-z0-9_-]+\.css$/.test(name))
+  return matches.length === 1 ? resolve(assets, matches[0]!) : null
 }
 
 function serveIndex(): Response {

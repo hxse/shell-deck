@@ -1,7 +1,9 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import tailwindcss from '@tailwindcss/vite'
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import { assertListenMode, serverHostAllowlist } from './server/accessControl'
+import { LOGIN_QR_ASSET_PATH, LOGIN_STYLE_ASSET_PATH } from './src/lib/loginToken'
 import { injectThemeBootstrap } from './src/lib/themeBootstrap'
 
 const backendOrigin = process.env.SHELL_DECK_DEV_BACKEND_ORIGIN ?? 'http://127.0.0.1:5177'
@@ -10,10 +12,25 @@ const listenMode = process.env.SHELL_DECK_DEV_LISTEN_MODE
 
 export default defineConfig({
   clearScreen: false,
-  plugins: [themeHeadBootstrap(), devAssetAdmission(), roomRouteBridge(), tailwindcss(), svelte()],
+  plugins: [
+    themeHeadBootstrap(),
+    devAssetAdmission(),
+    loginQrDevAsset(),
+    loginStyleDevAsset(),
+    roomRouteBridge(),
+    tailwindcss(),
+    svelte(),
+  ],
   build: {
     rollupOptions: {
+      input: {
+        index: resolve(process.cwd(), 'index.html'),
+        'login-qr': resolve(process.cwd(), 'src/loginQrClient.ts'),
+      },
       output: {
+        entryFileNames(chunk) {
+          return chunk.name === 'login-qr' ? 'login-assets/login-qr.js' : 'assets/[name]-[hash].js'
+        },
         manualChunks(id) {
           if (id.includes('/node_modules/@xterm/xterm/')) return 'xterm'
           if (id.includes('/node_modules/svelte/')) return 'svelte'
@@ -63,7 +80,10 @@ function devAssetAdmission() {
       if (!req.url) { next(); return }
       const pathname = new URL(req.url, 'http://vite.local').pathname
       if (isPageRoute(pathname) || pathname === '/login' || pathname.startsWith('/api')) { next(); return }
-      void fetch(backendOrigin + '/health', { redirect: 'manual', headers: browserHeaders(req) }).then(async (response) => {
+      const admissionPath = (pathname === LOGIN_QR_ASSET_PATH || pathname === LOGIN_STYLE_ASSET_PATH)
+        ? '/login?next=%2F'
+        : '/health'
+      void fetch(backendOrigin + admissionPath, { redirect: 'manual', headers: browserHeaders(req) }).then(async (response) => {
         if (response.status === 200) { next(); return }
         res.statusCode = response.status === 403 ? 403 : 401
         res.setHeader('cache-control', 'no-store')
@@ -71,6 +91,53 @@ function devAssetAdmission() {
       }).catch(() => { res.statusCode = 502; res.end('shell_deck_backend_unavailable') })
     }) },
   }
+}
+
+function loginQrDevAsset() {
+  let bundledSource: Promise<string> | null = null
+  return {
+    name: 'shell-deck-login-qr-dev-asset',
+    configureServer(server: DevServer) { server.middlewares.use((req, res, next) => {
+      if (!req.url || new URL(req.url, 'http://vite.local').pathname !== LOGIN_QR_ASSET_PATH) {
+        next()
+        return
+      }
+      bundledSource ??= buildLoginQrDevBundle()
+      void bundledSource.then((source) => {
+        res.statusCode = 200
+        res.setHeader('content-type', 'text/javascript; charset=utf-8')
+        res.setHeader('cache-control', 'no-store')
+        res.end(source)
+      }).catch(() => {
+        res.statusCode = 500
+        res.end('shell_deck_login_qr_bundle_failed')
+      })
+    }) },
+  }
+}
+
+function loginStyleDevAsset() {
+  return {
+    name: 'shell-deck-login-style-dev-asset',
+    configureServer(server: DevServer) { server.middlewares.use((req, res, next) => {
+      if (req.url && new URL(req.url, 'http://vite.local').pathname === LOGIN_STYLE_ASSET_PATH) {
+        req.url = '/src/app.css'
+        req.headers.accept = 'text/css,*/*;q=0.1'
+        res.setHeader('cache-control', 'no-store')
+      }
+      next()
+    }) },
+  }
+}
+
+async function buildLoginQrDevBundle(): Promise<string> {
+  const result = await Bun.build({
+    entrypoints: [resolve(process.cwd(), 'src/loginQrClient.ts')],
+    format: 'esm',
+    target: 'browser',
+  })
+  if (!result.success || result.outputs.length !== 1) throw new Error('login_qr_dev_bundle_failed')
+  return await result.outputs[0].text()
 }
 
 function roomRouteBridge() {
