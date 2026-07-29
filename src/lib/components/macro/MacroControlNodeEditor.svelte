@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte'
   import type {
     FlowV2Node,
-    MacroDefinitionV5,
+    MacroDefinitionV6,
     MacroTerminalReference,
     MacroCondition,
     TextListItem,
@@ -56,8 +56,9 @@
     updateDraft,
     terminalChoices,
     adoptTerminalSelection,
-    choiceFromIndex,
     insertionPaletteMode,
+    telegramProfileIds = [],
+    telegramProfilesError = '',
     currentNodeId = null,
   } = $props<{
     node: ControlEditorNode
@@ -80,12 +81,13 @@
     moveTextListItem: (nodeId: string, itemIndex: number, offset: -1 | 1) => void
     onUpdate: (mutator: (item: FlowV2Node) => void) => void
     renderNodeList: NodeListRenderer
-    draft: MacroDefinitionV5
-    updateDraft: (mutator: (template: MacroDefinitionV5) => void) => void
+    draft: MacroDefinitionV6
+    updateDraft: (mutator: (template: MacroDefinitionV6) => void) => void
     terminalChoices: () => TerminalChoice[]
-    adoptTerminalSelection: (template: MacroDefinitionV5, terminalIndex: number) => boolean
-    choiceFromIndex: (target: number) => string
+    adoptTerminalSelection: (template: MacroDefinitionV6, terminalIndex: number) => boolean
     insertionPaletteMode: MacroInsertionPaletteMode
+    telegramProfileIds?: string[]
+    telegramProfilesError?: string
     currentNodeId?: string | null
   }>()
 
@@ -150,7 +152,7 @@
   {/if}
   {@render renderNodeList(node.body, [...bodyPath, { kind: 'for', nodeId: node.id }], true, 'for body', false, forBodyTemplateScope(node, templateScope), depth + 1)}
 {:else if node.type === 'parallel'}
-  <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {adoptTerminalSelection} {choiceFromIndex} outerArtifactChoices={artifactChoices} {templateScope} {insertionPaletteMode} {currentNodeId} />
+  <ParallelLaneTabs {draft} nodeId={node.id} {updateDraft} {terminalChoices} {adoptTerminalSelection} outerArtifactChoices={artifactChoices} {templateScope} {insertionPaletteMode} {telegramProfileIds} {telegramProfilesError} {currentNodeId} />
 {:else}
   <label>Reason<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="flow-control-reason" value={node.reason ?? ''} oninput={(event) => onUpdate((item: FlowV2Node) => { if ('reason' in item) item.reason = event.currentTarget.value || undefined })} /></label>
   {#if node.type === 'finish' || node.type === 'break' || node.type === 'continue'}

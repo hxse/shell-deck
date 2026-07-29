@@ -299,7 +299,7 @@ function manifest(runId: string, roomId: string, createdAt: string): RunManifest
     runId,
     createdAt,
     macroRecord: { id: createGeneratedId('macroTemplate'), revision: 1 },
-    definition: { schemaVersion: 5, name: 'quota', description: '', terminalLayout: [], body: [] },
+    definition: { schemaVersion: 6, name: 'quota', description: '', terminalLayout: [], body: [] },
     definitionHash: { algorithm: 'sha256', value: '0'.repeat(64) },
     runtime: {
       serverInstanceId: createGeneratedId('serverInstance'),

@@ -9,7 +9,7 @@ import { TerminalRoomManager } from '../../server/terminalRoomManager'
 import { submitStructuredJson } from '../../scripts/submitStructuredJson'
 import type {
   CaptureWaitLimit,
-  MacroDefinitionV5,
+  MacroDefinitionV6,
 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import type { RoomControlGrant } from '../../src/lib/roomControl'
@@ -223,7 +223,7 @@ async function startRunner(
   harness: ReturnType<typeof createHarness>,
   roomId: string,
   grant: RoomControlGrant,
-  definition: MacroDefinitionV5,
+  definition: MacroDefinitionV6,
 ): Promise<{ runId: string }> {
   const record = await harness.server.macroStore.create(definition)
   const ticket = harness.server.manager.admitControlledBearer(grant, roomId)
@@ -244,8 +244,8 @@ async function startRunner(
 function decisionDefinition(
   waitLimit: CaptureWaitLimit,
   withBranch = false,
-): MacroDefinitionV5 {
-  const body: MacroDefinitionV5['body'] = [{
+): MacroDefinitionV6 {
+  const body: MacroDefinitionV6['body'] = [{
     id: 'capture_decision',
     type: 'capture-source',
     capture: {
@@ -309,7 +309,7 @@ function decisionDefinition(
     }],
   })
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Structured decision',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],

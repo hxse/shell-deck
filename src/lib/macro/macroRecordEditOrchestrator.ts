@@ -1,7 +1,7 @@
 import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEditLease'
 import { cloneJsonValue } from '../jsonClone'
 import type { TerminalRoomClient } from '../terminalRoomClient'
-import type { MacroDefinitionV5, MacroRecord } from './macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord } from './macroDefinitionTypes'
 import type { MacroJsonCommit } from './macroJsonEditSession.svelte'
 import { formatMacroError } from './macroJsonEditSession.svelte'
 import type {
@@ -16,14 +16,14 @@ import type { MacroTemplateRefreshResult } from './macroRecordRemoteSyncCoordina
 type DefinitionOperationSource = 'visual' | 'json'
 
 export type MacroStartRecordSnapshot = {
-  definition: MacroDefinitionV5
+  definition: MacroDefinitionV6
   draftRevision: number
   dirty: boolean
   record: MacroRecord | null
 }
 
 export type MacroDefinitionOperationContext = {
-  definition: MacroDefinitionV5
+  definition: MacroDefinitionV6
   token: MacroOperationToken
   revision: number
   source: DefinitionOperationSource
@@ -48,7 +48,7 @@ type MacroRecordEditOptions = {
   canMutateShared(): boolean
   operationPending(): boolean
   selectedRecord(): MacroRecord | null
-  draft(): MacroDefinitionV5 | null
+  draft(): MacroDefinitionV6 | null
   draftRevision(): number
   dirty(): boolean
   contentEditing(): boolean
@@ -280,7 +280,7 @@ export class MacroRecordEditOrchestrator {
   }
 
   #context(
-    definition: MacroDefinitionV5,
+    definition: MacroDefinitionV6,
     token: MacroOperationToken,
     revision: number,
     source: DefinitionOperationSource,

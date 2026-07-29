@@ -12,7 +12,7 @@ POSIX 新建目录使用 `0700`，文件使用 `0600`；managed path 不接受 s
 
 ## Shared content
 
-`.032`提供user-global `MacroRecord<TDefinition>` envelope与canonical per-resource cross-process transaction primitive。record metadata（id/revision/timestamps）由server拥有；update/delete必须匹配expected revision。`.037`引入exact unassigned reference，`.038`把唯一current definition切换为MacroDefinitionV5并加入exact AgentEvent wait limit；record envelope不变。`.035`提供saved-content invalidation primitive。`MacroRecord`是唯一saved user-content model，server没有Prompt、Note、Library item或其他通用素材record。
+`.032`提供user-global `MacroRecord<TDefinition>` envelope与canonical per-resource cross-process transaction primitive。record metadata（id/revision/timestamps）由server拥有；update/delete必须匹配expected revision。`.037`引入exact unassigned reference，`.038`以MacroDefinitionV5加入exact AgentEvent wait limit，`20260729A`再把唯一current definition hard-cut为MacroDefinitionV6；record envelope不变。`.035`提供saved-content invalidation primitive。`MacroRecord`是唯一saved user-content model，server没有Prompt、Note、Library item或其他通用素材record。
 
 不扫描、转换或 dual-read 旧 config/project/directory 数据。唯一迁移例外是 notification config：从精确定义的 legacy path 在 target lock 内按 raw bytes relocation；内容相同才清理 source，内容冲突则两边都保留并 fail loudly。
 

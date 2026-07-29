@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionV6, MacroRecord, MacroRecordSummary } from '../../macro/macroDefinitionTypes'
   import type { MacroRunnerSnapshot } from '../../macro/runnerTypes'
   import MacroRunDock from './MacroRunDock.svelte'
   import MacroTemplateSelector from './MacroTemplateSelector.svelte'
@@ -15,13 +15,13 @@
     onCancelEdit, onDeleteTemplate, onUpdateDraft, onResetWidth, onPrepare,
     onRunnerInputChange, onSubmitRunnerInput, onRefreshRunner, onMacroControl, onViewChange,
   } = $props<{
-    templates: MacroRecordSummary[]; filteredTemplates: MacroRecordSummary[]; draft: MacroDefinitionV5 | null; selectedRecord: MacroRecord | null
+    templates: MacroRecordSummary[]; filteredTemplates: MacroRecordSummary[]; draft: MacroDefinitionV6 | null; selectedRecord: MacroRecord | null
     templateSearch: string; dirty: boolean; contentEditing: boolean; mutationAllowed?: boolean; errorText: string | null; macroView: MacroView; runner: MacroRunnerSnapshot | null
     statusText: string; runnerInput: string; runnerInputSyncing?: boolean; preparing?: boolean; prepareDisabled?: boolean; prepareDisabledReason?: string
     startDisabled?: boolean; startDisabledReason?: string; jsonEditing?: boolean; operationPending?: boolean; runActive?: boolean
     onTemplateSearchChange: (value: string) => void; onSelectTemplate: (id: string) => Promise<boolean>; onCreateTemplate: () => void
     onBeginEdit: () => void; onSaveTemplate: () => void; onCancelEdit: () => void; onDeleteTemplate: () => void
-    onUpdateDraft: (mutator: (definition: MacroDefinitionV5) => void) => void; onResetWidth?: () => void; onPrepare: () => void
+    onUpdateDraft: (mutator: (definition: MacroDefinitionV6) => void) => void; onResetWidth?: () => void; onPrepare: () => void
     onRunnerInputChange: (value: string) => void; onSubmitRunnerInput: () => void; onRefreshRunner: () => void
     onMacroControl: (action: 'start' | 'pause' | 'resume' | 'stop') => void; onViewChange: (view: MacroView) => void
   }>()

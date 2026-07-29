@@ -1,4 +1,4 @@
-import type { FlowV2Node, MacroDefinitionV5, TextListItem } from '../../macro/macroDefinitionTypes'
+import type { FlowV2Node, MacroDefinitionV6, TextListItem } from '../../macro/macroDefinitionTypes'
 import {
   allMacroNodeIds,
   defaultTextMatchCondition,
@@ -18,8 +18,8 @@ import {
 import { hasNonDefaultTextListItems } from '../../macro/scopedTextTemplateEditor'
 
 type MacroFlowTreeControllerOptions = {
-  draft(): MacroDefinitionV5
-  updateDraft(mutator: (template: MacroDefinitionV5) => void): void
+  draft(): MacroDefinitionV6
+  updateDraft(mutator: (template: MacroDefinitionV6) => void): void
   setInsertionNotice(notice: string): void
 }
 

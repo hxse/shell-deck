@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createMacroDraftMutationTracker } from '../../src/lib/macro/macroDraftMutation'
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 
 describe('20260724C Macro draft mutation hot path', () => {
   test('mutates one draft object and preserves exact dirty reversion', () => {
@@ -55,9 +55,9 @@ describe('20260724C Macro draft mutation hot path', () => {
   })
 })
 
-function definition(name: string): MacroDefinitionV5 {
+function definition(name: string): MacroDefinitionV6 {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name,
     description: '',
     terminalLayout: [],

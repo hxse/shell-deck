@@ -20,7 +20,7 @@ test('current Room terminal run survives quota GC, HTTP snapshot, and WebSocket 
     const room = server.manager.createRoom()
     const grant = roomGrant(server.manager, room.roomId)
     const record = await server.macroStore.create({
-      schemaVersion: 5,
+      schemaVersion: 6,
       name: 'current run pin',
       description: '',
       terminalLayout: [],

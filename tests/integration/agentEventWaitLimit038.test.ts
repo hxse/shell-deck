@@ -9,7 +9,7 @@ import { NotificationService } from '../../server/notificationService'
 import { MacroRecordStore } from '../../server/sharedContentStore'
 import { TerminalRoomManager } from '../../server/terminalRoomManager'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
-import type { CaptureWaitLimit, MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { CaptureWaitLimit, MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import type { RoomControlGrant } from '../../src/lib/roomControl'
 import { serviceTracesForRoom } from '../helpers/macroTrace'
@@ -98,7 +98,7 @@ async function createHarness(waitLimit: CaptureWaitLimit) {
   const room = manager.createRoom()
   const terminal = manager.createTerminal(room.roomId, { backend: 'fake' })
   const grant = roomGrant(manager, room.roomId)
-  const records = new MacroRecordStore<MacroDefinitionV5>(root)
+  const records = new MacroRecordStore<MacroDefinitionV6>(root)
   const agentEvents = new AgentEventStore(root)
   const runner = new MacroRunnerService(manager, records, new MacroRunStore(root), new NotificationService(root), agentEvents)
   const record = await records.create(definition(waitLimit))
@@ -127,9 +127,9 @@ async function createHarness(waitLimit: CaptureWaitLimit) {
   }
 }
 
-function definition(waitLimit: CaptureWaitLimit): MacroDefinitionV5 {
+function definition(waitLimit: CaptureWaitLimit): MacroDefinitionV6 {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Agent wait',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],

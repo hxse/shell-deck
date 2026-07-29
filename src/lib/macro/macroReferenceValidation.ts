@@ -6,10 +6,10 @@ export type MacroTerminalLayoutValidation =
   | { ok: true; value: MacroTerminalLayoutItem[] }
   | { ok: false; issues: MacroDefinitionIssue[] }
 
-type TerminalCapability = 'send' | 'input' | 'terminal-quiet' | 'terminal-buffer' | 'text-box' | 'agent-event' | 'structured-json' | 'parallel'
+type TerminalCapability = 'send' | 'input' | 'terminal-quiet' | 'terminal-buffer' | 'text-box' | 'agent-event' | 'structured-json'
 export type ArtifactFamily = 'text' | 'json' | 'serializable'
 
-const TEXT_ARTIFACTS = ['captured_text', 'merged_text', 'extracted_text'] as const
+const TEXT_ARTIFACTS = ['captured_text', 'extracted_text'] as const
 const JSON_ARTIFACTS = ['captured_json'] as const
 const SERIALIZABLE_ARTIFACTS = [...TEXT_ARTIFACTS, ...JSON_ARTIFACTS] as const
 
@@ -101,6 +101,6 @@ function validateTerminalIndex(index: number, capability: TerminalCapability, pa
   }
   const allowed = type === 'shell'
     ? capability !== 'text-box'
-    : capability === 'send' || capability === 'input' || capability === 'text-box' || capability === 'parallel'
+    : capability === 'send' || capability === 'input' || capability === 'text-box'
   if (!allowed) add(context.issues, 'terminal_capability_mismatch', path, `${capability} is not supported by ${type} terminal`)
 }

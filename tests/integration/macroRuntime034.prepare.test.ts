@@ -14,7 +14,7 @@ import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } fr
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
@@ -138,7 +138,7 @@ test('Macro Create rechecks Room control inside the canonical record transaction
     }
 
     const pending = request(server.url, '/api/templates', grant, {
-      definition: { schemaVersion: 5, name: 'must not persist', description: '', terminalLayout: [], body: [] },
+      definition: { schemaVersion: 6, name: 'must not persist', description: '', terminalLayout: [], body: [] },
     })
     await entered.wait
     server.manager.disconnectClient(grant.clientId)
@@ -160,8 +160,8 @@ test('persistable unassigned references round-trip through Macro CRUD but Start 
   try {
     const room = server.manager.createRoom()
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV5 = {
-      schemaVersion: 5,
+    const definition: MacroDefinitionV6 = {
+      schemaVersion: 6,
       name: 'Unassigned draft',
       description: '',
       terminalLayout: [],
@@ -205,7 +205,7 @@ test('persistable unassigned references round-trip through Macro CRUD but Start 
     const activeRoom = server.manager.createRoom()
     const activeGrant = roomGrant(server.manager, activeRoom.roomId)
     const activeRecordResponse = await request(server.url, '/api/templates', activeGrant, {
-      definition: { schemaVersion: 5, name: 'active', description: '', terminalLayout: [], body: [{ id: 'wait', type: 'wait', mode: 'duration', durationMs: 5_000 }] },
+      definition: { schemaVersion: 6, name: 'active', description: '', terminalLayout: [], body: [{ id: 'wait', type: 'wait', mode: 'duration', durationMs: 5_000 }] },
     })
     const activeRecord = (activeRecordResponse.body as { template: MacroRecord }).template
     await request(server.url, `/api/rooms/${activeRoom.roomId}/runner/start`, activeGrant, {

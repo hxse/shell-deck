@@ -9,7 +9,7 @@ import type {
 import type { FrozenTerminalBinding } from '../src/lib/macro/runnerTypes'
 import type { TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
 import type { JsonSchema, JsonValue } from '../src/lib/macro/structuredJson'
-import { buildTerminalInputPayload, resolveTerminalInputDelivery } from '../src/lib/terminal/terminalInputDelivery'
+import { sendMacroTerminalInput, type MacroTerminalWriteDispatch } from './macroTerminalInputRuntime'
 import type { NotificationDispatcher } from './notificationService'
 import type { TerminalRoomManager } from './terminalRoomManager'
 import {
@@ -22,6 +22,10 @@ import {
 } from './macroTextEvaluation'
 
 export type MacroExecutableActionNode = Exclude<FlowV2ActionNode, { type: 'parallel' }>
+export type MacroActionExecutionOptions = {
+  abortSignal?: AbortSignal
+  dispatchTerminalWrite?: MacroTerminalWriteDispatch
+}
 
 export type MacroActionRuntimeContext = {
   manager: TerminalRoomManager
@@ -47,6 +51,7 @@ export type MacroActionRuntimeContext = {
       binding: FrozenTerminalBinding,
       captureMode: AgentEventCaptureMode,
       waitLimit: CaptureWaitLimit,
+      abortSignal: AbortSignal,
     ) => Promise<{ text: string; raw: unknown; events: Array<{ eventId: string }> }>
     waitForStructuredJsonCapture: (
       stepId: string,
@@ -61,17 +66,20 @@ export type MacroActionRuntimeContext = {
   }
 }
 
-export async function executeMacroAction(context: MacroActionRuntimeContext, node: MacroExecutableActionNode): Promise<void> {
+export async function executeMacroAction(
+  context: MacroActionRuntimeContext,
+  node: MacroExecutableActionNode,
+  options: MacroActionExecutionOptions = {},
+): Promise<void> {
+  const abortSignal = options.abortSignal ?? context.run.abortSignal
+  throwIfActionAborted(abortSignal)
   const templateBinding = context.run.templateBindings.at(-1)
   if (node.type === 'send') {
-    send(
-      context,
-      assignedMacroTerminalIndex(node.terminal),
-      renderMacroMessage(node.message, context.run.artifacts, templateBinding),
-      node.delivery,
-      node.ending,
-      node.id,
-    )
+    await send(context, assignedMacroTerminalIndex(node.terminal), renderMacroMessage(
+      node.message,
+      context.run.artifacts,
+      templateBinding,
+    ), node.delivery, node.ending, node.id, abortSignal, options.dispatchTerminalWrite)
     return
   }
   if (node.type === 'input') {
@@ -79,7 +87,7 @@ export async function executeMacroAction(context: MacroActionRuntimeContext, nod
     const defaultText = node.defaultSource ? readMacroArtifact(context.run.artifacts, node.defaultSource) : ''
     const value = await context.callbacks.waitForInput(prompt, defaultText)
     if (!node.allowEmpty && value.length === 0) throw new Error('runner_input_empty')
-    send(context, assignedMacroTerminalIndex(node.terminal), value, node.delivery, node.ending, node.id)
+    await send(context, assignedMacroTerminalIndex(node.terminal), value, node.delivery, node.ending, node.id, abortSignal)
     return
   }
   if (node.type === 'notify') {
@@ -125,8 +133,8 @@ export async function executeMacroAction(context: MacroActionRuntimeContext, nod
         createdAt,
         runId: context.run.runId,
         stepId: node.id,
-      })
-      await context.callbacks.checkpoint()
+      }, abortSignal)
+      await actionCheckpoint(context, abortSignal)
       if (result.ok) {
         context.callbacks.appendEvent('notification_delivered', {
           stepId: node.id,
@@ -153,7 +161,7 @@ export async function executeMacroAction(context: MacroActionRuntimeContext, nod
     return
   }
   if (node.type === 'wait') {
-    if (node.mode === 'duration') await waitDuration(context, node.durationMs)
+    if (node.mode === 'duration') await waitDuration(context, node.durationMs, abortSignal)
     else if (node.mode === 'user-continue') {
       await context.callbacks.waitForInput(renderMacroScalar(node.prompt, templateBinding))
     } else {
@@ -163,6 +171,7 @@ export async function executeMacroAction(context: MacroActionRuntimeContext, nod
         node.quietMs,
         node.maxMs,
         node.onTimeout,
+        abortSignal,
       )
     }
     return
@@ -188,7 +197,7 @@ export async function executeMacroAction(context: MacroActionRuntimeContext, nod
       })
       return
     }
-    const captured = await capture(context, node.id, node.capture)
+    const captured = await capture(context, node.id, node.capture, abortSignal)
     context.callbacks.persistArtifact(node.id, 'captured_text', captured.text, 'capture', captured.data)
     return
   }
@@ -201,31 +210,30 @@ export async function executeMacroAction(context: MacroActionRuntimeContext, nod
   }
 }
 
-function send(
+async function send(
   context: MacroActionRuntimeContext,
   terminalIndex: number,
   content: string,
   delivery: 'auto' | 'direct' | 'bracketed-paste',
   ending: 'none' | 'lf' | 'cr' | 'crlf',
   stepId: string,
-): void {
-  if (context.callbacks.isTerminalized() || context.run.abortSignal.aborted) throw new Error('run_stopped')
+  abortSignal: AbortSignal,
+  dispatch?: MacroTerminalWriteDispatch,
+): Promise<void> {
   const binding = frozenBinding(context, terminalIndex)
-  const resolved = resolveTerminalInputDelivery(delivery, binding.type)
-  const payload = buildTerminalInputPayload(content, resolved, ending)
-  if (!payload.ok) throw new Error(payload.reason)
-  const result = context.manager.input(context.run.roomId, binding.terminalId, payload.payload)
-  if (!result.ok) throw new Error('frozen_terminal_not_ready')
-  const currentTerminalIndex = context.manager.indexMap(context.run.roomId).find((item) => item.terminalId === binding.terminalId)?.index ?? null
-  context.callbacks.appendEvent('terminal_input_sent', {
-    stepId,
-    configuredTerminalIndex: terminalIndex,
-    currentTerminalIndex,
-    terminalId: binding.terminalId,
-    launchId: binding.launchId,
-    requestedDelivery: delivery,
-    resolvedDelivery: resolved,
+  await sendMacroTerminalInput({
+    manager: context.manager,
+    roomId: context.run.roomId,
+    abortSignal,
+    isTerminalized: context.callbacks.isTerminalized,
+    binding,
+    terminalIndex,
+    content,
+    delivery,
     ending,
+    stepId,
+    appendEvent: context.callbacks.appendEvent,
+    dispatch,
   })
 }
 
@@ -233,12 +241,19 @@ async function capture(
   context: MacroActionRuntimeContext,
   stepId: string,
   source: Exclude<CaptureSourceConfig, { kind: 'structured-json' }>,
+  abortSignal: AbortSignal,
 ): Promise<{ text: string; data: Record<string, unknown> }> {
   const configuredTerminalIndex = assignedMacroTerminalIndex(source.terminal)
   const binding = frozenBinding(context, configuredTerminalIndex)
   const currentTerminalIndex = context.manager.indexMap(context.run.roomId).find((item) => item.terminalId === binding.terminalId)?.index ?? null
   if (source.kind === 'agent-event') {
-    const captured = await context.callbacks.waitForAgentEventCapture(stepId, binding, source.captureMode, source.waitLimit)
+    const captured = await context.callbacks.waitForAgentEventCapture(
+      stepId,
+      binding,
+      source.captureMode,
+      source.waitLimit,
+      abortSignal,
+    )
     const rawArtifactRef = context.callbacks.writeSupplementalArtifact(
       stepId,
       'agent_event_raw',
@@ -309,12 +324,12 @@ function frozenBinding(context: MacroActionRuntimeContext, terminalIndex: number
   return binding
 }
 
-async function waitDuration(context: MacroActionRuntimeContext, durationMs: number): Promise<void> {
+async function waitDuration(context: MacroActionRuntimeContext, durationMs: number, abortSignal: AbortSignal): Promise<void> {
   let remaining = durationMs
   while (remaining > 0) {
-    await context.callbacks.checkpoint()
+    await actionCheckpoint(context, abortSignal)
     const slice = Math.min(remaining, 50)
-    await abortableDelay(slice, context.run.abortSignal)
+    await abortableDelay(slice, abortSignal)
     remaining -= slice
   }
 }
@@ -325,6 +340,7 @@ async function waitQuiet(
   quietMs: number,
   maxMs: number,
   onTimeout: 'pause' | 'fail' | 'finish' | 'continue',
+  abortSignal: AbortSignal,
 ): Promise<void> {
   const binding = frozenBinding(context, terminalIndex)
   let previous = context.manager.terminalOutputActivityRevision(
@@ -337,7 +353,7 @@ async function waitQuiet(
   let elapsed = 0
   while (elapsed < maxMs) {
     const slice = Math.min(50, maxMs - elapsed)
-    await waitDuration(context, slice)
+    await waitDuration(context, slice, abortSignal)
     elapsed += slice
     const revision = context.manager.terminalOutputActivityRevision(
       context.run.roomId,
@@ -356,6 +372,19 @@ async function waitQuiet(
     return
   }
   throw new Error('terminal_quiet_timeout')
+}
+
+async function actionCheckpoint(
+  context: MacroActionRuntimeContext,
+  abortSignal: AbortSignal,
+): Promise<void> {
+  throwIfActionAborted(abortSignal)
+  await context.callbacks.checkpoint()
+  throwIfActionAborted(abortSignal)
+}
+
+function throwIfActionAborted(abortSignal: AbortSignal): void {
+  if (abortSignal.aborted) throw new Error('run_stopped')
 }
 
 function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {

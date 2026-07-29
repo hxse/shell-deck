@@ -1,6 +1,6 @@
 <script lang="ts">
   import LineNumberedTextarea from './LineNumberedTextarea.svelte'
-  import type { FlowV2Node, MacroDefinitionV5 } from '../../macro/macroDefinitionTypes'
+  import type { FlowV2Node, MacroDefinitionV6 } from '../../macro/macroDefinitionTypes'
   import { isActiveMacroRunnerStatus, type MacroRunnerSnapshot } from '../../macro/runnerTypes'
 
   let {
@@ -51,7 +51,7 @@
     return findStage(definition, nodeId) ?? { id: nodeId, type: 'node' }
   }
 
-  function findStage(definition: MacroDefinitionV5, nodeId: string): RunStage | null {
+  function findStage(definition: MacroDefinitionV6, nodeId: string): RunStage | null {
     return findStageInNodes(definition.body, nodeId)
   }
 

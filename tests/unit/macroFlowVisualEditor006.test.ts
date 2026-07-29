@@ -16,7 +16,7 @@ import {
   defaultTextFilter,
   nextParallelLaneId,
 } from '../../src/lib/macro/macroEditorDefaults'
-import type { FlowV2Node, MacroDefinitionV5, ParallelLane } from '../../src/lib/macro/macroDefinitionTypes'
+import type { FlowV2Node, MacroDefinitionV6, ParallelLane } from '../../src/lib/macro/macroDefinitionTypes'
 
 describe('Macro flow visual editor extraction', () => {
   test('palette lifecycle and editor controllers have one owner without draft duplication', () => {
@@ -64,6 +64,9 @@ describe('Macro flow visual editor extraction', () => {
     expect(flow).toContain('createMacroFlowTreeController')
     expect(flow).toContain('createMacroFlowInsertionController')
     expect(lanes).toContain('createParallelLaneEditorController')
+    expect(lanes).toContain('const terminalUsageIndex = $derived')
+    expect(lanes.match(/buildParallelTerminalUsage\(parallelNode/g)).toHaveLength(1)
+    expect(laneController).toContain('options.terminalUsageIndex()')
     expect(flow).toContain('new MacroInsertionPaletteLifecycle')
     expect(insertion).not.toContain('new MacroInsertionPaletteLifecycle')
     expect(insertion).toContain('const lifecycle = options.lifecycle')
@@ -87,18 +90,17 @@ describe('Macro flow visual editor extraction', () => {
     expect(insertion).toContain("notice = 'Insertion failed: ' + reason")
     expect(lanePolicy + laneCommands).not.toMatch(/\$state|options\.updateDraft|\bconfirm\(|editNotice/)
     expect(laneController.match(/\$state/g)).toHaveLength(2)
-    expect(setLaneActionIdSource).toContain('if (collapsedLaneActionIds.includes(actionId))')
-    expect(setLaneActionIdSource).not.toContain('result.ok')
-    expect(setLaneActionIdSource).toContain('return true')
+    expect(setLaneActionIdSource).toContain('collapsedLaneActionIds.includes(actionId)')
+    expect(setLaneActionIdSource).toContain('result.ok')
+    expect(setLaneActionIdSource).toContain('return result.ok')
     expect(laneController).toContain('collapsedLaneActionIds.filter((id) => !removed.has(id))')
     expect(laneController).toContain('options.setSelectedLaneId(result.addedLaneId)')
     for (const text of [
       'Duplicate lane id blocked: ',
       'Duplicate lane label blocked: ',
       'Duplicate action id blocked: ',
-      'Duplicate output id blocked: ',
-      'Add Capture or Extract before collecting lane text.',
-      'Lane terminal change blocked; incompatible actions for ',
+      'Target is already owned by an incompatible pane action.',
+      'Target type is incompatible with this action.',
       'Remove parallel lane ',
       'Remove parallel lane action ',
     ]) expect(laneController).toContain(text)
@@ -148,34 +150,24 @@ describe('Macro flow visual editor extraction', () => {
     const parallel = defaultFlowNode(template, 'parallel')
     expect(parallel).toEqual({
       id: 'parallel', type: 'parallel',
-      lanes: [{
-        id: 'lane_1', label: 'lane_1', terminal: { kind: 'unassigned' },
-        body: [{ id: 'lane_1_output', type: 'output', source: { kind: 'none' } }],
-      }],
-      merge: {
-        kind: 'sectioned_text',
-        separator: '\n\n===== {laneId} | {laneLabel} | {terminalIndex} =====\n\n',
-        includeEmptyOutputs: false,
-      },
+      lanes: [{ id: 'lane_1', label: 'lane_1', body: [] }],
+      sharedTextOrder: 'pane_order',
       onLaneFail: 'pause',
     })
   })
 
   test('lane/default field factories preserve ids, capture shape, and exact filter defaults', () => {
     const template = definition([])
-    const lane = defaultParallelLane(template, 'lane_1', { kind: 'terminal_index', index: 2 })
-    expect(lane).toEqual({
-      id: 'lane_1', label: 'lane_1', terminal: { kind: 'terminal_index', index: 2 },
-      body: [{ id: 'lane_1_output', type: 'output', source: { kind: 'none' } }],
-    })
+    const lane = defaultParallelLane('lane_1')
+    expect(lane).toEqual({ id: 'lane_1', label: 'lane_1', body: [] })
     expect(nextParallelLaneId([lane, { ...lane, id: 'lane_3' }])).toBe('lane_4')
     expect(defaultParallelLaneAction(template, 'send')).toEqual({
-      id: 'send', type: 'send', message: { parts: [] }, delivery: 'auto', ending: 'cr',
+      id: 'send', type: 'send', terminal: { kind: 'unassigned' }, message: { parts: [] }, delivery: 'auto', ending: 'cr',
     })
     expect(defaultParallelLaneAction(template, 'wait')).toEqual({ id: 'wait', type: 'wait', mode: 'duration', durationMs: 1500 })
     expect(defaultParallelLaneAction(template, 'capture-source', 'agent-event')).toEqual({
       id: 'capture_source', type: 'capture-source',
-      capture: { kind: 'agent-event', agent: { kind: 'codex' }, captureMode: 'result_only', waitLimit: { kind: 'unbounded' } },
+      capture: { kind: 'agent-event', terminal: { kind: 'unassigned' }, agent: { kind: 'codex' }, captureMode: 'result_only', waitLimit: { kind: 'unbounded' } },
     })
     expect(defaultParallelLaneAction(template, 'extract_text')).toEqual({
       id: 'extract_text', type: 'extract_text', source: { kind: 'unassigned' },
@@ -210,15 +202,14 @@ describe('Macro flow visual editor extraction', () => {
     expect(artifactChoicesBefore(template, 'branch_target').map((choice) => choice.label))
       .toEqual(['outer_capture.captured_text'])
     expect(artifactChoicesBefore(template, 'after_parallel').map((choice) => choice.label))
-      .toEqual(['outer_capture.captured_text', 'outer_parallel.merged_text'])
+      .toEqual(['outer_capture.captured_text'])
 
     const lane: ParallelLane = {
-      id: 'lane_1', label: 'lane', terminal: { kind: 'unassigned' },
+      id: 'lane_1', label: 'lane',
       body: [
-        { id: 'lane_capture', type: 'capture-source', capture: { kind: 'text-box' } },
+        { id: 'lane_capture', type: 'capture-source', capture: { kind: 'text-box', terminal: { kind: 'unassigned' } } },
         laneExtract('lane_extract'),
-        { id: 'lane_send', type: 'send', message: { parts: [] }, delivery: 'auto', ending: 'cr' },
-        { id: 'lane_output', type: 'output', source: { kind: 'none' } },
+        { id: 'lane_send', type: 'send', terminal: { kind: 'unassigned' }, message: { parts: [] }, delivery: 'auto', ending: 'cr' },
       ],
     }
     const outer = artifactChoicesBefore(template, 'after_parallel')
@@ -227,7 +218,6 @@ describe('Macro flow visual editor extraction', () => {
     expect(parallelMessageChoices(outer, lane, 'lane_send').map((choice) => choice.label))
       .toEqual([
         'outer_capture.captured_text',
-        'outer_parallel.merged_text',
         'lane_capture.captured_text',
         'lane_extract.extracted_text',
       ])
@@ -248,8 +238,8 @@ function fileName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1)
 }
 
-function definition(body: FlowV2Node[]): MacroDefinitionV5 {
-  return { schemaVersion: 5, name: 'Test', description: '', terminalLayout: [], body }
+function definition(body: FlowV2Node[]): MacroDefinitionV6 {
+  return { schemaVersion: 6, name: 'Test', description: '', terminalLayout: [], body }
 }
 
 function capture(id: string): FlowV2Node {
@@ -276,9 +266,8 @@ function laneExtract(id: string): Extract<ParallelLane['body'][number], { type: 
 function parallel(id: string): FlowV2Node {
   return {
     id, type: 'parallel', lanes: [{
-      id: 'sibling_lane', label: 'sibling', terminal: { kind: 'unassigned' },
-      body: [{ id: 'sibling_output', type: 'output', source: { kind: 'none' } }],
+      id: 'sibling_lane', label: 'sibling', body: [],
     }],
-    merge: { kind: 'sectioned_text', separator: '', includeEmptyOutputs: false }, onLaneFail: 'pause',
+    sharedTextOrder: 'pane_order', onLaneFail: 'pause',
   }
 }

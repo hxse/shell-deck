@@ -124,10 +124,10 @@ test('every textual consumer can select an earlier typed JSON artifact', async (
   await selectJsonArtifact(extract.getByTestId('extract-text-source'))
 
   const parallel = await insertRoot(page, 'add-step-parallel')
-  await parallel.getByTestId('parallel-lane-terminal').selectOption({ label: '1 · shell' })
-  await parallel.getByTestId('parallel-lane-add-before-output').click()
+  await parallel.getByTestId('parallel-lane-add-empty').click()
   await page.getByTestId('parallel-add-send').click()
   const laneSend = parallel.getByTestId('parallel-lane-action').first()
+  await laneSend.getByTestId('parallel-send-terminal').selectOption({ label: '1 · shell' })
   await laneSend.getByTestId('message-add-source').click()
   await selectJsonArtifact(laneSend.getByTestId('message-source-part'))
 

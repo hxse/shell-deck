@@ -8,6 +8,7 @@ import {
   codexControlExclusions,
   attributedControlChanges,
   attributedControlChanges035,
+  attributedControlChanges20260729A,
   attributedControlRemovals20260724A,
   attributedRestorations034,
   baseline031ARuntimeControlIds,
@@ -52,6 +53,7 @@ describe('.031B evolving UI source inventory', () => {
       'attributedBehaviorChanges',
       'attributedControlChanges',
       'attributedControlChanges035',
+      'attributedControlChanges20260729A',
       'attributedControlRemovals20260724A',
       'attributedRestorations034',
       'baseline031ARuntimeControlIds',
@@ -77,7 +79,7 @@ describe('.031B evolving UI source inventory', () => {
       'workspaceRuntimeControlInventory034',
     ])
     expect(createHash('sha256').update(JSON.stringify(values)).digest('hex'))
-      .toBe('c57796250d18bd67cefd3e8803df35a7f50a9f104612c26d72cf806d2b3b3374')
+      .toBe('9263e6d9ed5330ed7be10c178c192d935a709a81c804ddea813cd34c19a01d63')
 
     const inventoryRoot = resolve(projectRoot, 'tests/ui-baseline/031B')
     const facade = readFileSync(resolve(inventoryRoot, 'controlInventory.ts'), 'utf8')
@@ -118,7 +120,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest038).toBe('278ac0156e82120cbe483e2fb764273d28b7c21b78661c5b9a299bbd5a8e2c63')
   })
 
-  test('20260722B.001 interactive source controls match the current path-only snapshot', () => {
+  test('20260729A interactive source controls match the current path-only snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -144,7 +146,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.038', '20260722A.001', '20260722B.001'].includes(change?.changedBy ?? '')).toBe(true)
+      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.038', '20260722A.001', '20260722B.001', '20260729A'].includes(change?.changedBy ?? '')).toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
@@ -159,8 +161,34 @@ describe('.031B evolving UI source inventory', () => {
     expect(changes.get('for-text-list-item-insert-below')?.changedBy).toBe('20260722A.001')
     expect(changes.get('notify-app-repeat-count')?.changedBy).toBe('20260722A.001')
     expect(changes.get('notify-app-repeat-interval-ms')?.changedBy).toBe('20260722A.001')
-    expect(changes.get('parallel-collect-lane-text')?.changedBy).toBe('20260722A.001')
+    expect(changes.get('parallel-shared-text-order')?.changedBy).toBe('20260729A')
+    expect(changes.get('parallel-send-terminal')?.changedBy).toBe('20260729A')
+    expect(changes.get('parallel-merge-separator')?.changedBy).toBe('20260729A')
     expect(changes.get('theme-select')?.changedBy).toBe('20260722B.001')
+  })
+
+  test('20260729A attributes the exact V6 Parallel control cutover', () => {
+    const changes = new Map(attributedControlChanges20260729A.map((entry) => [entry.key, entry]))
+    expect(new Set(changes.keys())).toEqual(new Set([
+      'parallel-merge-separator',
+      'parallel-include-empty-outputs',
+      'parallel-lane-terminal',
+      'parallel-lane-add-before-output',
+      'parallel-output-id-input',
+      'parallel-output-source',
+      'parallel-collect-lane-text',
+      'parallel-shared-text-order',
+      'parallel-lane-add-empty',
+      'parallel-send-terminal',
+      'parallel-wait-terminal',
+      'parallel-wait-on-timeout',
+      'parallel-capture-terminal',
+      'parallel-add-notify',
+      'parallel-terminal-usage',
+    ]))
+    expect(attributedControlChanges20260729A.every((entry) => (
+      entry.changedBy === '20260729A' && entry.oldBehavior && entry.newBehavior && entry.spec
+    ))).toBe(true)
   })
 
   test('.034 attributes every restored current-schema Macro control without reviving removed product behavior', () => {

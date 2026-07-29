@@ -23,7 +23,7 @@ import {
 
 test.describe.configure({ mode: 'serial' })
 
-test('current UI journey preserves the complex V5 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
+test('current UI journey preserves the complex V6 Macro and exercises server-owned runtime input through visible controls', async ({ page }) => {
   test.setTimeout(600_000)
   page.setDefaultTimeout(10_000)
   page.setDefaultNavigationTimeout(15_000)
@@ -58,7 +58,7 @@ test('current UI journey preserves the complex V5 Macro and exercises server-own
     await buildFlowControl(page)
   })
 
-  await test.step('Parallel lanes cover lane CRUD, all lane actions and merged output', async () => {
+  await test.step('Parallel panes cover explicit targets, sharing, lane CRUD and all pane actions', async () => {
     await buildParallelLanes(page)
   })
 

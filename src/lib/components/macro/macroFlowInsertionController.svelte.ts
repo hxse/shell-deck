@@ -1,6 +1,6 @@
 import type {
   FlowV2Node,
-  MacroDefinitionV5,
+  MacroDefinitionV6,
   MacroTerminalReference,
 } from '../../macro/macroDefinitionTypes'
 import { defaultFlowNode } from '../../macro/macroEditorDefaults'
@@ -47,10 +47,10 @@ type InsertionPaletteLifecycle = {
 }
 
 type MacroFlowInsertionControllerOptions = {
-  draft(): MacroDefinitionV5
-  updateDraft(mutator: (template: MacroDefinitionV5) => void): void
+  draft(): MacroDefinitionV6
+  updateDraft(mutator: (template: MacroDefinitionV6) => void): void
   insertionPaletteMode(): MacroInsertionPaletteMode
-  adoptTerminalSelection(template: MacroDefinitionV5, terminalIndex: number): boolean
+  adoptTerminalSelection(template: MacroDefinitionV6, terminalIndex: number): boolean
   lifecycle: InsertionPaletteLifecycle
 }
 

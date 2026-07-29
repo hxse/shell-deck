@@ -1,8 +1,8 @@
 import type { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
-import type { MacroDefinitionV5, MacroRecord } from '../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord } from '../src/lib/macro/macroDefinitionTypes'
 import {
-  validateMacroDefinitionV5,
-  validateRunnableMacroDefinitionV5,
+  validateMacroDefinitionV6,
+  validateRunnableMacroDefinitionV6,
 } from '../src/lib/macro/macroDefinitionValidation'
 import { validateMacroRuntimeBinding } from '../src/lib/macro/macroRuntimeBinding'
 import type {
@@ -45,7 +45,7 @@ export class MacroRunnerLifecycle {
   private readonly artifacts: MacroRunnerArtifacts
   constructor(
     private readonly manager: TerminalRoomManager,
-    private readonly records: MacroRecordStore<MacroDefinitionV5>,
+    private readonly records: MacroRecordStore<MacroDefinitionV6>,
     private readonly runStore: MacroRunStore,
     private readonly notificationService: NotificationDispatcher,
     private readonly agentEvents: AgentEventStore,
@@ -74,9 +74,9 @@ export class MacroRunnerLifecycle {
 
   preflightStart(templateId: string): MacroStartPreflight {
     const record = this.records.read(templateId) as MacroRecord
-    const persistable = validateMacroDefinitionV5(record.definition)
+    const persistable = validateMacroDefinitionV6(record.definition)
     if (!persistable.ok) throw new Error('invalid_macro_definition')
-    const runnable = validateRunnableMacroDefinitionV5(persistable.value)
+    const runnable = validateRunnableMacroDefinitionV6(persistable.value)
     if (!runnable.ok) throw new MacroNotRunnableError(runnable.issues)
     return {
       recordId: record.id,
@@ -101,7 +101,7 @@ export class MacroRunnerLifecycle {
     const record = this.records.read(templateId) as MacroRecord
     if (record.id !== preflight.recordId || record.revision !== preflight.recordRevision) throw new Error('macro_revision_conflict')
     if (record.revision !== expectedMacroRevision) throw new Error('macro_revision_conflict')
-    const validated = validateRunnableMacroDefinitionV5(record.definition)
+    const validated = validateRunnableMacroDefinitionV6(record.definition)
     if (!validated.ok) throw new MacroNotRunnableError(validated.issues)
     if (macroDefinitionHash(validated.value) !== preflight.definitionHash) throw new Error('macro_revision_conflict')
     const definition = structuredClone(validated.value)
@@ -258,14 +258,14 @@ export class MacroRunnerLifecycle {
         waitForInput: (prompt, defaultText) => this.interaction.waitForInput(run, prompt, defaultText),
         pauseRun: (reason, stepId) => this.interaction.pauseRun(run, reason, stepId),
         finishFlow: () => { throw new MacroFlowSignal('finish') },
-        waitForAgentEventCapture: (stepId, binding, captureMode, waitLimit) => waitForMacroAgentEventCapture({
+        waitForAgentEventCapture: (stepId, binding, captureMode, waitLimit, abortSignal) => waitForMacroAgentEventCapture({
           serverInstanceId: this.manager.serverInstanceId,
           agentEvents: this.agentEvents,
           roomId: run.roomId,
           roomGeneration: run.roomGeneration,
           baselines: run.agentEventBaselines,
           consumedEventIds: run.consumedAgentEventIds,
-          abortSignal: run.abortController.signal,
+          abortSignal,
           checkpoint: () => this.interaction.checkpoint(run),
           validateBinding: (terminalIndex) => {
             const frozen = run.bindings.get(terminalIndex)
@@ -310,18 +310,16 @@ export class MacroRunnerLifecycle {
     try {
       await executeMacroFlow({
         body: run.definition.body,
+        terminalLayout: run.definition.terminalLayout,
         artifacts: run.artifacts,
         templateBindings: run.templateBindings,
         parallelProgress: run.parallelProgress,
-        parallelOutputs: run.parallelOutputs,
+        abortSignal: run.abortController.signal,
         callbacks: {
           checkpoint: () => this.interaction.checkpoint(run),
           setCurrentNodeId: (nodeId) => { run.currentNodeId = nodeId },
           appendEvent: (kind, data) => this.appendEvent(run, kind, data),
-          executeAction: (node) => executeMacroAction(actionContext, node),
-          persistArtifact: (stepId, name, value, prefix, data) => {
-            return this.artifacts.persistText(run, stepId, name, value, prefix, data)
-          },
+          executeAction: (node, options) => executeMacroAction(actionContext, node, options),
           pauseRun: (reason, stepId) => this.interaction.pauseRun(run, reason, stepId),
           isTerminalized: () => run.terminalized,
           isCancellation: (error) => isRunCancellation(run, error),

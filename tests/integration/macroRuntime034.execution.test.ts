@@ -14,7 +14,7 @@ import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } fr
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type {
   MacroRunEventPage,
   MacroRunnerActionAck,
@@ -98,8 +98,8 @@ test('input.defaultSource is exposed as editable live input without becoming per
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
     setTextTerminalContent(server.manager, room.roomId, text.terminalId, 'captured draft')
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV5 = {
-      schemaVersion: 5,
+    const definition: MacroDefinitionV6 = {
+      schemaVersion: 6,
       name: 'input default',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -135,8 +135,8 @@ test('Stop and Room Destroy cancel pending Input without terminal writes or dupl
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-cancel-034-'))
   const server = startShellDeckServer({ accessMode: 'guest', listenMode: 'local', port: 0, dataRoot: root })
   try {
-    const definition: MacroDefinitionV5 = {
-      schemaVersion: 5,
+    const definition: MacroDefinitionV6 = {
+      schemaVersion: 6,
       name: 'cancel input',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -198,8 +198,8 @@ test('extract_text keeps the current negative index syntax and sends the selecte
     const text = server.manager.createTerminal(room.roomId, { backend: 'text' })
     setTextTerminalContent(server.manager, room.roomId, text.terminalId, 'first\nlast')
     const grant = roomGrant(server.manager, room.roomId)
-    const definition: MacroDefinitionV5 = {
-      schemaVersion: 5,
+    const definition: MacroDefinitionV6 = {
+      schemaVersion: 6,
       name: 'negative select',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],

@@ -1,8 +1,8 @@
 import {
-  diagnoseTrustedMacroDefinitionV5,
+  diagnoseTrustedMacroDefinitionV6,
   type MacroDefinitionDiagnostics,
 } from './macroDefinitionValidation'
-import type { MacroDefinitionV5 } from './macroDefinitionTypes'
+import type { MacroDefinitionV6 } from './macroDefinitionTypes'
 
 export class MacroDiagnosticsScheduler {
   #timer: ReturnType<typeof setTimeout> | null = null
@@ -10,10 +10,10 @@ export class MacroDiagnosticsScheduler {
   #current: MacroDefinitionDiagnostics | null = null
 
   constructor(
-    private readonly read: () => { definition: MacroDefinitionV5 | null; revision: number },
+    private readonly read: () => { definition: MacroDefinitionV6 | null; revision: number },
     private readonly commit: (diagnostics: MacroDefinitionDiagnostics) => void,
     private readonly delayMs = 40,
-    private readonly diagnose = diagnoseTrustedMacroDefinitionV5,
+    private readonly diagnose = diagnoseTrustedMacroDefinitionV6,
   ) {}
 
   schedule(): void {

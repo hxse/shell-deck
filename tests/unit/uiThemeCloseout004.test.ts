@@ -30,15 +30,15 @@ const currentComponentFingerprints = {
   },
   'src/lib/components/macro/CaptureSourceEditor.svelte': {
     count: 89,
-    digest: '24eefe047b00d5b0d799e56baf526daa89c75004506fd7d16161a4996ef938ac',
+    digest: 'bf10208f3d5167a87dbee3f07318569bb944e1270d78984c119368ba5e4c0363',
   },
   'src/lib/components/macro/ExtractTextEditor.svelte': {
     count: 104,
     digest: '7663ad2c0c227700fff0b90645d20bba40fb645a78e15146b9f112715d4cce60',
   },
   'src/lib/components/macro/MacroActionNodeEditor.svelte': {
-    count: 82,
-    digest: '4447dbaa16043a1b6c83d6d4545108235a87d1d8dbbcb1eef1b85809e35372b4',
+    count: 38,
+    digest: '2a98c105c43c770d603a61196110560425507fecb1f852a970c5f055533ce180',
   },
   'src/lib/components/macro/MacroConditionEditor.svelte': {
     count: 70,
@@ -46,7 +46,15 @@ const currentComponentFingerprints = {
   },
   'src/lib/components/macro/MacroControlNodeEditor.svelte': {
     count: 46,
-    digest: 'd3f47fa64189c29291738a5f4b3debf6698ba346a09f9c18aaa37e03d6e0e11d',
+    digest: 'd1809b25da38f36aa308d9ccc7e4d7273503cc6b787e3a6f139fb5c903cc3bdb',
+  },
+  'src/lib/components/macro/MacroEditorShell.svelte': {
+    count: 9,
+    digest: 'ed91ae9b98b5346426520def27ac723749412fd44b61ff79f0bb2a0a9e6c676e',
+  },
+  'src/lib/components/macro/MacroFlowNodeList.svelte': {
+    count: 22,
+    digest: 'aada653e28ad8d185514a73ea1a5a961b396dc1bf7971a75108eaaceb5d30bdd',
   },
   'src/lib/components/macro/MacroIconButton.svelte': {
     count: 19,
@@ -65,12 +73,24 @@ const currentComponentFingerprints = {
     digest: 'c9f8eaac2cc493ee8267212a079d72d13f8a82d553b687d57b9ea011a0b730e4',
   },
   'src/lib/components/macro/ParallelLaneTabs.svelte': {
-    count: 57,
-    digest: 'e2647db722d2f04b8b42f8fde0154fa2ce3e4e68ca0fc65925bc7c6f0d11b3f2',
+    count: 41,
+    digest: 'f1c5900483bf75abe12fcc243effdca626062487a8afa03290cdab36544452bb',
   },
   'src/lib/components/macro/ParallelLaneActionEditor.svelte': {
-    count: 24,
-    digest: '9934e342136fc375b71f4530b1e1bea6a44bac1bf04c373ed783ed4e54b2fff4',
+    count: 34,
+    digest: '6f29874f85e0354d25770295433225f33c07aec14fc64899a5e4326a764c0962',
+  },
+  'src/lib/components/macro/MacroStepList.svelte': {
+    count: 13,
+    digest: 'b25ad9750f5c830e59b1fa3680e19e08d3033d64b68f42e83384be7d17e42427',
+  },
+  'src/lib/components/macro/NotifyActionFields.svelte': {
+    count: 45,
+    digest: '2e10e1ea1a882c8a5c2ec4746668e91d323158d55b61375bcb1d91bb9b3ec84c',
+  },
+  'src/lib/components/macro/ParallelTerminalUsageBadge.svelte': {
+    count: 3,
+    digest: '7e70818d15af3838ac831970199cde134d716eaa0a9b961c9c29d06c54eb495c',
   },
 } as const
 
@@ -126,6 +146,8 @@ describe('20260722B.004 UI theme migration closeout', () => {
       ...Object.keys(structureBaseline.files)
         .filter((path) => path !== 'src/lib/components/LibraryPanel.svelte'),
       'src/lib/components/macro/MacroConditionEditor.svelte',
+      'src/lib/components/macro/NotifyActionFields.svelte',
+      'src/lib/components/macro/ParallelTerminalUsageBadge.svelte',
     ].sort())
 
     for (const [path, expected] of Object.entries(structureBaseline.files)) {
@@ -186,38 +208,6 @@ describe('20260722B.004 UI theme migration closeout', () => {
       "src/lib/components/MacroPanel.svelte::Component:MacroTraceView::{runner}|summaries={traces}|eventsPage={traceEvents}|{selectedTraceRunId}|hasPreviousSummaryPage={runnerSession.hasPreviousTracePage}|hasNextSummaryPage={runnerSession.hasNextTracePage}|hasPreviousEventPage={runnerSession.hasPreviousTraceEventPage}|hasNextEventPage={runnerSession.hasNextTraceEventPage}|onSelectRun={(runId) => void runnerSession.selectTrace(runId)}|onPreviousSummaryPage={() => void runnerSession.previousTraceSummaryPage()}|onNextSummaryPage={() => void runnerSession.nextTraceSummaryPage()}|onPreviousEventPage={() => void runnerSession.previousTraceEventPage()}|onNextEventPage={() => void runnerSession.nextTraceEventPage()}",
     ])
 
-    const editorBaseline = structureBaseline.files['src/lib/components/macro/MacroEditorShell.svelte']
-    expect(editorBaseline.entryDigests).toHaveLength(9)
-    const editorDelta = structureDelta(
-      editorBaseline.entryDigests ?? [],
-      current['src/lib/components/macro/MacroEditorShell.svelte'],
-    )
-    expect(editorDelta.removed).toEqual([
-      'eac4b6faa80c5a39bca540fe26a2ea32935047399423bb11185e323b0d50ac69',
-    ])
-    expect(editorDelta.added).toEqual([
-      "src/lib/components/macro/MacroEditorShell.svelte::RegularElement:div::data-testid=\"macro-editor-lock-notice\"|data-lock-reason={lockedReason}|data-click-to-edit={normalReadOnly}|role={normalReadOnly ? 'button' : 'status'}|tabindex={normalReadOnly ? 0 : undefined}|onclick={normalReadOnly ? activateNormalReadOnlyNotice : undefined}|onkeydown={normalReadOnly ? activateNormalReadOnlyNotice : undefined}",
-    ])
-
-    const flowPath = 'src/lib/components/macro/MacroFlowNodeList.svelte'
-    expect(structureBaseline.files[flowPath]).toEqual({
-      count: 22,
-      digest: '7bbb9d90fd1bbccec7c662ef8615dfedde25a26c8d7a6a7d8306ed97ad1e40ee',
-    })
-    expect({
-      count: current[flowPath].count,
-      digest: current[flowPath].digest,
-      controllerBinding: current[flowPath].entries.filter((entry) => (
-        entry.includes('::Component:MacroInsertionPalette::')
-      )),
-    }).toEqual({
-      count: 22,
-      digest: 'de158d91d96e04f38dd550244d3d0a076fe8b59504b755d927a3dab6b4ae5433',
-      controllerBinding: [
-        "src/lib/components/macro/MacroFlowNodeList.svelte::Component:MacroInsertionPalette::anchored={insertion.paletteAnchored}|position={insertion.position}|{insertionPaletteMode}|summary={insertion.summary}|actionOnly={insertion.actionOnly}|allowsLoopControls={insertion.allowsLoopControls}|actionItems={insertion.actionPaletteItems}|flowItems={insertion.flowPaletteItems}|moveNodeId={insertion.moveNodeId}|movableNodeChoices={movableNodeChoices()}|blocked={insertion.notice.startsWith('Insertion failed:')}|bind:paletteElement={insertion.paletteElement}|onMoveNodeIdChange={insertion.setMoveNodeId}|onInsert={insertFromPalette}|onMoveExisting={moveExistingNodeFromPalette}|onCancel={cancelInsertion}",
-      ],
-    })
-
     expect(structureBaseline.files['src/lib/components/LibraryPanel.svelte']).toEqual({
       count: 47,
       digest: '4e911729639d5f6d191f5e49cd9ecc8d1facfeb86a6db09ef1265476f00fdae6',
@@ -237,13 +227,13 @@ describe('20260722B.004 UI theme migration closeout', () => {
         digest: current['src/lib/components/workspace/WorkspaceShell.svelte'].digest,
       },
     }).toEqual({
-      selector: { count: 31, digest: '51c2d5d29b6e96ffb91f9a1ebfbb521794aad6df83d3ef740414acca705be1fa' },
+      selector: { count: 31, digest: '49043727ae109d3fa38512728dce96eec2a33b33cbd341125de6838f9dc437ee' },
       chrome: { count: 9, digest: 'b7652ac4db283c1c007c53f245aa6d95c05bb5e8c716139dbe4c720aa396383a' },
       workspace: { count: 12, digest: '2a44c50cac4159cb82425e42350c99d9dea2fc13f99d2bcf121be7142ec8f10a' },
     })
 
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
-    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(847)
+    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(845)
 
     const app = readFileSync(resolve(projectRoot, 'src/App.svelte'), 'utf8')
     expect(app.match(/data-testid="theme-select"/g)).toHaveLength(1)

@@ -30,6 +30,7 @@ export {
   attributedBehaviorChanges,
   attributedControlChanges,
   attributedControlChanges035,
+  attributedControlChanges20260729A,
   attributedControlRemovals20260724A,
   attributedRestorations034,
   codexControlExclusions,

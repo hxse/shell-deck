@@ -17,14 +17,6 @@ import {
 
 export async function completeMacro(page: Page, state: MacroJourneyState): Promise<void> {
   let { mainTemplateId } = state
-  const sendMerged = await insertRoot(page, 'add-step-send', 'send_merged_to_text')
-  await selectOptionContaining(sendMerged.getByTestId('send-terminal'), '5 · text')
-  await sendMerged.getByTestId('message-add-text').click()
-  await sendMerged.getByTestId('message-text-part').fill('MERGED\\n')
-  await sendMerged.getByTestId('message-add-source').click()
-  await sendMerged.getByTestId('message-source-part').selectOption('parallel_root:merged_text')
-  await sendMerged.getByTestId('send-ending-sequence').selectOption('none')
-
   const captureText = await insertRoot(page, 'add-step-capture', 'capture_text_box')
   await selectOptionContaining(captureText.getByTestId('capture-step-terminal'), '5 · text')
   await expect(captureText.getByTestId('capture-kind-fixed')).toContainText('text-box')
@@ -68,7 +60,7 @@ export async function exerciseSavedRecords(page: Page, state: MacroJourneyState)
   await page.getByTestId("macro-save-json").click()
   await expect(page.getByTestId("macro-json-error")).toContainText("Invalid JSON")
   const currentJson = await page.evaluate(() => navigator.clipboard.readText())
-  await page.getByTestId("macro-json-editor").fill(currentJson.replace("\"schemaVersion\": 5", "\"schemaVersion\": 4"))
+  await page.getByTestId("macro-json-editor").fill(currentJson.replace("\"schemaVersion\": 6", "\"schemaVersion\": 5"))
   await page.getByTestId("macro-save-json").click()
   await expect(page.getByTestId("macro-json-error")).toContainText("schemaVersion")
   await page.getByTestId("macro-cancel-json").click()
@@ -136,8 +128,8 @@ export async function runMacro(page: Page, state: MacroJourneyState): Promise<vo
   await expect(terminalHost(page, fakeTwoId)).toHaveAttribute('data-rendered-tail', /IF_MATCH/)
   await expect(terminalHost(page, fakeTwoId)).toHaveAttribute('data-rendered-tail', /PARALLEL_BETA/)
   await terminalTab(page, textId).click()
-  await expect(page.getByTestId('text-box-editor')).toHaveValue(/MERGED/)
-  await expect(page.getByTestId('text-box-editor')).toHaveValue(/lane_alpha/)
+  await expect(page.getByTestId('text-box-editor')).toHaveValue(/PARALLEL_ALPHA/)
+  await expect(page.getByTestId('text-box-editor')).toHaveValue(/PARALLEL_BETA/)
 
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status')).toContainText('running')
@@ -184,7 +176,7 @@ export async function repairCapabilities(page: Page, state: MacroJourneyState): 
   const repairLane = parallel.getByTestId("parallel-lane-editor")
   await expect(repairLane.getByTestId("parallel-capture-kind-repair")).toBeVisible()
   await repairLane.getByTestId("parallel-capture-kind-repair").click()
-  await repairLane.getByTestId("parallel-lane-terminal").selectOption("4")
+  await repairLane.getByTestId("parallel-capture-terminal").selectOption("4")
   await expect(page.getByTestId("macro-validation-summary")).toHaveText("success")
 }
 

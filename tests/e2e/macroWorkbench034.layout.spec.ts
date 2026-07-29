@@ -49,10 +49,9 @@ test('every eligible new reference defaults to Unassigned even when compatible t
   await forBody.getByTestId('empty-body-add').click()
   await page.getByTestId('add-step-parallel').click()
   const incompleteParallel = forBody.locator('[data-flow-node-type="parallel"]').first()
-  await expect(incompleteParallel.getByTestId('parallel-lane-terminal')).toHaveValue('unassigned')
+  await expect(incompleteParallel.getByTestId('parallel-lane-terminal')).toHaveCount(0)
   await incompleteParallel.getByTestId('parallel-add-lane').click()
-  await expect(incompleteParallel.getByTestId('parallel-lane-terminal')).toHaveValue('unassigned')
-  await incompleteParallel.getByTestId('parallel-lane-add-before-output').click()
+  await incompleteParallel.getByTestId('parallel-lane-add-empty').click()
   await incompleteParallel.getByTestId('parallel-add-extract').click()
   const incompleteLaneExtract = incompleteParallel.locator('[data-testid="parallel-lane-action"][data-parallel-action-type="extract_text"]')
   await expect(incompleteLaneExtract).toBeVisible()
@@ -70,7 +69,7 @@ test('every eligible new reference defaults to Unassigned even when compatible t
   await producer.getByTestId('node-add-after').click()
   await page.getByTestId('add-step-parallel').click()
   const parallelAfterCapture = forBody.locator('[data-flow-node-type="parallel"]').first()
-  await parallelAfterCapture.getByTestId('parallel-lane-add-before-output').click()
+  await parallelAfterCapture.getByTestId('parallel-lane-add-empty').click()
   await parallelAfterCapture.getByTestId('parallel-add-extract').click()
   const outerAwareExtract = parallelAfterCapture.locator('[data-testid="parallel-lane-action"][data-parallel-action-type="extract_text"]')
   await expect(outerAwareExtract.getByTestId('parallel-extract-source').locator('option')).toContainText(['capture_source.captured_text'])
@@ -133,7 +132,7 @@ test('terminal selectors never render blank for empty, stale or incompatible tar
   await expect(quietTarget).toHaveValue('1')
 })
 
-test('Send, Input, Wait, Capture and Parallel default Unassigned and hidden layout follows explicit references', async ({ page, request }) => {
+test('Send, Input, Wait, Capture and Parallel actions default Unassigned and drive hidden layout', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -176,9 +175,11 @@ test('Send, Input, Wait, Capture and Parallel default Unassigned and hidden layo
 
   await page.getByTestId('node-add-after').last().click()
   await page.getByTestId('add-step-parallel').click()
-  await expect(page.getByTestId('parallel-lane-terminal')).toHaveValue('unassigned')
-  await page.getByTestId('parallel-lane-terminal').selectOption('4')
-  await expect(page.getByTestId('parallel-lane-terminal')).toHaveValue('4')
+  await page.getByTestId('parallel-lane-add-empty').click()
+  await page.getByTestId('parallel-add-send').click()
+  await expect(page.getByTestId('parallel-send-terminal')).toHaveValue('unassigned')
+  await page.getByTestId('parallel-send-terminal').selectOption('4')
+  await expect(page.getByTestId('parallel-send-terminal')).toHaveValue('4')
 
   await page.getByTestId('node-add-after').last().click()
   await page.getByTestId('add-step-capture').click()

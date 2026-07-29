@@ -8,6 +8,8 @@ import {
   currentRuntimeControls,
   macroControlIdsAdded001,
   macroRuntimeControls034,
+  parallelControlIdsAdded20260729A,
+  parallelControlIdsRemoved20260729A,
 } from './controlInventoryCurrent'
 
 export const attributedControlChanges: UiControlInventoryEntry[] = [
@@ -85,6 +87,27 @@ export const attributedControlRemovals20260724A: UiControlInventoryEntry[] = rem
   spec: '20260724A/02_spec/01_contract.md — Removed Semantics',
 }))
 
+export const attributedControlChanges20260729A: UiControlInventoryEntry[] = [
+  ...[...parallelControlIdsRemoved20260729A].map((key) => ({
+    key,
+    evidence: 'boundary' as const,
+    changedBy: '20260729A',
+    oldBehavior: 'V5 exposed a lane terminal or mandatory lane-output/merge control at this Parallel boundary.',
+    newBehavior: 'V6 removes implicit lane targets and mandatory text results; pane Actions now own explicit targets.',
+    spec: '20260729A/02_spec/01_contract.md — V6 public shape and removed semantics',
+  })),
+  ...currentRuntimeControls
+    .filter(([key]) => parallelControlIdsAdded20260729A.has(key))
+    .map(([key, evidence]) => ({
+      key,
+      evidence,
+      changedBy: '20260729A',
+      oldBehavior: 'V5 had no explicit per-Action target, shared Text order, empty-pane insertion, Notify, or terminal-usage control with this identity.',
+      newBehavior: 'V6 exposes explicit pane Action routing and derived terminal-sharing behavior.',
+      spec: '20260729A/02_spec/01_contract.md — Authoring projection and usage language',
+    })),
+]
+
 export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
   ['terminal-create-real', 'Shell creation becomes controller-only.'],
   ['terminal-create-text', 'Text creation becomes controller-only.'],
@@ -103,6 +126,7 @@ export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
 
 function addedControlTask(key: string): string {
   if (key === 'theme-select') return '20260722B.001'
+  if (parallelControlIdsAdded20260729A.has(key)) return '20260729A'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001'
   if (key === "take-control") return "20260627A.033"
   if (["macro-edit", "macro-cancel-edit", "macro-prepare-terminals", "macro-insertion-placement"].includes(key)) return "20260627A.034"
@@ -111,6 +135,7 @@ function addedControlTask(key: string): string {
 
 function addedControlOldBehavior(key: string): string {
   if (key === 'theme-select') return '20260722A.001 had no browser-local UI theme preference control.'
+  if (parallelControlIdsAdded20260729A.has(key)) return 'V5 had no explicit Parallel Action routing or shared Text behavior control with this identity.'
   if (macroControlIdsAdded001.has(key)) return '.010 did not expose this Macro authoring or notification control.'
   if (key === "take-control") return ".032 had no explicit controller handoff control."
   if (addedControlTask(key) === "20260627A.034") return ".031A did not expose this current-schema V3 control with this identity."
@@ -119,6 +144,7 @@ function addedControlOldBehavior(key: string): string {
 
 function addedControlNewBehavior(key: string): string {
   if (key === 'theme-select') return '.001 adds the only Theme selector with system plus all 35 registered daisyUI themes.'
+  if (parallelControlIdsAdded20260729A.has(key)) return '20260729A exposes explicit pane Action targets, shared Text ordering, Notify insertion, and derived usage help.'
   if (macroControlIdsAdded001.has(key)) return '.001 exposes per-item insertion, App notification repetition, or optional Parallel lane text collection through an explicit control.'
   if (key === "take-control") return ".033 adds explicit confirmed takeover for an observer."
   if (addedControlTask(key) === "20260627A.034") return ".034 adds the explicit V3 edit lifecycle or Prepare control."
@@ -127,6 +153,7 @@ function addedControlNewBehavior(key: string): string {
 
 function addedControlSpec(key: string): string {
   if (key === 'theme-select') return '20260722B.001/02_spec/01_contract.md — Settings control'
+  if (parallelControlIdsAdded20260729A.has(key)) return '20260729A/02_spec/01_contract.md — Authoring projection and usage language'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001/02_spec/01_contract.md — Macro authoring and notification interaction contract'
   if (key === "take-control") return "20260627A.033/02_spec/01_contract.md — Take Control与丢失控制"
   if (addedControlTask(key) === "20260627A.034") return "20260627A.034/02_spec/01_contract.md — Macro workbench and explicit Prepare"
@@ -134,10 +161,12 @@ function addedControlSpec(key: string): string {
 }
 
 function removedControlTask(key: string): string {
+  if (parallelControlIdsRemoved20260729A.has(key)) return '20260729A'
   return key === 'for-text-list-add' ? '20260722A.001' : '20260627A.032'
 }
 
 function removedControlBehavior(key: string): string {
+  if (parallelControlIdsRemoved20260729A.has(key)) return '20260729A removes implicit lane terminals and mandatory lane-result/merge authoring in favor of explicit target Actions.'
   if (key === 'for-text-list-add') return '.001 replaces the header-only append control with per-item insert-above and insert-below controls.'
   if (key === 'terminal-create-fake') return '.032 removes the fake-terminal production control; tests use real Shell and Text only.'
   if (key === 'terminal-alias-input') return '.032 removes terminal alias/rename from the current schema and UI.'
@@ -152,6 +181,7 @@ function removedControlBehavior(key: string): string {
 }
 
 function removedControlSpec(key: string): string {
+  if (parallelControlIdsRemoved20260729A.has(key)) return '20260729A/02_spec/01_contract.md — Removed semantics and Legacy Kill List'
   if (key === 'for-text-list-add') return '20260722A.001/02_spec/01_contract.md — Text-list local insertion'
   return '20260627A.032/02_spec/01_contract.md — Destructive cutover 与 UI preservation 边界'
 }

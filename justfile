@@ -116,6 +116,11 @@ test-20260727a:
     HISTFILE=/dev/null bun test tests/integration/accessControl20260726A.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/qrTokenLogin20260727A.spec.ts
 
+test-20260729a:
+    HISTFILE=/dev/null bun test tests/unit/macroDefinition034.core.test.ts tests/unit/macroDefinition034.action.test.ts tests/unit/macroDefinition034.control.test.ts tests/unit/macroRunnerExecution007.test.ts tests/unit/parallelLaneEditor011.test.ts tests/unit/parallelSharedText20260729A.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    HISTFILE=/dev/null bun test tests/integration/parallelSharedText20260729A.test.ts tests/integration/macroRuntime034.execution.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
+
 test-032:
     bun run test:032
 

@@ -9,7 +9,7 @@ test.afterEach(async ({ request }) => {
   await Promise.all(body.rooms.map((room) => request.delete('/api/rooms/' + encodeURIComponent(room.roomId), { data: { expectedRoomGeneration: room.roomGeneration } })))
 })
 
-test('V5 Macro workbench saves without terminals, prepares only on click, and keeps JSON edit locked until Save or Cancel', async ({ page, request }) => {
+test('V6 Macro workbench saves without terminals, prepares only on click, and keeps JSON edit locked until Save or Cancel', async ({ page, request }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.stack ?? error.message))
   const created = await request.post('/api/rooms')
@@ -71,7 +71,7 @@ test('V5 Macro workbench saves without terminals, prepares only on click, and ke
   await page.getByTestId('macro-template-drawer').click()
 
   await page.getByTestId('macro-tab-json').click()
-  await expect(page.getByTestId('macro-json-preview')).toContainText('"schemaVersion": 5')
+  await expect(page.getByTestId('macro-json-preview')).toContainText('"schemaVersion": 6')
   await expect(page.getByTestId('macro-json-preview')).not.toContainText('terminalId')
   await page.getByTestId('macro-edit-json').click()
   await expect(page.getByTestId('macro-json-editor')).toBeVisible()
@@ -91,7 +91,7 @@ test('V5 Macro workbench saves without terminals, prepares only on click, and ke
   expect(pageErrors).toEqual([])
 })
 
-test('valid V5 JSON keeps its exact edit buffer open when update or create persistence fails', async ({ page, request }) => {
+test('valid V6 JSON keeps its exact edit buffer open when update or create persistence fails', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -103,7 +103,7 @@ test('valid V5 JSON keeps its exact edit buffer open when update or create persi
   await page.getByTestId('macro-tab-json').click()
   await page.getByTestId('macro-edit-json').click()
   const updateCandidate = JSON.parse(await page.getByTestId('macro-json-editor').inputValue()) as Record<string, unknown>
-  updateCandidate.name = 'V5 JSON update must survive'
+  updateCandidate.name = 'V6 JSON update must survive'
   const updateText = JSON.stringify(updateCandidate, null, 2)
   await page.getByTestId('macro-json-editor').fill(updateText)
   await page.route('**/api/templates/*', async (route) => {
@@ -125,7 +125,7 @@ test('valid V5 JSON keeps its exact edit buffer open when update or create persi
   await page.getByTestId('macro-tab-json').click()
   await page.getByTestId('macro-edit-json').click()
   const createCandidate = JSON.parse(await page.getByTestId('macro-json-editor').inputValue()) as Record<string, unknown>
-  createCandidate.name = 'V5 JSON create must survive'
+  createCandidate.name = 'V6 JSON create must survive'
   const createText = JSON.stringify(createCandidate, null, 2)
   await page.getByTestId('macro-json-editor').fill(createText)
   await page.route('**/api/templates', async (route) => {

@@ -67,20 +67,13 @@ test('Macro Visual fields keep native input identity and never autosave', async 
     'lane_fast',
   )
 
-  await parallel.getByTestId('parallel-lane-add-before-output').click()
+  await parallel.getByTestId('parallel-lane-add-empty').click()
   await page.getByTestId('parallel-add-capture').click()
   const action = parallel.getByTestId('parallel-lane-action').first()
   await expectStableRename(
     action.getByTestId('parallel-action-id-input'),
     'actionId',
     'capture_fast',
-  )
-
-  await parallel.getByTestId('parallel-collect-lane-text').check()
-  await expectStableRename(
-    parallel.getByTestId('parallel-output-id-input'),
-    'outputId',
-    'result_fast',
   )
 
   expect(persistedWrites).toEqual([])

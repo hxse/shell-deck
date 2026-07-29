@@ -2,7 +2,7 @@
   import type {
     FlowV2ActionNode,
     FlowV2Node,
-    MacroDefinitionV5,
+    MacroDefinitionV6,
     ParallelNode,
   } from '../../macro/macroDefinitionTypes'
   import { buildArtifactChoiceIndex } from '../../macro/macroArtifactChoices'
@@ -27,17 +27,15 @@
     updateDraft,
     terminalChoices,
     adoptTerminalSelection,
-    choiceFromIndex,
     insertionPaletteMode,
     telegramProfileIds = [],
     telegramProfilesError = '',
     currentNodeId = null,
   } = $props<{
-    draft: MacroDefinitionV5
-    updateDraft: (mutator: (template: MacroDefinitionV5) => void) => void
+    draft: MacroDefinitionV6
+    updateDraft: (mutator: (template: MacroDefinitionV6) => void) => void
     terminalChoices: () => TerminalChoice[]
-    adoptTerminalSelection: (template: MacroDefinitionV5, terminalIndex: number) => boolean
-    choiceFromIndex: (target: number) => string
+    adoptTerminalSelection: (template: MacroDefinitionV6, terminalIndex: number) => boolean
     insertionPaletteMode: MacroInsertionPaletteMode
     telegramProfileIds?: string[]
     telegramProfilesError?: string
@@ -184,8 +182,9 @@
             {updateDraft}
             {terminalChoices}
             {adoptTerminalSelection}
-            {choiceFromIndex}
             {insertionPaletteMode}
+            {telegramProfileIds}
+            {telegramProfilesError}
             {currentNodeId}
           />
         {/if}

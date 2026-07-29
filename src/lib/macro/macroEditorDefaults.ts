@@ -4,10 +4,9 @@ import type {
   FlowV2JsonArtifactSource,
   FlowV2Node,
   JsonMatchCondition,
-  MacroDefinitionV5,
+  MacroDefinitionV6,
   MacroTerminalReference,
   NotifyChannel,
-  ParallelCaptureSourceConfig,
   ParallelLane,
   ParallelLaneActionNode,
   TextFilterSpec,
@@ -48,13 +47,6 @@ export function defaultCaptureSource(
   return { kind, terminal, mode: 'scrollback-tail', maxChars: 20000 }
 }
 
-export function defaultParallelCaptureSource(
-  kind: ParallelCaptureSourceConfig['kind'],
-): ParallelCaptureSourceConfig {
-  const { terminal: _terminal, ...capture } = defaultCaptureSource(kind)
-  return capture as ParallelCaptureSourceConfig
-}
-
 export function defaultTextMatchCondition(source: FlowV2ArtifactSource): TextMatchCondition {
   return {
     kind: 'text_match',
@@ -84,22 +76,14 @@ export function defaultTextFilter(): TextFilterSpec {
 }
 
 export function defaultParallelLane(
-  template: MacroDefinitionV5,
   rawId: string,
-  terminal: MacroTerminalReference,
   existingLaneIds: string[] = [],
 ): ParallelLane {
-  const ids = allMacroNodeIds(template.body)
   const id = uniqueMacroEditorKey(rawId, existingLaneIds)
   return {
     id,
     label: id,
-    terminal,
-    body: [{
-      id: uniqueMacroEditorKey(`${id}_output`, [...ids, id]),
-      type: 'output',
-      source: { kind: 'none' },
-    }],
+    body: [],
   }
 }
 
@@ -113,7 +97,7 @@ export function nextParallelLaneId(lanes: ParallelLane[]): string {
 }
 
 export function defaultFlowNode(
-  template: MacroDefinitionV5,
+  template: MacroDefinitionV6,
   type: FlowV2Node['type'],
 ): FlowV2Node {
   const terminal: MacroTerminalReference = { kind: 'unassigned' }
@@ -150,12 +134,8 @@ export function defaultFlowNode(
     return {
       id,
       type,
-      lanes: [defaultParallelLane(template, 'lane_1', terminal)],
-      merge: {
-        kind: 'sectioned_text',
-        separator: '\n\n===== {laneId} | {laneLabel} | {terminalIndex} =====\n\n',
-        includeEmptyOutputs: false,
-      },
+      lanes: [defaultParallelLane('lane_1')],
+      sharedTextOrder: 'pane_order',
       onLaneFail: 'pause',
     }
   }
@@ -177,14 +157,30 @@ export function defaultFlowNode(
 }
 
 export function defaultParallelLaneAction(
-  template: MacroDefinitionV5,
+  template: MacroDefinitionV6,
   type: ParallelLaneActionNode['type'],
-  captureKind: ParallelCaptureSourceConfig['kind'] = 'terminal-buffer',
+  captureKind: Exclude<CaptureSourceConfig['kind'], 'structured-json'> = 'terminal-buffer',
 ): ParallelLaneActionNode {
   const id = uniqueMacroEditorKey(type.replace(/[^A-Za-z0-9_]/g, '_'), allMacroNodeIds(template.body))
-  if (type === 'send') return { id, type, message: { parts: [] }, delivery: 'auto', ending: 'cr' }
+  const terminal: MacroTerminalReference = { kind: 'unassigned' }
+  if (type === 'send') return { id, type, terminal, message: { parts: [] }, delivery: 'auto', ending: 'cr' }
+  if (type === 'notify') {
+    return {
+      id,
+      type,
+      level: 'info',
+      title: 'Macro notification',
+      message: { parts: [] },
+      channels: [defaultNotifyChannel('app')],
+      onFailure: 'continue',
+    }
+  }
   if (type === 'wait') return { id, type, mode: 'duration', durationMs: 1500 }
-  if (type === 'capture-source') return { id, type, capture: defaultParallelCaptureSource(captureKind) }
+  if (type === 'capture-source') {
+    const capture = defaultCaptureSource(captureKind, terminal)
+    if (capture.kind === 'structured-json') throw new Error('parallel_structured_capture_not_supported')
+    return { id, type, capture }
+  }
   return {
     id,
     type,

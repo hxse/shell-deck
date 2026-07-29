@@ -1,5 +1,5 @@
 import { cloneJsonValue } from '../jsonClone'
-import type { MacroDefinitionV5, MacroTerminalLayoutItem, TerminalType } from './macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroTerminalLayoutItem, TerminalType } from './macroDefinitionTypes'
 import { parseJson, type InvalidJsonError } from './macroJsonTextParser'
 import { validateNodeList } from './macroNodeValidation'
 import { validateMacroTerminalLayout } from './macroReferenceValidation'
@@ -21,7 +21,7 @@ export type { InvalidJsonError } from './macroJsonTextParser'
 export type { MacroTerminalLayoutValidation } from './macroReferenceValidation'
 
 export type MacroDefinitionValidation =
-  | { ok: true; value: MacroDefinitionV5 }
+  | { ok: true; value: MacroDefinitionV6 }
   | { ok: false; issues: MacroDefinitionIssue[] }
 export type MacroDefinitionDiagnostics = {
   persistable: MacroDefinitionValidation
@@ -29,7 +29,7 @@ export type MacroDefinitionDiagnostics = {
 }
 export type MacroDefinitionDiagnosticsMetrics = { nodeVisits: number }
 export type MacroDefinitionJsonValidation =
-  | { ok: true; value: MacroDefinitionV5 }
+  | { ok: true; value: MacroDefinitionV6 }
   | { ok: false; error: InvalidJsonError }
   | { ok: false; error: { code: 'invalid_macro_definition'; issues: MacroDefinitionIssue[] } }
 export type MacroTerminalLayoutJsonValidation =
@@ -39,15 +39,15 @@ export type MacroTerminalLayoutJsonValidation =
 
 const TOP_LEVEL_KEYS = ['schemaVersion', 'name', 'description', 'terminalLayout', 'body'] as const
 
-export function validateMacroDefinitionV5(input: unknown): MacroDefinitionValidation {
+export function validateMacroDefinitionV6(input: unknown): MacroDefinitionValidation {
   return diagnoseMacroDefinition(input, true).persistable
 }
 
-export function validateRunnableMacroDefinitionV5(input: unknown): MacroDefinitionValidation {
+export function validateRunnableMacroDefinitionV6(input: unknown): MacroDefinitionValidation {
   return diagnoseMacroDefinition(input, true).runnable
 }
 
-export function diagnoseTrustedMacroDefinitionV5(
+export function diagnoseTrustedMacroDefinitionV6(
   input: unknown,
   metrics?: MacroDefinitionDiagnosticsMetrics,
 ): MacroDefinitionDiagnostics {
@@ -63,7 +63,7 @@ function diagnoseMacroDefinition(
   const definition = object(input, issues, '')
   if (!definition) return failedDiagnostics(finishIssues(issues))
   exactKeys(definition, TOP_LEVEL_KEYS, issues, '')
-  if (definition.schemaVersion !== 5) add(issues, 'invalid_literal', 'schemaVersion', 'schemaVersion must be 5')
+  if (definition.schemaVersion !== 6) add(issues, 'invalid_literal', 'schemaVersion', 'schemaVersion must be 6')
   stringValue(definition.name, issues, 'name', { nonEmpty: true })
   stringValue(definition.description, issues, 'description')
   const layoutResult = validateMacroTerminalLayout(definition.terminalLayout)
@@ -86,7 +86,7 @@ function diagnoseMacroDefinition(
       && issue.code !== 'unassigned_artifact_reference'
   ))
   if (persistableIssues.length > 0) return failedDiagnostics(persistableIssues)
-  const value = cloneSuccess ? cloneJsonValue(input) as MacroDefinitionV5 : input as MacroDefinitionV5
+  const value = cloneSuccess ? cloneJsonValue(input) as MacroDefinitionV6 : input as MacroDefinitionV6
   const persistable: MacroDefinitionValidation = { ok: true, value }
   const runnable: MacroDefinitionValidation = ordered.length > 0
     ? { ok: false, issues: ordered }
@@ -102,7 +102,7 @@ function failedDiagnostics(issues: MacroDefinitionIssue[]): MacroDefinitionDiagn
 export function parseAndValidateMacroDefinitionJson(text: string): MacroDefinitionJsonValidation {
   const parsed = parseJson(text)
   if (!parsed.ok) return parsed
-  const validated = validateMacroDefinitionV5(parsed.value)
+  const validated = validateMacroDefinitionV6(parsed.value)
   return validated.ok
     ? validated
     : { ok: false, error: { code: 'invalid_macro_definition', issues: validated.issues } }

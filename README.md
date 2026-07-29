@@ -2,7 +2,7 @@
 
 `shell-deck` is a local browser terminal workspace with live, URL-addressed Rooms and a visual macro system. Codex and other programs remain ordinary processes inside PTYs; a macro addresses terminals by their current index/type and resolves that logical layout to runtime terminal IDs at Start.
 
-Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro editor/runner cutover in `.034`, server-authoritative Room runtime sync in `.035`, exact persistable unassigned references in MacroDefinitionV4 in `.037`, explicit AgentEvent wait limits in MacroDefinitionV5 in `.038`, and retained terminal views across tab switches in `.039`. `20260724A` removes the former `.036` Library domain; MacroRecord is now the only saved user-content model.
+Current stack work is the destructive Room/user-storage redesign beginning at `20260627A.032`. Room routing/runtime isolation and user-level storage land in `.032`, single-controller/content edit leases in `.033`, the production Macro editor/runner cutover in `.034`, server-authoritative Room runtime sync in `.035`, exact persistable unassigned references in MacroDefinitionV4 in `.037`, explicit AgentEvent wait limits in MacroDefinitionV5 in `.038`, and retained terminal views across tab switches in `.039`. `20260724A` removes the former `.036` Library domain; `20260729A` hard-cuts to MacroDefinitionV6 for flexible Parallel pane routing, and MacroRecord remains the only saved user-content model.
 
 Core V0 behavior:
 
@@ -18,7 +18,7 @@ Core V0 behavior:
 - `just codex` only runs inside a shell-deck-created Shell with complete Room context; external terminals fail loudly
 - AgentEvent ingest normalizes Codex hook callbacks; Codex session ids are trace data, not macro template state
 - AgentEvent capture defaults to explicit unbounded waiting; users may opt into a persisted duration timeout
-- MacroDefinitionV5 stores portable Flow plus continuous terminal index/type and exact assigned/unassigned logical references; MacroRecord metadata and runtime terminal IDs remain separate
+- MacroDefinitionV6 stores portable Flow plus continuous terminal index/type and exact assigned/unassigned logical references; MacroRecord metadata and runtime terminal IDs remain separate
 - terminal layout changes only through the explicit `Prepare terminals` button; selection, Save, Start and terminal events never auto-prepare
 - Start validates a saved record revision and terminal structure revision, then freezes index/type to terminalId/launchId routing for the run
 - Macro selection/draft stays browser-local, while saved records and the Room's frozen Running Macro are synchronized through the server
@@ -45,7 +45,7 @@ just test-033            # Room controller/content edit lease gate
 just test-034            # Macro editor/Prepare/runner regression gate
 just test-035            # server-authoritative Room runtime sync gate
 just test-037            # Macro unassigned-reference regression gate
-just test-038            # Macro V5 explicit AgentEvent wait-limit gate
+just test-038            # Macro V6 explicit AgentEvent wait-limit gate
 just test-039            # retained terminal view lifecycle gate
 just test-20260724a      # removed Library domain + Macro-only saved-content gate
 just test-20260727a      # authenticated terminal QR + image/live-camera login gate

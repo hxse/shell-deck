@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TerminalRuntimePosition } from '../../protocol'
-  import type { MacroDefinitionV5 } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionV6 } from '../../macro/macroDefinitionTypes'
   import type { MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import { adoptRuntimeTerminal, reconcileVisualTerminalLayout } from '../../macro/macroTerminalLayoutAuthoring'
   import { terminalRuntimeChoices, type TerminalChoice } from '../../macro/macroTerminalChoices'
@@ -23,7 +23,7 @@
     onMutationDenied = () => {},
     onUpdateDraft,
   } = $props<{
-    draft: MacroDefinitionV5
+    draft: MacroDefinitionV6
     validation: MacroDefinitionValidation
     runnableValidation: MacroDefinitionValidation
     runtimePositions?: TerminalRuntimePosition[] | null
@@ -36,7 +36,7 @@
     editorKey?: string
     onBeginEdit: () => void
     onMutationDenied?: (reason: string) => void
-    onUpdateDraft: (mutator: (definition: MacroDefinitionV5) => void) => void
+    onUpdateDraft: (mutator: (definition: MacroDefinitionV6) => void) => void
   }>()
 
   const lockedMessage = $derived(lockReasonMessage(lockedReason))
@@ -63,15 +63,14 @@
   }
 
   function terminalChoices(): TerminalChoice[] { return terminalRuntimeChoices(runtimePositions) }
-  function choiceFromIndex(index: number): string { return String(index) }
-  function updateVisualDraft(mutator: (definition: MacroDefinitionV5) => void) {
-    onUpdateDraft((definition: MacroDefinitionV5) => {
+  function updateVisualDraft(mutator: (definition: MacroDefinitionV6) => void) {
+    onUpdateDraft((definition: MacroDefinitionV6) => {
       mutator(definition)
       reconcileVisualTerminalLayout(definition)
     })
   }
 
-  function adoptTerminalSelection(definition: MacroDefinitionV5, terminalIndex: number): boolean {
+  function adoptTerminalSelection(definition: MacroDefinitionV6, terminalIndex: number): boolean {
     return adoptRuntimeTerminal(definition, terminalIndex, runtimePositions).ok
   }
 
@@ -118,7 +117,6 @@
             updateDraft={updateVisualDraft}
             {terminalChoices}
             {adoptTerminalSelection}
-            {choiceFromIndex}
             {insertionPaletteMode}
             {telegramProfileIds}
             {telegramProfilesError}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MacroDefinitionV5 } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionV6 } from '../../macro/macroDefinitionTypes'
   import type { MacroDefinitionIssue, MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import LineNumberedTextarea from './LineNumberedTextarea.svelte'
 
@@ -20,7 +20,7 @@
     onCancel,
     onCopyResult = () => {},
   } = $props<{
-    draft: MacroDefinitionV5 | null
+    draft: MacroDefinitionV6 | null
     runnableValidation: MacroDefinitionValidation
     jsonPreview: string
     editing: boolean
@@ -79,7 +79,7 @@
   {:else if draft}
     {#if unassignedIssues.length > 0}
       <div class="macro-json-runnable-warning alert alert-warning block px-3 py-2 text-xs leading-[1.35]" data-testid="macro-json-runnable-warning" role="status">
-        Valid MacroDefinitionV5, but not runnable: assign {unassignedIssues.length} terminal or artifact reference{unassignedIssues.length === 1 ? '' : 's'} before Start.
+        Valid MacroDefinitionV6, but not runnable: assign {unassignedIssues.length} terminal or artifact reference{unassignedIssues.length === 1 ? '' : 's'} before Start.
         <ul>{#each unassignedIssues as issue}<li><code>{issue.path}</code></li>{/each}</ul>
       </div>
     {/if}

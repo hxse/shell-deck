@@ -6,15 +6,15 @@ import { TerminalRoomManager } from '../../server/terminalRoomManager'
 
 import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } from '../../server/terminalBackend'
 
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 
 import type { ServerMessage } from '../../src/lib/protocol'
 
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
 
-function runnableDefinition(second: string): MacroDefinitionV5 {
+function runnableDefinition(second: string): MacroDefinitionV6 {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'immutable run',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],

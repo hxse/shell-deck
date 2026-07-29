@@ -9,7 +9,7 @@ test.afterEach(async ({ request }) => {
   await Promise.all(body.rooms.map((room) => request.delete('/api/rooms/' + encodeURIComponent(room.roomId), { data: { expectedRoomGeneration: room.roomGeneration } })))
 })
 
-test('Macro authoring exposes local item insertion, compact loop tokens and optional Parallel text collection', async ({ page, request }) => {
+test('Macro authoring exposes local insertion, compact tokens and derived Parallel Text sharing', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -53,40 +53,44 @@ test('Macro authoring exposes local item insertion, compact loop tokens and opti
   await expect(notify.getByTestId('notify-app-repeat-count')).toHaveValue('3')
   await expect(notify.getByTestId('notify-app-repeat-interval-ms')).toHaveValue('1000')
 
+  await page.getByRole('button', { name: 'New shell', exact: true }).click()
+  await page.getByRole('button', { name: 'New shell', exact: true }).click()
+  await page.getByRole('button', { name: 'New text', exact: true }).click()
   const parallel = await insertRoot(page, 'add-step-parallel')
-  await expect(parallel.getByTestId('parallel-collect-lane-text')).not.toBeChecked()
+  await expect(parallel.getByTestId('parallel-shared-text-order')).toHaveValue('pane_order')
+  await expect(parallel.getByTestId('parallel-collect-lane-text')).toHaveCount(0)
   await expect(parallel.getByTestId('parallel-output-id-input')).toHaveCount(0)
   await expect(parallel.getByTestId('parallel-output-source')).toHaveCount(0)
   await expect(parallel.getByTestId('parallel-merge-separator')).toHaveCount(0)
-  await parallel.getByTestId('parallel-collect-lane-text').click()
-  await expect(parallel.getByTestId('parallel-collect-lane-text')).not.toBeChecked()
-  await expect(parallel.getByTestId('parallel-id-edit-notice')).toContainText('Add Capture or Extract')
 
-  await parallel.getByTestId('parallel-lane-add-before-output').click()
-  await page.getByTestId('parallel-add-capture').click()
+  await parallel.getByTestId('parallel-lane-add-empty').click()
+  await page.getByTestId('parallel-add-send').click()
   let laneActions = parallel.getByTestId('parallel-lane-action')
-  let captureAction = parallel.locator(
-    '[data-testid="parallel-lane-action"][data-parallel-action-type="capture-source"]',
-  ).first()
-  await expect(captureAction.getByTestId('parallel-lane-add-before')).toHaveAttribute('aria-label', 'Insert before')
-  await expect(captureAction.getByTestId('parallel-lane-add-after')).toHaveAttribute('aria-label', 'Insert after')
-  await captureAction.getByTestId('parallel-lane-add-before').click()
+  let sharedSend = laneActions.first()
+  await sharedSend.getByTestId('parallel-send-terminal').selectOption('3')
+  await expect(sharedSend.getByTestId('parallel-terminal-usage')).toHaveText('Exclusive Text')
+  await expect(sharedSend.getByTestId('parallel-lane-add-before')).toHaveAttribute('aria-label', 'Insert before')
+  await expect(sharedSend.getByTestId('parallel-lane-add-after')).toHaveAttribute('aria-label', 'Insert after')
+  await sharedSend.getByTestId('parallel-lane-add-before').click()
   await page.getByTestId('parallel-add-wait').click()
-  captureAction = parallel.locator(
-    '[data-testid="parallel-lane-action"][data-parallel-action-type="capture-source"]',
+  sharedSend = parallel.locator(
+    '[data-testid="parallel-lane-action"][data-parallel-action-type="send"]',
   ).first()
-  await captureAction.getByTestId('parallel-lane-add-after').click()
+  await sharedSend.getByTestId('parallel-lane-add-after').click()
   await page.getByTestId('parallel-add-wait').click()
   laneActions = parallel.getByTestId('parallel-lane-action')
   expect(await laneActions.evaluateAll((actions) => actions.map((action) => action.getAttribute('data-parallel-action-type'))))
-    .toEqual(['wait', 'capture-source', 'wait'])
-  await parallel.getByTestId('parallel-collect-lane-text').check()
-  await expect(parallel.getByTestId('parallel-collect-lane-text')).toBeChecked()
-  await expect(parallel.getByTestId('parallel-output-source')).toHaveValue('capture_source:captured_text')
-  await expect(parallel.getByTestId('parallel-merge-separator')).toBeVisible()
-  await parallel.getByTestId('parallel-collect-lane-text').uncheck()
-  await expect(parallel.getByTestId('parallel-output-source')).toHaveCount(0)
-  await expect(parallel.getByTestId('parallel-merge-separator')).toHaveCount(0)
+    .toEqual(['wait', 'send', 'wait'])
+
+  await parallel.getByTestId('parallel-add-lane').click()
+  const laneTwo = parallel.getByTestId('parallel-lane-editor')
+  await laneTwo.getByTestId('parallel-lane-add-empty').click()
+  await page.getByTestId('parallel-add-send').click()
+  const secondSend = laneTwo.getByTestId('parallel-lane-action')
+  await secondSend.getByTestId('parallel-send-terminal').selectOption('3')
+  await expect(secondSend.getByTestId('parallel-terminal-usage')).toHaveText('Shared Text · pane order')
+  await parallel.getByTestId('parallel-shared-text-order').selectOption('completion_order')
+  await expect(secondSend.getByTestId('parallel-terminal-usage')).toHaveText('Shared Text · completion order')
 })
 
 test('active run visibly locks Macro authoring and highlights the frozen current stage until stop', async ({ page, request }) => {

@@ -72,7 +72,16 @@ const splitBaseline = JSON.parse(readProjectFile(
 )) as SplitBaseline
 const currentMacroComprehensive = {
   ...splitBaseline.macroComprehensive,
-  postSplitSourceSha256: '050c619437911baabc9b4258cf723b481ffd4908cbc0df60ae662f492fbbd547',
+  titles: [
+    'current UI journey preserves the complex V6 Macro and exercises server-owned runtime input through visible controls',
+  ],
+  steps: splitBaseline.macroComprehensive.steps.map((step) => (
+    step === 'Parallel lanes cover lane CRUD, all lane actions and merged output'
+      ? 'Parallel panes cover explicit targets, sharing, lane CRUD and all pane actions'
+      : step
+  )),
+  expects: 115,
+  postSplitSourceSha256: 'f6fbb1919ace5090a55f31cfa2a2aae02c67fec26c08bc86ace1905c4598b67c',
 }
 const currentRoomLargeReplay = {
   ...splitBaseline.roomLargeReplay,
@@ -126,10 +135,10 @@ test('current journeys preserve every attributed case, assertion and forced gate
 
   expect(inventory).toHaveLength(40)
   expect(new Set(inventory.map(({ title }) => title)).size).toBe(40)
-  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(451)
+  expect(inventory.reduce((total, item) => total + item.expects, 0)).toBe(450)
   expect(inventory.reduce((total, item) => total + item.routes, 0)).toBe(18)
   expect(inventory.reduce((total, item) => total + item.waits, 0)).toBe(20)
-  expect(aggregate).toBe('f9ebdd11e4a8ea82502e71cc4d6908ec5cae92559e944fa4c370f9bf5f7dabe1')
+  expect(aggregate).toBe('9ae91acea03cc29c79c45034c4f50294b0fcb8d2266c04d45003d52109fc07de')
 
   expect(roomFiles.flatMap(readCaseInventory)).toHaveLength(14)
   expect(macroFiles.flatMap(readCaseInventory)).toHaveLength(11)

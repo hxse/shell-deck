@@ -4,8 +4,6 @@
     FlowV2ActionNode,
     FlowV2Node,
     MacroTerminalReference,
-    NotificationLevel,
-    NotifyChannel,
     ParallelNode,
     TerminalEnding,
     TerminalInputDelivery,
@@ -16,7 +14,7 @@
     assignedArtifactSourceFromKey,
     type ArtifactChoice,
   } from '../../macro/macroArtifactChoices'
-  import { defaultCaptureSource, defaultNotifyChannel } from '../../macro/macroEditorDefaults'
+  import { defaultCaptureSource } from '../../macro/macroEditorDefaults'
   import type { TextTemplateScope } from '../../macro/scopedTextTemplateEditor'
   import {
     isCaptureKindAllowed,
@@ -28,6 +26,7 @@
   import ExtractTextEditor, { type EditableExtractTextNode } from './ExtractTextEditor.svelte'
   import MacroTerminalSelect from './MacroTerminalSelect.svelte'
   import MessagePartsEditor from './MessagePartsEditor.svelte'
+  import NotifyActionFields from './NotifyActionFields.svelte'
   import TemplatableScalarField from './TemplatableScalarField.svelte'
   import TerminalEndingField from './TerminalEndingField.svelte'
   import TerminalInputDeliveryField from './TerminalInputDeliveryField.svelte'
@@ -91,37 +90,6 @@
     return onUpdateTerminal(terminal, (item: FlowV2Node) => { if (item.type === 'capture-source') item.capture = capture })
   }
 
-  function notifyChannel(kind: NotifyChannel['kind']): NotifyChannel | undefined {
-    return node.type === 'notify' ? node.channels.find((channel: NotifyChannel) => channel.kind === kind) : undefined
-  }
-
-  function setNotifyChannelEnabled(kind: NotifyChannel['kind'], enabled: boolean): void {
-    onUpdate((item: FlowV2Node) => {
-      if (item.type !== 'notify') return
-      const exists = item.channels.some((channel) => channel.kind === kind)
-      if (enabled && !exists) item.channels.push(defaultNotifyChannel(kind))
-      if (!enabled) item.channels = item.channels.filter((channel) => channel.kind !== kind)
-    })
-  }
-
-  function updateNotifyChannel(kind: NotifyChannel['kind'], mutator: (channel: NotifyChannel) => void): void {
-    onUpdate((item: FlowV2Node) => {
-      if (item.type !== 'notify') return
-      let channel = item.channels.find((candidate) => candidate.kind === kind)
-      if (!channel) {
-        channel = defaultNotifyChannel(kind)
-        item.channels.push(channel)
-      }
-      mutator(channel)
-    })
-  }
-
-  function telegramProfileChoices(currentProfileId: string): string[] {
-    const choices = [...telegramProfileIds]
-    if (currentProfileId && !choices.includes(currentProfileId)) choices.unshift(currentProfileId)
-    return choices
-  }
-
   function setWaitMode(item: WaitNode, mode: string, terminal: MacroTerminalReference | null = null): void {
     const record = item as unknown as Record<string, unknown>
     delete record.durationMs
@@ -156,38 +124,14 @@
   <TerminalInputDeliveryField value={node.delivery} onChange={(delivery: TerminalInputDelivery) => onUpdate((item: FlowV2Node) => { if (item.type === 'send') item.delivery = delivery })} testId="send-input-delivery" />
   <TerminalEndingField value={node.ending} onChange={(ending: TerminalEnding) => onUpdate((item: FlowV2Node) => { if (item.type === 'send') item.ending = ending })} testId="send-ending-sequence" />
 {:else if node.type === 'notify'}
-  <div class="macro-row">
-    <label>Level<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-level" value={node.level} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.level = event.currentTarget.value as NotificationLevel })}><option value="info">info</option><option value="success">success</option><option value="warning">warning</option><option value="error">error</option></select></label>
-    <label>On failure<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-on-failure" value={node.onFailure} onchange={(event) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.onFailure = event.currentTarget.value as 'continue' | 'pause' | 'fail' })}><option value="continue">continue</option><option value="pause">pause</option><option value="fail">fail</option></select></label>
-  </div>
-  <TemplatableScalarField label="Title" value={node.title} onChange={(value) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') item.title = value })} {templateScope} testId="notify-title" />
-  <MessagePartsEditor message={node.message} onUpdate={(mutator) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') mutator(item.message) })} choices={artifactChoices} {templateScope} />
-  <div class="message-part-row card" data-testid="notify-channels">
-    <div class="step-title"><strong>Channels</strong></div>
-    <div class="macro-row">
-      <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-channel-app" checked={Boolean(notifyChannel('app'))} onchange={(event) => setNotifyChannelEnabled('app', event.currentTarget.checked)} />app</label>
-      <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-channel-system" checked={Boolean(notifyChannel('system'))} onchange={(event) => setNotifyChannelEnabled('system', event.currentTarget.checked)} />system</label>
-      <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-channel-telegram" checked={Boolean(notifyChannel('telegram'))} onchange={(event) => setNotifyChannelEnabled('telegram', event.currentTarget.checked)} />telegram</label>
-    </div>
-    {#if notifyChannel('app')?.kind === 'app'}
-      {@const appChannel = notifyChannel('app')}
-      {#if appChannel?.kind === 'app'}
-        <div class="macro-row">
-          <label class="checkbox-row"><input class="checkbox checkbox-xs" type="checkbox" data-testid="notify-app-toast" checked={appChannel.toast} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.toast = event.currentTarget.checked })} />Toast</label>
-          <label>Sound<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-app-sound" value={appChannel.sound} onchange={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.sound = event.currentTarget.value as 'none' | 'bell' | 'chime' | 'ping' | 'pulse' | 'success' | 'warning' | 'alert' })}><option value="success">success</option><option value="bell">bell</option><option value="chime">chime</option><option value="ping">ping</option><option value="pulse">pulse</option><option value="warning">warning</option><option value="alert">alert</option><option value="none">none</option></select></label>
-          <label>Repeat count<input class="input box-border input-xs input-ghost w-full bg-base-content/15" type="number" min="1" max="10" step="1" data-testid="notify-app-repeat-count" value={appChannel.repeatCount} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatCount = Number(event.currentTarget.value) })} /></label>
-          <label>Interval ms<input class="input box-border input-xs input-ghost w-full bg-base-content/15" type="number" min="250" max="60000" step="1" data-testid="notify-app-repeat-interval-ms" value={appChannel.repeatIntervalMs} oninput={(event) => updateNotifyChannel('app', (channel) => { if (channel.kind === 'app') channel.repeatIntervalMs = Number(event.currentTarget.value) })} /></label>
-        </div>
-      {/if}
-    {/if}
-    {#if notifyChannel('telegram')?.kind === 'telegram'}
-      {@const telegramChannel = notifyChannel('telegram')}
-      {#if telegramChannel?.kind === 'telegram'}
-        <label>Telegram profile<select class="select box-border select-xs select-ghost w-full bg-base-content/15" data-testid="notify-telegram-profile" value={telegramChannel.profileId} onchange={(event) => updateNotifyChannel('telegram', (channel) => { if (channel.kind === 'telegram') channel.profileId = event.currentTarget.value })}>{#each telegramProfileChoices(telegramChannel.profileId) as profileId}<option value={profileId}>{profileId}</option>{/each}</select></label>
-        {#if telegramProfilesError}<p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="notify-telegram-profile-status">Telegram profiles unavailable: {telegramProfilesError}</p>{/if}
-      {/if}
-    {/if}
-  </div>
+  <NotifyActionFields
+    {node}
+    {artifactChoices}
+    {templateScope}
+    {telegramProfileIds}
+    {telegramProfilesError}
+    onUpdate={(mutator) => onUpdate((item: FlowV2Node) => { if (item.type === 'notify') mutator(item) })}
+  />
 {:else if node.type === 'input'}
   <label>Target tab
     <MacroTerminalSelect testId="input-terminal" reference={node.terminal} expectedType={expectedTerminalTypeAt(node.terminal)} choices={terminalChoices()} onChange={(terminal) => onUpdateTerminal(terminal, (item: FlowV2Node) => { if (item.type === 'input') item.terminal = terminal })} />

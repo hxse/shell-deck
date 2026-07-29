@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { MacroDefinitionV5 } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionV6 } from '../../macro/macroDefinitionTypes'
   import type { MacroDefinitionIssue, MacroDefinitionValidation } from '../../macro/macroDefinitionValidation'
   import type { TerminalChoice } from '../../macro/macroTerminalChoices'
   import type { MacroInsertionPaletteMode } from '../../workspace/uiLayoutTypes'
@@ -12,19 +12,17 @@
     updateDraft,
     terminalChoices,
     adoptTerminalSelection,
-    choiceFromIndex,
     insertionPaletteMode,
     telegramProfileIds = [],
     telegramProfilesError = '',
     currentNodeId = null,
   } = $props<{
-    draft: MacroDefinitionV5
+    draft: MacroDefinitionV6
     validation: MacroDefinitionValidation
     runnableValidation: MacroDefinitionValidation
-    updateDraft: (mutator: (template: MacroDefinitionV5) => void) => void
+    updateDraft: (mutator: (template: MacroDefinitionV6) => void) => void
     terminalChoices: () => TerminalChoice[]
-    adoptTerminalSelection: (template: MacroDefinitionV5, terminalIndex: number) => boolean
-    choiceFromIndex: (target: number) => string
+    adoptTerminalSelection: (template: MacroDefinitionV6, terminalIndex: number) => boolean
     insertionPaletteMode: MacroInsertionPaletteMode
     telegramProfileIds?: string[]
     telegramProfilesError?: string
@@ -62,7 +60,6 @@
   {updateDraft}
   {terminalChoices}
   {adoptTerminalSelection}
-  {choiceFromIndex}
   {insertionPaletteMode}
   {telegramProfileIds}
   {telegramProfilesError}

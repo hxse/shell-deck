@@ -111,7 +111,9 @@ printf '%s' '{"decision":"retry","confidence":0.82}' \
 
 `SHELL_DECK_JUSTFILE`由shell-deck Shell注入为当前checkout的canonical absolute justfile路径，因此terminal cwd或项目checkout位置变化不会让参考命令失效。命令没有Room或step参数；它从当前shell-deck Shell继承Room generation、terminalId、launchId、URL与memory-only token，因此普通外部terminal缺少完整context，其他Room或旧launch也不能误投。
 
-server只接受当前run在该terminal等待的第一份schema-valid JSON。schema不匹配时命令打印`structured_json_schema_mismatch`及issues，Capture继续等待，可修正后重新提交；Pause期间可接收但Resume后才推进，Stop会取消等待。Capture输出typed `captured_json`。后续If可选择`json_match`，用JSON Pointer（例如`/decision`）和typed equals/number matcher分支；也可把它选作root/Parallel Send、Notify message、Input default、Extract Text或`text_match`的source。后一类textual consumer统一读取成key稳定排序的compact单行JSON且不附加换行，所以Send仍只由自己的Ending sequence决定是否提交；artifact本身不会双写成text。structured Capture本身仍不能放进Parallel lane，Parallel final Output也只收集lane-local text。
+server只接受当前run在该terminal等待的第一份schema-valid JSON。schema不匹配时命令打印`structured_json_schema_mismatch`及issues，Capture继续等待，可修正后重新提交；Pause期间可接收但Resume后才推进，Stop会取消等待。Capture输出typed `captured_json`。后续If可选择`json_match`，用JSON Pointer（例如`/decision`）和typed equals/number matcher分支；也可把它选作root/Parallel Send、Notify message、Input default、Extract Text或`text_match`的source。后一类textual consumer统一读取成key稳定排序的compact单行JSON且不附加换行，所以Send仍只由自己的Ending sequence决定是否提交；artifact本身不会双写成text。structured Capture本身仍不能放进Parallel pane。
+
+Parallel pane不再配置统一terminal或固定返回文本。每个pane内显式组合Action，例如`Send Shell 1 → Capture Shell 1 → Send Text 3`；全部pane结束后外层Flow自然继续，可再`Capture Text 3 → If`。同一Shell只能属于一个pane；Text只被一个pane使用时显示`Exclusive Text`，多个pane向同一Text Send时显示`Shared Text · pane order`或`Shared Text · completion order`。默认pane order会让后序pane的Send等待前序Send并实时依次append；completion order则哪个Send先触发就先append。两者都不等待整个Parallel完成，也不自动清空、替换或回滚Text；需要怎样处理既有正文由Macro中的普通Text Action显式决定。
 
 ## 长期数据
 
@@ -125,11 +127,11 @@ notification 配置可用以下命令初始化：
 just notification-config-init
 ```
 
-`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro editor/runner，`.035`交付server-authoritative runtime sync，`.037`切换到`MacroDefinitionV4` exact assigned/unassigned reference，`.038`再切换到`MacroDefinitionV5` explicit AgentEvent wait limit，`.039`让访问过的terminal view在tab切换时保持挂载，不再重复回放长历史。`20260724A`删除原`.036` Library domain，MacroRecord成为唯一saved user content；`20260724B`加入structured JSON Capture，`20260724C`稳定Macro逐字符编辑，`20260724D`把Text/Runner/Trace等热路径切换为增量projection和分页读取。
+`.032`交付Room/user-storage foundation，`.033`交付Room controller与跨Room/process的saved-content edit lease，`.034`交付production Macro editor/runner，`.035`交付server-authoritative runtime sync，`.037`切换到`MacroDefinitionV4` exact assigned/unassigned reference，`.038`以`MacroDefinitionV5`加入explicit AgentEvent wait limit，`.039`让访问过的terminal view在tab切换时保持挂载，不再重复回放长历史。`20260724A`删除原`.036` Library domain，MacroRecord成为唯一saved user content；`20260724B`加入structured JSON Capture，`20260724C`稳定Macro逐字符编辑，`20260724D`把Text/Runner/Trace等热路径切换为增量projection和分页读取，`20260729A`再hard-cut到`MacroDefinitionV6`并引入flexible Parallel pane routing。
 
 ## Macro
 
-新Room默认不选择Macro。点击Macro面板的New创建client-local draft；Save只校验并保存portable、persistable的`MacroDefinitionV5`，不要求当前Room已有匹配terminal。definition只保存连续terminal index/type，不保存terminalId、cwd或Room identity。terminal target与必填artifact source使用exact tagged reference；新slot默认`{kind:"unassigned"}`，可Save但不可Start，旧primitive `terminalIndex`与空`stepId`写法会直接失败。
+新Room默认不选择Macro。点击Macro面板的New创建client-local draft；Save只校验并保存portable、persistable的`MacroDefinitionV6`，不要求当前Room已有匹配terminal。definition只保存连续terminal index/type，不保存terminalId、cwd或Room identity。terminal target与必填artifact source使用exact tagged reference；新slot默认`{kind:"unassigned"}`，可Save但不可Start，旧primitive `terminalIndex`与空`stepId`写法会直接失败。
 
 Macro结构操作栏中，`↑`/`↓`移动当前项，`+↑`在当前项之前插入，`+↓`在当前项之后插入；Flow node、Parallel lane action与For text-list item使用同一套含义。插入按钮仍打开对应位置的action/flow palette，移动按钮不会创建新项。
 
@@ -141,7 +143,7 @@ Start要求Macro已经Save，先通过runnable completeness（所有terminal/art
 
 Macro selector、visual/JSON draft和未保存编辑只属于当前browser。Save/Delete后的record会同步，但不会切换其他browser的selector。saved Macro退出Edit后由`Read-only`提示明确标记，正文、field与flow node仍保持正常可读对比度；直接点击这条normal read-only提示，或聚焦后按Enter/Space，会先获取该record的content edit lease，成功后进入Edit。只有这条提示是快捷入口，点击正文/field不会进入Edit；active run、controller loss、pending或lease-lost提示也不会误触Edit。不同嵌套depth的纵向guide和横向渐隐separator都直接跟随当前Theme的semantic color。Start后Room另有只读Running Macro；status、current step、Pause/Resume/Stop以及Input Action的prompt/draft/submit都由server主动同步到同Room设备。关闭所有页面不会停止run，重新进入原Room URL会立即得到当前live snapshot。
 
-产品不再提供内建Library、Prompt/Note素材库、Import或Export。需要外部保存时，使用Copy把current `MacroDefinitionV5` JSON写入clipboard后存到Gist等外部工具；恢复时显式New、进入JSON Edit、Paste并Save。shell-deck只接受当时的current schema，旧版本、alias和缺失字段都会fail loudly，不做自动升级。
+产品不再提供内建Library、Prompt/Note素材库、Import或Export。需要外部保存时，使用Copy把current `MacroDefinitionV6` JSON写入clipboard后存到Gist等外部工具；恢复时显式New、进入JSON Edit、Paste并Save。shell-deck只接受当时的current schema，旧版本、alias和缺失字段都会fail loudly，不做自动升级。
 
 Notify Action在server只执行一次并向当时在线的同Room browser各广播一条message；Telegram与System notification都只呈现一次。每个browser去重后，App channel按`repeatCount`与`repeatIntervalMs`重复toast/sound；reconnect、Room切换或workspace dispose会取消尚未触发的剩余重复。后进入的browser不补弹历史通知，但仍可在Trace查看event。
 

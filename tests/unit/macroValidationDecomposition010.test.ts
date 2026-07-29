@@ -13,27 +13,27 @@ const TEST_FILES = [
 const BASELINE = {
   'Macro validation keeps the complete multi-issue code, path, message and order across value and JSON gateways': {
     expects: 3,
-    digest: '92ab25577ab8c78c58b779859cbd10c527af98b2a229356b133ed94fdf628897',
+    digest: '401b3588111995fb784702d5f503d071fe5adacdfdb633ace1e4e3337b827a5a',
   },
-  'MacroDefinitionV5 accepts only index/type terminal layout and current text-list template tokens': {
+  'MacroDefinitionV6 accepts only index/type terminal layout and current text-list template tokens': {
     expects: 6,
-    digest: '03528c893e25d6dc0d6a833377f390d85c221c227fc5ff146c901e67a23cc28c',
+    digest: '8f8c070af32b05db6fd3080e61bef0073000efd4ac2c5770924e03e2160563d5',
   },
-  'MacroDefinitionV5 requires an exact AgentEvent waitLimit branch': {
+  'MacroDefinitionV6 requires an exact AgentEvent waitLimit branch': {
     expects: 11,
-    digest: '5087139ad101ae09826eb9aad08f35346da9be2d244cc58005d0d12a6062a149',
+    digest: '4329a7063c8b53e783897e90a63bf61de948dc9db6f6984d2a895f14ebe3f493',
   },
   'App Notify repeat count and interval are required exact bounded integers': {
     expects: 5,
-    digest: 'aa8bb7ec99e7baae1cd589e856668fc8efabf2a870a25d203413f57c0e79f869',
+    digest: '6766237ea65b24dcc2303facd65c741c111a48d45db90693d6ebf2897ed123be',
   },
   'unassigned terminal and required artifact slots are persistable but never runnable': {
     expects: 5,
-    digest: '24d00f99ab3baecbdabb1b184c95de7b660b3caaf83c48625381ef928978bb00',
+    digest: 'b31def8104d6251af77f5fde139542687a15a34284e02faf4c5aa60c259c3797',
   },
   'unassigned is rejected outside the finite required-reference whitelist': {
-    expects: 6,
-    digest: '587c9c048ec7ea8a082b38bd49ed2a76f663659f3f4ec0941392af1da5e73328',
+    expects: 13,
+    digest: '048a9cd3d104a64252cfc7732c2c8b731a3ef78adb7f7e4ef25b9988d4e6e91a',
   },
   'terminal layout is empty-or-contiguous, unbounded by product policy, and runtime readiness is separate': {
     expects: 5,
@@ -49,15 +49,15 @@ const BASELINE = {
   },
   'the unique JSON gateway reports deterministic UTF-16 positions and Prepare reads layout only': {
     expects: 3,
-    digest: '035589bc68f6b9b04dd4d8b0a6af3f3231cbd2c348738baa1c753b3562467e96',
+    digest: '15b8c4d010efaa20e99d577874ad9adeb7b17947457b610f4e7d9a9e5ef9b605',
   },
   'optional Flow fields stay optional and negative text selection remains current syntax': {
     expects: 1,
-    digest: '02f56e4bf0d42466cadf1249a923dfca283037d61b8d14f1534a0eb4bd75578c',
+    digest: '88c2f752285c3c6e45f80b8c2bab46b65defcca94be9df6960bfc31a368e50fa',
   },
-  'parallel lanes require one final local Output and reject cross-lane artifacts': {
-    expects: 4,
-    digest: 'f849856e4686d65522c656d04a5f29b500afeba8649c725b73c4c49a808faee3',
+  'parallel panes use explicit action targets, allow empty bodies and reject cross-pane artifacts': {
+    expects: 3,
+    digest: '0ec58509bfa04b6c5eeca86ec7c77c5283099298921494071959396c0431f417',
   },
 } satisfies Record<string, TestEvidence>
 
@@ -65,7 +65,7 @@ test('the split preserves every original test title, expectation count and seman
   const actual = collectEvidence()
   expect(actual).toHaveLength(12)
   expect(new Set(actual.map(({ title }) => title)).size).toBe(12)
-  expect(actual.reduce((sum, { expects }) => sum + expects, 0)).toBe(64)
+  expect(actual.reduce((sum, { expects }) => sum + expects, 0)).toBe(70)
   expect(Object.fromEntries(actual.map(({ title, expects, digest }) => [
     title,
     { expects, digest },

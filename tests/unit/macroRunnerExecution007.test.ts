@@ -12,7 +12,6 @@ import {
   readMacroArtifact,
   renderMacroMessage,
   renderMacroScalar,
-  type MacroArtifactValue,
   type MacroArtifactMap,
 } from '../../server/macroTextEvaluation'
 
@@ -92,15 +91,17 @@ describe('Macro runner execution extraction', () => {
             type: 'parallel',
             lanes: [
               {
-                id: 'lane_a', label: 'A', terminal: { kind: 'terminal_index', index: 1 },
-                body: [{ id: 'lane_a_output', type: 'output', source: { kind: 'step_artifact', stepId: 'seed', artifact: 'captured_text' } }],
+                id: 'lane_a',
+                label: 'A',
+                body: [{ id: 'lane_a_wait', type: 'wait', mode: 'duration', durationMs: 1 }],
               },
               {
-                id: 'lane_b', label: 'B', terminal: { kind: 'terminal_index', index: 2 },
-                body: [{ id: 'lane_b_output', type: 'output', source: { kind: 'none' } }],
+                id: 'lane_b',
+                label: 'B',
+                body: [],
               },
             ],
-            merge: { kind: 'sectioned_text', separator: '[{laneId}:{laneLabel}:{terminalIndex}]', includeEmptyOutputs: true },
+            sharedTextOrder: 'pane_order',
             onLaneFail: 'fail',
           }],
         }],
@@ -123,18 +124,12 @@ describe('Macro runner execution extraction', () => {
     expect(caught).toBeInstanceOf(MacroFlowSignal)
     expect((caught as MacroFlowSignal).signal).toBe('finish')
     expect(context.templateBindings).toEqual([])
-    expect(artifacts.get('parallel')?.get('merged_text'))
-      .toEqual({ kind: 'text', value: '[lane_a:A:1]READY\n\n[lane_b:B:2]' })
-    expect(trace).toEqual([
-      'checkpoint', 'step_started:loop',
-      'checkpoint', 'step_started:branch',
-      'checkpoint', 'step_started:parallel',
-      'checkpoint', 'checkpoint',
-      'artifact:parallel:merged_text', 'step_completed:parallel',
-      'step_completed:branch',
-      'checkpoint', 'step_started:finish',
-      'checkpoint', 'step_started:before_finish', 'action:before_finish', 'step_completed:before_finish',
-    ])
+    expect(artifacts.has('parallel')).toBe(false)
+    expect(trace).toContain('action:lane_a_wait')
+    expect(trace).toContain('step_completed:parallel')
+    expect(trace).toContain('action:before_finish')
+    expect(trace).not.toContain('step_completed:finish')
+    expect(trace).not.toContain('step_started:unreachable')
   })
 
   test('Continue and Break retain loop control without completing control-terminal steps', async () => {
@@ -169,7 +164,81 @@ describe('Macro runner execution extraction', () => {
     expect(trace).not.toContain('step_completed:break')
     expect(trace.at(-1)).toBe('step_completed:break_loop')
   })
+
+  test('a pane action finish outcome exits Parallel without becoming a lane failure', async () => {
+    const trace: string[] = []
+    const context = executionContext(new Map(), trace, [{
+      id: 'parallel',
+      type: 'parallel',
+      sharedTextOrder: 'pane_order',
+      onLaneFail: 'fail',
+      lanes: [
+        {
+          id: 'lane_a',
+          label: 'A',
+          body: [{ id: 'finish_from_action', type: 'wait', mode: 'duration', durationMs: 1 }],
+        },
+        { id: 'lane_b', label: 'B', body: [] },
+      ],
+    }])
+    context.callbacks.executeAction = async (node) => {
+      trace.push(`action:${node.id}`)
+      if (node.id === 'finish_from_action') throw new MacroFlowSignal('finish')
+    }
+
+    await expect(executeMacroFlow(context)).rejects.toMatchObject({ signal: 'finish' })
+    expect(trace).not.toContain('step_failed:parallel')
+  })
+
+  test('Pause retries the failed pane and drains shared Text waiters in pane order', async () => {
+    const trace: string[] = []
+    const context = executionContext(new Map(), trace, [{
+      id: 'parallel',
+      type: 'parallel',
+      sharedTextOrder: 'pane_order',
+      onLaneFail: 'pause',
+      lanes: [
+        { id: 'lane_a', label: 'A', body: [parallelTextSend('send_a')] },
+        { id: 'lane_b', label: 'B', body: [parallelTextSend('send_b')] },
+      ],
+    }])
+    context.terminalLayout = [{ index: 1, type: 'text' }]
+    let firstAttempt = true
+    let pauses = 0
+    context.callbacks.pauseRun = async () => { pauses += 1 }
+    context.callbacks.executeAction = async (node, options) => {
+      if (node.id === 'send_a' && firstAttempt) {
+        firstAttempt = false
+        throw new Error('retry_me')
+      }
+      await options?.dispatchTerminalWrite?.({
+        stepId: node.id,
+        terminalIndex: 1,
+        write: () => { trace.push(`write:${node.id}`) },
+        record: () => { trace.push(`record:${node.id}`) },
+      })
+    }
+
+    await executeMacroFlow(context)
+
+    expect(pauses).toBe(1)
+    expect(trace.filter((item) => item.startsWith('write:'))).toEqual([
+      'write:send_a',
+      'write:send_b',
+    ])
+  })
 })
+
+function parallelTextSend(id: string) {
+  return {
+    id,
+    type: 'send' as const,
+    terminal: { kind: 'terminal_index' as const, index: 1 },
+    message: { parts: [] },
+    delivery: 'direct' as const,
+    ending: 'none' as const,
+  }
+}
 
 function executionContext(
   artifacts: MacroArtifactMap,
@@ -178,22 +247,16 @@ function executionContext(
 ): MacroFlowExecutionContext {
   return {
     body,
+    terminalLayout: [],
     artifacts,
     templateBindings: [],
     parallelProgress: new Map(),
-    parallelOutputs: new Map(),
+    abortSignal: new AbortController().signal,
     callbacks: {
       checkpoint: async () => { trace.push('checkpoint') },
       setCurrentNodeId: () => {},
       appendEvent: (kind, data) => { trace.push(`${kind}:${String(data?.stepId ?? '')}`) },
       executeAction: async (node) => { trace.push(`action:${node.id}`) },
-      persistArtifact: (stepId, name, value) => {
-        const outputs = artifacts.get(stepId) ?? new Map<string, MacroArtifactValue>()
-        outputs.set(name, { kind: 'text', value })
-        artifacts.set(stepId, outputs)
-        trace.push(`artifact:${stepId}:${name}`)
-        return `artifact://${stepId}/${name}`
-      },
       pauseRun: async () => {},
       isTerminalized: () => false,
       isCancellation: () => false,

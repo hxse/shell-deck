@@ -9,7 +9,7 @@ test.afterEach(async ({ request }) => {
   await Promise.all(body.rooms.map((room) => request.delete('/api/rooms/' + encodeURIComponent(room.roomId), { data: { expectedRoomGeneration: room.roomGeneration } })))
 })
 
-test('V5 visual editor preserves anchored insertion, nested blocks and explicit collapse state', async ({ page, request }) => {
+test('V6 visual editor preserves anchored insertion, nested blocks and explicit collapse state', async ({ page, request }) => {
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -74,7 +74,7 @@ test('shared root and lane palette lifecycle clamps, focuses and restores its ex
   await rootTrigger.click()
   await page.getByTestId('add-step-parallel').click()
 
-  const laneTrigger = page.getByTestId('parallel-lane-add-before-output')
+  const laneTrigger = page.getByTestId('parallel-lane-add-empty')
   await laneTrigger.click()
   await expect(page.getByTestId('parallel-lane-insertion-mode')).toHaveAttribute('data-placement-mode', 'anchored')
   await expect(page.getByTestId('parallel-add-send')).toBeFocused()

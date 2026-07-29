@@ -1,10 +1,10 @@
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { TerminalRuntimePosition } from '../../src/lib/protocol'
 
-export function validDefinition(): MacroDefinitionV5 {
+export function validDefinition(): MacroDefinitionV6 {
   return {
-    schemaVersion: 5,
-    name: 'V5 macro',
+    schemaVersion: 6,
+    name: 'V6 macro',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],
     body: [{

@@ -14,7 +14,7 @@ import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } fr
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
@@ -26,13 +26,13 @@ test('durable Start never installs a run after controller loss or Room Destroy c
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-boundary-034-'))
   try {
     const manager = new TerminalRoomManager()
-    const records = new MacroRecordStore<MacroDefinitionV5>(root)
+    const records = new MacroRecordStore<MacroDefinitionV6>(root)
     const notification = new NotificationService(root)
     const agentEvents = new AgentEventStore(root)
 
     const lostRoom = manager.createRoom()
     const lostGrant = roomGrant(manager, lostRoom.roomId)
-    const lostRecord = await records.create({ schemaVersion: 5, name: 'lost control', description: '', terminalLayout: [], body: [] })
+    const lostRecord = await records.create({ schemaVersion: 6, name: 'lost control', description: '', terminalLayout: [], body: [] })
     const lostStore = new MacroRunStore(root)
     const append = lostStore.append.bind(lostStore)
     let revoked = false
@@ -56,7 +56,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
 
     const destroyedRoom = manager.createRoom()
     const destroyedGrant = roomGrant(manager, destroyedRoom.roomId)
-    const destroyedRecord = await records.create({ schemaVersion: 5, name: 'destroyed', description: '', terminalLayout: [], body: [] })
+    const destroyedRecord = await records.create({ schemaVersion: 6, name: 'destroyed', description: '', terminalLayout: [], body: [] })
     const destroyedStore = new MacroRunStore(root)
     const publish = destroyedStore.publishManifest.bind(destroyedStore)
     let destroying: Promise<void> | null = null
@@ -78,7 +78,7 @@ test('durable Start never installs a run after controller loss or Room Destroy c
 test('tight forever flow cooperatively yields so Stop can terminalize within a deadline', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-forever-yield-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV5>(root)
+  const records = new MacroRecordStore<MacroDefinitionV6>(root)
   const store = new MacroRunStore(root)
   const runner = new MacroRunnerService(manager, records, store, new NotificationService(root), new AgentEventStore(root))
   manager.addDestroyHook((roomId, roomGeneration) => runner.destroyRoom(roomId, roomGeneration))
@@ -86,7 +86,7 @@ test('tight forever flow cooperatively yields so Stop can terminalize within a d
     const room = manager.createRoom()
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 5,
+      schemaVersion: 6,
       name: 'cooperative forever',
       description: '',
       terminalLayout: [],

@@ -14,7 +14,7 @@ import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } fr
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
@@ -25,7 +25,7 @@ import { acquireMacroLease, replayFromManager, request, roomGrant, waitFor } fro
 test('published runner events stay successful when summary maintenance fails after commit', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-maintenance-debt-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV5>(root)
+  const records = new MacroRecordStore<MacroDefinitionV6>(root)
   const failKinds = new Set<string>()
   let failSequence100 = true
   const evidence = new EvidenceStore(root, () => new Date().toISOString(), {
@@ -44,7 +44,7 @@ test('published runner events stay successful when summary maintenance fails aft
   try {
     const terminalRoom = manager.createRoom()
     const terminalGrant = roomGrant(manager, terminalRoom.roomId)
-    const terminalRecord = await records.create({ schemaVersion: 5, name: 'terminal debt', description: '', terminalLayout: [], body: [] })
+    const terminalRecord = await records.create({ schemaVersion: 6, name: 'terminal debt', description: '', terminalLayout: [], body: [] })
     failKinds.add('run_started')
     failKinds.add('run_completed')
     const terminalTicket = manager.admitControlledBearer(terminalGrant, terminalRoom.roomId)
@@ -58,7 +58,7 @@ test('published runner events stay successful when summary maintenance fails aft
     const checkpointRoom = manager.createRoom()
     const checkpointGrant = roomGrant(manager, checkpointRoom.roomId)
     const checkpointRecord = await records.create({
-      schemaVersion: 5,
+      schemaVersion: 6,
       name: 'checkpoint debt',
       description: '',
       terminalLayout: [],
@@ -75,7 +75,7 @@ test('published runner events stay successful when summary maintenance fails aft
     const inputTerminal = manager.createTerminal(inputRoom.roomId, { backend: 'text' })
     const inputGrant = roomGrant(manager, inputRoom.roomId)
     const inputRecord = await records.create({
-      schemaVersion: 5,
+      schemaVersion: 6,
       name: 'input debt',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],
@@ -159,7 +159,7 @@ test('published Macro create/update/delete stay successful after record or lease
     const grant = roomGrant(server.manager, room.roomId)
     const broadcasts: ServerMessage[] = []
     server.manager.connectClient(room.roomId, (message) => broadcasts.push(message))
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'published', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'published', description: '', terminalLayout: [], body: [] }
 
     const created = await request(server.url, '/api/templates', grant, { definition })
     expect(created.status).toBe(201)

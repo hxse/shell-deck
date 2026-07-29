@@ -2,7 +2,7 @@ import { expect } from 'playwright/test'
 
 function sharedRuntimeDefinition() {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Shared runtime',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
@@ -24,7 +24,7 @@ function sharedRuntimeDefinition() {
 
 function completedRunDefinition() {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Completed run unlock',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],
@@ -41,7 +41,7 @@ function completedRunDefinition() {
 
 function gapRepairDefinition() {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Gap repair retry',
     description: '',
     terminalLayout: [],
@@ -55,7 +55,7 @@ function gapRepairDefinition() {
 
 function runtimeInputGenerationDefinition() {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Runtime input generation',
     description: '',
     terminalLayout: [{ index: 1, type: 'text' }],

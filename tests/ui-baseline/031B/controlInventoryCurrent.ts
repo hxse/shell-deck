@@ -4,9 +4,9 @@ import {
   type UiControlInventoryEntry,
 } from './controlInventoryHistorical'
 
-export const sourceInteractiveControlCount = 183
+export const sourceInteractiveControlCount = 201
 
-export const sourceInteractiveControlDigest = '8bc48bddc270d85049ca8f5b1f7329d93b7b3a4b3787869f04fafe6dd11417df'
+export const sourceInteractiveControlDigest = '983fd095e4587c1c3d8e1561a155dd70a3b2b1309cee30176763bcf9d038a79f'
 
 const workspaceRuntimeControls034 = [
   ["home-refresh", "clicked"],
@@ -64,14 +64,38 @@ const macroControlsAdded001: Array<readonly [string, UiControlEvidenceKind]> = [
   ['for-text-list-item-insert-below', 'clicked'],
   ['notify-app-repeat-count', 'edited'],
   ['notify-app-repeat-interval-ms', 'edited'],
-  ['parallel-collect-lane-text', 'clicked'],
 ]
 
 export const macroControlIdsAdded001 = new Set(macroControlsAdded001.map(([key]) => key))
 
+const parallelControlsAdded20260729A: Array<readonly [string, UiControlEvidenceKind]> = [
+  ['parallel-shared-text-order', 'edited'],
+  ['parallel-lane-add-empty', 'clicked'],
+  ['parallel-send-terminal', 'edited'],
+  ['parallel-wait-terminal', 'edited'],
+  ['parallel-wait-on-timeout', 'edited'],
+  ['parallel-capture-terminal', 'edited'],
+  ['parallel-add-notify', 'clicked'],
+  ['parallel-terminal-usage', 'clicked'],
+]
+
+const parallelControlsRemoved20260729A = [
+  'parallel-merge-separator',
+  'parallel-include-empty-outputs',
+  'parallel-lane-terminal',
+  'parallel-lane-add-before-output',
+  'parallel-output-id-input',
+  'parallel-output-source',
+  'parallel-collect-lane-text',
+] as const
+
+export const parallelControlIdsAdded20260729A = new Set(parallelControlsAdded20260729A.map(([key]) => key))
+export const parallelControlIdsRemoved20260729A = new Set<string>(parallelControlsRemoved20260729A)
+
 const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
-  ...macroRuntimeControls034.filter(([key]) => key !== 'for-text-list-add'),
+  ...macroRuntimeControls034.filter(([key]) => key !== 'for-text-list-add' && !parallelControlIdsRemoved20260729A.has(key)),
   ...macroControlsAdded001,
+  ...parallelControlsAdded20260729A,
 ]
 
 export const workspaceRuntimeControlInventory034: UiControlInventoryEntry[] = workspaceRuntimeControls034.map(([key, evidence]) => ({ key, evidence }))

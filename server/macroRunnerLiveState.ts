@@ -1,5 +1,5 @@
 import type { MacroDefinitionIssue } from '../src/lib/macro/macroDefinitionValidation'
-import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../src/lib/macro/macroDefinitionTypes'
 import type {
   FrozenTerminalBinding,
   MacroRunnerActionAck,
@@ -41,7 +41,7 @@ export type LiveRun = {
   hasPublishedSnapshot: boolean
   definitionHash: string
   publishTimer: ReturnType<typeof setTimeout> | null
-  definition: MacroDefinitionV5
+  definition: MacroDefinitionV6
   bindings: Map<number, FrozenTerminalBinding>
   status: MacroRunnerSnapshot['status']
   currentNodeId: string | null
@@ -53,7 +53,6 @@ export type LiveRun = {
   artifacts: MacroArtifactMap
   templateBindings: TextListTemplateBinding[]
   parallelProgress: Map<string, number>
-  parallelOutputs: Map<string, string>
   agentEventBaselines: Map<string, number>
   consumedAgentEventIds: Set<string>
   terminalized: boolean
@@ -80,7 +79,7 @@ export function createLiveRun(input: {
   recordRevision: number
   runtimeRevision: number
   definitionHash: string
-  definition: MacroDefinitionV5
+  definition: MacroDefinitionV6
   bindings: FrozenTerminalBinding[]
 }): LiveRun {
   freezeDefinitionProjection(input.definition)
@@ -101,7 +100,6 @@ export function createLiveRun(input: {
     artifacts: new Map(),
     templateBindings: [],
     parallelProgress: new Map(),
-    parallelOutputs: new Map(),
     agentEventBaselines: new Map(),
     consumedAgentEventIds: new Set(),
     terminalized: false,

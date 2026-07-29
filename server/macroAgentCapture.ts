@@ -102,8 +102,16 @@ function agentCaptureTargets(nodes: FlowV2Node[]): Array<{ stepId: string; termi
     }
     if (node.type === 'for') targets.push(...agentCaptureTargets(node.body))
     if (node.type === 'parallel') for (const lane of node.lanes) for (const item of lane.body) {
-      if (item.type === 'capture-source' && item.capture.kind === 'agent-event' && lane.terminal.kind === 'terminal_index') {
-        targets.push({ stepId: item.id, terminalIndex: lane.terminal.index, captureMode: item.capture.captureMode })
+      if (
+        item.type === 'capture-source'
+        && item.capture.kind === 'agent-event'
+        && item.capture.terminal.kind === 'terminal_index'
+      ) {
+        targets.push({
+          stepId: item.id,
+          terminalIndex: item.capture.terminal.index,
+          captureMode: item.capture.captureMode,
+        })
       }
     }
     if ((node.type === 'break' || node.type === 'continue' || node.type === 'finish') && node.body) {

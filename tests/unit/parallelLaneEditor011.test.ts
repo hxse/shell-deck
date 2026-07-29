@@ -7,231 +7,233 @@ import {
   removeParallelLaneAction,
   renameParallelLane,
   renameParallelLaneAction,
-  renameParallelLaneOutput,
-  setParallelLaneCollectsText,
+  setParallelActionTerminal,
   setParallelLaneLabel,
-  setParallelLaneTerminal,
-  type ParallelLaneCommandResult,
 } from '../../src/lib/components/macro/parallelLaneEditorCommands'
 import {
   expectedParallelTerminalTypeAt,
   findParallel,
-  incompatibleParallelLaneActionIds,
-  parallelCollectsAnyLaneText,
+  findParallelLane,
+  parallelActionCaptureKinds,
+  parallelActionTerminalChoices,
+  parallelActionUsage,
   parallelLaneActionPaletteItems,
-  parallelLaneCaptureKinds,
-  parallelLaneOutput,
-  parallelLaneOutputSourceChoices,
-  selectedParallelLane,
-  unavailableParallelLaneTerminalValues,
+  unavailableParallelActionTerminalValues,
 } from '../../src/lib/components/macro/parallelLaneEditorPolicy'
-import type { MacroDefinitionV5, ParallelLane, ParallelNode } from '../../src/lib/macro/macroDefinitionTypes'
-import { terminalChoice } from '../../src/lib/macro/macroTerminalChoices'
+import type {
+  MacroDefinitionV6,
+  ParallelLaneActionNode,
+  ParallelNode,
+} from '../../src/lib/macro/macroDefinitionTypes'
+import {
+  buildParallelTerminalUsage,
+  parallelTerminalUsageLabel,
+} from '../../src/lib/macro/parallelTerminalUsage'
+import { terminalChoice, type TerminalChoice } from '../../src/lib/macro/macroTerminalChoices'
+import { validateMacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionValidation'
 
-const terminalChoices = [
+const terminalChoices: TerminalChoice[] = [
   terminalChoice({ index: 1, type: 'shell' }),
-  terminalChoice({ index: 2, type: 'text' }),
+  terminalChoice({ index: 2, type: 'shell' }),
+  terminalChoice({ index: 3, type: 'text' }),
+  terminalChoice({ index: 4, type: 'text' }),
 ]
 
-test('parallel lane pure policy preserves lookup, capability and lane-local output choices', () => {
-  const draft = parallelDraft()
-  const snapshot = structuredClone(draft)
-  const node = findParallel(draft.body, 'parallel')!
-  const shell = node.lanes[0]
-  const text = node.lanes[1]
+test('parallel editor policy derives action capabilities and exact usage labels', () => {
+  const draft = definition()
+  const node = findParallel(draft.body, 'parallel')
+  if (!node) throw new Error('parallel_missing')
+  const shellSend = node.lanes[0].body[0]
+  const exclusiveCapture = node.lanes[0].body[1]
+  const sharedSend = node.lanes[0].body[2]
+  expect(parallelLaneActionPaletteItems().map(({ type }) => type))
+    .toEqual(['send', 'wait', 'capture-source', 'extract_text', 'notify'])
+  expect(parallelActionTerminalChoices(shellSend, terminalChoices).map(({ index }) => index))
+    .toEqual([1, 2, 3, 4])
+  if (exclusiveCapture.type !== 'capture-source') throw new Error('capture_missing')
+  expect(parallelActionCaptureKinds(exclusiveCapture, terminalChoices)).toEqual(['text-box'])
+  expect(expectedParallelTerminalTypeAt(draft, exclusiveCapture.capture.terminal)).toBe('text')
 
-  expect(selectedParallelLane(node, 'missing')?.id).toBe('lane_shell')
-  expect(expectedParallelTerminalTypeAt(draft, shell.terminal)).toBe('shell')
-  expect(parallelLaneActionPaletteItems(shell, terminalChoices).map(({ type }) => type))
-    .toEqual(['send', 'wait', 'capture-source', 'extract_text'])
-  expect(parallelLaneActionPaletteItems(text, terminalChoices).map(({ type }) => type))
-    .toEqual(['send', 'capture-source', 'extract_text'])
-  expect(parallelLaneCaptureKinds(shell, terminalChoices)).toEqual(['terminal-buffer', 'agent-event'])
-  expect(parallelLaneCaptureKinds(text, terminalChoices)).toEqual(['text-box'])
-  expect(incompatibleParallelLaneActionIds(shell, 2, terminalChoices))
-    .toEqual(['lane_wait', 'lane_capture'])
-  expect(parallelLaneOutputSourceChoices(shell, 'lane_output').map(({ label }) => label))
-    .toEqual(['lane_capture.captured_text', 'lane_extract.extracted_text'])
-  expect(unavailableParallelLaneTerminalValues(node, 'lane_shell', terminalChoices, String))
-    .toEqual(['2'])
-  expect(unavailableParallelLaneTerminalValues(node, 'lane_text', terminalChoices, String))
-    .toEqual(['1'])
-  expect(parallelCollectsAnyLaneText(node)).toBe(false)
-  expect(draft).toEqual(snapshot)
+  const usage = buildParallelTerminalUsage(node, draft.terminalLayout)
+  expect(parallelTerminalUsageLabel(usage.byActionId.get(shellSend.id)!))
+    .toBe('Shell · owned by lane_1')
+  expect(parallelTerminalUsageLabel(parallelActionUsage(draft, node, exclusiveCapture, usage)!))
+    .toBe('Exclusive Text')
+  expect(parallelTerminalUsageLabel(parallelActionUsage(draft, node, sharedSend, usage)!))
+    .toBe('Shared Text · pane order')
+  expect(usage.sharedTextPlans[0]?.sendPlan).toEqual(['shared_a', 'shared_b'])
+  expect(usage.conflicts).toEqual([])
 })
 
-test('parallel lane commands preserve parent failure effects and final Output ordering', () => {
-  const draft = parallelDraft()
-
-  expectAtomicFailure(draft, () =>
-    renameParallelLane(draft, 'parallel', 'lane_shell', 'lane_text'), 'duplicate_lane_id')
-  expectAtomicFailure(draft, () =>
-    renameParallelLaneAction(draft, 'parallel', 'lane_shell', 'lane_wait', 'reserved'), 'duplicate_node_id')
-  expectAtomicFailure(draft, () =>
-    setParallelLaneLabel(draft, 'parallel', 'lane_shell', ' text '), 'duplicate_lane_label')
-  expectAtomicFailure(draft, () =>
-    renameParallelLaneOutput(draft, 'parallel', 'lane_shell', 'lane_output', 'reserved'), 'duplicate_node_id')
-  expectAtomicFailure(draft, () =>
-    removeParallelLaneAction(draft, 'parallel', 'lane_shell', 'lane_output'), 'action_not_found')
-  expectAtomicFailure(draft, () =>
-    setParallelLaneCollectsText(draft, 'parallel', 'lane_text', true), 'artifact_source_unavailable')
-
-  let adoptions = 0
-  const blocked = expectAtomicFailure(draft, () => setParallelLaneTerminal(
+test('terminal availability prevents cross-pane Shell and shared Text reads', () => {
+  const draft = definition()
+  const node = draft.body[0] as ParallelNode
+  const laneTwo = node.lanes[1]
+  const laneTwoSend = laneTwo.body[0]
+  const initialUsage = buildParallelTerminalUsage(node, draft.terminalLayout)
+  expect(unavailableParallelActionTerminalValues(
     draft,
-    'parallel',
-    'lane_shell',
-    { kind: 'terminal_index', index: 2 },
+    node,
+    laneTwo.id,
+    laneTwoSend,
     terminalChoices,
-    () => { adoptions += 1; return true },
-  ), 'incompatible_lane_actions')
-  expect(blocked.incompatibleActionIds).toEqual(['lane_wait', 'lane_capture'])
-  expect(adoptions).toBe(1)
-  expectAtomicFailure(draft, () => setParallelLaneTerminal(
-    draft,
-    'parallel',
-    'lane_text',
-    { kind: 'terminal_index', index: 2 },
-    terminalChoices,
-    () => { adoptions += 1; return false },
-  ), 'terminal_adoption_failed')
-  expect(adoptions).toBe(2)
-  expect(setParallelLaneTerminal(
-    draft,
-    'parallel',
-    'lane_text',
-    { kind: 'terminal_index', index: 2 },
-    terminalChoices,
-    () => { adoptions += 1; return true },
-  )).toEqual({ ok: true })
-  expect(adoptions).toBe(3)
+    initialUsage,
+  )).toEqual(['1', '4'])
 
-  const beforeMissingLane = draft.terminalLayout.length
-  expect(setParallelLaneTerminal(
+  const capture = captureAction('candidate_capture', 4)
+  laneTwo.body.push(capture)
+  const usageWithCapture = buildParallelTerminalUsage(node, draft.terminalLayout)
+  expect(unavailableParallelActionTerminalValues(
     draft,
-    'parallel',
-    'missing_lane',
-    { kind: 'terminal_index', index: 3 },
+    node,
+    laneTwo.id,
+    capture,
     terminalChoices,
-    (template) => {
-      template.terminalLayout.push({ index: 3, type: 'shell' })
-      return true
-    },
-  )).toEqual({ ok: false, reason: 'lane_not_found' })
-  expect(draft.terminalLayout).toHaveLength(beforeMissingLane + 1)
+    usageWithCapture,
+  )).toEqual(['3', '4'])
 
-  expect(setParallelLaneCollectsText(draft, 'parallel', 'lane_shell', true)).toEqual({ ok: true })
-  const node = findParallel(draft.body, 'parallel')!
-  const shell = node.lanes[0]
-  expect(parallelLaneOutput(shell)?.source).toEqual({
-    kind: 'step_artifact',
-    stepId: 'lane_extract',
-    artifact: 'extracted_text',
+  const invalidShell = structuredClone(draft)
+  const invalidShellNode = invalidShell.body[0] as ParallelNode
+  ;(invalidShellNode.lanes[1].body[0] as Extract<ParallelLaneActionNode, { type: 'send' }>).terminal = {
+    kind: 'terminal_index',
+    index: 1,
+  }
+  expect(validateMacroDefinitionV6(invalidShell).ok).toBe(false)
+
+  const invalidSharedRead = structuredClone(draft)
+  const invalidSharedNode = invalidSharedRead.body[0] as ParallelNode
+  invalidSharedNode.lanes[1].body.push(captureAction('shared_read', 3))
+  expect(validateMacroDefinitionV6(invalidSharedRead).ok).toBe(false)
+})
+
+test('an unassigned pane action can select a live terminal beyond the empty draft layout', () => {
+  const draft = definition()
+  draft.terminalLayout = []
+  const node = draft.body[0] as ParallelNode
+  node.lanes = [{
+    id: 'lane_1',
+    label: 'Alpha',
+    body: [sendAction('unassigned_send', 1)],
+  }]
+  const send = node.lanes[0].body[0] as Extract<ParallelLaneActionNode, { type: 'send' }>
+  send.terminal = { kind: 'unassigned' }
+
+  expect(unavailableParallelActionTerminalValues(
+    draft,
+    node,
+    'lane_1',
+    send,
+    terminalChoices,
+  )).toEqual([])
+})
+
+test('parallel editor commands mutate only pane/action structure and explicit targets', () => {
+  const draft = definition()
+  expect(renameParallelLane(draft, 'parallel', 'lane_1', 'lane_2')).toEqual({
+    ok: false,
+    reason: 'duplicate_lane_id',
   })
+  expect(setParallelLaneLabel(draft, 'parallel', 'lane_1', 'Beta')).toEqual({
+    ok: false,
+    reason: 'duplicate_lane_label',
+  })
+  expect(renameParallelLaneAction(draft, 'parallel', 'lane_1', 'shared_a', 'shared_b'))
+    .toEqual({ ok: false, reason: 'duplicate_node_id' })
 
-  const added = addParallelLaneAction(
+  const addedLane = addParallelLane(draft, 'parallel')
+  expect(addedLane.ok && addedLane.addedLaneId).toBe('lane_3')
+  const node = draft.body[0] as ParallelNode
+  expect(node.lanes[2]).toEqual({ id: 'lane_3', label: 'lane_3', body: [] })
+
+  const addedAction = addParallelLaneAction(draft, 'parallel', 'lane_3', 'notify')
+  if (!addedAction.ok || !addedAction.addedActionId) throw new Error('notify_not_added')
+  expect(node.lanes[2].body[0]?.type).toBe('notify')
+  const send = addParallelLaneAction(draft, 'parallel', 'lane_3', 'send')
+  if (!send.ok || !send.addedActionId) throw new Error('send_not_added')
+
+  let adopted = 0
+  expect(setParallelActionTerminal(
     draft,
     'parallel',
-    'lane_shell',
-    'send',
-    terminalChoices,
-    Number.MAX_SAFE_INTEGER,
-  )
-  expect(added.ok).toBe(true)
-  if (!added.ok || !added.addedActionId) throw new Error('expected added lane action')
-  expect(shell.body.at(-1)?.type).toBe('output')
-  expect(shell.body.at(-2)?.id).toBe(added.addedActionId)
-  expect(moveParallelLaneAction(draft, 'parallel', 'lane_shell', added.addedActionId, -1))
+    'lane_3',
+    send.addedActionId,
+    { kind: 'terminal_index', index: 2 },
+    (_template, index) => { adopted = index; return true },
+  )).toEqual({ ok: true })
+  expect(adopted).toBe(2)
+  expect((node.lanes[2].body[1] as Extract<ParallelLaneActionNode, { type: 'send' }>).terminal)
+    .toEqual({ kind: 'terminal_index', index: 2 })
+
+  expect(moveParallelLaneAction(draft, 'parallel', 'lane_3', send.addedActionId, -1))
     .toEqual({ ok: true })
-  expect(shell.body.at(-3)?.id).toBe(added.addedActionId)
-  expect(renameParallelLaneAction(
-    draft,
-    'parallel',
-    'lane_shell',
-    added.addedActionId,
-    'renamed_send',
-  )).toEqual({ ok: true, renamed: { from: added.addedActionId, to: 'renamed_send' } })
-
-  const laneAdded = addParallelLane(draft, 'parallel')
-  expect(laneAdded).toEqual({ ok: true, addedLaneId: 'lane_3' })
-  expect(node.lanes.at(-1)?.body.at(-1)?.type).toBe('output')
-  const removed = removeParallelLane(draft, 'parallel', 'lane_shell')
-  expect(removed.ok).toBe(true)
-  if (!removed.ok) throw new Error('expected removed lane')
-  expect(removed.removedActionIds).toEqual([
-    'lane_wait',
-    'lane_capture',
-    'renamed_send',
-    'lane_extract',
-  ])
-  expect(node.lanes.some((lane) => lane.id === 'lane_shell')).toBe(false)
+  expect(node.lanes[2].body[0]?.id).toBe(send.addedActionId)
+  expect(removeParallelLaneAction(draft, 'parallel', 'lane_3', send.addedActionId))
+    .toEqual({ ok: true, removedActionIds: [send.addedActionId] })
+  expect(removeParallelLane(draft, 'parallel', 'lane_3')).toEqual({
+    ok: true,
+    removedLaneId: 'lane_3',
+    removedActionIds: [addedAction.addedActionId],
+  })
+  expect(findParallelLane(node, 'lane_3')).toBeUndefined()
 })
 
-function expectAtomicFailure(
-  draft: MacroDefinitionV5,
-  command: () => ParallelLaneCommandResult,
-  reason: string,
-): Extract<ParallelLaneCommandResult, { ok: false }> {
-  const before = structuredClone(draft)
-  const result = command()
-  expect(result).toMatchObject({ ok: false, reason })
-  expect(draft).toEqual(before)
-  if (result.ok) throw new Error('expected failed command')
-  return result
-}
-
-function parallelDraft(): MacroDefinitionV5 {
+function definition(): MacroDefinitionV6 {
   return {
-    schemaVersion: 5,
-    name: 'Parallel policy',
+    schemaVersion: 6,
+    name: 'Parallel editor',
     description: '',
-    terminalLayout: [{ index: 1, type: 'shell' }, { index: 2, type: 'text' }],
-    body: [
-      { id: 'reserved', type: 'wait', mode: 'duration', durationMs: 1 },
-      {
-        id: 'parallel',
-        type: 'parallel',
-        lanes: [shellLane(), textLane()],
-        merge: { kind: 'sectioned_text', separator: '\n', includeEmptyOutputs: false },
-        onLaneFail: 'pause',
-      } satisfies ParallelNode,
+    terminalLayout: [
+      { index: 1, type: 'shell' },
+      { index: 2, type: 'shell' },
+      { index: 3, type: 'text' },
+      { index: 4, type: 'text' },
     ],
+    body: [{
+      id: 'parallel',
+      type: 'parallel',
+      sharedTextOrder: 'pane_order',
+      onLaneFail: 'pause',
+      lanes: [
+        {
+          id: 'lane_1',
+          label: 'Alpha',
+          body: [
+            sendAction('shell_a', 1),
+            captureAction('exclusive_capture', 4),
+            sendAction('shared_a', 3),
+          ],
+        },
+        {
+          id: 'lane_2',
+          label: 'Beta',
+          body: [sendAction('shared_b', 3)],
+        },
+      ],
+    }],
   }
 }
 
-function shellLane(): ParallelLane {
+function sendAction(
+  id: string,
+  terminalIndex: number,
+): Extract<ParallelLaneActionNode, { type: 'send' }> {
   return {
-    id: 'lane_shell',
-    label: 'shell',
-    terminal: { kind: 'terminal_index', index: 1 },
-    body: [
-      { id: 'lane_wait', type: 'wait', mode: 'terminal-quiet', quietMs: 100, maxMs: 200, onTimeout: 'pause' },
-      {
-        id: 'lane_capture',
-        type: 'capture-source',
-        capture: { kind: 'terminal-buffer', mode: 'scrollback-tail', maxChars: 1000 },
-      },
-      {
-        id: 'lane_extract',
-        type: 'extract_text',
-        source: { kind: 'step_artifact', stepId: 'lane_capture', artifact: 'captured_text' },
-        split: { kind: 'lines', keepEmpty: false },
-        filters: [],
-        select: { mode: 'all' },
-        extract: { kind: 'none' },
-        trim: 'right',
-        onEmpty: 'pause',
-      },
-      { id: 'lane_output', type: 'output', source: { kind: 'none' } },
-    ],
+    id,
+    type: 'send',
+    terminal: { kind: 'terminal_index', index: terminalIndex },
+    message: { parts: [{ kind: 'text', text: id }] },
+    delivery: 'direct',
+    ending: 'none',
   }
 }
 
-function textLane(): ParallelLane {
+function captureAction(
+  id: string,
+  terminalIndex: number,
+): Extract<ParallelLaneActionNode, { type: 'capture-source' }> {
   return {
-    id: 'lane_text',
-    label: 'text',
-    terminal: { kind: 'terminal_index', index: 2 },
-    body: [{ id: 'text_output', type: 'output', source: { kind: 'none' } }],
+    id,
+    type: 'capture-source',
+    capture: { kind: 'text-box', terminal: { kind: 'terminal_index', index: terminalIndex } },
   }
 }

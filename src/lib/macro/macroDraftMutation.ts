@@ -1,21 +1,21 @@
-import type { MacroDefinitionV5 } from './macroDefinitionTypes'
+import type { MacroDefinitionV6 } from './macroDefinitionTypes'
 
 type JsonPath = Array<string | number>
 type PathEntry = { path: JsonPath; key: string }
 
 export function createMacroDraftMutationTracker() {
-  let base: MacroDefinitionV5 | null = null
+  let base: MacroDefinitionV6 | null = null
   const unequal = new Map<string, PathEntry>()
   const proxyTargets = new WeakMap<object, object>()
 
   return {
-    replaceBase(definition: MacroDefinitionV5 | null): void {
+    replaceBase(definition: MacroDefinitionV6 | null): void {
       base = definition
       unequal.clear()
     },
     apply(
-      definition: MacroDefinitionV5,
-      mutator: (definition: MacroDefinitionV5) => void,
+      definition: MacroDefinitionV6,
+      mutator: (definition: MacroDefinitionV6) => void,
     ): boolean {
       const changed = new Map<string, PathEntry>()
       mutator(recordingProxy(definition, [], changed, new WeakMap(), proxyTargets))

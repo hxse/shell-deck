@@ -178,7 +178,7 @@ async function snapshot(
   events: MacroRunEvent[],
   overrides: Partial<MacroRunnerSnapshot> = {},
 ): Promise<MacroRunnerSnapshot> {
-  const definition = { schemaVersion: 5 as const, name: 'merge', description: '', terminalLayout: [], body: [] }
+  const definition = { schemaVersion: 6 as const, name: 'merge', description: '', terminalLayout: [], body: [] }
   const definitionHash = await sha256Text(canonicalJsonStringify(definition))
   const value: MacroRunnerSnapshot = {
     roomId: ROOM_ID,

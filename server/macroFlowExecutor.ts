@@ -1,12 +1,19 @@
-import type { FlowV2Node, ParallelLane } from '../src/lib/macro/macroDefinitionTypes'
+import type {
+  FlowV2Node,
+  MacroTerminalLayoutItem,
+  ParallelLane,
+} from '../src/lib/macro/macroDefinitionTypes'
+import { buildParallelTerminalUsage } from '../src/lib/macro/parallelTerminalUsage'
 import type { TextListTemplateBinding } from '../src/lib/macro/scopedTextTemplate'
-import type { MacroExecutableActionNode } from './macroActionRuntime'
+import type {
+  MacroActionExecutionOptions,
+  MacroExecutableActionNode,
+} from './macroActionRuntime'
 import {
-  assignedMacroTerminalIndex,
   matchesMacroCondition,
-  readMacroArtifact,
   type MacroArtifactMap,
 } from './macroTextEvaluation'
+import { ParallelSharedTextQueue } from './parallelSharedTextQueue'
 
 export type MacroRunControlSignal = 'break' | 'continue' | 'finish'
 
@@ -18,16 +25,19 @@ export class MacroFlowSignal extends Error {
 
 export type MacroFlowExecutionContext = {
   body: FlowV2Node[]
+  terminalLayout: MacroTerminalLayoutItem[]
   artifacts: MacroArtifactMap
   templateBindings: TextListTemplateBinding[]
   parallelProgress: Map<string, number>
-  parallelOutputs: Map<string, string>
+  abortSignal: AbortSignal
   callbacks: {
     checkpoint: () => Promise<void>
     setCurrentNodeId: (nodeId: string) => void
     appendEvent: (kind: string, data?: Record<string, unknown>) => void
-    executeAction: (node: MacroExecutableActionNode) => Promise<void>
-    persistArtifact: (stepId: string, name: string, value: string, prefix: string, data?: Record<string, unknown>) => string
+    executeAction: (
+      node: MacroExecutableActionNode,
+      options?: MacroActionExecutionOptions,
+    ) => Promise<void>
     pauseRun: (reason: string, stepId: string) => Promise<void>
     isTerminalized: () => boolean
     isCancellation: (error: unknown) => boolean
@@ -57,21 +67,7 @@ async function executeNodes(context: MacroFlowExecutionContext, nodes: FlowV2Nod
 
 async function executeNode(context: MacroFlowExecutionContext, node: FlowV2Node): Promise<void> {
   if (node.type === 'parallel') {
-    const sections = await executeParallel(context, node)
-    const merged = sections
-      .filter((value) => node.merge.includeEmptyOutputs || value.text.length > 0)
-      .map((value) => node.merge.separator
-        .replaceAll('{laneId}', value.laneId)
-        .replaceAll('{laneLabel}', value.label)
-        .replaceAll('{terminalIndex}', String(value.terminalIndex)) + value.text)
-      .join('\n\n')
-    context.callbacks.persistArtifact(
-      node.id,
-      'merged_text',
-      merged,
-      'parallel-merged',
-      { laneIds: sections.map((section) => section.laneId) },
-    )
+    await executeParallel(context, node)
     return
   }
   if (node.type === 'if') {
@@ -128,27 +124,61 @@ async function executeLoopBody(context: MacroFlowExecutionContext, body: FlowV2N
 async function executeParallel(
   context: MacroFlowExecutionContext,
   node: Extract<FlowV2Node, { type: 'parallel' }>,
-): Promise<Array<{ laneId: string; label: string; terminalIndex: number; text: string }>> {
-  while (true) {
-    const settled = await Promise.all(node.lanes.map(async (lane) => {
-      try {
-        return { ok: true as const, value: await executeLane(context, node.id, lane) }
-      } catch (error) {
-        return { ok: false as const, laneId: lane.id, error }
+): Promise<void> {
+  const usage = buildParallelTerminalUsage(node, context.terminalLayout)
+  const invocationAbort = new AbortController()
+  const stopInvocation = () => invocationAbort.abort(new Error('run_stopped'))
+  if (context.abortSignal.aborted) stopInvocation()
+  else context.abortSignal.addEventListener('abort', stopInvocation, { once: true })
+  const queue = new ParallelSharedTextQueue(usage.sharedTextPlans, invocationAbort.signal)
+  const execute = (lane: ParallelLane) => executeLane(
+    context,
+    node.id,
+    lane,
+    queue,
+    invocationAbort.signal,
+  )
+    .then(() => ({ ok: true as const, lane }))
+    .catch((error: unknown) => ({ ok: false as const, lane, error }))
+  const active = new Map(node.lanes.map((lane) => [lane.id, execute(lane)]))
+  try {
+    while (active.size > 0) {
+      const settled = await Promise.race(active.values())
+      active.delete(settled.lane.id)
+      if (settled.ok) continue
+      if (settled.error instanceof MacroFlowSignal) {
+        cancelParallelInvocation(invocationAbort, queue, settled.error)
+        await Promise.all(active.values())
+        throw settled.error
       }
-    }))
-    const failed = settled.find((result) => !result.ok)
-    if (!failed) {
-      const values = settled.map((result) => (result as Extract<typeof result, { ok: true }>).value)
-      for (const lane of node.lanes) {
-        context.parallelProgress.delete(`${node.id}:${lane.id}`)
-        context.parallelOutputs.delete(`${node.id}:${lane.id}`)
+      if (context.callbacks.isCancellation(settled.error)) {
+        cancelParallelInvocation(invocationAbort, queue, new Error('run_stopped'))
+        await Promise.all(active.values())
+        throw settled.error
       }
-      return values
+      const code = `parallel_lane_failed:${settled.lane.id}:${errorMessage(settled.error)}`
+      if (node.onLaneFail === 'fail') {
+        cancelParallelInvocation(invocationAbort, queue, new Error(code))
+        await Promise.all(active.values())
+        throw new Error(code)
+      }
+      await context.callbacks.pauseRun(code, node.id)
+      if (context.abortSignal.aborted || context.callbacks.isTerminalized()) {
+        cancelParallelInvocation(invocationAbort, queue, new Error('run_stopped'))
+        await Promise.all(active.values())
+        throw new Error('run_stopped')
+      }
+      active.set(settled.lane.id, execute(settled.lane))
     }
-    const code = `parallel_lane_failed:${failed.laneId}:${errorMessage(failed.error)}`
-    if (node.onLaneFail === 'fail') throw new Error(code)
-    await context.callbacks.pauseRun(code, node.id)
+    queue.finish()
+    for (const lane of node.lanes) context.parallelProgress.delete(`${node.id}:${lane.id}`)
+  } catch (error) {
+    queue.cancel(error instanceof Error ? error : new Error(errorMessage(error)))
+    await Promise.all(active.values())
+    throw error
+  } finally {
+    context.abortSignal.removeEventListener('abort', stopInvocation)
+    queue.dispose()
   }
 }
 
@@ -156,33 +186,28 @@ async function executeLane(
   context: MacroFlowExecutionContext,
   parallelId: string,
   lane: ParallelLane,
-): Promise<{ laneId: string; label: string; terminalIndex: number; text: string }> {
+  queue: ParallelSharedTextQueue,
+  abortSignal: AbortSignal,
+): Promise<void> {
   const progressKey = `${parallelId}:${lane.id}`
   let index = context.parallelProgress.get(progressKey) ?? 0
   while (index < lane.body.length) {
+    if (abortSignal.aborted) throw new Error('run_stopped')
     await context.callbacks.checkpoint()
+    if (abortSignal.aborted) throw new Error('run_stopped')
     const node = lane.body[index]
-    if (node.type === 'output') {
-      context.parallelOutputs.set(
-        progressKey,
-        node.source.kind === 'none' ? '' : readMacroArtifact(context.artifacts, node.source),
-      )
-      index += 1
-      context.parallelProgress.set(progressKey, index)
-      continue
-    }
-    const inherited = { ...node } as Record<string, unknown>
-    if (node.type === 'send' || (node.type === 'wait' && node.mode === 'terminal-quiet')) inherited.terminal = lane.terminal
-    if (node.type === 'capture-source') inherited.capture = { ...node.capture, terminal: lane.terminal }
     context.callbacks.setCurrentNodeId(node.id)
     context.callbacks.appendEvent('step_started', { stepId: node.id, type: node.type, parallelId, laneId: lane.id })
     try {
-      await context.callbacks.executeAction(inherited as unknown as MacroExecutableActionNode)
+      await context.callbacks.executeAction(node, {
+        abortSignal,
+        dispatchTerminalWrite: queue.dispatch,
+      })
       context.callbacks.appendEvent('step_completed', { stepId: node.id, type: node.type, parallelId, laneId: lane.id })
       index += 1
       context.parallelProgress.set(progressKey, index)
     } catch (error) {
-      if (!context.callbacks.isTerminalized() && !(error instanceof MacroFlowSignal) && !context.callbacks.isCancellation(error)) {
+      if (!abortSignal.aborted && !context.callbacks.isTerminalized() && !(error instanceof MacroFlowSignal) && !context.callbacks.isCancellation(error)) {
         context.callbacks.appendEvent('step_failed', {
           stepId: node.id,
           type: node.type,
@@ -194,12 +219,15 @@ async function executeLane(
       throw error
     }
   }
-  return {
-    laneId: lane.id,
-    label: lane.label,
-    terminalIndex: assignedMacroTerminalIndex(lane.terminal),
-    text: context.parallelOutputs.get(progressKey) ?? '',
-  }
+}
+
+function cancelParallelInvocation(
+  controller: AbortController,
+  queue: ParallelSharedTextQueue,
+  error: Error,
+): void {
+  if (!controller.signal.aborted) controller.abort(error)
+  queue.cancel(error)
 }
 
 function errorMessage(error: unknown): string {

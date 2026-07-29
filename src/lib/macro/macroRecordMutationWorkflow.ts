@@ -1,7 +1,7 @@
 import type { ContentEditLeaseGrant, ContentEditLeaseView } from '../contentEditLease'
 import type { TerminalRoomClient } from '../terminalRoomClient'
-import { validateMacroDefinitionV5 } from './macroDefinitionValidation'
-import type { MacroDefinitionV5, MacroRecord } from './macroDefinitionTypes'
+import { validateMacroDefinitionV6 } from './macroDefinitionValidation'
+import type { MacroDefinitionV6, MacroRecord } from './macroDefinitionTypes'
 import { formatMacroIssues, messageOf } from './macroJsonEditSession.svelte'
 import { MacroRecordClient, type MacroRecordListResult } from './macroRecordClient'
 
@@ -89,11 +89,11 @@ export class MacroRecordMutationWorkflow {
   }
 
   async persistDefinition(
-    definition: MacroDefinitionV5,
+    definition: MacroDefinitionV6,
     operationIsCurrent: () => boolean,
     commit: (outcome: Exclude<MacroPersistDefinitionOutcome, { kind: 'discarded' }>) => void,
   ): Promise<MacroPersistDefinitionOutcome> {
-    const validation = validateMacroDefinitionV5(definition)
+    const validation = validateMacroDefinitionV6(definition)
     if (!validation.ok) throw new Error(formatMacroIssues(validation.issues))
     const record = this.options.selectedRecord()
     const initialLease = this.options.editLease()

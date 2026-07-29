@@ -36,9 +36,9 @@ describe('Macro workbench theme contract', () => {
       entries: inventory.length,
       digest: createHash('sha256').update(JSON.stringify(inventory)).digest('hex'),
     }).toEqual({
-      files: 25,
-      entries: 744,
-      digest: '5efcb40f0010882f18ef319c68ac74e025299bc7f3f1057bc0ff50c8b084ada0',
+      files: 27,
+      entries: 742,
+      digest: '7822f80e4fff3c4c769566fb975586ba783de3eb3e12dd6c3f50aeb49af0367a',
     })
   })
 
@@ -80,8 +80,9 @@ describe('Macro workbench theme contract', () => {
     const condition = readFileSync(resolve(macroRoot, 'MacroConditionEditor.svelte'), 'utf8')
     const scalar = readFileSync(resolve(macroRoot, 'TemplatableScalarField.svelte'), 'utf8')
     const message = readFileSync(resolve(macroRoot, 'MessagePartsEditor.svelte'), 'utf8')
-    const action = readFileSync(resolve(macroRoot, 'MacroActionNodeEditor.svelte'), 'utf8')
+    const notify = readFileSync(resolve(macroRoot, 'NotifyActionFields.svelte'), 'utf8')
     const parallel = readFileSync(resolve(macroRoot, 'ParallelLaneTabs.svelte'), 'utf8')
+    const usage = readFileSync(resolve(macroRoot, 'ParallelTerminalUsageBadge.svelte'), 'utf8')
     const runDock = readFileSync(resolve(macroRoot, 'MacroRunDock.svelte'), 'utf8')
     const editor = readFileSync(resolve(macroRoot, 'MacroEditorShell.svelte'), 'utf8')
     const tokens = readFileSync(resolve(projectRoot, 'src/lib/macro/scopedTextTemplate.ts'), 'utf8')
@@ -95,9 +96,12 @@ describe('Macro workbench theme contract', () => {
     expect(scalar + message).toContain('LOOP_KEY_TEMPLATE_TOKEN')
     expect(scalar + message).toContain('LOOP_VALUE_TEMPLATE_TOKEN')
     expect(scalar + message).not.toContain('Available:')
-    expect(action).toContain('notify-app-repeat-count')
-    expect(action).toContain('notify-app-repeat-interval-ms')
-    expect(parallel).toContain('parallel-collect-lane-text')
+    expect(notify).toContain('notify-app-repeat-count')
+    expect(notify).toContain('notify-app-repeat-interval-ms')
+    expect(parallel).toContain('parallel-shared-text-order')
+    expect(parallel).toContain('parallel-lane-add-empty')
+    expect(parallel).not.toContain('parallel-collect-lane-text')
+    expect(usage).toContain('parallel-terminal-usage')
     expect(runDock).toContain('Current stage')
     expect(runDock).toContain('data-current-node-id')
     expect(editor).toContain('macro_run_active')

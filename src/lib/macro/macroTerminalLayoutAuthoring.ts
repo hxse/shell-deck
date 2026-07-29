@@ -1,7 +1,7 @@
 import type { TerminalRuntimePosition } from '../protocol'
 import type {
   FlowV2Node,
-  MacroDefinitionV5,
+  MacroDefinitionV6,
   MacroTerminalLayoutItem,
 } from './macroDefinitionTypes'
 
@@ -9,13 +9,17 @@ export type AdoptRuntimeTerminalResult =
   | { ok: true }
   | { ok: false; reason: 'invalid_terminal_index' | 'invalid_macro_layout' | 'runtime_terminal_unavailable' }
 
-export function referencedTerminalIndexes(definition: MacroDefinitionV5): number[] {
+export type ProjectRuntimeTerminalLayoutResult =
+  | { ok: true; layout: MacroTerminalLayoutItem[] }
+  | Exclude<AdoptRuntimeTerminalResult, { ok: true }>
+
+export function referencedTerminalIndexes(definition: MacroDefinitionV6): number[] {
   const indexes = new Set<number>()
   collectNodeTerminalIndexes(definition.body, indexes)
   return [...indexes].sort((left, right) => left - right)
 }
 
-export function reconcileVisualTerminalLayout(definition: MacroDefinitionV5): void {
+export function reconcileVisualTerminalLayout(definition: MacroDefinitionV6): void {
   const lastReferencedIndex = referencedTerminalIndexes(definition).at(-1) ?? 0
   if (definition.terminalLayout.length > lastReferencedIndex) {
     definition.terminalLayout = definition.terminalLayout.slice(0, lastReferencedIndex)
@@ -23,14 +27,29 @@ export function reconcileVisualTerminalLayout(definition: MacroDefinitionV5): vo
 }
 
 export function adoptRuntimeTerminal(
-  definition: MacroDefinitionV5,
+  definition: MacroDefinitionV6,
   terminalIndex: number,
   runtimePositions: TerminalRuntimePosition[] | null,
 ): AdoptRuntimeTerminalResult {
+  const projected = projectRuntimeTerminalLayout(
+    definition.terminalLayout,
+    terminalIndex,
+    runtimePositions,
+  )
+  if (!projected.ok) return projected
+  definition.terminalLayout = projected.layout
+  return { ok: true }
+}
+
+export function projectRuntimeTerminalLayout(
+  currentLayout: MacroTerminalLayoutItem[],
+  terminalIndex: number,
+  runtimePositions: Array<Pick<TerminalRuntimePosition, 'index' | 'type'>> | null,
+): ProjectRuntimeTerminalLayoutResult {
   if (!Number.isInteger(terminalIndex) || terminalIndex < 1) {
     return { ok: false, reason: 'invalid_terminal_index' }
   }
-  if (!isContinuousLayout(definition.terminalLayout)) {
+  if (!isContinuousLayout(currentLayout)) {
     return { ok: false, reason: 'invalid_macro_layout' }
   }
 
@@ -38,15 +57,14 @@ export function adoptRuntimeTerminal(
   const selected = runtimeByIndex.get(terminalIndex)
   if (!selected) return { ok: false, reason: 'runtime_terminal_unavailable' }
 
-  const nextLayout = definition.terminalLayout.map((item) => ({ ...item }))
+  const nextLayout = currentLayout.map((item) => ({ ...item }))
   for (let index = nextLayout.length + 1; index <= terminalIndex; index += 1) {
     const runtime = runtimeByIndex.get(index)
     if (!runtime) return { ok: false, reason: 'runtime_terminal_unavailable' }
     nextLayout.push({ index, type: runtime.type })
   }
   nextLayout[terminalIndex - 1] = { index: terminalIndex, type: selected.type }
-  definition.terminalLayout = nextLayout
-  return { ok: true }
+  return { ok: true, layout: nextLayout }
 }
 
 function collectNodeTerminalIndexes(nodes: FlowV2Node[], indexes: Set<number>): void {
@@ -55,7 +73,7 @@ function collectNodeTerminalIndexes(nodes: FlowV2Node[], indexes: Set<number>): 
     if (node.type === 'wait' && node.mode === 'terminal-quiet') addAssignedIndex(node.terminal, indexes)
     if (node.type === 'capture-source') addAssignedIndex(node.capture.terminal, indexes)
     if (node.type === 'parallel') {
-      for (const lane of node.lanes) addAssignedIndex(lane.terminal, indexes)
+      for (const lane of node.lanes) collectParallelLaneTerminalIndexes(lane.body, indexes)
     }
     if (node.type === 'if') {
       for (const branch of node.branches) collectNodeTerminalIndexes(branch.body, indexes)
@@ -65,6 +83,17 @@ function collectNodeTerminalIndexes(nodes: FlowV2Node[], indexes: Set<number>): 
     if ((node.type === 'break' || node.type === 'continue' || node.type === 'finish') && node.body) {
       collectNodeTerminalIndexes(node.body, indexes)
     }
+  }
+}
+
+function collectParallelLaneTerminalIndexes(
+  actions: Extract<FlowV2Node, { type: 'parallel' }>['lanes'][number]['body'],
+  indexes: Set<number>,
+): void {
+  for (const action of actions) {
+    if (action.type === 'send') addAssignedIndex(action.terminal, indexes)
+    if (action.type === 'wait' && action.mode === 'terminal-quiet') addAssignedIndex(action.terminal, indexes)
+    if (action.type === 'capture-source') addAssignedIndex(action.capture.terminal, indexes)
   }
 }
 

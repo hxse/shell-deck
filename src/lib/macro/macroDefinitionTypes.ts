@@ -25,12 +25,8 @@ export type CaptureSourceConfig =
   | { kind: 'text-box'; terminal: MacroTerminalReference }
   | { kind: 'agent-event'; agent: { kind: 'codex' }; terminal: MacroTerminalReference; captureMode: AgentEventCaptureMode; waitLimit: CaptureWaitLimit }
   | { kind: 'structured-json'; terminal: MacroTerminalReference; schema: JsonSchema; waitLimit: CaptureWaitLimit }
-export type ParallelCaptureSourceConfig =
-  | Omit<Extract<CaptureSourceConfig, { kind: 'terminal-buffer' }>, 'terminal'>
-  | Omit<Extract<CaptureSourceConfig, { kind: 'text-box' }>, 'terminal'>
-  | Omit<Extract<CaptureSourceConfig, { kind: 'agent-event' }>, 'terminal'>
 
-export type TextArtifactName = 'captured_text' | 'merged_text' | 'extracted_text'
+export type TextArtifactName = 'captured_text' | 'extracted_text'
 export type JsonArtifactName = 'captured_json'
 export type ArtifactName = TextArtifactName | JsonArtifactName
 export type FlowV2TextStepArtifactSource = { kind: 'step_artifact'; stepId: string; artifact: TextArtifactName }
@@ -91,17 +87,26 @@ export type WaitNode =
 export type CaptureSourceNode = { id: string; type: 'capture-source'; capture: CaptureSourceConfig }
 export type ExtractTextNode = { id: string; type: 'extract_text'; source: FlowV2ArtifactSource; split: TextSplitSpec; filters: TextFilterSpec[]; select: TextSelectSpec; extract: TextExtractSpec; trim: TextTrimMode; onEmpty: TimeoutAction }
 
+export type ParallelCaptureNode = {
+  id: string
+  type: 'capture-source'
+  capture: Exclude<CaptureSourceConfig, { kind: 'structured-json' }>
+}
 export type ParallelLaneActionNode =
-  | Omit<SendNode, 'terminal'>
-  | Extract<WaitNode, { mode: 'duration' }>
-  | (Omit<Extract<WaitNode, { mode: 'terminal-quiet' }>, 'terminal' | 'onTimeout'> & { onTimeout: 'pause' })
-  | { id: string; type: 'capture-source'; capture: ParallelCaptureSourceConfig }
-  | (Omit<ExtractTextNode, 'onEmpty'> & { onEmpty: 'pause' | 'fail' })
-export type ParallelLaneOutputNode = { id: string; type: 'output'; source: FlowV2TextStepArtifactSource | { kind: 'none' } }
-export type ParallelOutputSource = ParallelLaneOutputNode['source']
-export type ParallelLaneNode = ParallelLaneActionNode | ParallelLaneOutputNode
-export type ParallelLane = { id: string; label: string; terminal: MacroTerminalReference; body: ParallelLaneNode[] }
-export type ParallelNode = { id: string; type: 'parallel'; lanes: ParallelLane[]; merge: { kind: 'sectioned_text'; separator: string; includeEmptyOutputs: boolean }; onLaneFail: 'pause' | 'fail' }
+  | SendNode
+  | Extract<WaitNode, { mode: 'duration' | 'terminal-quiet' }>
+  | ParallelCaptureNode
+  | ExtractTextNode
+  | NotifyNode
+export type ParallelLane = { id: string; label: string; body: ParallelLaneActionNode[] }
+export type ParallelSharedTextOrder = 'pane_order' | 'completion_order'
+export type ParallelNode = {
+  id: string
+  type: 'parallel'
+  lanes: ParallelLane[]
+  sharedTextOrder: ParallelSharedTextOrder
+  onLaneFail: 'pause' | 'fail'
+}
 
 export type FlowV2ActionNode = SendNode | NotifyNode | InputNode | WaitNode | CaptureSourceNode | ExtractTextNode | ParallelNode
 export type FlowV2IfBranch = { kind: 'if' | 'elif'; condition: MacroCondition; body: FlowV2Node[] }
@@ -117,8 +122,8 @@ export type FlowV2ControlNode =
   | FlowV2ControlTerminalNode
 export type FlowV2Node = FlowV2ActionNode | FlowV2ControlNode
 
-export type MacroDefinitionV5 = {
-  schemaVersion: 5
+export type MacroDefinitionV6 = {
+  schemaVersion: 6
   name: string
   description: string
   terminalLayout: MacroTerminalLayoutItem[]
@@ -130,7 +135,7 @@ export type MacroRecord = {
   revision: number
   createdAt: string
   updatedAt: string
-  definition: MacroDefinitionV5
+  definition: MacroDefinitionV6
 }
 
 export type MacroRecordSummary = {

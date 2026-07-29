@@ -2,7 +2,7 @@ import { PROFILE_CATALOG_SUMMARY } from '../../src/lib/parser/profileCatalogSumm
 import { assertGeneratedId } from '../../src/lib/generatedId'
 import { assertContentResourceKey } from '../../src/lib/contentEditLease'
 import type { FlowV2Node } from '../../src/lib/macro/macroDefinitionTypes'
-import { validateMacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionValidation'
+import { validateMacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionValidation'
 import type { HttpContext, HttpRouteResult } from './httpContext'
 import {
   assertNoQuery,
@@ -54,7 +54,7 @@ export async function handleContentRoutes(req: Request, url: URL, context: HttpC
       const scan = macroStore.scan()
       const invalidRecords: Array<{ recordId: string; error: 'invalid_macro_record' | 'invalid_macro_record_definition' }> = [...scan.invalidRecords]
       const templates = scan.records.flatMap((record) => {
-        const validated = validateMacroDefinitionV5(record.definition)
+        const validated = validateMacroDefinitionV6(record.definition)
         if (!validated.ok) {
           invalidRecords.push({ recordId: record.id, error: 'invalid_macro_record_definition' })
           return []
@@ -73,7 +73,7 @@ export async function handleContentRoutes(req: Request, url: URL, context: HttpC
     }
     if (req.method === 'POST') {
       const body = await exactObject(req, ['definition'])
-      const validation = validateMacroDefinitionV5(body.definition)
+      const validation = validateMacroDefinitionV6(body.definition)
       if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
       const template = await manager.runControlledBearerPublishedOperation(roomControlBearer(req), async (ticket) => {
         ticket.assertAuthorized()
@@ -96,12 +96,12 @@ export async function handleContentRoutes(req: Request, url: URL, context: HttpC
     const templateId = assertGeneratedId(decodeURIComponent(templateRoute[1]), 'macroTemplate')
     if (req.method === 'GET') {
       const template = macroStore.read(templateId)
-      if (!validateMacroDefinitionV5(template.definition).ok) throw new Error('invalid_macro_record_definition')
+      if (!validateMacroDefinitionV6(template.definition).ok) throw new Error('invalid_macro_record_definition')
       return json({ ok: true, template })
     }
     if (req.method === 'PUT') {
       const body = await exactObject(req, ['expectedRevision', 'editLeaseId', 'definition'])
-      const validation = validateMacroDefinitionV5(body.definition)
+      const validation = validateMacroDefinitionV6(body.definition)
       if (!validation.ok) return json({ ok: false, error: 'invalid_macro_definition', issues: validation.issues }, 400)
       const expectedRevision = assertPositiveRevision(body.expectedRevision)
       const editLeaseId = assertGeneratedId(body.editLeaseId, 'contentEditLease')

@@ -14,7 +14,7 @@ import type { TerminalBackend, TerminalBackendEvent, TerminalBackendOptions } fr
 import { publishPrivateFileDelete, writePrivateFileAtomic } from '../../server/userDataRoot'
 import { AgentEventStore } from '../../src/lib/agentEvents/agentEventStore'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV5, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord } from '../../src/lib/macro/macroDefinitionTypes'
 import type { MacroRunnerSnapshot, RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
@@ -27,7 +27,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
     replayByteLimit: 8,
     backendFactory: (_kind, options) => new StreamingTerminalBackend(options),
   })
-  const records = new MacroRecordStore<MacroDefinitionV5>(root)
+  const records = new MacroRecordStore<MacroDefinitionV6>(root)
   const store = new MacroRunStore(root)
   const runner = new MacroRunnerService(manager, records, store, new NotificationService(root), new AgentEventStore(root))
   manager.addDestroyHook((roomId, roomGeneration) => runner.destroyRoom(roomId, roomGeneration))
@@ -36,7 +36,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
     manager.createTerminal(room.roomId, { backend: 'fake' })
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 5,
+      schemaVersion: 6,
       name: 'quiet activity revision',
       description: '',
       terminalLayout: [{ index: 1, type: 'shell' }],
@@ -58,7 +58,7 @@ test('terminal quiet observes output activity after the replay tail is full', as
 test('Input submit append failure keeps the pending request retryable and never strands the structure lock', async () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-input-append-failure-034-'))
   const manager = new TerminalRoomManager()
-  const records = new MacroRecordStore<MacroDefinitionV5>(root)
+  const records = new MacroRecordStore<MacroDefinitionV6>(root)
   const store = new MacroRunStore(root)
   const originalAppend = store.append.bind(store)
   let failSubmitted = true
@@ -75,7 +75,7 @@ test('Input submit append failure keeps the pending request retryable and never 
     const text = manager.createTerminal(room.roomId, { backend: 'text' })
     const grant = roomGrant(manager, room.roomId)
     const record = await records.create({
-      schemaVersion: 5,
+      schemaVersion: 6,
       name: 'retry input append',
       description: '',
       terminalLayout: [{ index: 1, type: 'text' }],

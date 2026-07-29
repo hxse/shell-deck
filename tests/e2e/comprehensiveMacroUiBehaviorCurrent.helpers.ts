@@ -251,7 +251,12 @@ export async function exerciseNodeChrome(page: Page, first: Locator, second: Loc
 }
 
 export async function addParallelAction(lane: Locator, paletteTestId: string) {
-  await lane.getByTestId('parallel-lane-add-before-output').click()
+  const actions = lane.getByTestId('parallel-lane-action')
+  if (await actions.count() === 0) {
+    await lane.getByTestId('parallel-lane-add-empty').click()
+  } else {
+    await actions.last().getByTestId('parallel-lane-add-after').click()
+  }
   await lane.page().getByTestId(paletteTestId).click()
 }
 

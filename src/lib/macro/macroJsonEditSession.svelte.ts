@@ -3,7 +3,7 @@ import {
   parseAndValidateMacroDefinitionJson,
   parseAndValidateMacroTerminalLayoutFromDefinitionJson,
 } from './macroDefinitionValidation'
-import type { MacroDefinitionV5 } from './macroDefinitionTypes'
+import type { MacroDefinitionV6 } from './macroDefinitionTypes'
 
 type ValidationIssue = { path: string; code?: string; message: string }
 type JsonValidationFailure = {
@@ -13,7 +13,7 @@ type JsonValidationFailure = {
 
 export type MacroJsonCommit = {
   revision: number
-  candidate: MacroDefinitionV5
+  candidate: MacroDefinitionV6
 }
 
 export function createMacroJsonEditSession() {
@@ -23,7 +23,7 @@ export function createMacroJsonEditSession() {
   let error = $state<string | null>(null)
   let pendingCommitRevision: number | null = null
 
-  function open(definition: MacroDefinitionV5): void {
+  function open(definition: MacroDefinitionV6): void {
     text = JSON.stringify(definition, null, 2)
     editing = true
     revision += 1

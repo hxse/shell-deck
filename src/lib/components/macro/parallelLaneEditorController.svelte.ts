@@ -1,10 +1,14 @@
 import type {
-  MacroDefinitionV5,
+  MacroDefinitionV6,
   MacroTerminalReference,
   ParallelLane,
   ParallelLaneActionNode,
   ParallelNode,
 } from '../../macro/macroDefinitionTypes'
+import {
+  parallelActionTerminalReference,
+  type ParallelTerminalUsageIndex,
+} from '../../macro/parallelTerminalUsage'
 import type { TerminalChoice } from '../../macro/macroTerminalChoices'
 import {
   addParallelLane,
@@ -14,11 +18,8 @@ import {
   removeParallelLaneAction,
   renameParallelLane,
   renameParallelLaneAction,
-  renameParallelLaneOutput,
-  setParallelLaneCollectsText,
+  setParallelActionTerminal,
   setParallelLaneLabel,
-  setParallelLaneOutputSource,
-  setParallelLaneTerminal,
   type ParallelLaneCommandResult,
 } from './parallelLaneEditorCommands'
 import {
@@ -29,30 +30,27 @@ import {
   findParallel,
   findParallelLane,
   findParallelLaneAction,
-  incompatibleParallelLaneActionIds,
-  parallelCollectsAnyLaneText,
+  parallelActionCaptureAllowed,
+  parallelActionCaptureKinds,
+  parallelActionTerminalChoices,
+  parallelActionUsage,
   parallelLaneActionPaletteItems,
-  parallelLaneCaptureAllowed,
-  parallelLaneCaptureKinds,
-  parallelLaneOutput,
-  parallelLaneOutputSourceChoices,
-  parallelTerminalChoiceForIndex,
   selectedParallelLane,
-  unavailableParallelLaneTerminalValues,
+  unavailableParallelActionTerminalValues,
   type LaneActionType,
 } from './parallelLaneEditorPolicy'
 
 export type { LaneActionType } from './parallelLaneEditorPolicy'
 
 type ParallelLaneEditorControllerOptions = {
-  draft(): MacroDefinitionV5
+  draft(): MacroDefinitionV6
   nodeId(): string
   selectedLaneId(): string
   setSelectedLaneId(laneId: string): void
-  updateDraft(mutator: (template: MacroDefinitionV5) => void): void
+  updateDraft(mutator: (template: MacroDefinitionV6) => void): void
   terminalChoices(): TerminalChoice[]
-  adoptTerminalSelection(template: MacroDefinitionV5, terminalIndex: number): boolean
-  choiceFromIndex(target: number): string
+  terminalUsageIndex(): ParallelTerminalUsageIndex | undefined
+  adoptTerminalSelection(template: MacroDefinitionV6, terminalIndex: number): boolean
   closeLaneInsertion(restoreFocus: boolean): void
   closeLaneInsertionForLane(laneId: string): void
 }
@@ -67,10 +65,6 @@ export function createParallelLaneEditorController(options: ParallelLaneEditorCo
 
   function selectedLane(): ParallelLane | undefined {
     return selectedParallelLane(parallelNode(), options.selectedLaneId())
-  }
-
-  function collectsAnyLaneText(): boolean {
-    return parallelCollectsAnyLaneText(parallelNode())
   }
 
   function updateParallel(mutator: (node: ParallelNode) => void): void {
@@ -102,19 +96,43 @@ export function createParallelLaneEditorController(options: ParallelLaneEditorCo
     return expectedParallelTerminalTypeAt(options.draft(), terminal)
   }
 
-  function laneActionPaletteItemsFor(lane: ParallelLane) {
-    return parallelLaneActionPaletteItems(lane, options.terminalChoices())
+  function actionTerminalChoices(action: ParallelLaneActionNode): TerminalChoice[] {
+    return parallelActionTerminalChoices(action, options.terminalChoices())
   }
 
-  function laneCaptureKinds(lane: ParallelLane) {
-    return parallelLaneCaptureKinds(lane, options.terminalChoices())
+  function actionCaptureKinds(
+    action: Extract<ParallelLaneActionNode, { type: 'capture-source' }>,
+  ) {
+    return parallelActionCaptureKinds(action, options.terminalChoices())
   }
 
-  function laneCaptureAllowed(
-    lane: ParallelLane,
+  function actionCaptureAllowed(
     action: Extract<ParallelLaneActionNode, { type: 'capture-source' }>,
   ): boolean {
-    return parallelLaneCaptureAllowed(lane, action, options.terminalChoices())
+    return parallelActionCaptureAllowed(action, options.terminalChoices())
+  }
+
+  function terminalUsage(action: ParallelLaneActionNode) {
+    const node = parallelNode()
+    const usage = options.terminalUsageIndex()
+    return node && usage ? parallelActionUsage(options.draft(), node, action, usage) : undefined
+  }
+
+  function unavailableActionTerminalValues(
+    laneId: string,
+    action: ParallelLaneActionNode,
+  ): string[] {
+    const node = parallelNode()
+    return node
+      ? unavailableParallelActionTerminalValues(
+          options.draft(),
+          node,
+          laneId,
+          action,
+          options.terminalChoices(),
+          options.terminalUsageIndex(),
+        )
+      : []
   }
 
   function setLaneId(laneId: string, nextId: string): boolean {
@@ -155,13 +173,14 @@ export function createParallelLaneEditorController(options: ParallelLaneEditorCo
       return false
     }
     editNotice = ''
+    let result = failedCommand()
     options.updateDraft((template) => {
-      renameParallelLaneAction(template, options.nodeId(), laneId, actionId, nextId)
+      result = renameParallelLaneAction(template, options.nodeId(), laneId, actionId, nextId)
     })
-    if (collapsedLaneActionIds.includes(actionId)) {
+    if (result.ok && collapsedLaneActionIds.includes(actionId)) {
       collapsedLaneActionIds = collapsedLaneActionIds.map((id) => id === actionId ? nextId : id)
     }
-    return true
+    return result.ok
   }
 
   function isLaneActionCollapsed(actionId: string): boolean {
@@ -172,42 +191,6 @@ export function createParallelLaneEditorController(options: ParallelLaneEditorCo
     collapsedLaneActionIds = isLaneActionCollapsed(actionId)
       ? collapsedLaneActionIds.filter((id) => id !== actionId)
       : [...collapsedLaneActionIds, actionId]
-  }
-
-  function setLaneOutputId(laneId: string, outputId: string, nextId: string): boolean {
-    if (duplicateMacroNodeId(options.draft(), outputId, nextId)) {
-      editNotice = 'Duplicate output id blocked: ' + nextId
-      return false
-    }
-    editNotice = ''
-    let result = failedCommand()
-    options.updateDraft((template) => {
-      result = renameParallelLaneOutput(template, options.nodeId(), laneId, outputId, nextId)
-    })
-    return result.ok
-  }
-
-  function setLaneCollectsText(laneId: string, enabled: boolean): boolean {
-    const lane = parallelNode()?.lanes.find((candidate) => candidate.id === laneId)
-    const output = lane ? parallelLaneOutput(lane) : undefined
-    if (!lane || !output) return false
-    if (enabled && !parallelLaneOutputSourceChoices(lane, output.id).at(-1)?.source) {
-      editNotice = 'Add Capture or Extract before collecting lane text.'
-      return false
-    }
-    editNotice = ''
-    let result = failedCommand()
-    options.updateDraft((template) => {
-      result = setParallelLaneCollectsText(template, options.nodeId(), laneId, enabled)
-    })
-    return result.ok
-  }
-
-  function setLaneOutputSource(laneId: string, outputId: string, value: string): void {
-    editNotice = ''
-    options.updateDraft((template) => {
-      setParallelLaneOutputSource(template, options.nodeId(), laneId, outputId, value)
-    })
   }
 
   function addLane(): void {
@@ -240,56 +223,45 @@ export function createParallelLaneEditorController(options: ParallelLaneEditorCo
     }
   }
 
-  function setLaneTerminalReference(laneId: string, terminal: MacroTerminalReference): boolean {
-    const lane = parallelNode()?.lanes.find((candidate) => candidate.id === laneId)
-    if (!lane) return false
-    const choices = options.terminalChoices()
-    const incompatible = terminal.kind === 'terminal_index'
-      ? incompatibleParallelLaneActionIds(lane, terminal.index, choices)
-      : []
-    if (incompatible.length > 0) {
-      const target = terminal.kind === 'terminal_index'
-        ? parallelTerminalChoiceForIndex(terminal.index, choices)
-        : undefined
-      editNotice = 'Lane terminal change blocked; incompatible actions for '
-        + (target?.label ?? 'terminal') + ': ' + incompatible.join(', ')
-      return false
+  function setActionTerminalReference(
+    laneId: string,
+    actionId: string,
+    terminal: MacroTerminalReference,
+  ): boolean {
+    const node = parallelNode()
+    const lane = node ? findParallelLane(node, laneId) : undefined
+    const action = lane ? findParallelLaneAction(lane, actionId) : undefined
+    if (!node || !action || !parallelActionTerminalReference(action)) return false
+    if (terminal.kind === 'terminal_index') {
+      const compatible = actionTerminalChoices(action).some((choice) => choice.index === terminal.index)
+      const blocked = unavailableActionTerminalValues(laneId, action)
+        .some((value) => options.terminalChoices().find((choice) => choice.value === value)?.index === terminal.index)
+      if (!compatible || blocked) {
+        editNotice = blocked
+          ? 'Target is already owned by an incompatible pane action.'
+          : 'Target type is incompatible with this action.'
+        return false
+      }
     }
     editNotice = ''
     let result = failedCommand()
     options.updateDraft((template) => {
-      result = setParallelLaneTerminal(
+      result = setParallelActionTerminal(
         template,
         options.nodeId(),
         laneId,
+        actionId,
         terminal,
-        choices,
         options.adoptTerminalSelection,
       )
     })
     return result.ok
   }
 
-  function unavailableLaneTerminalValues(laneId: string): string[] {
-    return unavailableParallelLaneTerminalValues(
-      parallelNode(),
-      laneId,
-      options.terminalChoices(),
-      options.choiceFromIndex,
-    )
-  }
-
   function addAction(laneId: string, type: LaneActionType, insertionIndex?: number): boolean {
     let result = failedCommand()
     options.updateDraft((template) => {
-      result = addParallelLaneAction(
-        template,
-        options.nodeId(),
-        laneId,
-        type,
-        options.terminalChoices(),
-        insertionIndex,
-      )
+      result = addParallelLaneAction(template, options.nodeId(), laneId, type, insertionIndex)
       if (!result.ok) return
       options.setSelectedLaneId(laneId)
       editNotice = ''
@@ -298,11 +270,8 @@ export function createParallelLaneEditorController(options: ParallelLaneEditorCo
   }
 
   function removeAction(laneId: string, actionId: string): void {
+    if (!confirm('Remove parallel lane action ' + actionId + '?')) return
     options.updateDraft((template) => {
-      const node = findParallel(template.body, options.nodeId())
-      const lane = node ? findParallelLane(node, laneId) : undefined
-      if (!lane || !findParallelLaneAction(lane, actionId)) return
-      if (!confirm('Remove parallel lane action ' + actionId + '?')) return
       const result = removeParallelLaneAction(template, options.nodeId(), laneId, actionId)
       if (result.ok) {
         collapsedLaneActionIds = collapsedLaneActionIds.filter((id) => id !== actionId)
@@ -320,25 +289,23 @@ export function createParallelLaneEditorController(options: ParallelLaneEditorCo
     get editNotice() { return editNotice },
     parallelNode,
     selectedLane,
-    collectsAnyLaneText,
     updateParallel,
     updateLaneAction,
     expectedTerminalTypeAt,
-    laneActionPaletteItemsFor,
-    laneCaptureKinds,
-    laneCaptureAllowed,
+    laneActionPaletteItems: parallelLaneActionPaletteItems,
+    actionTerminalChoices,
+    actionCaptureKinds,
+    actionCaptureAllowed,
+    terminalUsage,
+    unavailableActionTerminalValues,
     setLaneId,
     setLaneLabel,
     setLaneActionId,
     isLaneActionCollapsed,
     toggleLaneActionCollapsed,
-    setLaneOutputId,
-    setLaneCollectsText,
-    setLaneOutputSource,
     addLane,
     removeLane,
-    setLaneTerminalReference,
-    unavailableLaneTerminalValues,
+    setActionTerminalReference,
     addAction,
     removeAction,
     moveAction,

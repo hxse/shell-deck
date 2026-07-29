@@ -3,7 +3,7 @@ import { appendFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import { EvidenceStore, RUN_EVENT_RETENTION_LIMIT } from '../../server/evidenceStore'
 import { canonicalJsonStringify, macroDefinitionHash, MacroRunStore } from '../../server/macroRunStore'
@@ -15,7 +15,7 @@ test('RunManifest uses canonical definition hash and private persistent artifact
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-store-034-'))
   try {
     const store = new MacroRunStore(root, () => '2026-07-15T00:00:00.000Z')
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'hash', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'hash', description: '', terminalLayout: [], body: [] }
     const manifest = runManifest(store.reserveRunId(), definition)
     expect(macroDefinitionHash(definition)).toMatch(/^[0-9a-f]{64}$/)
     expect(canonicalJsonStringify({ z: 1, a: { y: 2, x: 3 } })).toBe('{"a":{"x":3,"y":2},"z":1}')
@@ -44,7 +44,7 @@ test('a durable run_started without a terminal event is derived as interrupted, 
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-interrupted-034-'))
   try {
     const store = new MacroRunStore(root)
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'interrupted', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'interrupted', description: '', terminalLayout: [], body: [] }
     const manifest = runManifest(store.reserveRunId(), definition)
     store.publishManifest(manifest)
     store.append(manifest.runId, 'run_started')
@@ -68,7 +68,7 @@ test('cold Trace repairs a stale valid summary once, then returns to zero-segmen
     })
     const writer = new MacroRunStore(root, undefined, () => createGeneratedId('run'), writerEvidence)
     const manifest = runManifest(writer.reserveRunId(), {
-      schemaVersion: 5, name: 'stale summary', description: '', terminalLayout: [], body: [],
+      schemaVersion: 6, name: 'stale summary', description: '', terminalLayout: [], body: [],
     })
     writer.publishManifest(manifest)
     writer.append(manifest.runId, 'run_started')
@@ -100,7 +100,7 @@ test('removing an unstarted manifest invalidates its derived Trace entry', () =>
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-unstarted-034-'))
   try {
     const store = new MacroRunStore(root)
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'unstarted', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'unstarted', description: '', terminalLayout: [], body: [] }
     const manifest = runManifest(store.reserveRunId(), definition)
     store.publishManifest(manifest)
     store.removeUnstarted(manifest.runId)
@@ -114,8 +114,8 @@ test('removing an unstarted manifest invalidates its derived Trace entry', () =>
 test('known Trace index add and remove never parse all manifests', () => {
   const root = mkdtempSync(join(tmpdir(), 'shell-deck-run-trace-index-034-'))
   try {
-    const definition: MacroDefinitionV5 = {
-      schemaVersion: 5, name: 'index scale', description: '', terminalLayout: [], body: [],
+    const definition: MacroDefinitionV6 = {
+      schemaVersion: 6, name: 'index scale', description: '', terminalLayout: [], body: [],
     }
     const seed = new MacroRunStore(root)
     for (let index = 0; index < 20; index += 1) {
@@ -176,7 +176,7 @@ test('live run append uses one monotonic cursor instead of rereading the growing
     }
     const evidence = new CountingEvidenceStore(root, () => '2026-07-15T00:00:00.000Z')
     const store = new MacroRunStore(root, () => '2026-07-15T00:00:00.000Z', () => createGeneratedId('run'), evidence)
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'cursor', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'cursor', description: '', terminalLayout: [], body: [] }
     const manifest = runManifest(store.reserveRunId(), definition)
     store.publishManifest(manifest)
     store.append(manifest.runId, 'run_started')
@@ -213,7 +213,7 @@ test('a committed event succeeds despite summary maintenance failure and the nex
       },
     })
     const store = new MacroRunStore(root, () => '2026-07-15T00:00:00.000Z', () => createGeneratedId('run'), evidence)
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'idempotent', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'idempotent', description: '', terminalLayout: [], body: [] }
     const manifest = runManifest(store.reserveRunId(), definition)
     store.publishManifest(manifest)
     store.append(manifest.runId, 'run_started')
@@ -251,7 +251,7 @@ test('run_started and an ordinary sequence checkpoint survive summary maintenanc
       },
     })
     const store = new MacroRunStore(root, () => '2026-07-15T00:00:00.000Z', () => createGeneratedId('run'), evidence)
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'checkpoint debt', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'checkpoint debt', description: '', terminalLayout: [], body: [] }
     const manifest = runManifest(store.reserveRunId(), definition)
     store.publishManifest(manifest)
     expect(store.append(manifest.runId, 'run_started').eventSeq).toBe(1)
@@ -277,7 +277,7 @@ test('durable evidence keeps only the latest 1000 absolute-sequence events and r
       },
     })
     const store = new MacroRunStore(root, () => '2026-07-15T00:00:00.000Z', () => createGeneratedId('run'), evidence)
-    const definition: MacroDefinitionV5 = { schemaVersion: 5, name: 'retention', description: '', terminalLayout: [], body: [] }
+    const definition: MacroDefinitionV6 = { schemaVersion: 6, name: 'retention', description: '', terminalLayout: [], body: [] }
     const manifest = runManifest(store.reserveRunId(), definition)
     store.publishManifest(manifest)
     store.append(manifest.runId, 'run_started')
@@ -297,7 +297,7 @@ test('durable evidence keeps only the latest 1000 absolute-sequence events and r
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-function runManifest(runId: string, definition: MacroDefinitionV5): RunManifestV1 {
+function runManifest(runId: string, definition: MacroDefinitionV6): RunManifestV1 {
   return {
     schemaVersion: 1,
     runId,

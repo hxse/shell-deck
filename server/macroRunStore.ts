@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { assertGeneratedId, assertRoomRouteToken, createGeneratedId } from '../src/lib/generatedId'
 import { canonicalJsonStringify } from '../src/lib/canonicalJson'
-import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../src/lib/macro/macroDefinitionTypes'
 import type {
   MacroRunEvent,
   MacroRunEventPage,
@@ -348,6 +348,6 @@ function isTerminalRunKind(kind: string): boolean {
   return kind === 'run_completed' || kind === 'run_failed' || kind === 'run_stopped'
 }
 
-export function macroDefinitionHash(definition: MacroDefinitionV5): string {
+export function macroDefinitionHash(definition: MacroDefinitionV6): string {
   return createHash('sha256').update(Buffer.from(canonicalJsonStringify(definition), 'utf8')).digest('hex')
 }

@@ -39,7 +39,7 @@ type NotificationProfilesFile = {
 
 type FetchLike = (input: string, init: RequestInit) => Promise<Response>
 export type NotificationDispatcher = {
-  sendTelegram(request: TelegramNotificationRequest): Promise<TelegramNotificationResult>
+  sendTelegram(request: TelegramNotificationRequest, abortSignal?: AbortSignal): Promise<TelegramNotificationResult>
 }
 
 const TELEGRAM_MAX_MESSAGE_CHARS = 4096
@@ -97,7 +97,10 @@ export class NotificationService {
     if (this.unavailableReason) throw new Error(this.unavailableReason)
   }
 
-  async sendTelegram(request: TelegramNotificationRequest): Promise<TelegramNotificationResult> {
+  async sendTelegram(
+    request: TelegramNotificationRequest,
+    abortSignal?: AbortSignal,
+  ): Promise<TelegramNotificationResult> {
     let profile: TelegramProfile | null
     try {
       profile = this.readTelegramProfile(request.profileId)
@@ -107,6 +110,9 @@ export class NotificationService {
     if (!profile) return { ok: false, profileId: request.profileId, code: 'profile_missing', message: 'Telegram notification profile not found: ' + request.profileId }
 
     const controller = new AbortController()
+    const abort = () => controller.abort()
+    if (abortSignal?.aborted) abort()
+    else abortSignal?.addEventListener('abort', abort, { once: true })
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)
     try {
       const response = await this.fetcher('https://api.telegram.org/bot' + profile.botToken + '/sendMessage', {
@@ -128,6 +134,7 @@ export class NotificationService {
       return { ok: false, profileId: request.profileId, code: aborted ? 'telegram_timeout' : 'telegram_fetch_failed', message: aborted ? 'Telegram send timed out' : 'Telegram send failed' }
     } finally {
       clearTimeout(timer)
+      abortSignal?.removeEventListener('abort', abort)
     }
   }
 

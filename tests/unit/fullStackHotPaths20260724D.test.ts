@@ -8,10 +8,10 @@ import { canonicalJsonStringify } from '../../src/lib/canonicalJson'
 import { createGeneratedId } from '../../src/lib/generatedId'
 import { buildArtifactChoiceIndex } from '../../src/lib/macro/macroArtifactChoices'
 import {
-  diagnoseTrustedMacroDefinitionV5,
+  diagnoseTrustedMacroDefinitionV6,
   type MacroDefinitionDiagnosticsMetrics,
 } from '../../src/lib/macro/macroDefinitionValidation'
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 import { MacroDiagnosticsScheduler } from '../../src/lib/macro/macroDiagnosticsScheduler'
 import { createMacroDraftMutationTracker } from '../../src/lib/macro/macroDraftMutation'
 import { moveNodeAtPosition } from '../../src/lib/macro/flowV2EditorCommands'
@@ -28,7 +28,7 @@ describe('20260724D Macro hot paths', () => {
   test('trusted diagnostics visits a 1000-node draft once, keeps identity, and coalesces revisions', async () => {
     const definition = largeDefinition(1_000)
     const metrics: MacroDefinitionDiagnosticsMetrics = { nodeVisits: 0 }
-    const diagnostics = diagnoseTrustedMacroDefinitionV5(definition, metrics)
+    const diagnostics = diagnoseTrustedMacroDefinitionV6(definition, metrics)
     expect(diagnostics.persistable).toMatchObject({ ok: true })
     expect(diagnostics.runnable).toMatchObject({ ok: true })
     if (!diagnostics.persistable.ok || !diagnostics.runnable.ok) throw new Error('expected valid diagnostics')
@@ -42,7 +42,7 @@ describe('20260724D Macro hot paths', () => {
       () => ({ definition, revision }),
       () => {},
       5,
-      (value) => diagnoseTrustedMacroDefinitionV5(value, scheduledMetrics),
+      (value) => diagnoseTrustedMacroDefinitionV6(value, scheduledMetrics),
     )
     scheduler.schedule()
     scheduler.schedule()
@@ -243,9 +243,9 @@ test('AgentEvent current log cold-loads once, indexes 1000 IDs, and wakes waiter
   }
 })
 
-function largeDefinition(size: number): MacroDefinitionV5 {
+function largeDefinition(size: number): MacroDefinitionV6 {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'large',
     description: '',
     terminalLayout: [],

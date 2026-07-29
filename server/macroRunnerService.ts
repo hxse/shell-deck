@@ -1,5 +1,5 @@
 import type { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
-import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../src/lib/macro/macroDefinitionTypes'
 import type {
   MacroRunEventPage,
   MacroRunnerActionAck,
@@ -25,7 +25,7 @@ export class MacroRunnerService {
 
   constructor(
     manager: TerminalRoomManager,
-    records: MacroRecordStore<MacroDefinitionV5>,
+    records: MacroRecordStore<MacroDefinitionV6>,
     runStore: MacroRunStore,
     notificationService: NotificationDispatcher,
     agentEvents: AgentEventStore,

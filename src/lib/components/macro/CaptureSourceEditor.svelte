@@ -2,7 +2,6 @@
   import type {
     CaptureSourceConfig,
     MacroTerminalReference,
-    ParallelCaptureSourceConfig,
   } from '../../macro/macroDefinitionTypes'
   import {
     compileStructuredJsonSchema,
@@ -14,7 +13,6 @@
   import LineNumberedTextarea from './LineNumberedTextarea.svelte'
   import MacroTerminalSelect from './MacroTerminalSelect.svelte'
 
-  type CaptureValue = CaptureSourceConfig | ParallelCaptureSourceConfig
   type PromptCopyState = 'idle' | 'copied' | 'failed'
 
   let {
@@ -23,20 +21,24 @@
     allowedKinds,
     captureAllowed,
     terminalChoices = () => [],
+    allTerminalChoices = undefined,
+    disabledTerminalValues = [],
     expectedTerminalType = undefined,
     onTerminalChange = () => false,
     onKindChange,
     onChange,
   } = $props<{
     variant: 'root' | 'parallel'
-    capture: CaptureValue
+    capture: CaptureSourceConfig
     allowedKinds: CapabilityCaptureKind[]
     captureAllowed: boolean
     terminalChoices?: () => TerminalChoice[]
+    allTerminalChoices?: TerminalChoice[]
+    disabledTerminalValues?: string[]
     expectedTerminalType?: 'shell' | 'text'
     onTerminalChange?: (terminal: MacroTerminalReference) => boolean
     onKindChange: (kind: CaptureSourceConfig['kind']) => void
-    onChange: (capture: CaptureValue) => void
+    onChange: (capture: CaptureSourceConfig) => void
   }>()
 
   let submissionPromptDialog = $state<HTMLDialogElement | null>(null)
@@ -47,7 +49,7 @@
     return structuredJsonSubmissionPrompt(capture.schema)
   })
 
-  function changeCapture(next: CaptureValue): void {
+  function changeCapture(next: CaptureSourceConfig): void {
     onChange(next)
   }
 
@@ -86,9 +88,7 @@
   }
 </script>
 
-{#if variant === 'root' && 'terminal' in capture}
-  <label>Source tab<MacroTerminalSelect testId="capture-step-terminal" reference={capture.terminal} expectedType={expectedTerminalType} choices={terminalChoices()} onChange={onTerminalChange} /></label>
-{/if}
+<label>Source tab<MacroTerminalSelect testId={variant === 'root' ? 'capture-step-terminal' : 'parallel-capture-terminal'} reference={capture.terminal} expectedType={expectedTerminalType} choices={terminalChoices()} allChoices={allTerminalChoices} disabledValues={disabledTerminalValues} onChange={onTerminalChange} /></label>
 
 {#if allowedKinds.length > 1}
   {#if variant === 'root'}
@@ -107,7 +107,7 @@
     <p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="capture-kind-invalid">Capture kind {capture.kind} is not valid for this source tab.</p>
     {#if allowedKinds[0]}<button class="btn btn-warning btn-xs" type="button" data-testid="capture-kind-repair" onclick={() => onKindChange(allowedKinds[0])}>Use {allowedKinds[0]}</button>{/if}
   {:else}
-    <p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="parallel-capture-kind-invalid">Capture kind {capture.kind} is not valid for this lane tab.</p>
+    <p class="macro-insertion-notice alert alert-warning py-2 text-xs" data-testid="parallel-capture-kind-invalid">Capture kind {capture.kind} is not valid for this source tab.</p>
     {#if allowedKinds[0]}<button class="btn btn-warning btn-xs" type="button" data-testid="parallel-capture-kind-repair" onclick={() => onKindChange(allowedKinds[0])}>Use {allowedKinds[0]}</button>{/if}
   {/if}
 {:else if capture.kind === 'terminal-buffer'}
@@ -219,6 +219,6 @@
   {#if variant === 'root'}
     <p class="hint">Captures this text tab as plain text.</p>
   {:else}
-    <p class="hint">Captures this text lane tab as plain text.</p>
+    <p class="hint">Captures this text tab as plain text.</p>
   {/if}
 {/if}

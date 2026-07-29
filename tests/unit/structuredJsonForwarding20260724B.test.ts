@@ -8,11 +8,11 @@ import {
 } from '../../server/macroTextEvaluation'
 import type {
   FlowV2ArtifactSource,
-  MacroDefinitionV5,
+  MacroDefinitionV6,
 } from '../../src/lib/macro/macroDefinitionTypes'
 import {
-  validateMacroDefinitionV5,
-  validateRunnableMacroDefinitionV5,
+  validateMacroDefinitionV6,
+  validateRunnableMacroDefinitionV6,
 } from '../../src/lib/macro/macroDefinitionValidation'
 import { compactCanonicalJson } from '../../src/lib/macro/structuredJson'
 
@@ -25,23 +25,31 @@ const JSON_SOURCE = {
 describe('20260724B structured JSON textual forwarding', () => {
   test('all textual consumers accept an earlier typed JSON artifact', () => {
     const definition = forwardingDefinition()
-    expect(validateMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
-    expect(validateRunnableMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
+    expect(validateMacroDefinitionV6(definition)).toEqual({ ok: true, value: definition })
+    expect(validateRunnableMacroDefinitionV6(definition)).toEqual({ ok: true, value: definition })
   })
 
-  test('Parallel Output remains lane-local text-only', () => {
+  test('Parallel consumes outer artifacts but publishes no implicit merged artifact', () => {
     const definition = forwardingDefinition()
-    const parallel = definition.body.find((node) => node.type === 'parallel')
-    if (!parallel || parallel.type !== 'parallel') throw new Error('parallel_missing')
-    const output = parallel.lanes[0].body.at(-1)
-    if (!output || output.type !== 'output') throw new Error('parallel_output_missing')
-    output.source = JSON_SOURCE as never
-    const result = validateMacroDefinitionV5(definition)
+    definition.body.push({
+      id: 'after_parallel',
+      type: 'send',
+      terminal: { kind: 'terminal_index', index: 1 },
+      message: {
+        parts: [{
+          kind: 'artifact',
+          source: { kind: 'step_artifact', stepId: 'parallel', artifact: 'extracted_text' },
+        }],
+      },
+      delivery: 'direct',
+      ending: 'cr',
+    })
+    const result = validateMacroDefinitionV6(definition)
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.issues).toContainEqual(expect.objectContaining({
-      code: 'invalid_literal',
-      path: 'body[6].lanes[0].body[1].source.artifact',
+      code: 'invalid_reference',
+      path: 'body[7].message.parts[0].source',
     }))
   })
 
@@ -108,10 +116,10 @@ function jsonArtifacts(value: Parameters<typeof compactCanonicalJson>[0]): Macro
   ]])
 }
 
-function forwardingDefinition(): MacroDefinitionV5 {
+function forwardingDefinition(): MacroDefinitionV6 {
   const source = (): FlowV2ArtifactSource => ({ ...JSON_SOURCE })
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Forward structured JSON',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],
@@ -184,19 +192,18 @@ function forwardingDefinition(): MacroDefinitionV5 {
         lanes: [{
           id: 'lane',
           label: 'lane',
-          terminal: { kind: 'terminal_index', index: 1 },
           body: [
             {
               id: 'lane_send_json',
               type: 'send',
+              terminal: { kind: 'terminal_index', index: 1 },
               message: { parts: [{ kind: 'artifact', source: source() }] },
               delivery: 'direct',
               ending: 'cr',
             },
-            { id: 'lane_output', type: 'output', source: { kind: 'none' } },
           ],
         }],
-        merge: { kind: 'sectioned_text', separator: '\n', includeEmptyOutputs: false },
+        sharedTextOrder: 'pane_order',
         onLaneFail: 'fail',
       },
     ],

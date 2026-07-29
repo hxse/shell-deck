@@ -188,7 +188,7 @@ function manifest(): RunManifestV1 {
     runId: createGeneratedId('run'),
     createdAt: '2026-07-25T00:00:00.000Z',
     macroRecord: { id: createGeneratedId('macroTemplate'), revision: 1 },
-    definition: { schemaVersion: 5, name: 'trace', description: '', terminalLayout: [], body: [] },
+    definition: { schemaVersion: 6, name: 'trace', description: '', terminalLayout: [], body: [] },
     definitionHash: { algorithm: 'sha256', value: '0'.repeat(64) },
     runtime,
     terminalBindings: [],

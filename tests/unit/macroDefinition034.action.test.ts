@@ -1,14 +1,14 @@
 import { expect, test } from 'bun:test'
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 import {
-  validateMacroDefinitionV5,
-  validateRunnableMacroDefinitionV5,
+  validateMacroDefinitionV6,
+  validateRunnableMacroDefinitionV6,
 } from '../../src/lib/macro/macroDefinitionValidation'
 import { validDefinition } from './macroDefinition034.fixtures'
 
-test('MacroDefinitionV5 requires an exact AgentEvent waitLimit branch', () => {
-  const definition: MacroDefinitionV5 = {
-    schemaVersion: 5,
+test('MacroDefinitionV6 requires an exact AgentEvent waitLimit branch', () => {
+  const definition: MacroDefinitionV6 = {
+    schemaVersion: 6,
     name: 'Agent wait limits',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],
@@ -20,41 +20,39 @@ test('MacroDefinitionV5 requires an exact AgentEvent waitLimit branch', () => {
         lanes: [{
           id: 'lane',
           label: 'lane',
-          terminal: { kind: 'terminal_index', index: 1 },
           body: [
-            { id: 'lane_capture', type: 'capture-source', capture: { kind: 'agent-event', agent: { kind: 'codex' }, captureMode: 'prompt_only', waitLimit: { kind: 'timeout', timeoutMs: 30_000 } } },
-            { id: 'output', type: 'output', source: { kind: 'step_artifact', stepId: 'lane_capture', artifact: 'captured_text' } },
+            { id: 'lane_capture', type: 'capture-source', capture: { kind: 'agent-event', terminal: { kind: 'terminal_index', index: 1 }, agent: { kind: 'codex' }, captureMode: 'prompt_only', waitLimit: { kind: 'timeout', timeoutMs: 30_000 } } },
           ],
         }],
-        merge: { kind: 'sectioned_text', separator: '\n', includeEmptyOutputs: true },
+        sharedTextOrder: 'pane_order',
         onLaneFail: 'fail',
       },
     ],
   }
-  expect(validateMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
+  expect(validateMacroDefinitionV6(definition)).toEqual({ ok: true, value: definition })
 
-  const legacyV4 = structuredClone(definition) as unknown as Record<string, unknown>
-  legacyV4.schemaVersion = 4
-  const rejectedV4 = validateMacroDefinitionV5(legacyV4)
-  expect(rejectedV4.ok).toBe(false)
-  if (!rejectedV4.ok) expect(rejectedV4.issues).toContainEqual({ code: 'invalid_literal', path: 'schemaVersion', message: 'schemaVersion must be 5' })
+  const legacyV5 = structuredClone(definition) as unknown as Record<string, unknown>
+  legacyV5.schemaVersion = 5
+  const rejectedV5 = validateMacroDefinitionV6(legacyV5)
+  expect(rejectedV5.ok).toBe(false)
+  if (!rejectedV5.ok) expect(rejectedV5.issues).toContainEqual({ code: 'invalid_literal', path: 'schemaVersion', message: 'schemaVersion must be 6' })
 
   const missing = structuredClone(definition) as unknown as { body: Array<{ capture?: Record<string, unknown> }> }
   delete missing.body[0].capture!.waitLimit
-  const rejectedMissing = validateMacroDefinitionV5(missing)
+  const rejectedMissing = validateMacroDefinitionV6(missing)
   expect(rejectedMissing.ok).toBe(false)
   if (!rejectedMissing.ok) expect(rejectedMissing.issues).toContainEqual({ code: 'missing_field', path: 'body[0].capture.waitLimit', message: 'waitLimit is required' })
 
   const extra = structuredClone(definition) as unknown as { body: Array<{ capture?: { waitLimit: Record<string, unknown> } }> }
   extra.body[0].capture!.waitLimit.timeoutMs = 1
-  const rejectedExtra = validateMacroDefinitionV5(extra)
+  const rejectedExtra = validateMacroDefinitionV6(extra)
   expect(rejectedExtra.ok).toBe(false)
   if (!rejectedExtra.ok) expect(rejectedExtra.issues).toContainEqual({ code: 'unknown_field', path: 'body[0].capture.waitLimit.timeoutMs', message: 'unknown field: timeoutMs' })
 
   for (const waitLimit of [null, false, true]) {
     const invalidBranch = structuredClone(definition) as unknown as { body: Array<{ capture?: Record<string, unknown> }> }
     invalidBranch.body[0].capture!.waitLimit = waitLimit as unknown as Record<string, unknown>
-    expect(validateMacroDefinitionV5(invalidBranch).ok).toBe(false)
+    expect(validateMacroDefinitionV6(invalidBranch).ok).toBe(false)
   }
 
   const unrelatedCapture = structuredClone(definition) as unknown as { body: Array<unknown> }
@@ -63,20 +61,20 @@ test('MacroDefinitionV5 requires an exact AgentEvent waitLimit branch', () => {
     type: 'capture-source',
     capture: { kind: 'terminal-buffer', terminal: { kind: 'terminal_index', index: 1 }, mode: 'scrollback-tail', maxChars: 20_000, waitLimit: { kind: 'unbounded' } },
   }
-  const rejectedUnrelated = validateMacroDefinitionV5(unrelatedCapture)
+  const rejectedUnrelated = validateMacroDefinitionV6(unrelatedCapture)
   expect(rejectedUnrelated.ok).toBe(false)
   if (!rejectedUnrelated.ok) expect(rejectedUnrelated.issues).toContainEqual({ code: 'unknown_field', path: 'body[0].capture.waitLimit', message: 'unknown field: waitLimit' })
 
   for (const timeoutMs of [0, -1, 1.5, Number.POSITIVE_INFINITY]) {
     const invalidTimeout = structuredClone(definition) as unknown as { body: Array<unknown> }
     invalidTimeout.body[0] = { id: 'capture', type: 'capture-source', capture: { kind: 'agent-event', terminal: { kind: 'terminal_index', index: 1 }, agent: { kind: 'codex' }, captureMode: 'result_only', waitLimit: { kind: 'timeout', timeoutMs } } }
-    expect(validateMacroDefinitionV5(invalidTimeout).ok).toBe(false)
+    expect(validateMacroDefinitionV6(invalidTimeout).ok).toBe(false)
   }
 })
 
 test('App Notify repeat count and interval are required exact bounded integers', () => {
-  const definition: MacroDefinitionV5 = {
-    schemaVersion: 5,
+  const definition: MacroDefinitionV6 = {
+    schemaVersion: 6,
     name: 'Repeated app notification',
     description: '',
     terminalLayout: [],
@@ -90,12 +88,12 @@ test('App Notify repeat count and interval are required exact bounded integers',
       onFailure: 'continue',
     }],
   }
-  expect(validateMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
+  expect(validateMacroDefinitionV6(definition)).toEqual({ ok: true, value: definition })
 
   for (const field of ['repeatCount', 'repeatIntervalMs'] as const) {
     const missing = structuredClone(definition) as unknown as { body: Array<{ channels: Array<Record<string, unknown>> }> }
     delete missing.body[0].channels[0][field]
-    const result = validateMacroDefinitionV5(missing)
+    const result = validateMacroDefinitionV6(missing)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.issues).toContainEqual({
       code: 'missing_field',
@@ -109,20 +107,20 @@ test('App Notify repeat count and interval are required exact bounded integers',
     const channel = invalid.body[0].type === 'notify' ? invalid.body[0].channels[0] : undefined
     if (channel?.kind !== 'app') throw new Error('expected app channel')
     channel.repeatCount = repeatCount
-    expect(validateMacroDefinitionV5(invalid).ok).toBe(false)
+    expect(validateMacroDefinitionV6(invalid).ok).toBe(false)
   }
   for (const repeatIntervalMs of [249, 60001, 500.5, Number.POSITIVE_INFINITY]) {
     const invalid = structuredClone(definition)
     const channel = invalid.body[0].type === 'notify' ? invalid.body[0].channels[0] : undefined
     if (channel?.kind !== 'app') throw new Error('expected app channel')
     channel.repeatIntervalMs = repeatIntervalMs
-    expect(validateMacroDefinitionV5(invalid).ok).toBe(false)
+    expect(validateMacroDefinitionV6(invalid).ok).toBe(false)
   }
 })
 
 test('unassigned terminal and required artifact slots are persistable but never runnable', () => {
-  const definition: MacroDefinitionV5 = {
-    schemaVersion: 5,
+  const definition: MacroDefinitionV6 = {
+    schemaVersion: 6,
     name: 'Persistable draft',
     description: '',
     terminalLayout: [],
@@ -152,8 +150,8 @@ test('unassigned terminal and required artifact slots are persistable but never 
     ],
   }
 
-  expect(validateMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
-  const runnable = validateRunnableMacroDefinitionV5(definition)
+  expect(validateMacroDefinitionV6(definition)).toEqual({ ok: true, value: definition })
+  const runnable = validateRunnableMacroDefinitionV6(definition)
   expect(runnable.ok).toBe(false)
   if (!runnable.ok) expect(runnable.issues).toEqual([
     { code: 'unassigned_artifact_reference', path: 'body[0].message.parts[0].source', message: 'artifact source must be assigned before Start' },
@@ -163,7 +161,7 @@ test('unassigned terminal and required artifact slots are persistable but never 
 
   const malformed = structuredClone(definition) as unknown as { body: Array<Record<string, unknown>> }
   malformed.body[0].terminal = { kind: 'unassigned', index: 1 }
-  const rejected = validateMacroDefinitionV5(malformed)
+  const rejected = validateMacroDefinitionV6(malformed)
   expect(rejected.ok).toBe(false)
   if (!rejected.ok) expect(rejected.issues).toContainEqual({ code: 'unknown_field', path: 'body[0].terminal.index', message: 'unknown field: index' })
 })
@@ -175,12 +173,12 @@ test('unassigned is rejected outside the finite required-reference whitelist', (
   send.message.parts = [{ kind: 'artifact', source: { kind: 'unassigned' } }]
   const missingSourceShape = structuredClone(missingMessageSource) as unknown as { body: Array<{ body: Array<{ message: { parts: Array<Record<string, unknown>> } }> }> }
   delete missingSourceShape.body[0].body[0].message.parts[0].source
-  const missing = validateMacroDefinitionV5(missingSourceShape)
+  const missing = validateMacroDefinitionV6(missingSourceShape)
   expect(missing.ok).toBe(false)
   if (!missing.ok) expect(missing.issues).toContainEqual({ code: 'missing_field', path: 'body[0].body[0].message.parts[0].source', message: 'source is required' })
 
-  const assignedOnly: MacroDefinitionV5 = {
-    schemaVersion: 5,
+  const assignedOnly: MacroDefinitionV6 = {
+    schemaVersion: 6,
     name: 'Assigned-only slots',
     description: '',
     terminalLayout: [],
@@ -190,21 +188,75 @@ test('unassigned is rejected outside the finite required-reference whitelist', (
       {
         id: 'parallel',
         type: 'parallel',
-        lanes: [{ id: 'lane', label: 'lane', terminal: { kind: 'unassigned' }, body: [{ id: 'output', type: 'output', source: { kind: 'none' } }] }],
-        merge: { kind: 'sectioned_text', separator: '\n', includeEmptyOutputs: false },
+        lanes: [{ id: 'lane', label: 'lane', body: [] }],
+        sharedTextOrder: 'pane_order',
         onLaneFail: 'pause',
       },
     ],
   }
   const invalidDefault = structuredClone(assignedOnly) as unknown as { body: Array<Record<string, unknown>> }
   invalidDefault.body[1].defaultSource = { kind: 'unassigned' }
-  const defaultResult = validateMacroDefinitionV5(invalidDefault)
+  const defaultResult = validateMacroDefinitionV6(invalidDefault)
   expect(defaultResult.ok).toBe(false)
   if (!defaultResult.ok) expect(defaultResult.issues).toContainEqual({ code: 'invalid_literal', path: 'body[1].defaultSource.kind', message: 'artifact source kind must be step_artifact' })
 
-  const invalidOutput = structuredClone(assignedOnly) as unknown as { body: Array<{ lanes?: Array<{ body: Array<{ source: unknown }> }> }> }
-  invalidOutput.body[2].lanes![0].body[0].source = { kind: 'unassigned' }
-  const outputResult = validateMacroDefinitionV5(invalidOutput)
-  expect(outputResult.ok).toBe(false)
-  if (!outputResult.ok) expect(outputResult.issues).toContainEqual({ code: 'invalid_literal', path: 'body[2].lanes[0].body[0].source.kind', message: 'artifact source kind must be step_artifact' })
+  const legacyParallel = structuredClone(assignedOnly) as unknown as {
+    body: Array<Record<string, unknown>>
+  }
+  legacyParallel.body[2].merge = {
+    kind: 'sectioned_text',
+    separator: '\n',
+    includeEmptyOutputs: false,
+  }
+  const legacyResult = validateMacroDefinitionV6(legacyParallel)
+  expect(legacyResult.ok).toBe(false)
+  if (!legacyResult.ok) expect(legacyResult.issues).toContainEqual({
+    code: 'unknown_field',
+    path: 'body[2].merge',
+    message: 'unknown field: merge',
+  })
+
+  const legacyLaneTerminal = structuredClone(assignedOnly) as unknown as {
+    body: Array<Record<string, unknown>>
+  }
+  const lane = (legacyLaneTerminal.body[2].lanes as Array<Record<string, unknown>>)[0]
+  lane.terminal = { kind: 'terminal_index', index: 1 }
+  lane.output = { id: 'lane_output', source: { kind: 'none' } }
+  const laneResult = validateMacroDefinitionV6(legacyLaneTerminal)
+  expect(laneResult.ok).toBe(false)
+  if (!laneResult.ok) {
+    expect(laneResult.issues).toContainEqual({
+      code: 'unknown_field',
+      path: 'body[2].lanes[0].terminal',
+      message: 'unknown field: terminal',
+    })
+    expect(laneResult.issues).toContainEqual({
+      code: 'unknown_field',
+      path: 'body[2].lanes[0].output',
+      message: 'unknown field: output',
+    })
+  }
+
+  const missingOrder = structuredClone(assignedOnly) as unknown as {
+    body: Array<Record<string, unknown>>
+  }
+  delete missingOrder.body[2].sharedTextOrder
+  const missingOrderResult = validateMacroDefinitionV6(missingOrder)
+  expect(missingOrderResult.ok).toBe(false)
+  if (!missingOrderResult.ok) expect(missingOrderResult.issues).toContainEqual({
+    code: 'missing_field',
+    path: 'body[2].sharedTextOrder',
+    message: 'sharedTextOrder is required',
+  })
+
+  const mergedArtifact = structuredClone(assignedOnly) as unknown as {
+    body: Array<Record<string, unknown>>
+  }
+  const defaultSource = mergedArtifact.body[1].defaultSource as Record<string, unknown>
+  defaultSource.artifact = 'merged_text'
+  const mergedResult = validateMacroDefinitionV6(mergedArtifact)
+  expect(mergedResult.ok).toBe(false)
+  if (!mergedResult.ok) expect(mergedResult.issues.some((issue) => (
+    issue.path === 'body[1].defaultSource.artifact' && issue.code === 'invalid_literal'
+  ))).toBe(true)
 })

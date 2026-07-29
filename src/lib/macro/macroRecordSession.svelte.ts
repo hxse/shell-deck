@@ -4,11 +4,11 @@ import type { ContentEditLeaseChangedMessage } from '../protocol'
 import type { TerminalRoomClient } from '../terminalRoomClient'
 import { MacroDiagnosticsScheduler } from './macroDiagnosticsScheduler'
 import {
-  diagnoseTrustedMacroDefinitionV5,
+  diagnoseTrustedMacroDefinitionV6,
   type MacroDefinitionDiagnostics,
 } from './macroDefinitionValidation'
 import { createMacroDraftMutationTracker } from './macroDraftMutation'
-import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
+import type { MacroDefinitionV6, MacroRecord, MacroRecordSummary } from './macroDefinitionTypes'
 import { MacroRecordEditOrchestrator, type MacroDefinitionOperationContext, type MacroEditCommitOutcome, type MacroStartRecordSnapshot } from './macroRecordEditOrchestrator'
 import { formatMacroError, messageOf, type MacroJsonEditSession } from './macroJsonEditSession.svelte'
 import type { SequencedContentRecordChange } from './macroInvalidationQueue'
@@ -37,8 +37,8 @@ type MacroRecordSessionOptions = {
 export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   let templates = $state<MacroRecordSummary[]>([])
   let selectedRecord = $state<MacroRecord | null>(null)
-  let baseDefinition = $state<MacroDefinitionV5 | null>(null)
-  let draft = $state<MacroDefinitionV5 | null>(null)
+  let baseDefinition = $state<MacroDefinitionV6 | null>(null)
+  let draft = $state<MacroDefinitionV6 | null>(null)
   let draftRevision = $state(0)
   let editorGeneration = $state(0)
   let contentEditing = $state(false)
@@ -51,7 +51,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
   let operationPending = $state(false)
   let errorText = $state<string | null>(null)
   let templateListProblem = $state<string | null>(null)
-  let diagnostics = $state<MacroDefinitionDiagnostics>(diagnoseTrustedMacroDefinitionV5(null))
+  let diagnostics = $state<MacroDefinitionDiagnostics>(diagnoseTrustedMacroDefinitionV6(null))
   let handledContentLeaseChangeSequence = 0
   const draftMutations = createMacroDraftMutationTracker()
   const diagnosticsScheduler = new MacroDiagnosticsScheduler(
@@ -248,7 +248,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     errorText = null
   }
 
-  function updateDraft(mutator: (definition: MacroDefinitionV5) => void): void {
+  function updateDraft(mutator: (definition: MacroDefinitionV6) => void): void {
     if (!options.canMutateShared()) {
       rejectMutation(options.roomClient() ? 'room_control_required' : 'room_disconnected')
       return
@@ -269,7 +269,7 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     else diagnosticsScheduler.schedule()
   }
 
-  function replaceBaseDefinition(definition: MacroDefinitionV5 | null): void {
+  function replaceBaseDefinition(definition: MacroDefinitionV6 | null): void {
     baseDefinition = definition
     draftMutations.replaceBase(definition)
   }
@@ -343,8 +343,8 @@ export function createMacroRecordSession(options: MacroRecordSessionOptions) {
     options.onMutationDenied(reason)
   }
 
-  function emptyDefinition(): MacroDefinitionV5 {
-    return { schemaVersion: 5, name: 'New Macro', description: '', terminalLayout: [], body: [] }
+  function emptyDefinition(): MacroDefinitionV6 {
+    return { schemaVersion: 6, name: 'New Macro', description: '', terminalLayout: [], body: [] }
   }
 
   return {

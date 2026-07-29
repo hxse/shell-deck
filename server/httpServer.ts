@@ -2,7 +2,7 @@ import { readFileSync, realpathSync, unlinkSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { AgentEventStore } from '../src/lib/agentEvents/agentEventStore'
 import { createGeneratedSuffix } from '../src/lib/generatedId'
-import type { MacroDefinitionV5 } from '../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../src/lib/macro/macroDefinitionTypes'
 import { ServerAccessController, assertAccessMode, assertListenMode, listenHost, type AccessMode, type ListenMode } from './accessControl'
 import { ContentEditLeaseService, type ContentEditLeaseServiceOptions } from './contentEditLeaseService'
 import { handleContentRoutes } from './http/contentRoutes'
@@ -35,7 +35,7 @@ export type ShellDeckServer = {
   loginToken: string | null
   manager: TerminalRoomManager
   contentEditLeases: ContentEditLeaseService
-  macroStore: MacroRecordStore<MacroDefinitionV5>
+  macroStore: MacroRecordStore<MacroDefinitionV6>
   macroRunner: MacroRunnerService
   userDataRoot: string
   stop(): Promise<void>
@@ -102,7 +102,7 @@ export function startShellDeckServer(options: StartOptions): ShellDeckServer {
     console.warn(notificationError)
   }
   const notificationService = new NotificationService(userDataRoot, fetch, 10_000, notificationError)
-  const macroStore = new MacroRecordStore<MacroDefinitionV5>(userDataRoot, options.macroStoreOptions)
+  const macroStore = new MacroRecordStore<MacroDefinitionV6>(userDataRoot, options.macroStoreOptions)
   const macroRunStore = new MacroRunStore(
     userDataRoot,
     undefined,

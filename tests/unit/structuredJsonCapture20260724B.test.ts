@@ -5,10 +5,10 @@ import {
   artifactChoicesBefore,
   jsonArtifactChoices,
 } from '../../src/lib/macro/macroArtifactChoices'
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 import {
-  validateMacroDefinitionV5,
-  validateRunnableMacroDefinitionV5,
+  validateMacroDefinitionV6,
+  validateRunnableMacroDefinitionV6,
 } from '../../src/lib/macro/macroDefinitionValidation'
 import {
   canonicalJson,
@@ -21,8 +21,8 @@ import {
 describe('20260724B structured JSON definition contract', () => {
   test('valid schema, typed artifact, and json_match are runnable', () => {
     const definition = structuredDefinition()
-    expect(validateMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
-    expect(validateRunnableMacroDefinitionV5(definition)).toEqual({ ok: true, value: definition })
+    expect(validateMacroDefinitionV6(definition)).toEqual({ ok: true, value: definition })
+    expect(validateRunnableMacroDefinitionV6(definition)).toEqual({ ok: true, value: definition })
 
     const choices = artifactChoicesBefore(definition, 'branch')
     expect(jsonArtifactChoices(choices).map((choice) => choice.label))
@@ -70,17 +70,15 @@ describe('20260724B structured JSON definition contract', () => {
       lanes: [{
         id: 'lane',
         label: 'lane',
-        terminal: { kind: 'terminal_index', index: 1 },
         body: [
           {
             id: 'bad_capture',
             type: 'capture-source',
-            capture: { kind: 'structured-json', schema: true, waitLimit: { kind: 'unbounded' } },
+            capture: { kind: 'structured-json', terminal: { kind: 'terminal_index', index: 1 }, schema: true, waitLimit: { kind: 'unbounded' } },
           },
-          { id: 'output', type: 'output', source: { kind: 'none' } },
         ],
       }],
-      merge: { kind: 'sectioned_text', separator: '\n', includeEmptyOutputs: false },
+      sharedTextOrder: 'pane_order',
       onLaneFail: 'fail',
     }]
     expect(issueCodes(parallel)).toContain('semantic_conflict')
@@ -242,9 +240,9 @@ describe('20260724B submit-json CLI adapter', () => {
   })
 })
 
-function structuredDefinition(): MacroDefinitionV5 {
+function structuredDefinition(): MacroDefinitionV6 {
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     name: 'Structured decision',
     description: '',
     terminalLayout: [{ index: 1, type: 'shell' }],
@@ -283,7 +281,7 @@ function structuredDefinition(): MacroDefinitionV5 {
 }
 
 function issueCodes(input: unknown): string[] {
-  const result = validateMacroDefinitionV5(input)
+  const result = validateMacroDefinitionV6(input)
   return result.ok ? [] : result.issues.map((issue) => issue.code)
 }
 

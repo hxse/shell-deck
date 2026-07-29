@@ -5,9 +5,8 @@ import type {
   FlowV2Node,
   FlowV2StepArtifactSource,
   FlowV2TextStepArtifactSource,
-  MacroDefinitionV5,
+  MacroDefinitionV6,
   ParallelLane,
-  ParallelOutputSource,
 } from './macroDefinitionTypes'
 
 export type ArtifactChoice = { label: string; source: FlowV2StepArtifactSource }
@@ -23,7 +22,7 @@ type ArtifactScope = {
   cached: ArtifactChoice[] | null
 }
 
-export function buildArtifactChoiceIndex(template: MacroDefinitionV5): ArtifactChoiceIndex {
+export function buildArtifactChoiceIndex(template: MacroDefinitionV6): ArtifactChoiceIndex {
   const root: ArtifactScope = { parent: null, choice: null, cached: [] }
   const scopes = new Map<string, ArtifactScope>()
   indexArtifactScopes(template.body, root, scopes)
@@ -36,7 +35,7 @@ export function buildArtifactChoiceIndex(template: MacroDefinitionV5): ArtifactC
 }
 
 export function artifactChoicesBefore(
-  template: MacroDefinitionV5,
+  template: MacroDefinitionV6,
   nodeId: string,
 ): ArtifactChoice[] {
   return buildArtifactChoiceIndex(template).before(nodeId)
@@ -91,9 +90,7 @@ export function assignedArtifactSourceFromKey(key: string): FlowV2StepArtifactSo
   if (!stepId) return undefined
   const normalized: ArtifactName | undefined = artifact === 'captured_json'
     ? 'captured_json'
-    : artifact === 'merged_text'
-      ? 'merged_text'
-      : artifact === 'extracted_text'
+    : artifact === 'extracted_text'
         ? 'extracted_text'
         : artifact === 'captured_text'
           ? 'captured_text'
@@ -104,15 +101,6 @@ export function assignedArtifactSourceFromKey(key: string): FlowV2StepArtifactSo
     stepId,
     artifact: normalized,
   } as FlowV2StepArtifactSource
-}
-
-export function parallelOutputSourceKey(source: ParallelOutputSource): string {
-  return source.kind === 'none' ? '' : artifactSourceKey(source)
-}
-
-export function parallelOutputSourceFromKey(key: string): ParallelOutputSource {
-  const source = assignedArtifactSourceFromKey(key)
-  return source && source.artifact !== 'captured_json' ? source : { kind: 'none' }
 }
 
 function indexArtifactScopes(
@@ -147,7 +135,6 @@ function artifactOutputForNode(node: FlowV2Node): ArtifactChoice | null {
   if (node.type === 'capture-source') {
     return artifactChoice(node.id, node.capture.kind === 'structured-json' ? 'captured_json' : 'captured_text')
   }
-  if (node.type === 'parallel') return artifactChoice(node.id, 'merged_text')
   if (node.type === 'extract_text') return artifactChoice(node.id, 'extracted_text')
   return null
 }

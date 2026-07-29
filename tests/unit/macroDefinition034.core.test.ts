@@ -4,8 +4,8 @@ import {
   parseAndValidateMacroDefinitionJson,
   parseAndValidateMacroTerminalLayoutFromDefinitionJson,
   type MacroDefinitionIssue,
-  validateMacroDefinitionV5,
-  validateRunnableMacroDefinitionV5,
+  validateMacroDefinitionV6,
+  validateRunnableMacroDefinitionV6,
   validateMacroTerminalLayout,
 } from '../../src/lib/macro/macroDefinitionValidation'
 import { validateMacroRuntimeBinding } from '../../src/lib/macro/macroRuntimeBinding'
@@ -56,14 +56,14 @@ test('Macro validation keeps the complete multi-issue code, path, message and or
     { code: 'expected_string', path: 'description', message: 'value must be a string' },
     { code: 'unknown_field', path: 'legacyTop', message: 'unknown field: legacyTop' },
     { code: 'invalid_range', path: 'name', message: 'string must not be empty' },
-    { code: 'invalid_literal', path: 'schemaVersion', message: 'schemaVersion must be 5' },
+    { code: 'invalid_literal', path: 'schemaVersion', message: 'schemaVersion must be 6' },
     { code: 'terminal_layout_not_contiguous', path: 'terminalLayout[0].index', message: 'terminalLayout index must be 1' },
     { code: 'unknown_field', path: 'terminalLayout[0].legacy', message: 'unknown field: legacy' },
   ]
 
-  const valueResult = validateMacroDefinitionV5(invalid)
+  const valueResult = validateMacroDefinitionV6(invalid)
   expect(valueResult).toEqual({ ok: false, issues })
-  expect(validateRunnableMacroDefinitionV5(invalid)).toEqual(valueResult)
+  expect(validateRunnableMacroDefinitionV6(invalid)).toEqual(valueResult)
   expect(parseAndValidateMacroDefinitionJson(JSON.stringify(invalid))).toEqual({
     ok: false,
     error: { code: 'invalid_macro_definition', issues },
@@ -162,7 +162,7 @@ test('visual terminal layout is driven by explicit Action targets rather than te
 })
 
 test('the unique JSON gateway reports deterministic UTF-16 positions and Prepare reads layout only', () => {
-  const invalid = parseAndValidateMacroDefinitionJson('{\r\n  "schemaVersion": 5,\r\n}')
+  const invalid = parseAndValidateMacroDefinitionJson('{\r\n  "schemaVersion": 6,\r\n}')
   expect(invalid).toEqual({ ok: false, error: { code: 'invalid_json', offset: 26, line: 3, column: 1, message: 'Invalid JSON at line 3, column 1' } })
 
   const prepare = parseAndValidateMacroTerminalLayoutFromDefinitionJson(JSON.stringify({ terminalLayout: [{ index: 1, type: 'text' }], body: 'intentionally invalid for full validation' }))

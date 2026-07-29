@@ -1,6 +1,6 @@
 <script lang="ts">
   import LineNumberedTextarea from './LineNumberedTextarea.svelte'
-  import type { MacroDefinitionV5, MacroRecord, MacroRecordSummary } from '../../macro/macroDefinitionTypes'
+  import type { MacroDefinitionV6, MacroRecord, MacroRecordSummary } from '../../macro/macroDefinitionTypes'
 
   let {
     templates,
@@ -24,7 +24,7 @@
   } = $props<{
     templates: MacroRecordSummary[]
     filteredTemplates: MacroRecordSummary[]
-    draft: MacroDefinitionV5 | null
+    draft: MacroDefinitionV6 | null
     selectedRecord: MacroRecord | null
     templateSearch: string
     dirty: boolean
@@ -38,7 +38,7 @@
     onSaveTemplate: () => void
     onCancelEdit: () => void
     onDeleteTemplate: () => void
-    onUpdateDraft: (mutator: (definition: MacroDefinitionV5) => void) => void
+    onUpdateDraft: (mutator: (definition: MacroDefinitionV6) => void) => void
     onResetWidth?: () => void
   }>()
 
@@ -93,8 +93,8 @@
         </div>
         {#if draft}
           <div class="template-metadata grid gap-2" data-testid="macro-template-metadata">
-            <label>Name<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="macro-name" value={draft.name} disabled={!editable} oninput={(event) => onUpdateDraft((definition: MacroDefinitionV5) => { definition.name = event.currentTarget.value })} /></label>
-            <label>Description<LineNumberedTextarea testId="macro-description" value={draft.description} maxRows={3} ariaLabel="Macro description" showLineNumbers={false} disabled={!editable} onInput={(value) => onUpdateDraft((definition: MacroDefinitionV5) => { definition.description = value })} /></label>
+            <label>Name<input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="macro-name" value={draft.name} disabled={!editable} oninput={(event) => onUpdateDraft((definition: MacroDefinitionV6) => { definition.name = event.currentTarget.value })} /></label>
+            <label>Description<LineNumberedTextarea testId="macro-description" value={draft.description} maxRows={3} ariaLabel="Macro description" showLineNumbers={false} disabled={!editable} onInput={(value) => onUpdateDraft((definition: MacroDefinitionV6) => { definition.description = value })} /></label>
             <code class="text-[11px] text-base-content/60">{selectedRecord ? `${selectedRecord.id} · revision ${selectedRecord.revision}` : 'unsaved new macro'}</code>
           </div>
         {/if}

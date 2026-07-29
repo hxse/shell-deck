@@ -1,4 +1,5 @@
-import { add, childContext, registerArtifact, type ValidationContext } from './macroValidationContext'
+import type { ParallelNode } from './macroDefinitionTypes'
+import { add, childContext, type ValidationContext } from './macroValidationContext'
 import {
   booleanValue,
   exactKeys,
@@ -9,11 +10,8 @@ import {
   validateIdentifier,
   type RecordValue,
 } from './macroValidationPrimitives'
-import {
-  validateArtifactReference,
-  validateAssignedArtifact,
-  validateTerminalReference,
-} from './macroReferenceValidation'
+import { buildParallelTerminalUsage } from './parallelTerminalUsage'
+import { validateArtifactReference } from './macroReferenceValidation'
 import { validateFilterMatcher } from './macroTextMatchValidation'
 import { validateJsonPointer } from './structuredJson'
 
@@ -39,18 +37,17 @@ export function validateParallel(
   context: ValidationContext,
   validateNode: NodeValidator,
 ): void {
-  exactKeys(node, ['id', 'type', 'lanes', 'merge', 'onLaneFail'], context.issues, path)
+  exactKeys(node, ['id', 'type', 'lanes', 'sharedTextOrder', 'onLaneFail'], context.issues, path)
   if (!Array.isArray(node.lanes)) add(context.issues, 'expected_array', `${path}.lanes`, 'lanes must be an array')
   else {
     if (node.lanes.length === 0) add(context.issues, 'invalid_range', `${path}.lanes`, 'parallel must declare at least one lane')
     const laneIds = new Set<string>()
     const laneLabels = new Set<string>()
-    const terminalIndexes = new Set<number>()
     node.lanes.forEach((value, index) => {
       const lanePath = `${path}.lanes[${index}]`
       const lane = object(value, context.issues, lanePath)
       if (!lane) return
-      exactKeys(lane, ['id', 'label', 'terminal', 'body'], context.issues, lanePath)
+      exactKeys(lane, ['id', 'label', 'body'], context.issues, lanePath)
       validateIdentifier(lane.id, context.issues, `${lanePath}.id`, laneIds)
       const label = stringValue(lane.label, context.issues, `${lanePath}.label`)
       if (label?.trim()) {
@@ -58,85 +55,78 @@ export function validateParallel(
         if (laneLabels.has(normalized)) add(context.issues, 'semantic_conflict', `${lanePath}.label`, 'parallel lane labels must be unique')
         laneLabels.add(normalized)
       }
-      const terminalIndex = validateTerminalReference(lane.terminal, 'parallel', `${lanePath}.terminal`, context)
-      if (typeof terminalIndex === 'number') {
-        if (terminalIndexes.has(terminalIndex)) add(context.issues, 'semantic_conflict', `${lanePath}.terminal`, 'parallel lanes must use distinct assigned terminal indexes')
-        terminalIndexes.add(terminalIndex)
-      }
-      validateParallelLaneBody(lane.body, `${lanePath}.body`, context, terminalIndex, validateNode)
+      validateParallelLaneBody(lane.body, `${lanePath}.body`, context, validateNode)
     })
+    validateParallelTerminalUsage(node as unknown as ParallelNode, path, context)
   }
-  const merge = object(node.merge, context.issues, `${path}.merge`)
-  if (merge) {
-    exactKeys(merge, ['kind', 'separator', 'includeEmptyOutputs'], context.issues, `${path}.merge`)
-    if (merge.kind !== 'sectioned_text') add(context.issues, 'invalid_literal', `${path}.merge.kind`, 'merge kind must be sectioned_text')
-    stringValue(merge.separator, context.issues, `${path}.merge.separator`, { nonEmpty: true })
-    booleanValue(merge.includeEmptyOutputs, context.issues, `${path}.merge.includeEmptyOutputs`)
-  }
+  literal(node.sharedTextOrder, ['pane_order', 'completion_order'], context.issues, `${path}.sharedTextOrder`, 'sharedTextOrder must be pane_order or completion_order')
   literal(node.onLaneFail, ['pause', 'fail'], context.issues, `${path}.onLaneFail`, 'onLaneFail must be pause or fail')
-  if (typeof node.id === 'string') registerArtifact(context, node.id, 'merged_text')
 }
 
 function validateParallelLaneBody(
   value: unknown,
   path: string,
   context: ValidationContext,
-  terminalIndex: number | null | undefined,
   validateNode: NodeValidator,
 ): void {
   if (!Array.isArray(value)) {
     add(context.issues, 'expected_array', path, 'parallel lane body must be an array')
     return
   }
-  if (value.length === 0) {
-    add(context.issues, 'invalid_range', path, 'parallel lane body must end with output')
-    return
-  }
   const laneContext = childContext(context)
-  const outputContext = { ...childContext(context), artifactOutputs: new Map<string, Set<string>>() }
-  let outputCount = 0
   value.forEach((child, childIndex) => {
     const childPath = `${path}[${childIndex}]`
     const childRecord = object(child, context.issues, childPath)
     if (!childRecord) return
-    if (childRecord.type === 'output') {
-      outputCount += 1
-      validateIdentifier(childRecord.id, context.issues, `${childPath}.id`, context.nodeIds)
-      exactKeys(childRecord, ['id', 'type', 'source'], context.issues, childPath)
-      const source = object(childRecord.source, context.issues, `${childPath}.source`)
-      if (source?.kind === 'none') exactKeys(source, ['kind'], context.issues, `${childPath}.source`)
-      else validateAssignedArtifact(childRecord.source, `${childPath}.source`, outputContext, 'text')
-      if (childIndex !== value.length - 1) add(context.issues, 'semantic_conflict', `${childPath}.type`, 'parallel lane output must be the final node')
-      return
-    }
     if (typeof childRecord.type !== 'string') {
       validateIdentifier(childRecord.id, context.issues, `${childPath}.id`, context.nodeIds)
       add(context.issues, 'expected_string', `${childPath}.type`, 'parallel lane node type must be a string')
       return
     }
-    if (childIndex === value.length - 1) add(context.issues, 'semantic_conflict', `${childPath}.type`, 'parallel lane must end with output')
-    if (!['send', 'wait', 'capture-source', 'extract_text'].includes(childRecord.type)) {
+    if (!['send', 'notify', 'wait', 'capture-source', 'extract_text'].includes(childRecord.type)) {
       validateIdentifier(childRecord.id, context.issues, `${childPath}.id`, context.nodeIds)
-      add(context.issues, 'semantic_conflict', `${childPath}.type`, 'parallel lane only supports send, wait, capture-source, extract_text and final output')
+      add(context.issues, 'semantic_conflict', `${childPath}.type`, 'parallel pane only supports send, notify, wait, capture-source and extract_text')
       return
     }
-    validateNode(child, childPath, laneContext, false, terminalIndex)
+    validateNode(child, childPath, laneContext, false, undefined)
     if (childRecord.type === 'wait' && childRecord.mode === 'user-continue') {
-      add(context.issues, 'semantic_conflict', `${childPath}.mode`, 'parallel lane wait must not use user-continue')
+      add(context.issues, 'semantic_conflict', `${childPath}.mode`, 'parallel pane wait must not use user-continue')
     }
-    if (childRecord.type === 'wait' && childRecord.mode === 'terminal-quiet' && childRecord.onTimeout !== 'pause') {
-      add(context.issues, 'semantic_conflict', `${childPath}.onTimeout`, 'parallel lane wait onTimeout must be pause')
+    if (
+      childRecord.type === 'capture-source'
+      && childRecord.capture
+      && typeof childRecord.capture === 'object'
+      && (childRecord.capture as { kind?: unknown }).kind === 'structured-json'
+    ) {
+      add(context.issues, 'semantic_conflict', `${childPath}.capture.kind`, 'structured-json capture is only supported in root flow')
     }
-    if (childRecord.type === 'extract_text' && childRecord.onEmpty !== 'pause' && childRecord.onEmpty !== 'fail') {
-      add(context.issues, 'semantic_conflict', `${childPath}.onEmpty`, 'parallel lane extract onEmpty must be pause or fail')
-    }
-    if (typeof childRecord.id === 'string' && childRecord.type === 'capture-source') {
-      registerArtifact(outputContext, childRecord.id, childRecord.capture && typeof childRecord.capture === 'object' && (childRecord.capture as { kind?: unknown }).kind === 'structured-json' ? 'captured_json' : 'captured_text')
-    }
-    if (typeof childRecord.id === 'string' && childRecord.type === 'extract_text') registerArtifact(outputContext, childRecord.id, 'extracted_text')
   })
-  if (outputCount === 0) add(context.issues, 'semantic_conflict', path, 'parallel lane must declare final output')
-  if (outputCount > 1) add(context.issues, 'semantic_conflict', path, 'parallel lane must declare exactly one output')
+}
+
+function validateParallelTerminalUsage(
+  node: ParallelNode,
+  path: string,
+  context: ValidationContext,
+): void {
+  const usage = buildParallelTerminalUsage(node, context.layout)
+  for (const conflict of usage.conflicts) {
+    const issuePath = `${path}.${conflict.use.referencePath}`
+    if (conflict.kind === 'shell_shared') {
+      add(
+        context.issues,
+        'semantic_conflict',
+        issuePath,
+        `Shell ${conflict.use.terminalIndex} is owned by ${conflict.ownerLaneId} and cannot be shared across parallel panes`,
+      )
+    } else {
+      add(
+        context.issues,
+        'semantic_conflict',
+        issuePath,
+        `shared Text ${conflict.use.terminalIndex} only supports Send append inside parallel panes`,
+      )
+    }
+  }
 }
 
 export function validateIf(

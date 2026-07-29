@@ -9,7 +9,7 @@ import { encodeEventCursor } from '../../server/macroRunTraceIndex'
 import { TerminalRoomManager } from '../../server/terminalRoomManager'
 import { textTerminalHash } from '../../server/textTerminalHash'
 import { createGeneratedId } from '../../src/lib/generatedId'
-import type { MacroDefinitionV5 } from '../../src/lib/macro/macroDefinitionTypes'
+import type { MacroDefinitionV6 } from '../../src/lib/macro/macroDefinitionTypes'
 import type { RunManifestV1 } from '../../src/lib/macro/runnerTypes'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { roomControlHeaders, type RoomControlGrant } from '../../src/lib/roomControl'
@@ -252,8 +252,8 @@ function createRun(store: MacroRunStore, roomId: string, createdAt: string, even
 }
 
 function manifest(runId: string, roomId: string, createdAt: string): RunManifestV1 {
-  const definition: MacroDefinitionV5 = {
-    schemaVersion: 5,
+  const definition: MacroDefinitionV6 = {
+    schemaVersion: 6,
     name: 'trace',
     description: '',
     terminalLayout: [],
