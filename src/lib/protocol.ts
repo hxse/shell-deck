@@ -130,6 +130,7 @@ export type ClientMessage =
   | { type: 'terminal_resize'; terminalId?: string; terminalIndex?: number; cols: number; rows: number }
   | { type: 'reorder_terminal'; terminalId: string; newIndex: number }
   | { type: 'close_terminal'; terminalId?: string; terminalIndex?: number }
+  | { type: 'close_all_terminals' }
   | { type: 'reset_terminal'; terminalId?: string; terminalIndex?: number; backend?: TerminalBackendKind }
   | { type: 'request_replay'; terminalId?: string; terminalIndex?: number }
   | { type: 'request_text_snapshot'; terminalId?: string; terminalIndex?: number }
@@ -149,6 +150,7 @@ export function parseClientMessage(raw: string | Buffer): ClientMessage {
     terminal_resize: ['type', 'terminalId', 'terminalIndex', 'cols', 'rows'],
     reorder_terminal: ['type', 'terminalId', 'newIndex'],
     close_terminal: ['type', 'terminalId', 'terminalIndex'],
+    close_all_terminals: ['type'],
     reset_terminal: ['type', 'terminalId', 'terminalIndex', 'backend'],
     request_replay: ['type', 'terminalId', 'terminalIndex'],
     request_text_snapshot: ['type', 'terminalId', 'terminalIndex'],
@@ -158,7 +160,7 @@ export function parseClientMessage(raw: string | Buffer): ClientMessage {
   if (!allowed) throw new Error('invalid_client_message_type')
   const unknown = Object.keys(record).find((key) => !allowed.includes(key))
   if (unknown) throw new Error('client_message_unknown_field:' + unknown)
-  if (type !== 'create_terminal' && type !== 'request_snapshot' && type !== 'reorder_terminal') assertSingleTerminalRef(record)
+  if (type !== 'create_terminal' && type !== 'request_snapshot' && type !== 'reorder_terminal' && type !== 'close_all_terminals') assertSingleTerminalRef(record)
   if ('backend' in record && record.backend !== undefined && record.backend !== 'fake' && record.backend !== 'real' && record.backend !== 'text') throw new Error('invalid_terminal_backend')
   if ('cwd' in record && record.cwd !== undefined && typeof record.cwd !== 'string') throw new Error('invalid_terminal_cwd')
   if ('cwdSource' in record && record.cwdSource !== undefined && record.cwdSource !== 'last-shell') throw new Error('invalid_terminal_cwd_source')

@@ -182,6 +182,8 @@ test('terminal identity is only dynamic index plus runtime id; alias and rename 
   expect(() => parseClientMessage(JSON.stringify({ type: 'create_terminal', cwd: '/tmp', cwdSource: 'last-shell' }))).toThrow('terminal_cwd_source_conflict')
   expect(() => parseClientMessage(JSON.stringify({ type: 'create_terminal', cwdSource: 'active-tab' }))).toThrow('invalid_terminal_cwd_source')
   expect(() => parseClientMessage(JSON.stringify({ type: 'close_terminal', terminalIndex: 0 }))).toThrow('invalid_terminal_index')
+  expect(parseClientMessage(JSON.stringify({ type: 'close_all_terminals' }))).toEqual({ type: 'close_all_terminals' })
+  expect(() => parseClientMessage(JSON.stringify({ type: 'close_all_terminals', terminalId: terminal.terminalId }))).toThrow('client_message_unknown_field:terminalId')
   expect(() => manager.createTerminal(room.roomId, { backend: 'fake', cols: 1 })).toThrow('invalid_terminal_size')
   await manager.destroyAllRooms()
 })

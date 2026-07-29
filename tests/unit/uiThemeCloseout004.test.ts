@@ -46,7 +46,7 @@ const currentComponentFingerprints = {
   },
   'src/lib/components/macro/MacroControlNodeEditor.svelte': {
     count: 46,
-    digest: 'd1809b25da38f36aa308d9ccc7e4d7273503cc6b787e3a6f139fb5c903cc3bdb',
+    digest: 'ef69c6fff41f4681b6f3b977c85dcc11632643480524542ef627d09352b06e94',
   },
   'src/lib/components/macro/MacroEditorShell.svelte': {
     count: 9,
@@ -59,6 +59,10 @@ const currentComponentFingerprints = {
   'src/lib/components/macro/MacroIconButton.svelte': {
     count: 19,
     digest: '0b8c1020b602de00623b0ea0e2ad13ca398e495a0c76263f57ecc4e3b438b1c9',
+  },
+  'src/lib/components/macro/MacroRunDock.svelte': {
+    count: 24,
+    digest: '0bf82d3b6c25da9641b2150034e181cd728011ab8423feb215e31bc1ccbe0382',
   },
   'src/lib/components/macro/NodeActionControls.svelte': {
     count: 7,
@@ -74,7 +78,7 @@ const currentComponentFingerprints = {
   },
   'src/lib/components/macro/ParallelLaneTabs.svelte': {
     count: 41,
-    digest: 'f1c5900483bf75abe12fcc243effdca626062487a8afa03290cdab36544452bb',
+    digest: 'ca4982924ffc81dfb3e5293775c145fe0382c7cedf21aec3d88247d6e9352c2d',
   },
   'src/lib/components/macro/ParallelLaneActionEditor.svelte': {
     count: 34,
@@ -203,7 +207,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
       'a2e1e92633924c0b780e1ad6d07d109e593c3b9271e1269c26dcf388ea680ab5',
     ])
     expect(macroPanelDelta.added).toEqual([
-      "src/lib/components/MacroPanel.svelte::Component:MacroWorkbenchChrome::{templates}|{filteredTemplates}|{draft}|{selectedRecord}|{templateSearch}|{dirty}|{contentEditing}|mutationAllowed={canMutateShared}|errorText={displayedErrorText}|{macroView}|{runner}|{statusText}|{runnerInput}|{runnerInputSyncing}|{preparing}|prepareDisabled={prepareState.disabled}|prepareDisabledReason={prepareState.reason}|startDisabled={startState.disabled}|startDisabledReason={startState.reason}|{jsonEditing}|{operationPending}|{runActive}|onTemplateSearchChange={(value) => { templateSearch = value }}|onSelectTemplate={selectTemplate}|onCreateTemplate={() => void createTemplate()}|onBeginEdit={() => void beginEdit()}|onSaveTemplate={() => void saveTemplate()}|onCancelEdit={() => void cancelEdit()}|onDeleteTemplate={() => void deleteTemplate()}|onUpdateDraft={updateDraft}|onResetWidth={onResetWidth}|onPrepare={() => void prepareTerminals()}|onRunnerInputChange={updateRunnerInput}|onSubmitRunnerInput={() => void submitRunnerInput()}|onRefreshRunner={() => void refreshRunner()}|onMacroControl={(action) => void controlRunner(action)}|onViewChange={(view) => { if (!jsonEditing) { macroView = view; if (view === 'trace') void refreshTraces() } }}",
+      "src/lib/components/MacroPanel.svelte::Component:MacroWorkbenchChrome::{templates}|{filteredTemplates}|{draft}|{selectedRecord}|{templateSearch}|{dirty}|{contentEditing}|mutationAllowed={canMutateShared}|errorText={displayedErrorText}|{macroView}|{runner}|{statusText}|{runnerInput}|{runnerInputSyncing}|{preparing}|prepareDisabled={prepareState.disabled}|prepareDisabledReason={prepareState.reason}|closeAllDisabled={Boolean(closeAllDisabledReason)}|{closeAllDisabledReason}|startDisabled={startState.disabled}|startDisabledReason={startState.reason}|{jsonEditing}|{operationPending}|{runActive}|onTemplateSearchChange={(value) => { templateSearch = value }}|onSelectTemplate={selectTemplate}|onCreateTemplate={() => void createTemplate()}|onBeginEdit={() => void beginEdit()}|onSaveTemplate={() => void saveTemplate()}|onCancelEdit={() => void cancelEdit()}|onDeleteTemplate={() => void deleteTemplate()}|onUpdateDraft={updateDraft}|onResetWidth={onResetWidth}|onPrepare={() => void prepareTerminals()}|onCloseAll={closeAllTerminals}|onRunnerInputChange={updateRunnerInput}|onSubmitRunnerInput={() => void submitRunnerInput()}|onRefreshRunner={() => void refreshRunner()}|onMacroControl={(action) => void controlRunner(action)}|onViewChange={(view) => { if (!jsonEditing) { macroView = view; if (view === 'trace') void refreshTraces() } }}",
       "src/lib/components/MacroPanel.svelte::Component:MacroEditorShell::{draft}|validation={portableValidation}|{runnableValidation}|runtimePositions={terminalPositions}|{insertionPaletteMode}|{telegramProfileIds}|{telegramProfilesError}|locked={editorLocked}|editorKey={`${selectedRecord?.id ?? 'new'}:${editorGeneration}`}|lockedReason={runActive ? 'macro_run_active' : !canMutateShared ? 'room_control_required' : operationPending ? 'operation_pending' : leaseLost ? 'content_edit_lease_lost' : 'content_edit_lease_required'}|currentNodeId={runActive ? runner?.currentNodeId ?? null : null}|onBeginEdit={() => void beginEdit()}|{onMutationDenied}|onUpdateDraft={updateDraft}",
       "src/lib/components/MacroPanel.svelte::Component:MacroTraceView::{runner}|summaries={traces}|eventsPage={traceEvents}|{selectedTraceRunId}|hasPreviousSummaryPage={runnerSession.hasPreviousTracePage}|hasNextSummaryPage={runnerSession.hasNextTracePage}|hasPreviousEventPage={runnerSession.hasPreviousTraceEventPage}|hasNextEventPage={runnerSession.hasNextTraceEventPage}|onSelectRun={(runId) => void runnerSession.selectTrace(runId)}|onPreviousSummaryPage={() => void runnerSession.previousTraceSummaryPage()}|onNextSummaryPage={() => void runnerSession.nextTraceSummaryPage()}|onPreviousEventPage={() => void runnerSession.previousTraceEventPage()}|onNextEventPage={() => void runnerSession.nextTraceEventPage()}",
     ])
@@ -228,12 +232,12 @@ describe('20260722B.004 UI theme migration closeout', () => {
       },
     }).toEqual({
       selector: { count: 31, digest: '49043727ae109d3fa38512728dce96eec2a33b33cbd341125de6838f9dc437ee' },
-      chrome: { count: 9, digest: 'b7652ac4db283c1c007c53f245aa6d95c05bb5e8c716139dbe4c720aa396383a' },
+      chrome: { count: 9, digest: '787056aa4c2ee14cc52405bc7868611f17fdc8a0a2d25aab4ceff720d6601dab' },
       workspace: { count: 12, digest: '2a44c50cac4159cb82425e42350c99d9dea2fc13f99d2bcf121be7142ec8f10a' },
     })
 
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
-    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(845)
+    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(846)
 
     const app = readFileSync(resolve(projectRoot, 'src/App.svelte'), 'utf8')
     expect(app.match(/data-testid="theme-select"/g)).toHaveLength(1)

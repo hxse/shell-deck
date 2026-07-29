@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from 'playwright/test'
 
+import { clickWithDialog } from './comprehensiveMacroUiBehaviorCurrent.helpers'
 import { openTemplateDrawer } from './macroWorkbench034.helpers'
 
 test.afterEach(async ({ request }) => {
@@ -53,11 +54,24 @@ test('Macro authoring exposes local insertion, compact tokens and derived Parall
   await expect(notify.getByTestId('notify-app-repeat-count')).toHaveValue('3')
   await expect(notify.getByTestId('notify-app-repeat-interval-ms')).toHaveValue('1000')
 
+  await nodeControl(notify, 'node-add-after').click()
+  await page.getByTestId('add-step-parallel').click()
+  const nestedParallel = forBody.locator(':scope > [data-flow-node-type="parallel"]').last()
+  await expect(nestedParallel.getByTestId('parallel-lane-editor')).toHaveAttribute('data-flow-depth', '2')
+  await expect(nestedParallel.getByTestId('parallel-lane-editor')).toHaveClass(/\bborder-l-accent\b/)
+
   await page.getByRole('button', { name: 'New shell', exact: true }).click()
   await page.getByRole('button', { name: 'New shell', exact: true }).click()
   await page.getByRole('button', { name: 'New text', exact: true }).click()
   const parallel = await insertRoot(page, 'add-step-parallel')
+  await expect(parallel.getByTestId('parallel-on-lane-fail')).toHaveValue('fail')
+  await parallel.getByTestId('parallel-on-lane-fail').selectOption('pause')
+  await expect(parallel.getByTestId('parallel-on-lane-fail')).toHaveValue('pause')
+  await parallel.getByTestId('parallel-on-lane-fail').selectOption('fail')
   await expect(parallel.getByTestId('parallel-shared-text-order')).toHaveValue('pane_order')
+  await expect(parallel.getByTestId('parallel-lane-editor')).toHaveAttribute('data-flow-depth', '1')
+  await expect(parallel.getByTestId('parallel-lane-editor')).toHaveClass(/\bborder-l-secondary\b/)
+  await expect(parallel.getByTestId('parallel-lane-editor')).toHaveCSS('border-left-width', '4px')
   await expect(parallel.getByTestId('parallel-collect-lane-text')).toHaveCount(0)
   await expect(parallel.getByTestId('parallel-output-id-input')).toHaveCount(0)
   await expect(parallel.getByTestId('parallel-output-source')).toHaveCount(0)
@@ -91,6 +105,15 @@ test('Macro authoring exposes local insertion, compact tokens and derived Parall
   await expect(secondSend.getByTestId('parallel-terminal-usage')).toHaveText('Shared Text · pane order')
   await parallel.getByTestId('parallel-shared-text-order').selectOption('completion_order')
   await expect(secondSend.getByTestId('parallel-terminal-usage')).toHaveText('Shared Text · completion order')
+
+  await expect(page.getByTestId('macro-prepare-terminals')).toHaveText('Prepare')
+  const closeAll = page.getByTestId('macro-close-all-terminals')
+  await expect(closeAll).toBeEnabled()
+  await clickWithDialog(closeAll, 'dismiss', 'Close all Shell and Text tabs in this Room?')
+  await expect(page.getByTestId('terminal-tab')).toHaveCount(3)
+  await clickWithDialog(closeAll, 'accept', 'Close all Shell and Text tabs in this Room?')
+  await expect(page.getByTestId('terminal-tab')).toHaveCount(0)
+  await expect(closeAll).toBeDisabled()
 })
 
 test('active run visibly locks Macro authoring and highlights the frozen current stage until stop', async ({ page, request }) => {
@@ -111,6 +134,8 @@ test('active run visibly locks Macro authoring and highlights the frozen current
 
   await page.getByTestId('macro-control-start').click()
   await expect(page.getByTestId('macro-run-status').locator('strong')).toHaveText('running')
+  await expect(page.getByTestId('macro-close-all-terminals')).toBeDisabled()
+  await expect(page.getByTestId('macro-close-all-terminals')).toHaveAttribute('title', 'Terminal structure is locked')
   const runLockNotice = page.getByTestId('macro-editor-lock-notice')
   await expect(runLockNotice).toHaveAttribute('data-lock-reason', 'macro_run_active')
   await expect(runLockNotice).toHaveAttribute('data-click-to-edit', 'false')
@@ -135,6 +160,8 @@ test('active run visibly locks Macro authoring and highlights the frozen current
 
   await page.getByTestId('macro-control-stop').click()
   await expect(page.getByTestId('macro-run-status').locator('strong')).toHaveText('stopped')
+  await expect(page.getByTestId('macro-close-all-terminals')).toBeDisabled()
+  await expect(page.getByTestId('macro-close-all-terminals')).toHaveAttribute('title', 'No Shell or Text tabs to close')
   await page.getByTestId('macro-tab-editor').click()
   await expect(page.getByTestId('macro-editor-lock-notice')).toHaveCount(0)
   await expect(page.getByTestId('macro-editor-lock-surface')).not.toBeDisabled()

@@ -19,7 +19,7 @@ Core V0 behavior:
 - AgentEvent ingest normalizes Codex hook callbacks; Codex session ids are trace data, not macro template state
 - AgentEvent capture defaults to explicit unbounded waiting; users may opt into a persisted duration timeout
 - MacroDefinitionV6 stores portable Flow plus continuous terminal index/type and exact assigned/unassigned logical references; MacroRecord metadata and runtime terminal IDs remain separate
-- terminal layout changes only through the explicit `Prepare terminals` button; selection, Save, Start and terminal events never auto-prepare
+- terminal layout changes only through the explicit `Prepare` button; selection, Save, Start and terminal events never auto-prepare
 - Start validates a saved record revision and terminal structure revision, then freezes index/type to terminalId/launchId routing for the run
 - Macro selection/draft stays browser-local, while saved records and the Room's frozen Running Macro are synchronized through the server
 - runner status/current node/runtime input are pushed to every same-Room connection; closing browsers does not stop the live run

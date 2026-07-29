@@ -35,7 +35,7 @@ xterm继续加载package-owned vendor CSS，project只在唯一`src/app.css`中�
 
 Room与每个terminal分别维护单调roomRevision/terminalRevision；Text另有textRevision，每次PTY output或Text正文变化另推进outputActivityRevision。quiet判断使用activity revision，不能比较已截断replay的长度。terminal structure lock acquire/release都推进roomRevision。browser对完整Room snapshot与index map分别维护channel watermark：同一channel只有首次或revision严格更新时才能覆盖Room级字段；两种companion message可各自消费同一revision，terminal-specific event不冒充Room projection watermark。equal/older delayed snapshot不得重写structure lock。terminal-specific event按launchId + terminalRevision合并，只有accepted terminal snapshot才能派生readiness/position，跨HTTP/WebSocket的延迟snapshot不得回滚新真值。
 
-`terminal_index_map`是move/close/lock变化的authoritative structure projection。accepted map会删除已不在items中的client terminal并修正position/lock；move/close不再附带包含全部replay的`room_snapshot`。create/reset仍先投影目标terminal的最小snapshot，再发index map；Prepare把中间structure change合并为最后一份map，HTTP只构造一次最终Room snapshot。同一Room的普通broadcast先序列化一次，再把同一payload交给每个client queue；personalized control/direct response仍独立编码。
+`terminal_index_map`是move/close/lock变化的authoritative structure projection。accepted map会删除已不在items中的client terminal并修正position/lock；move/close不再附带包含全部replay的`room_snapshot`。create/reset仍先投影目标terminal的最小snapshot，再发index map；Prepare与confirmed Close all都把中间structure change合并为最后一份map，HTTP只构造一次最终Room snapshot。同一Room的普通broadcast先序列化一次，再把同一payload交给每个client queue；personalized control/direct response仍独立编码。
 
 Text browser的textarea值、caret和selection在本地input event内立即更新。网络按100ms leading/trailing throttle，每个terminal最多一个in-flight request，期间只保留latest local value；从last acknowledged正文到candidate使用最长公共前后缀生成单个UTF-16 replacement patch，patch接近全文时发送replace。mutation只携带`expectedTextRevision`与candidate完整SHA-256 `resultHash`。server在旧正文合并、重算hash并验证后才atomic commit revision并broadcast同一mutation；成功消息不携带完整正文。
 
@@ -55,7 +55,7 @@ Room registry ownership保持单向：`TerminalRoomManager`继续创建并公开
 
 MacroDefinition只保存连续index/type。显式Prepare与Start均携带调用者看到的`expectedTerminalStructureRevision`，并通过同一Room lifecycle ticket、controller guard与structure queue串行执行；revision不匹配必须在任何mutation前返回conflict。Prepare只调结构，Start还要求所有binding ready。
 
-Start把index/type解析为terminalId/launchId后冻结routing。active run期间create/delete/reorder/reset/Prepare等terminal structure mutation由UI和server共同拒绝；Pause不解锁，Stop或run终态后才释放。Home Destroy不是普通structure mutation，它先关闭Room admission并abort/drain在途操作，再清理runtime。
+Start把index/type解析为terminalId/launchId后冻结routing。active run期间create/delete/Close all/reorder/reset/Prepare等terminal structure mutation由UI和server共同拒绝；Pause不解锁，Stop或run终态后才释放。Home Destroy不是普通structure mutation，它先关闭Room admission并abort/drain在途操作，再清理runtime。
 
 ## Single-controller
 

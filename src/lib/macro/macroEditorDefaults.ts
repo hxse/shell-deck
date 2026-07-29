@@ -136,7 +136,7 @@ export function defaultFlowNode(
       type,
       lanes: [defaultParallelLane('lane_1')],
       sharedTextOrder: 'pane_order',
-      onLaneFail: 'pause',
+      onLaneFail: 'fail',
     }
   }
   if (type === 'if') {

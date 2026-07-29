@@ -95,6 +95,11 @@ export async function exerciseSavedRecords(page: Page, state: MacroJourneyState)
   await page.getByTestId("macro-template-select").selectOption(mainTemplateId)
   await closeTemplateDrawer(page)
   await expect(page.getByTestId("macro-validation-summary")).toHaveText("success")
+  await clickWithDialog(
+    page.getByTestId("macro-close-all-terminals"),
+    "dismiss",
+    "Close all Shell and Text tabs in this Room?",
+  )
   await page.getByTestId("macro-prepare-terminals").click()
   await expect(page.getByTestId("macro-control-start")).toBeEnabled()
 }

@@ -137,7 +137,9 @@ Macro结构操作栏中，`↑`/`↓`移动当前项，`+↑`在当前项之前�
 
 AgentEvent与structured JSON Capture提供`Enable timeout`。默认关闭并保存`waitLimit:{kind:"unbounded"}`，一直等待结果或用户Stop；开启后保存显式duration，Pause期间不计算超时时间。server不存在隐藏的10分钟Capture超时。
 
-需要调整当前Room terminal顺序/类型时，显式点击Start左侧的`Prepare terminals`。它读取当前visual draft或JSON Edit buffer的terminal layout；切换Macro、Save、Start和terminal变化都不会自动Prepare。Prepare只keep/move/create/insert，不删除或修复failed/exited terminal。
+需要调整当前Room terminal顺序/类型时，显式点击Start左侧的`Prepare`。它读取当前visual draft或JSON Edit buffer的terminal layout；切换Macro、Save、Start和terminal变化都不会自动Prepare。Prepare只keep/move/create/insert，不删除或修复failed/exited terminal。
+
+需要清空当前Room的terminal deck时，点击旁边的`Close all`并确认。它一次关闭全部Shell和Text tab，但不会关闭Room，也不会删除Macro、Trace、artifact或evidence；active run、observer或空deck时按钮不可用。
 
 Start要求Macro已经Save，先通过runnable completeness（所有terminal/artifact reference均assigned），再要求当前terminal layout/type/readiness匹配。启动时server把index解析成terminalId/launchId并冻结，运行中terminal结构保持锁定；Pause只暂停live run，server restart或Room Destroy后不能Resume。Trace、manifest、events和artifact仍可只读查看，但不会恢复runner。Trace先分页列出当前Room的run summaries；选中一个run后再分页读取其retained events，不会一次下载全部历史。
 

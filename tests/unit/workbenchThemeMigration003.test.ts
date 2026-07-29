@@ -37,8 +37,8 @@ describe('Macro workbench theme contract', () => {
       digest: createHash('sha256').update(JSON.stringify(inventory)).digest('hex'),
     }).toEqual({
       files: 27,
-      entries: 742,
-      digest: '7822f80e4fff3c4c769566fb975586ba783de3eb3e12dd6c3f50aeb49af0367a',
+      entries: 743,
+      digest: '478fabb263b721ae51819ead78d96d4b389a0b40e65918e3cb86716fdd281430',
     })
   })
 

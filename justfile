@@ -121,6 +121,11 @@ test-20260729a:
     HISTFILE=/dev/null bun test tests/integration/parallelSharedText20260729A.test.ts tests/integration/macroRuntime034.execution.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
+test-20260729b:
+    HISTFILE=/dev/null bun test tests/unit/macroFlowVisualEditor006.test.ts tests/unit/terminalRoomManager032.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    HISTFILE=/dev/null bun test tests/integration/terminalRoomWebSocket032.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
+
 test-032:
     bun run test:032
 

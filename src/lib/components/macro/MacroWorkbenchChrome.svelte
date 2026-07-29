@@ -10,18 +10,20 @@
     templates, filteredTemplates, draft, selectedRecord, templateSearch, dirty, contentEditing, mutationAllowed = true,
     errorText, macroView, runner, statusText, runnerInput, runnerInputSyncing = false, preparing = false,
     prepareDisabled = false, prepareDisabledReason = '', startDisabled = false, startDisabledReason = '',
+    closeAllDisabled = false, closeAllDisabledReason = '',
     jsonEditing = false, operationPending = false, runActive = false,
     onTemplateSearchChange, onSelectTemplate, onCreateTemplate, onBeginEdit, onSaveTemplate,
-    onCancelEdit, onDeleteTemplate, onUpdateDraft, onResetWidth, onPrepare,
+    onCancelEdit, onDeleteTemplate, onUpdateDraft, onResetWidth, onPrepare, onCloseAll,
     onRunnerInputChange, onSubmitRunnerInput, onRefreshRunner, onMacroControl, onViewChange,
   } = $props<{
     templates: MacroRecordSummary[]; filteredTemplates: MacroRecordSummary[]; draft: MacroDefinitionV6 | null; selectedRecord: MacroRecord | null
     templateSearch: string; dirty: boolean; contentEditing: boolean; mutationAllowed?: boolean; errorText: string | null; macroView: MacroView; runner: MacroRunnerSnapshot | null
     statusText: string; runnerInput: string; runnerInputSyncing?: boolean; preparing?: boolean; prepareDisabled?: boolean; prepareDisabledReason?: string
+    closeAllDisabled?: boolean; closeAllDisabledReason?: string
     startDisabled?: boolean; startDisabledReason?: string; jsonEditing?: boolean; operationPending?: boolean; runActive?: boolean
     onTemplateSearchChange: (value: string) => void; onSelectTemplate: (id: string) => Promise<boolean>; onCreateTemplate: () => void
     onBeginEdit: () => void; onSaveTemplate: () => void; onCancelEdit: () => void; onDeleteTemplate: () => void
-    onUpdateDraft: (mutator: (definition: MacroDefinitionV6) => void) => void; onResetWidth?: () => void; onPrepare: () => void
+    onUpdateDraft: (mutator: (definition: MacroDefinitionV6) => void) => void; onResetWidth?: () => void; onPrepare: () => void; onCloseAll: () => void
     onRunnerInputChange: (value: string) => void; onSubmitRunnerInput: () => void; onRefreshRunner: () => void
     onMacroControl: (action: 'start' | 'pause' | 'resume' | 'stop') => void; onViewChange: (view: MacroView) => void
   }>()
@@ -37,9 +39,9 @@
 
 <div class="macro-sticky-head relative top-0 z-[5] border-b border-base-300 bg-base-100/95 shadow-sm backdrop-blur" data-testid="macro-sticky-head">
   <div class="macro-top-dock grid gap-0 px-1.5 py-[3px]" data-testid="macro-top-dock">
-    <MacroRunDock {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing} {prepareDisabled} {prepareDisabledReason} {startDisabled} {startDisabledReason}
+    <MacroRunDock {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing} {prepareDisabled} {prepareDisabledReason} {closeAllDisabled} {closeAllDisabledReason} {startDisabled} {startDisabledReason}
       runtimeInputDisabled={!mutationAllowed || operationPending}
-      onPrepare={onPrepare} onRunnerInputChange={onRunnerInputChange} onSubmitRunnerInput={onSubmitRunnerInput}
+      onPrepare={onPrepare} onCloseAll={onCloseAll} onRunnerInputChange={onRunnerInputChange} onSubmitRunnerInput={onSubmitRunnerInput}
       onRefreshRunner={onRefreshRunner} onMacroControl={onMacroControl} />
   </div>
   <div class="macro-tabs tabs tabs-box grid grid-cols-3 gap-1 bg-base-200 p-1" role="tablist" aria-label="Macro views">

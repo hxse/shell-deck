@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createGeneratedId } from '../../src/lib/generatedId'
 import type { ServerMessage } from '../../src/lib/protocol'
 import { startShellDeckServer } from '../../server/httpServer'
 
@@ -43,6 +44,32 @@ test('two Room websocket clients share exact output, replay and dynamic index or
     await waitFor(() => latestIndexMap(second.messages).length === 1, 1000)
     expect(latestIndexMap(second.messages)).toEqual([{ index: 1, terminalId: terminal.terminalId }])
 
+    server.manager.createTerminal(room.roomId, { backend: 'text' })
+    await waitFor(() => latestIndexMap(second.messages).length === 2, 1000)
+    const beforeObserverAttempt = second.messages.length
+    second.ws.send(JSON.stringify({ type: 'close_all_terminals' }))
+    await waitFor(() => second.messages.slice(beforeObserverAttempt).some((message) => (
+      message.type === 'terminal_error' && message.reason === 'room_control_required'
+    )), 1000)
+    expect(server.manager.terminalPositions(room.roomId)).toHaveLength(2)
+
+    const runId = createGeneratedId('run')
+    server.manager.acquireRunStructureLock(room.roomId, runId)
+    await waitFor(() => latestIndexProjection(second.messages)?.terminalStructureLocked === true, 1000)
+    const beforeLockedAttempt = first.messages.length
+    first.ws.send(JSON.stringify({ type: 'close_all_terminals' }))
+    await waitFor(() => first.messages.slice(beforeLockedAttempt).some((message) => (
+      message.type === 'terminal_error' && message.reason === 'room_structure_locked_by_run'
+    )), 1000)
+    expect(server.manager.terminalPositions(room.roomId)).toHaveLength(2)
+    server.manager.releaseRunStructureLock(room.roomId, runId)
+    await waitFor(() => latestIndexProjection(second.messages)?.terminalStructureLocked === false, 1000)
+
+    const mapsBeforeCloseAll = second.messages.filter((message) => message.type === 'terminal_index_map').length
+    first.ws.send(JSON.stringify({ type: 'close_all_terminals' }))
+    await waitFor(() => latestIndexMap(second.messages).length === 0, 1000)
+    expect(server.manager.terminalPositions(room.roomId)).toEqual([])
+    expect(second.messages.filter((message) => message.type === 'terminal_index_map')).toHaveLength(mapsBeforeCloseAll + 1)
   } finally {
     await server.stop()
     await Promise.allSettled(sockets.map(closeWebSocket))
@@ -89,8 +116,14 @@ function snapshotText(messages: ServerMessage[], terminalId: string): string {
 }
 
 function latestIndexMap(messages: ServerMessage[]) {
-  const map = messages.filter((message) => message.type === 'terminal_index_map').at(-1)
+  const map = latestIndexProjection(messages)
   if (map?.type === 'terminal_index_map') return map.items
   const snapshot = messages.filter((message) => message.type === 'room_snapshot').at(-1)
   return snapshot?.type === 'room_snapshot' ? snapshot.indexMap : []
+}
+
+function latestIndexProjection(messages: ServerMessage[]) {
+  return messages.filter((message): message is Extract<ServerMessage, { type: 'terminal_index_map' }> => (
+    message.type === 'terminal_index_map'
+  )).at(-1)
 }

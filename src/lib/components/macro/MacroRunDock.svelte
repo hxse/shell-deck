@@ -11,10 +11,13 @@
     preparing = false,
     prepareDisabled = false,
     prepareDisabledReason = '',
+    closeAllDisabled = false,
+    closeAllDisabledReason = '',
     startDisabled = false,
     startDisabledReason = '',
     runtimeInputDisabled = false,
     onPrepare,
+    onCloseAll,
     onRunnerInputChange,
     onSubmitRunnerInput,
     onRefreshRunner,
@@ -27,10 +30,13 @@
     preparing?: boolean
     prepareDisabled?: boolean
     prepareDisabledReason?: string
+    closeAllDisabled?: boolean
+    closeAllDisabledReason?: string
     startDisabled?: boolean
     startDisabledReason?: string
     runtimeInputDisabled?: boolean
     onPrepare: () => void
+    onCloseAll: () => void
     onRunnerInputChange: (value: string) => void
     onSubmitRunnerInput: () => void
     onRefreshRunner: () => void
@@ -101,7 +107,8 @@
     {/if}
   </div>
   <div class="macro-run-controls flex flex-wrap items-center gap-1" data-testid="macro-run-controls">
-    <button class="macro-prepare-terminals btn btn-xs btn-primary min-w-[50px] !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-prepare-terminals" title={prepareDisabled ? prepareDisabledReason : 'Prepare current draft terminal layout'} aria-disabled={prepareDisabled || preparing} onclick={onPrepare}>{preparing ? 'Preparing…' : 'Prepare terminals'}</button>
+    <button class="macro-prepare-terminals btn btn-xs btn-primary min-w-[50px] !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-prepare-terminals" title={prepareDisabled ? prepareDisabledReason : 'Prepare current draft terminal layout'} aria-disabled={prepareDisabled || preparing} onclick={onPrepare}>{preparing ? 'Preparing…' : 'Prepare'}</button>
+    <button class="btn btn-xs btn-error min-w-[50px]" type="button" data-testid="macro-close-all-terminals" title={closeAllDisabled ? closeAllDisabledReason : 'Close every Shell and Text tab in this Room'} disabled={closeAllDisabled} onclick={onCloseAll}>Close all</button>
     <button class="btn btn-xs btn-success min-w-[50px] !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-control-start" title={startDisabled ? startDisabledReason : 'Start saved macro revision'} aria-disabled={startDisabled} onclick={() => onMacroControl('start')}>Start</button>
     <button class="btn btn-xs btn-warning min-w-[50px] !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-control-pause-resume" title={pauseResumeDisabled() ? 'No live run to pause or resume' : pauseResumeAction() === 'resume' ? 'Resume run' : 'Pause run'} aria-disabled={pauseResumeDisabled()} onclick={() => onMacroControl(pauseResumeAction())}>{pauseResumeAction() === 'resume' ? 'Resume' : 'Pause'}</button>
     <button class="btn btn-xs btn-error min-w-[50px] !pointer-events-auto aria-disabled:cursor-not-allowed" type="button" data-testid="macro-control-stop" title="Stop active run" aria-disabled={!runner || !['running', 'paused', 'waiting_input', 'stopping'].includes(runner.status)} onclick={() => onMacroControl('stop')}>Stop</button>

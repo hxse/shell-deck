@@ -33,6 +33,7 @@
     telegramProfileIds = [],
     telegramProfilesError = '',
     currentNodeId = null,
+    depth,
   } = $props<{
     draft: MacroDefinitionV6
     nodeId: string
@@ -45,6 +46,7 @@
     telegramProfileIds?: string[]
     telegramProfilesError?: string
     currentNodeId?: string | null
+    depth: number
   }>()
 
   let selectedLaneId = $state('')
@@ -52,14 +54,13 @@
   let laneInsertionPosition = $state<InsertionPalettePosition | null>(null)
   let laneInsertionPaletteElement = $state<HTMLElement | null>(null)
   const laneInsertionPaletteLifecycle = new MacroInsertionPaletteLifecycle()
-  const resolvedTerminalChoices = $derived(terminalChoices())
   const laneEditor = createParallelLaneEditorController({
     draft: () => draft,
     nodeId: () => nodeId,
     selectedLaneId: () => selectedLaneId,
     setSelectedLaneId: (laneId) => { selectedLaneId = laneId },
     updateDraft: (mutator) => updateDraft(mutator),
-    terminalChoices: () => resolvedTerminalChoices,
+    terminalChoices: () => terminalChoices(),
     terminalUsageIndex: () => terminalUsageIndex,
     adoptTerminalSelection: (template, terminalIndex) => adoptTerminalSelection(template, terminalIndex),
     closeLaneInsertion,
@@ -146,7 +147,15 @@
     </div>
 
     {#if selectedLane}
-      <div class="parallel-lane-card active-lane card grid min-w-0 gap-2 bg-primary/10 p-2 shadow-sm" data-testid="parallel-lane-editor">
+      <div
+        class="parallel-lane-card active-lane card grid min-w-0 gap-2 border-l-4 bg-primary/10 p-2 pl-2 shadow-sm"
+        class:border-l-primary={(depth + 1) % 4 === 0}
+        class:border-l-secondary={(depth + 1) % 4 === 1}
+        class:border-l-accent={(depth + 1) % 4 === 2}
+        class:border-l-info={(depth + 1) % 4 === 3}
+        data-testid="parallel-lane-editor"
+        data-flow-depth={depth + 1}
+      >
         <div class="step-title flex min-w-0 flex-wrap items-center justify-between gap-2">
           <strong>{selectedLane.label || selectedLane.id}</strong>
           <div class="inline-actions parallel-lane-controls flex flex-wrap gap-1">
@@ -196,7 +205,7 @@
             artifactChoices={parallelMessageChoices(outerArtifactChoices, selectedLane, item.id)}
             {templateScope}
             terminalChoices={laneEditor.actionTerminalChoices(item)}
-            allTerminalChoices={resolvedTerminalChoices}
+            allTerminalChoices={terminalChoices()}
             disabledTerminalValues={laneEditor.unavailableActionTerminalValues(selectedLane.id, item)}
             expectedTerminalType={terminal ? laneEditor.expectedTerminalTypeAt(terminal) : undefined}
             terminalUsage={laneEditor.terminalUsage(item)}

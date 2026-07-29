@@ -67,6 +67,10 @@ describe('Macro flow visual editor extraction', () => {
     expect(lanes).toContain('const terminalUsageIndex = $derived')
     expect(lanes.match(/buildParallelTerminalUsage\(parallelNode/g)).toHaveLength(1)
     expect(laneController).toContain('options.terminalUsageIndex()')
+    expect(lanes).toContain('data-flow-depth={depth + 1}')
+    expect(lanes).toContain('class:border-l-secondary={(depth + 1) % 4 === 1}')
+    expect(readFileSync(resolve(componentRoot, 'MacroControlNodeEditor.svelte'), 'utf8'))
+      .toContain('{currentNodeId} {depth} />')
     expect(flow).toContain('new MacroInsertionPaletteLifecycle')
     expect(insertion).not.toContain('new MacroInsertionPaletteLifecycle')
     expect(insertion).toContain('const lifecycle = options.lifecycle')
@@ -152,7 +156,7 @@ describe('Macro flow visual editor extraction', () => {
       id: 'parallel', type: 'parallel',
       lanes: [{ id: 'lane_1', label: 'lane_1', body: [] }],
       sharedTextOrder: 'pane_order',
-      onLaneFail: 'pause',
+      onLaneFail: 'fail',
     })
   })
 

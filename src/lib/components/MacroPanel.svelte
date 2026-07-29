@@ -107,6 +107,15 @@
   const editorLocked = $derived(runActive || !canMutateShared || operationPending || (selectedRecord !== null && !contentEditing))
   const prepareState = $derived(runnerSession.prepareState)
   const startState = $derived(runnerSession.startState)
+  const closeAllDisabledReason = $derived(
+    !roomClient || !canMutateShared
+      ? 'Room control is required'
+      : terminalStructureLocked
+        ? 'Terminal structure is locked'
+        : !terminalPositions?.length
+          ? 'No Shell or Text tabs to close'
+          : '',
+  )
   const displayedErrorText = $derived([recordSession.errorText, recordSession.templateListProblem].filter((value): value is string => Boolean(value)).join('\n') || null)
 
   $effect(() => {
@@ -160,6 +169,12 @@
   function cancelJson(): void {
     jsonSession.cancel(operationPending)
   }
+
+  function closeAllTerminals(): void {
+    if (closeAllDisabledReason || !roomClient) return
+    if (!window.confirm('Close all Shell and Text tabs in this Room?')) return
+    roomClient.send({ type: 'close_all_terminals' })
+  }
 </script>
 
 <section class="macro-panel flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden border border-base-300 bg-base-100 text-[13px] text-base-content shadow-sm [&_h2]:m-0 [&_h2]:text-sm [&_h2]:font-bold [&_h3]:m-0 [&_h3]:text-[13px] [&_h3]:font-bold [&_label]:grid [&_label]:min-w-0 [&_label]:gap-1 [&_label]:text-[11px] [&_label]:font-semibold [&_summary]:cursor-pointer [&_code]:font-mono [&_pre]:m-0 [&_pre]:max-w-full [&_pre]:overflow-auto [&_pre]:whitespace-pre-wrap [&_pre]:rounded-field [&_pre]:border [&_pre]:border-base-300 [&_pre]:bg-base-200 [&_pre]:p-2 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:leading-[1.4] [&_small]:text-[11px] [&_small]:leading-[1.3] [&_.macro-row]:grid [&_.macro-row]:min-w-0 [&_.macro-row]:grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] [&_.macro-row]:items-end [&_.macro-row]:gap-2 [&_.checkbox-row]:!flex [&_.checkbox-row]:w-fit [&_.checkbox-row]:cursor-pointer [&_.checkbox-row]:items-center [&_.checkbox-row]:gap-1.5 [&_.checkbox-row]:text-xs [&_.step-title]:flex [&_.step-title]:min-w-0 [&_.step-title]:items-center [&_.step-title]:justify-between [&_.step-title]:gap-2 [&_.inline-actions]:flex [&_.inline-actions]:min-w-0 [&_.inline-actions]:flex-wrap [&_.inline-actions]:gap-1 [&_.message-part-row]:grid [&_.message-part-row]:min-w-0 [&_.message-part-row]:gap-2 [&_.message-part-row]:rounded-md [&_.message-part-row]:bg-base-200/60 [&_.message-part-row]:p-2 [&_.hint]:m-0 [&_.hint]:text-xs [&_.hint]:text-base-content/55 [&_.agent-wait-limit]:grid [&_.agent-wait-limit]:min-w-0 [&_.agent-wait-limit]:grid-cols-[auto_minmax(0,1fr)] [&_.agent-wait-limit]:items-end [&_.agent-wait-limit]:gap-2 [&_.agent-timeout-hint]:self-center" data-testid="macro-panel">
@@ -167,12 +182,13 @@
     {templates} {filteredTemplates} {draft} {selectedRecord} {templateSearch} {dirty} {contentEditing} mutationAllowed={canMutateShared}
     errorText={displayedErrorText} {macroView} {runner} {statusText} {runnerInput} {runnerInputSyncing} {preparing}
     prepareDisabled={prepareState.disabled} prepareDisabledReason={prepareState.reason}
+    closeAllDisabled={Boolean(closeAllDisabledReason)} {closeAllDisabledReason}
     startDisabled={startState.disabled} startDisabledReason={startState.reason}
     {jsonEditing} {operationPending} {runActive}
     onTemplateSearchChange={(value) => { templateSearch = value }} onSelectTemplate={selectTemplate}
     onCreateTemplate={() => void createTemplate()} onBeginEdit={() => void beginEdit()} onSaveTemplate={() => void saveTemplate()}
     onCancelEdit={() => void cancelEdit()} onDeleteTemplate={() => void deleteTemplate()} onUpdateDraft={updateDraft}
-    onResetWidth={onResetWidth} onPrepare={() => void prepareTerminals()} onRunnerInputChange={updateRunnerInput}
+    onResetWidth={onResetWidth} onPrepare={() => void prepareTerminals()} onCloseAll={closeAllTerminals} onRunnerInputChange={updateRunnerInput}
     onSubmitRunnerInput={() => void submitRunnerInput()} onRefreshRunner={() => void refreshRunner()}
     onMacroControl={(action) => void controlRunner(action)} onViewChange={(view) => { if (!jsonEditing) { macroView = view; if (view === 'trace') void refreshTraces() } }}
   />

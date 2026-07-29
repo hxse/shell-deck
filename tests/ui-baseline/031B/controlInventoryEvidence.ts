@@ -126,6 +126,7 @@ export const attributedBehaviorChanges: UiControlInventoryEntry[] = [
 
 function addedControlTask(key: string): string {
   if (key === 'theme-select') return '20260722B.001'
+  if (key === 'macro-close-all-terminals') return '20260729B'
   if (parallelControlIdsAdded20260729A.has(key)) return '20260729A'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001'
   if (key === "take-control") return "20260627A.033"
@@ -135,6 +136,7 @@ function addedControlTask(key: string): string {
 
 function addedControlOldBehavior(key: string): string {
   if (key === 'theme-select') return '20260722A.001 had no browser-local UI theme preference control.'
+  if (key === 'macro-close-all-terminals') return '20260729A required closing each terminal tab separately.'
   if (parallelControlIdsAdded20260729A.has(key)) return 'V5 had no explicit Parallel Action routing or shared Text behavior control with this identity.'
   if (macroControlIdsAdded001.has(key)) return '.010 did not expose this Macro authoring or notification control.'
   if (key === "take-control") return ".032 had no explicit controller handoff control."
@@ -144,6 +146,7 @@ function addedControlOldBehavior(key: string): string {
 
 function addedControlNewBehavior(key: string): string {
   if (key === 'theme-select') return '.001 adds the only Theme selector with system plus all 35 registered daisyUI themes.'
+  if (key === 'macro-close-all-terminals') return '20260729B adds one confirmed, controller-guarded Room terminal deck close.'
   if (parallelControlIdsAdded20260729A.has(key)) return '20260729A exposes explicit pane Action targets, shared Text ordering, Notify insertion, and derived usage help.'
   if (macroControlIdsAdded001.has(key)) return '.001 exposes per-item insertion, App notification repetition, or optional Parallel lane text collection through an explicit control.'
   if (key === "take-control") return ".033 adds explicit confirmed takeover for an observer."
@@ -153,6 +156,7 @@ function addedControlNewBehavior(key: string): string {
 
 function addedControlSpec(key: string): string {
   if (key === 'theme-select') return '20260722B.001/02_spec/01_contract.md — Settings control'
+  if (key === 'macro-close-all-terminals') return '20260729B/02_spec/01_contract.md — Run dock controls and server mutation'
   if (parallelControlIdsAdded20260729A.has(key)) return '20260729A/02_spec/01_contract.md — Authoring projection and usage language'
   if (macroControlIdsAdded001.has(key)) return '20260722A.001/02_spec/01_contract.md — Macro authoring and notification interaction contract'
   if (key === "take-control") return "20260627A.033/02_spec/01_contract.md — Take Control与丢失控制"

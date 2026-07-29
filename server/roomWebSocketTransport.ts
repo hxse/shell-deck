@@ -4,6 +4,7 @@ import { parseClientMessage } from '../src/lib/protocol'
 import type { TerminalRef } from '../src/lib/terminalIdentity'
 import type { HttpContext } from './http/httpContext'
 import { assertNoQuery, errorMessage, errorResponse, json } from './http/httpPrimitives'
+import { closeAllTerminals } from './terminalDeckMutation'
 import type { RoomSummary, TerminalRoomManager } from './terminalRoomManager'
 import { WebSocketSendQueue } from './webSocketSendQueue'
 
@@ -97,7 +98,11 @@ async function handleClientMessage(manager: TerminalRoomManager, clientId: strin
   if (message.type !== 'request_replay' && message.type !== 'request_text_snapshot' && message.type !== 'request_snapshot') {
     if (isTerminalStructureMessage(message)) {
       await manager.runControlledClientOperation(clientId, async (ticket) => (
-        await manager.runTerminalStructureMutation(ticket, () => handleMutatingClientMessage(manager, roomId, message, send))
+        await manager.runTerminalStructureMutation(ticket, () => (
+          message.type === 'close_all_terminals'
+            ? closeAllTerminals(manager, roomId)
+            : handleMutatingClientMessage(manager, roomId, message, send)
+        ))
       ))
     } else manager.runControlledClientMutation(clientId, () => handleMutatingClientMessage(manager, roomId, message, send))
     return
@@ -108,7 +113,11 @@ async function handleClientMessage(manager: TerminalRoomManager, clientId: strin
 }
 
 function isTerminalStructureMessage(message: ClientMessage): boolean {
-  return message.type === 'create_terminal' || message.type === 'reorder_terminal' || message.type === 'close_terminal' || message.type === 'reset_terminal'
+  return message.type === 'create_terminal'
+    || message.type === 'reorder_terminal'
+    || message.type === 'close_terminal'
+    || message.type === 'close_all_terminals'
+    || message.type === 'reset_terminal'
 }
 
 function handleMutatingClientMessage(manager: TerminalRoomManager, roomId: string, message: Exclude<ClientMessage, { type: 'request_replay' | 'request_text_snapshot' | 'request_snapshot' }>, send: (message: ServerMessage) => void): void {

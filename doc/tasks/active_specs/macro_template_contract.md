@@ -75,7 +75,7 @@ Parallel是并发pane容器，不产生强制返回值，也没有显式Join nod
 
 同一个Shell只能被一个pane使用；同一pane内可顺序复用，其他pane候选中显示`Shell · owned by <paneId>`并不可选择。Text只被一个pane使用时是`Exclusive Text`，可立即Send/Capture；被多个pane使用时是Shared Text，跨pane只允许Send append，Capture/Wait等read use必须validation失败。`sharedTextOrder`默认`pane_order`，静态顺序按pane数组再按pane body中的Send顺序展开：轮到的Send实时append并依次drain已ready follower，后序Send在内存queue等待；`completion_order`则哪个Send触发就立即append，同一pane内部仍由Action顺序自然串行。多个Shared Text target各自拥有独立queue；Send只有在真实append完成后才完成。Pause保留queue和waiter并在Resume重试，Fail/Stop取消未提交waiter，不等待所有pane完成才统一flush。
 
-Visual UI删除lane terminal、Lane result、Collect lane text、final Output及merge controls。每个terminal-bearing Action card显示自己的Target/Source tab与derived usage：`Exclusive Text`、`Shared Text · pane order`、`Shared Text · completion order`或`Shell · owned by lane_1`；usage badge通过hover/focus/tap提供解释。`Shared Text order`只选择两种ordering，不改变其他Action执行顺序。empty pane通过`Add action`进入palette，palette另允许Notify。
+Visual UI删除lane terminal、Lane result、Collect lane text、final Output及merge controls。新建Parallel显式写入`onLaneFail:"fail"`，selector仍允许用户改为pause，已有record的显式值不迁移。每个terminal-bearing Action card显示自己的Target/Source tab与derived usage：`Exclusive Text`、`Shared Text · pane order`、`Shared Text · completion order`或`Shell · owned by lane_1`；usage badge通过hover/focus/tap提供解释。`Shared Text order`只选择两种ordering，不改变其他Action执行顺序。empty pane通过`Add action`进入palette，palette另允许Notify。selected pane按`depth + 1`复用递归Flow的4px semantic color rail，不建立Parallel专用CSS。
 
 JSON editor保持纯文本语义，不读取Room、不补引用或wait policy。JSON Save使用V6 persistable gateway；合法unassigned与exact waitLimit必须原样round-trip。
 
@@ -107,11 +107,13 @@ transient WebSocket reconnect以显式`connectionGeneration`触发saved-content 
 
 实现上，`createMacroRecordSession`是selection/draft/lease及全部Svelte rune state的唯一owner、commit gateway和public assembly point。`MacroRecordNavigationCoordinator`只拥有list generation并编排list/Select/New request phase；`MacroRecordEditOrchestrator`只用单次调用局部snapshot编排fresh lease、Save/Create/Delete、JSON Save和dirty Start persist phase。两者把typed outcome交给factory的live operation/controller/record/draft/JSON/lease-aware commit ports，不缓存record/draft/lease。`MacroRecordMutationWorkflow`继续唯一编排record transport、fresh lease和persist transaction；`MacroRecordRemoteSyncCoordinator`继续只持有invalidation queue、retry timer、connection generation与serialized drain。published Create与retained lease仍在MutationWorkflow commit callback内同步进入factory，不能延迟到外层await后再关联identity。production不建立第二种saved-content session或带feature flag的generic content session。
 
-## 显式 Prepare terminals
+## 显式 Prepare 与 Close all
 
-Macro运行区只有一个`Prepare terminals`按钮。不存在Settings toggle、Auto-prepare、Use/Activate、Start-and-prepare或selection/load/save/start/event trigger。
+Macro运行区只有一个显示为`Prepare`的terminal layout按钮。不存在Settings toggle、Auto-prepare、Use/Activate、Start-and-prepare或selection/load/save/start/event trigger。
 
 按钮读取当前visual draft或JSON buffer中的合法terminalLayout；New、dirty、saved以及含unassigned reference的draft均可Prepare，不要求record identity或先Save。Prepare request只携带canonical layout snapshot和expectedTerminalStructureRevision，不读取或修改MacroRecord。resolver只按顺序keep/move/create/insert缺少的shell/text，不删除、reset、等待或治疗starting/exited/failed terminal。backend失败立即停止并返回最新authoritative partial snapshot；不staging、不rollback。Prepare创建Shell使用`$HOME`，terminal/layout没有产品级数量上限。延迟HTTP response按roomRevision monotonic merge，不能回滚更晚WebSocket Room真值。
+
+同一run dock在Prepare旁提供theme-native destructive `Close all`。它只在当前browser可mutation、terminal structure未锁且deck非空时enabled；点击必须确认`Close all Shell and Text tabs in this Room?`，Cancel零副作用，Confirm只发送一次exact`close_all_terminals`。server在同一controller-guarded structure operation中冻结当前terminal ids、复用单terminal close lifecycle并把中间index map合并为最终authoritative projection。它不关闭Room，也不删除Macro、run log、artifact或evidence。
 
 ## Start、runner 与 runtime input
 

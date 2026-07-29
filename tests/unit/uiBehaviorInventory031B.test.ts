@@ -79,7 +79,7 @@ describe('.031B evolving UI source inventory', () => {
       'workspaceRuntimeControlInventory034',
     ])
     expect(createHash('sha256').update(JSON.stringify(values)).digest('hex'))
-      .toBe('9263e6d9ed5330ed7be10c178c192d935a709a81c804ddea813cd34c19a01d63')
+      .toBe('385d0cfd592a88f89968093cdbed39029251a87ba32b0731c34ff0317a75f958')
 
     const inventoryRoot = resolve(projectRoot, 'tests/ui-baseline/031B')
     const facade = readFileSync(resolve(inventoryRoot, 'controlInventory.ts'), 'utf8')
@@ -120,7 +120,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(sourceInteractiveControlDigest038).toBe('278ac0156e82120cbe483e2fb764273d28b7c21b78661c5b9a299bbd5a8e2c63')
   })
 
-  test('20260729A interactive source controls match the current path-only snapshot', () => {
+  test('current interactive source controls match the path-only snapshot', () => {
     const discovered = discoverInteractiveControls()
     const digest = createHash('sha256').update(JSON.stringify(discovered)).digest('hex')
     expect({
@@ -146,7 +146,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(new Set(changes.keys())).toEqual(delta)
     for (const key of delta) {
       const change = changes.get(key)
-      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.038', '20260722A.001', '20260722B.001', '20260729A'].includes(change?.changedBy ?? '')).toBe(true)
+      expect(['20260627A.032', '20260627A.033', '20260627A.034', '20260627A.038', '20260722A.001', '20260722B.001', '20260729A', '20260729B'].includes(change?.changedBy ?? '')).toBe(true)
       expect(change?.oldBehavior).toBeTruthy()
       expect(change?.newBehavior).toBeTruthy()
       expect(change?.spec).toBeTruthy()
@@ -164,6 +164,7 @@ describe('.031B evolving UI source inventory', () => {
     expect(changes.get('parallel-shared-text-order')?.changedBy).toBe('20260729A')
     expect(changes.get('parallel-send-terminal')?.changedBy).toBe('20260729A')
     expect(changes.get('parallel-merge-separator')?.changedBy).toBe('20260729A')
+    expect(changes.get('macro-close-all-terminals')?.changedBy).toBe('20260729B')
     expect(changes.get('theme-select')?.changedBy).toBe('20260722B.001')
   })
 

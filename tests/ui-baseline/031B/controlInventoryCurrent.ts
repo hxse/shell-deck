@@ -4,9 +4,9 @@ import {
   type UiControlInventoryEntry,
 } from './controlInventoryHistorical'
 
-export const sourceInteractiveControlCount = 201
+export const sourceInteractiveControlCount = 202
 
-export const sourceInteractiveControlDigest = '983fd095e4587c1c3d8e1561a155dd70a3b2b1309cee30176763bcf9d038a79f'
+export const sourceInteractiveControlDigest = '3d78593f1014d51e9598a0425bfb9b14b4c5ec901eb7facc34b538a152cdaab9'
 
 const workspaceRuntimeControls034 = [
   ["home-refresh", "clicked"],
@@ -89,6 +89,10 @@ const parallelControlsRemoved20260729A = [
   'parallel-collect-lane-text',
 ] as const
 
+const terminalDeckControlsAdded20260729B: Array<readonly [string, UiControlEvidenceKind]> = [
+  ['macro-close-all-terminals', 'clicked'],
+]
+
 export const parallelControlIdsAdded20260729A = new Set(parallelControlsAdded20260729A.map(([key]) => key))
 export const parallelControlIdsRemoved20260729A = new Set<string>(parallelControlsRemoved20260729A)
 
@@ -96,6 +100,7 @@ const macroRuntimeControls: Array<readonly [string, UiControlEvidenceKind]> = [
   ...macroRuntimeControls034.filter(([key]) => key !== 'for-text-list-add' && !parallelControlIdsRemoved20260729A.has(key)),
   ...macroControlsAdded001,
   ...parallelControlsAdded20260729A,
+  ...terminalDeckControlsAdded20260729B,
 ]
 
 export const workspaceRuntimeControlInventory034: UiControlInventoryEntry[] = workspaceRuntimeControls034.map(([key, evidence]) => ({ key, evidence }))
