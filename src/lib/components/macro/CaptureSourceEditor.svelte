@@ -13,7 +13,9 @@
   import LineNumberedTextarea from './LineNumberedTextarea.svelte'
   import MacroTerminalSelect from './MacroTerminalSelect.svelte'
 
-  type PromptCopyState = 'idle' | 'copied' | 'failed'
+  type CopyState = 'idle' | 'copied' | 'failed'
+
+  const CODEX_LAUNCH_COMMAND = 'just -f "$SHELL_DECK_JUSTFILE" codex'
 
   let {
     variant,
@@ -42,7 +44,8 @@
   }>()
 
   let submissionPromptDialog = $state<HTMLDialogElement | null>(null)
-  let promptCopyState = $state<PromptCopyState>('idle')
+  let promptCopyState = $state<CopyState>('idle')
+  let codexCommandCopyState = $state<CopyState>('idle')
   const submissionPrompt = $derived.by(() => {
     if (capture.kind !== 'structured-json') return null
     if (!compileStructuredJsonSchema(capture.schema).ok) return null
@@ -84,6 +87,15 @@
       promptCopyState = 'copied'
     } catch {
       promptCopyState = 'failed'
+    }
+  }
+
+  async function copyCodexLaunchCommand(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(CODEX_LAUNCH_COMMAND)
+      codexCommandCopyState = 'copied'
+    } catch {
+      codexCommandCopyState = 'failed'
     }
   }
 </script>
@@ -211,6 +223,22 @@
         <label class="agent-timeout-duration"><span>Timeout ms</span><input class="input box-border input-xs input-ghost w-full bg-base-content/15" data-testid="parallel-capture-agent-timeout-ms" type="number" min="1" step="1" value={capture.waitLimit.timeoutMs} oninput={(event) => { if (capture.kind === 'agent-event' && capture.waitLimit.kind === 'timeout') changeCapture({ ...capture, waitLimit: { kind: 'timeout', timeoutMs: Number(event.currentTarget.value) } }) }} /></label>
       {:else}
         <p class="hint agent-timeout-hint" data-testid="parallel-capture-agent-unbounded-hint">Wait until result or Stop</p>
+      {/if}
+    </div>
+  {/if}
+  {#if capture.agent.kind === 'codex'}
+    <div class="grid gap-1" data-testid="capture-agent-codex-guidance">
+      <div class="alert alert-info alert-soft box-border flex h-8 min-h-0 flex-nowrap items-center gap-1 px-2 py-0 text-xs" data-testid="capture-agent-codex-command-bar">
+        <span class="badge badge-info badge-xs shrink-0">Codex</span>
+        <div class="tooltip tooltip-top min-w-0 flex-1 text-left" data-testid="capture-agent-codex-command-tooltip" data-tip="Run this command in the selected Shell. Its current directory becomes the Codex workspace.">
+          <code class="block select-all overflow-x-auto whitespace-nowrap font-mono" data-testid="capture-agent-codex-command">{CODEX_LAUNCH_COMMAND}</code>
+        </div>
+        <div class="tooltip tooltip-top shrink-0" data-testid="capture-agent-codex-command-copy-tooltip" data-tip="Copy Codex launch command">
+          <button class="btn btn-xs btn-ghost" type="button" aria-label="Copy Codex launch command" data-testid="capture-agent-codex-command-copy" onclick={copyCodexLaunchCommand}>{codexCommandCopyState === 'copied' ? 'Copied' : 'Copy'}</button>
+        </div>
+      </div>
+      {#if codexCommandCopyState === 'failed'}
+        <p class="text-xs text-warning" data-testid="capture-agent-codex-command-copy-failed" role="status">Clipboard access failed. Select the command and copy it manually.</p>
       {/if}
     </div>
   {/if}

@@ -247,4 +247,13 @@ export const codexControlExclusions = [
     spec: '20260627A.038/02_spec/01_contract.md — Visual editor and explicit AgentEvent wait limit',
     reason: 'AgentEvent controls are covered by the isolated .038 UI journey, not the non-Codex .031B journey.',
   },
+  {
+    key: 'capture-agent-codex-command-copy',
+    evidence: 'excluded',
+    changedBy: '20260809A',
+    oldBehavior: 'AgentEvent Capture did not explain how to start hook-enabled Codex.',
+    newBehavior: 'Root and Parallel AgentEvent Capture expose one selectable command and a clipboard action.',
+    spec: '20260809A/02_spec/01_contract.md — Capture guidance',
+    reason: 'Codex launch guidance is covered by the isolated 20260809A journey, not the non-Codex .031B journey.',
+  },
 ] satisfies UiControlInventoryEntry[]

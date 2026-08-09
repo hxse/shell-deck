@@ -29,8 +29,8 @@ const currentComponentFingerprints = {
     digest: 'e32b5856e150654d6cf89364a56a1c913eb70f9872d378162a3aadf4a9f7e2b4',
   },
   'src/lib/components/macro/CaptureSourceEditor.svelte': {
-    count: 89,
-    digest: 'bf10208f3d5167a87dbee3f07318569bb944e1270d78984c119368ba5e4c0363',
+    count: 97,
+    digest: '879855f721d70f0910c26364624b932d7819ba85d312a50ff8ae3bd2fa522c65',
   },
   'src/lib/components/macro/ExtractTextEditor.svelte': {
     count: 104,
@@ -237,7 +237,7 @@ describe('20260722B.004 UI theme migration closeout', () => {
     })
 
     expect(Object.values(structureBaseline.files).reduce((sum, file) => sum + file.count, 0)).toBe(835)
-    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(846)
+    expect(Object.values(current).reduce((sum, file) => sum + file.count, 0)).toBe(854)
 
     const app = readFileSync(resolve(projectRoot, 'src/App.svelte'), 'utf8')
     expect(app.match(/data-testid="theme-select"/g)).toHaveLength(1)

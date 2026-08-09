@@ -1,4 +1,4 @@
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
@@ -18,6 +18,7 @@ if (requiredContext.some((name) => !process.env[name])) {
 }
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+const targetCwd = resolve(process.env.SHELL_DECK_TARGET_CWD ?? process.cwd())
 const codexBin = process.env.SHELL_DECK_CODEX_BIN ?? 'codex'
 const hookScript = join(repoRoot, 'scripts', 'shell-deck-hook.ts')
 const hookCommand = shellQuote(process.execPath) + ' ' + shellQuote(hookScript)
@@ -37,8 +38,8 @@ const hookArgs = process.env.SHELL_DECK_DISABLE_HOOKS === '1'
     ]
 
 const result = spawnSync(codexBin, [...hookArgs, ...process.argv.slice(2)], {
-  cwd: process.cwd(),
-  env: process.env,
+  cwd: targetCwd,
+  env: { ...process.env, SHELL_DECK_TARGET_CWD: targetCwd, PWD: targetCwd },
   stdio: 'inherit',
 })
 

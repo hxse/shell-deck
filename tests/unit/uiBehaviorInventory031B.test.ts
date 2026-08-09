@@ -79,7 +79,7 @@ describe('.031B evolving UI source inventory', () => {
       'workspaceRuntimeControlInventory034',
     ])
     expect(createHash('sha256').update(JSON.stringify(values)).digest('hex'))
-      .toBe('385d0cfd592a88f89968093cdbed39029251a87ba32b0731c34ff0317a75f958')
+      .toBe('209d4cf0fd18101f22905152d53bc0a5bcadc299d6bf22a47c1531964fcecce5')
 
     const inventoryRoot = resolve(projectRoot, 'tests/ui-baseline/031B')
     const facade = readFileSync(resolve(inventoryRoot, 'controlInventory.ts'), 'utf8')
@@ -216,6 +216,18 @@ describe('.031B evolving UI source inventory', () => {
       expect(current).not.toContain(key)
       expect(codexControlExclusions.find((entry) => entry.key === key)?.changedBy).toBe('20260627A.038')
     }
+  })
+
+  test('20260809A attributes Codex launch copy without adding it to the non-Codex journey', () => {
+    const key = 'capture-agent-codex-command-copy'
+    expect(macroRuntimeControlInventory.map(({ key }) => key)).not.toContain(key)
+    expect(codexControlExclusions).toContainEqual(expect.objectContaining({
+      key,
+      changedBy: '20260809A',
+      oldBehavior: expect.any(String),
+      newBehavior: expect.any(String),
+      spec: expect.any(String),
+    }))
   })
 
   test('.035 attributes removal of manual Home refresh without rewriting the .034 runtime snapshot', () => {

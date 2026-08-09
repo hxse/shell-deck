@@ -7,7 +7,9 @@ test.afterEach(async ({ request }) => {
   await Promise.all(body.rooms.map((room) => request.delete('/api/rooms/' + encodeURIComponent(room.roomId), { data: { expectedRoomGeneration: room.roomGeneration } })))
 })
 
-test('root and Parallel AgentEvent captures default to unbounded and expose an explicit timeout branch', async ({ page, request }) => {
+test('root and Parallel AgentEvent captures expose wait limits and Codex launch guidance', async ({ page, request }) => {
+  const codexCommand = 'just -f "$SHELL_DECK_JUSTFILE" codex'
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   const created = await request.post('/api/rooms')
   const room = await created.json() as { url: string }
   await page.goto(room.url)
@@ -21,7 +23,36 @@ test('root and Parallel AgentEvent captures default to unbounded and expose an e
 
   const capture = page.locator('[data-flow-node-type="capture-source"]').first()
   await capture.getByTestId('capture-step-terminal').selectOption('1')
+  await expect(capture.getByTestId('capture-agent-codex-guidance')).toHaveCount(0)
   await capture.getByTestId('capture-step-kind').selectOption('agent-event')
+  const commandTooltip = capture.getByTestId('capture-agent-codex-command-tooltip')
+  const copyTooltip = capture.getByTestId('capture-agent-codex-command-copy-tooltip')
+  await expect(commandTooltip).toHaveAttribute('data-tip', 'Run this command in the selected Shell. Its current directory becomes the Codex workspace.')
+  await expect(copyTooltip).toHaveAttribute('data-tip', 'Copy Codex launch command')
+  await commandTooltip.hover()
+  await expect.poll(() => commandTooltip.evaluate((element) => getComputedStyle(element, '::before').opacity)).toBe('1')
+  await copyTooltip.hover()
+  await expect.poll(() => copyTooltip.evaluate((element) => getComputedStyle(element, '::before').opacity)).toBe('1')
+  await expect(capture.getByTestId('capture-agent-codex-command')).toHaveText(codexCommand)
+  const commandBar = capture.getByTestId('capture-agent-codex-command-bar')
+  await expect(commandBar).toBeVisible()
+  expect(await commandBar.evaluate((element) => ({
+    height: element.getBoundingClientRect().height,
+    flexWrap: getComputedStyle(element).flexWrap,
+  }))).toEqual({ height: 32, flexWrap: 'nowrap' })
+  await expect(capture.getByTestId('capture-agent-codex-command-copy')).toHaveText('Copy')
+  await capture.getByTestId('capture-agent-codex-command-copy').click()
+  await expect(capture.getByTestId('capture-agent-codex-command-copy')).toHaveText('Copied')
+  await expect.poll(async () => page.evaluate(() => navigator.clipboard.readText())).toBe(codexCommand)
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      configurable: true,
+      value: async () => { throw new Error('clipboard denied') },
+    })
+  })
+  await capture.getByTestId('capture-agent-codex-command-copy').click()
+  await expect(capture.getByTestId('capture-agent-codex-command-copy-failed')).toContainText('copy it manually')
+  await expect(capture.getByTestId('capture-agent-codex-command')).toHaveText(codexCommand)
   await expect(capture.getByTestId('capture-agent-timeout-enabled')).not.toBeChecked()
   await expect(capture.getByTestId('capture-agent-unbounded-hint')).toHaveText('Wait until result or Stop')
   await expect(capture.getByTestId('capture-agent-timeout-ms')).toHaveCount(0)
@@ -49,6 +80,8 @@ test('root and Parallel AgentEvent captures default to unbounded and expose an e
   const laneCapture = parallel.locator('[data-testid="parallel-lane-action"][data-parallel-action-type="capture-source"]').first()
   await laneCapture.getByTestId('parallel-capture-terminal').selectOption('1')
   await laneCapture.getByTestId('parallel-capture-kind').selectOption('agent-event')
+  await expect(laneCapture.getByTestId('capture-agent-codex-guidance')).toBeVisible()
+  await expect(laneCapture.getByTestId('capture-agent-codex-command')).toHaveText(codexCommand)
   await expect(laneCapture.getByTestId('parallel-capture-agent-timeout-enabled')).not.toBeChecked()
   await expect(laneCapture.getByTestId('parallel-capture-agent-unbounded-hint')).toHaveText('Wait until result or Stop')
   await expectTimeoutToggleAligned(laneCapture.getByTestId('parallel-capture-agent-timeout-enabled'))

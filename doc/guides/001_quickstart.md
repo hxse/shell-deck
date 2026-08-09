@@ -90,7 +90,15 @@ Text输入在当前browser立即更新；后台以100ms leading/trailing节流�
 
 ## Codex hook
 
-`just codex` 只支持从 shell-deck 创建的 Shell 内运行，因为该 Shell 已注入完整 Room/terminal/launch ingest context。普通外部 terminal 调用会在启动 Codex 前返回：
+Codex AgentEvent Capture的root与Parallel编辑区都会显示一条32px单行command bar和`Copy`按钮。在Capture所选的shell-deck Shell中执行：
+
+```bash
+just -f "$SHELL_DECK_JUSTFILE" codex
+```
+
+该命令可在任意项目目录执行；Codex默认workspace与`PWD`保持为命令调用目录，不会切到shell-deck checkout。原生Codex参数继续透传，例如`-C ~/dev/another-project`可显式覆盖workspace。命令区悬浮提示selected Shell/workspace语义并允许横向滚动、手工选择；Copy按钮也有明确tooltip。clipboard成功后按钮显示`Copied`，权限被拒绝时才在下一行显示manual-copy提示。UI不会自动启动Codex或修改Send。
+
+这个入口只支持从 shell-deck 创建的 Shell 内运行，因为该 Shell 已注入完整 Room/terminal/launch ingest context。普通外部 terminal 调用会在启动 Codex 前返回：
 
 ```text
 shell_deck_room_context_required

@@ -15,7 +15,7 @@ Core V0 behavior:
 - saved Macro records use per-record cross-Room/process edit leases plus optimistic revision; different records remain independent
 - no role system and no Codex pre-injected prompts
 - authenticated startup prints one process-local token as text and terminal QR; the login page can decode an uploaded image or a secure-context live camera locally without uploading either
-- `just codex` only runs inside a shell-deck-created Shell with complete Room context; external terminals fail loudly
+- Codex AgentEvent Capture shows and copies `just -f "$SHELL_DECK_JUSTFILE" codex`; the wrapper preserves the caller project as Codex cwd/PWD and external terminals fail loudly
 - AgentEvent ingest normalizes Codex hook callbacks; Codex session ids are trace data, not macro template state
 - AgentEvent capture defaults to explicit unbounded waiting; users may opt into a persisted duration timeout
 - MacroDefinitionV6 stores portable Flow plus continuous terminal index/type and exact assigned/unassigned logical references; MacroRecord metadata and runtime terminal IDs remain separate
@@ -49,6 +49,7 @@ just test-038            # Macro V6 explicit AgentEvent wait-limit gate
 just test-039            # retained terminal view lifecycle gate
 just test-20260724a      # removed Library domain + Macro-only saved-content gate
 just test-20260727a      # authenticated terminal QR + image/live-camera login gate
+just test-20260809a      # Codex caller-workspace + AgentEvent guidance gate
 ```
 
 V0 phase tasks:

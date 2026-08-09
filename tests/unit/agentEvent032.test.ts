@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ingestAgentEvent } from '../../server/agentEventIngest'
@@ -44,6 +44,40 @@ test('external shell-deck codex wrapper fails before starting Codex when Room co
   })
   expect(result.exitCode).toBe(1)
   expect(result.stderr.toString()).toContain('shell_deck_room_context_required')
+})
+
+test('just codex preserves the invocation directory as child cwd and PWD', () => {
+  const root = mkdtempSync(join(tmpdir(), 'shell-deck-codex-cwd-'))
+  const targetCwd = join(root, 'caller-project')
+  const fakeCodex = join(root, 'fake-codex')
+  try {
+    mkdirSync(targetCwd)
+    writeFileSync(fakeCodex, '#!/usr/bin/env bash\npwd -P\nprintf \'%s\\n\' "$PWD"\nprintf \'%s\\n\' "$SHELL_DECK_TARGET_CWD"\n')
+    chmodSync(fakeCodex, 0o700)
+    const repoRoot = join(import.meta.dir, '..', '..')
+    const result = Bun.spawnSync(['just', '--justfile', join(repoRoot, 'justfile'), 'codex'], {
+      cwd: targetCwd,
+      env: {
+        ...process.env,
+        SHELL_DECK_CODEX_BIN: fakeCodex,
+        SHELL_DECK_DISABLE_HOOKS: '1',
+        SHELL_DECK_SERVER_INSTANCE_ID: 'server-test',
+        SHELL_DECK_ROOM_ID: 'room-test',
+        SHELL_DECK_ROOM_GENERATION: 'generation-test',
+        SHELL_DECK_TERMINAL_ID: 'terminal-test',
+        SHELL_DECK_LAUNCH_ID: 'launch-test',
+        SHELL_DECK_INGEST_URL: 'http://127.0.0.1/ingest',
+        SHELL_DECK_INGEST_TOKEN: 'token-test',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    expect(result.exitCode).toBe(0)
+    const observedPaths = result.stdout.toString().trim().split('\n').slice(-3)
+    expect(observedPaths).toEqual(Array(3).fill(realpathSync(targetCwd)))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 function agentOutput(roomGeneration: string, terminalId: string, launchId: string) {

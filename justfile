@@ -126,6 +126,10 @@ test-20260729b:
     HISTFILE=/dev/null bun test tests/integration/terminalRoomWebSocket032.test.ts
     bun run scripts/runPlaywright.ts --workers=1 tests/e2e/macroWorkbenchFixes001.spec.ts tests/e2e/comprehensiveMacroUiBehaviorCurrent.spec.ts
 
+test-20260809a:
+    HISTFILE=/dev/null bun test tests/unit/agentEvent032.test.ts tests/unit/uiThemeCloseout004.test.ts tests/unit/workbenchThemeMigration003.test.ts tests/unit/uiBehaviorInventory031B.test.ts
+    bun run scripts/runPlaywright.ts --workers=1 tests/e2e/agentEventWaitLimit038.spec.ts
+
 test-032:
     bun run test:032
 
@@ -372,7 +376,7 @@ test: test-unit test-e2e
 
 # Shell-deck wrapped Codex entry. It is valid only inside a shell-deck-created Shell.
 codex *args:
-    bun run scripts/shell-deck-codex.ts {{args}}
+    SHELL_DECK_TARGET_CWD={{quote(invocation_directory())}} bun run scripts/shell-deck-codex.ts {{args}}
 
 # Submit one structured JSON value from stdin using this terminal's Room runtime context.
 submit-json:

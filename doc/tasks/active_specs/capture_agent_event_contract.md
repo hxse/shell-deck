@@ -4,7 +4,9 @@ Live ingest 的唯一入口为 `POST /api/rooms/:roomId/agent-events`。server �
 
 request body 不能覆盖 path roomId。server 验证 token、当前 Room generation 以及 terminalId/launchId membership，再补 generated eventId、serverInstanceId 与 receivedAt，并追加到 User Data Root 的 Room-scoped evidence。不同 Room、generation、terminal 或 launch 的事件不能被消费。
 
-`just codex` 只允许在具有完整注入 context 的 shell-deck Shell 内启动。普通外部 terminal 在启动 Codex 前以 `shell_deck_room_context_required` fail loudly；不存在 manual id、global ingest、disk spool/import、unbound evidence 或旧 config fallback。
+`just codex` 只允许在具有完整注入 context 的 shell-deck Shell 内启动。跨checkout的canonical入口是`just -f "$SHELL_DECK_JUSTFILE" codex`：recipe用Just的`invocation_directory()`冻结调用目录，wrapper把该目录同时设为Codex child的cwd与`PWD`，并原样透传Codex CLI参数；显式`-C/--cd`仍由Codex按原生语义处理。普通外部 terminal 在启动 Codex 前以 `shell_deck_room_context_required` fail loudly；不存在 manual id、global ingest、disk spool/import、unbound evidence 或旧 config fallback。
+
+root和Parallel的Codex AgentEvent Capture editor都显示32px单行command bar：`Codex` badge、可横向滚动并手工选择的上述exact command，以及`Copy`按钮。命令与按钮使用daisyUI tooltip分别解释selected Shell/workspace语义与copy action；clipboard成功显示`Copied`，失败时才在下一行显示manual-copy提示。UI不读取server absolute checkout path、不自动启动Codex，也不修改Send或terminal内容。
 
 Macro `capture-source`只能消费与frozen run snapshot的serverInstanceId、roomId、roomGeneration、terminalId和launchId全部匹配的live evidence。Start先为每个capture step记录matching baseline，后续只消费baseline之后且尚未被同一run消费的event；`prompt_and_result`还要求相同agent session/turn配对。等待过程服从同一live Pause/Stop状态。
 

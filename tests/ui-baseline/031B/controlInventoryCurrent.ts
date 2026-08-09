@@ -4,9 +4,9 @@ import {
   type UiControlInventoryEntry,
 } from './controlInventoryHistorical'
 
-export const sourceInteractiveControlCount = 202
+export const sourceInteractiveControlCount = 203
 
-export const sourceInteractiveControlDigest = '3d78593f1014d51e9598a0425bfb9b14b4c5ec901eb7facc34b538a152cdaab9'
+export const sourceInteractiveControlDigest = 'f01497f02bf2959b3444bbcc4119cec2f8ae4c75bd26f25cfb73817fe6a61be3'
 
 const workspaceRuntimeControls034 = [
   ["home-refresh", "clicked"],
